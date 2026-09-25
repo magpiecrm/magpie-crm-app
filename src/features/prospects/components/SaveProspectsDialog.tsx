@@ -165,9 +165,9 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
             )}
 
             <p className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-md-s p-3 leading-relaxed">
-              Saving looks up a work email for each person, for these people only. Anyone who has opted out is
-              skipped. New contacts are marked <span className="font-semibold">notice pending</span> until they've
-              been told how their details were found.
+              Saving looks up a work email for each person at their current company, for these people only. Anyone
+              who has opted out is skipped. New contacts are marked{' '}
+              <span className="font-semibold">notice pending</span> until they've been told how their details were found.
               {people.length > 10 && ' This many people runs in the background, and you can watch progress here.'}
             </p>
 

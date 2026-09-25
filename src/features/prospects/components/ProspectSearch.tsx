@@ -31,9 +31,12 @@ import {
   type Seniority,
 } from '../../../server/prospecting/types'
 import { parseSeniorityLabel } from '../../../server/prospecting/seniority'
+import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
+
 import { INDUSTRIES } from '../constants/industries'
 import { JOB_TITLES } from '../constants/jobTitles'
 import type { Persona } from '../types'
+import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, SENIORITY_LABEL } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
@@ -59,10 +62,20 @@ interface PeopleForm {
   seniorities: Seniority[]
   country: string
   keyword: string
+  /** Results per page. Each result's profile is looked up, so this drives cost. */
+  count: number
 }
 
+const PAGE_SIZES = [1, 5, 10, 25] as const
+
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '' }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', count: 5 }
+
+/** Upper bound on one page: 3 credits per search (one per title) plus 3 per result's profile. */
+function creditsPerPage(form: Pick<PeopleForm, 'titles' | 'count'>) {
+  const searches = Math.max(1, Math.min(form.titles.length, 5))
+  return searches * 3 + searches * form.count * 3
+}
 
 interface StoredState {
   mode: Mode
@@ -72,7 +85,7 @@ interface StoredState {
   peopleSearch: PeopleForm | null
 }
 
-const STORAGE_KEY = 'prospectSearch.v2'
+const STORAGE_KEY = 'prospectSearch.v3'
 
 function loadStoredState(): Partial<StoredState> | null {
   try {
@@ -92,7 +105,7 @@ const noRefetch = { staleTime: Infinity, gcTime: 30 * 60_000, refetchOnWindowFoc
 
 export function ProspectSearch() {
   const queryClient = useQueryClient()
-  const [mode, setMode] = useState<Mode>('companies')
+  const [mode, setMode] = useState<Mode>('people')
   const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY_FORM)
   const [peopleForm, setPeopleForm] = useState(EMPTY_PEOPLE_FORM)
   const [companySearch, setCompanySearch] = useState<CompanyForm | null>(null)
@@ -164,6 +177,7 @@ export function ProspectSearch() {
           seniorities: peopleSearch!.seniorities,
           country: peopleSearch!.country || undefined,
           keyword: peopleSearch!.keyword || undefined,
+          count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
       }),
@@ -215,7 +229,7 @@ export function ProspectSearch() {
       setCompanySearch({ ...companyForm })
     } else {
       if (!peopleForm.company && peopleForm.titles.length === 0 && !peopleForm.keyword.trim()) {
-        setFormError('Pick a company, or enter at least one job title or keyword.')
+        setFormError('Enter a job title or keyword, or pick a company.')
         return
       }
       setPeopleSearch({ ...peopleForm })
@@ -264,6 +278,9 @@ export function ProspectSearch() {
 
   const companyItems = companies.data?.pages.flatMap((p) => p.items) ?? []
   const peopleItems = people.data?.pages.flatMap((p) => p.items) ?? []
+  // Titles checked against profiles, by the search itself or the button.
+  // Results whose title and company came from their profile (✓ in the table).
+  const refined = new Set(people.data?.pages.flatMap((p) => p.refined ?? []) ?? [])
 
   const toggleAllPeople = (select: boolean) =>
     setSelected((prev) => {
@@ -386,10 +403,7 @@ export function ProspectSearch() {
             )}
           </div>
         ) : (
-          <p className="text-[11px] text-muted-foreground leading-snug">
-            Any company. For people at one company, find it on the{' '}
-            <button type="button" className="text-accent font-semibold hover:underline" onClick={() => setMode('companies')}>Companies</button> tab.
-          </p>
+          <CompanyPicker onPick={(c) => setPeopleForm({ ...peopleForm, company: { ref: c.ref, name: c.name, domain: c.domain } })} />
         )}
       </div>
 
@@ -421,7 +435,19 @@ export function ProspectSearch() {
       </FilterAccordion>
 
       <FilterAccordion label="Country" icon={<Globe className="w-4 h-4" />} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} badgeCount={peopleForm.country ? 1 : 0}>
-        <input className={inputClass} value={peopleForm.country} placeholder="e.g. United Kingdom" onChange={(e) => setPeopleForm({ ...peopleForm, country: e.target.value })} />
+        <input
+          className={inputClass}
+          list="prospect-countries"
+          value={peopleForm.country}
+          placeholder="e.g. United Kingdom"
+          onChange={(e) => setPeopleForm({ ...peopleForm, country: e.target.value })}
+        />
+        <datalist id="prospect-countries">
+          {SUPPORTED_COUNTRIES.map((c) => <option key={c} value={c} />)}
+        </datalist>
+        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+          Countries in the list are filtered by SocialFetch. Others are filtered after each page, so pages can be thin.
+        </p>
       </FilterAccordion>
 
       <FilterAccordion label="Keyword" icon={<Search className="w-4 h-4" />} isOpen={!!expanded.keyword} onToggle={() => toggleSection('keyword')} badgeCount={peopleForm.keyword ? 1 : 0}>
@@ -461,6 +487,27 @@ export function ProspectSearch() {
   const filtersFooter = (
     <div className="p-4 border-t border-border bg-card/50 flex flex-col gap-2">
       {formError && <p className="text-[11px] text-destructive font-medium">{formError}</p>}
+      {mode === 'people' && (
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor="people-page-size" className="text-[11px] font-semibold text-foreground">
+            Results per page
+          </label>
+          <select
+            id="people-page-size"
+            value={peopleForm.count}
+            onChange={(e) => setPeopleForm({ ...peopleForm, count: Number(e.target.value) })}
+            className="px-2 py-1 text-xs bg-background border border-border rounded focus:ring-1 focus:ring-accent outline-none"
+          >
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+      )}
+      {mode === 'people' && (
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          Up to <span className="font-semibold text-foreground">{creditsPerPage(peopleForm)} credits</span> per page: 3 for the
+          search plus 3 per result, since each profile is checked for their current job and company.
+        </p>
+      )}
       <button
         type="submit"
         className="w-full bg-accent text-accent-foreground py-2 rounded-md-s text-xs font-semibold hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -500,7 +547,7 @@ export function ProspectSearch() {
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground font-display leading-tight">Prospect Search</h1>
             <p className="hidden sm:block text-xs text-muted-foreground mt-0.5">
-              Find companies, then the people in them. Emails are looked up only when you save someone to a list.
+              Find people by job title, seniority and country. Emails are looked up only when you save someone to a list.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -523,7 +570,7 @@ export function ProspectSearch() {
 
         <div className="px-4 sm:px-6 border-b border-border flex items-center justify-between gap-3 bg-card/10 shrink-0">
           <div role="tablist" className="flex gap-4">
-            {(['companies', 'people'] as const).map((m) => (
+            {(['people', 'companies'] as const).map((m) => (
               <button
                 key={m}
                 role="tab"
@@ -535,7 +582,7 @@ export function ProspectSearch() {
                 }}
                 className={`py-2.5 text-xs font-semibold border-b-2 transition-colors ${mode === m ? 'border-accent text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
               >
-                {m === 'companies' ? 'Companies' : 'People'}
+                {m === 'companies' ? 'Browse companies' : 'People'}
               </button>
             ))}
           </div>
@@ -583,7 +630,7 @@ export function ProspectSearch() {
             renderEmpty(
               mode === 'companies'
                 ? 'Search for companies by keyword, then open one to find people there.'
-                : 'Search by job title, optionally within one company.',
+                : 'Search for people by job title, seniority or keyword. Add a company to search inside just one.',
             )
           ) : active.isLoading ? (
             <div className="px-6 py-16 flex justify-center">
@@ -594,7 +641,7 @@ export function ProspectSearch() {
           ) : mode === 'companies' ? (
             <CompanyResults companies={companyItems} onFindPeople={findPeople} onDomainSet={applyDomain} />
           ) : (
-            <PeopleResults people={peopleItems} selected={selected} onToggle={togglePerson} onToggleAll={toggleAllPeople} />
+            <PeopleResults people={peopleItems} refined={refined} selected={selected} onToggle={togglePerson} onToggleAll={toggleAllPeople} />
           )}
 
           {hasSearched && active.hasNextPage && !active.error && (

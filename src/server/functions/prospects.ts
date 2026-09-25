@@ -63,6 +63,7 @@ const peopleSearchInput = z.object({
   seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
   country: z.string().trim().max(100).optional(),
   keyword: z.string().trim().max(200).optional(),
+  count: z.number().int().min(1).max(50).optional(),
   cursor: z.string().max(20_000).optional(),
 })
 
@@ -87,6 +88,7 @@ const personInput = z.object({
   companyDomain: z.string().trim().max(253).nullable(),
   country: z.string().trim().max(100).nullable(),
   source: z.literal('socialfetch'),
+  profileChecked: z.boolean().optional(),
 })
 
 const saveInput = z.object({

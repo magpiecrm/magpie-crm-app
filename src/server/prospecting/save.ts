@@ -10,7 +10,7 @@ import crypto from 'crypto'
 import { resolveCompanyDomain } from './companies'
 import { findEmail, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, normaliseDomain, profileHash } from './suppression'
-import type { CompanySource, EmailStatus, PersonResult } from './types'
+import type { CompanySource, EmailStatus, PeopleSource, PersonResult } from './types'
 
 const SYNC_LIMIT = 10
 const SYNC_TIMEOUT_MS = 45_000
@@ -52,7 +52,7 @@ export interface ProspectJob {
 }
 
 export interface SaveDeps {
-  source: CompanySource
+  source: CompanySource & PeopleSource
   finder: FinderDeps
   db: typeof import('../db')['db']
   sleep?: (ms: number) => Promise<void>
@@ -72,6 +72,37 @@ export function getJob(id: string): ProspectJob | null {
   return job ? structuredClone(job) : null
 }
 
+/**
+ * Search results don't say where someone works, so anyone without a known
+ * employer gets one profile lookup (3 credits) at save time. The profile's
+ * current position is also a better title than the search headline.
+ */
+async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGate): Promise<PersonResult> {
+  // Already known, or already paid for during search.
+  if (person.companyDomain || person.companyRef || person.profileChecked) return person
+  // Only the first lookup in a job runs blind; the rest wait for it and are
+  // skipped if it came back without a current job, rather than paying for
+  // every person in a save that can't work.
+  if (gate.first) {
+    if (!(await gate.first)) return person
+  }
+  const lookup = deps.source.getPerson(person.profileUrl)
+  gate.first ??= lookup.then((p) => Boolean(p?.companyRef)).catch(() => false)
+  const profile = await lookup
+  if (!profile?.companyRef) return person
+  return {
+    ...person,
+    title: profile.title || person.title,
+    seniority: profile.seniority ?? person.seniority,
+    company: profile.company || person.company,
+    companyRef: profile.companyRef,
+  }
+}
+
+interface LookupGate {
+  first: Promise<boolean> | null
+}
+
 async function resolveDomain(person: PersonResult, deps: SaveDeps): Promise<string | null> {
   if (person.companyDomain) return normaliseDomain(person.companyDomain)
   if (!person.companyRef) return null
@@ -79,11 +110,22 @@ async function resolveDomain(person: PersonResult, deps: SaveDeps): Promise<stri
 }
 
 async function processPerson(
-  person: PersonResult,
+  searched: PersonResult,
   listId: number,
   deps: SaveDeps,
   final: boolean,
+  gate: LookupGate,
 ): Promise<SaveOutcome> {
+  // Opted-out people are skipped before anything is spent on them.
+  if (isSuppressed(hashesFor(searched), deps.db.getSuppressionHashes())) {
+    return {
+      profileUrl: searched.profileUrl,
+      name: `${searched.firstName} ${searched.lastName}`.trim(),
+      company: searched.company,
+      status: 'suppressed',
+    }
+  }
+  const person = await withEmployer(searched, deps, gate)
   const base = {
     profileUrl: person.profileUrl,
     name: `${person.firstName} ${person.lastName}`.trim(),
@@ -93,7 +135,15 @@ async function processPerson(
 
   const domain = await resolveDomain(person, deps)
   if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
-  if (!domain) return { ...base, status: 'no_domain', message: 'Company website unknown — add the domain on the company first.' }
+  if (!domain) {
+    return {
+      ...base,
+      status: 'no_domain',
+      message: person.companyRef
+        ? 'Company website unknown. Add the domain on the company first.'
+        : "Couldn't find where they currently work, so there's no email domain.",
+    }
+  }
 
   const found = await findEmail(person, domain, deps.finder)
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
@@ -143,11 +193,12 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
 async function runJob(job: ProspectJob, people: PersonResult[], deps: SaveDeps) {
   const sleep = deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)))
   const indexOf = new Map(people.map((p, i) => [p.profileUrl, i]))
+  const gate: LookupGate = { first: null }
 
   const attempt = async (person: PersonResult, final: boolean) => {
     const i = indexOf.get(person.profileUrl)!
     try {
-      job.outcomes[i] = await processPerson(person, job.listId, deps, final)
+      job.outcomes[i] = await processPerson(person, job.listId, deps, final, gate)
     } catch (err: any) {
       job.outcomes[i] = {
         profileUrl: person.profileUrl,

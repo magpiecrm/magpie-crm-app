@@ -63,6 +63,11 @@ export interface PersonResult {
   companyDomain: string | null
   country: string | null
   source: SourceId
+  /**
+   * Their profile has already been looked up (3 credits), whether or not it
+   * listed a current job. Saving won't pay for the same lookup again.
+   */
+  profileChecked?: boolean
 }
 
 export interface CompanyRef {
@@ -83,6 +88,8 @@ export interface PeopleFilters {
   seniorities?: Seniority[]
   country?: string
   keyword?: string
+  /** Results per page (1-50). Each page costs the same whatever its size. */
+  count?: number
   cursor?: string
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinderDeps } from './emailFinder'
-import type { CompanySource, PersonResult } from './types'
+import type { CompanySource, PeopleSource, PersonResult } from './types'
 
 // End-to-end save and opt-out against an in-memory stand-in for the JSON db,
 // a fake SocialFetch company source and a fake Reacher. Nothing touches the
@@ -76,8 +76,18 @@ const person = (first: string, last: string, over: Partial<PersonResult> = {}): 
   ...over,
 })
 
-const source: CompanySource = {
+const source: CompanySource & PeopleSource = {
   searchCompanies: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }),
+  searchPeople: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }),
+  // Profile lookups: only /in/kim-park has a listed employer (company ref 1).
+  getPerson: vi.fn(async (ref: string) =>
+    ref.endsWith('/in/kim-park')
+      ? {
+          profileUrl: ref, firstName: 'Kim', lastName: 'Park', title: 'Head of Data', seniority: 'head' as const,
+          company: 'Acme', companyRef: '1', companyDomain: null, country: 'United Kingdom', source: 'socialfetch' as const,
+        }
+      : null,
+  ),
   getCompany: vi.fn(async (ref: string) =>
     ref === '1'
       ? { ref: '1', name: 'Acme', domain: 'acme.com', industry: null, headcount: 50, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch' as const }
@@ -114,6 +124,7 @@ beforeEach(() => {
   state.suppression = []
   state.disclosure = []
   vi.mocked(source.getCompany).mockClear()
+  vi.mocked(source.getPerson).mockClear()
 })
 
 describe('saveProspects', () => {
@@ -163,6 +174,43 @@ describe('saveProspects', () => {
     })
     expect(job.outcomes[0].status).toBe('suppressed')
     expect(state.contacts).toEqual([])
+  })
+
+  it('looks up the employer from the profile when search did not say where someone works', async () => {
+    const kim = person('Kim', 'Park', { company: '', companyRef: null, title: 'Data person' })
+    const job = await saveProspects(1, [kim], { source, finder: finder({ 'kim.park@acme.com': 'safe' }), db: fakeDb as any })
+    expect(source.getPerson).toHaveBeenCalledWith(kim.profileUrl)
+    expect(job.outcomes[0]).toMatchObject({ status: 'saved', email: 'kim.park@acme.com', company: 'Acme' })
+    expect(state.contacts[0]).toMatchObject({ job_title: 'Head of Data', company: 'Acme' })
+  })
+
+  it('does not look up a profile again if search already checked it', async () => {
+    const checked = person('Lee', 'Nobody', { company: '', companyRef: null, profileChecked: true })
+    const job = await saveProspects(1, [checked], { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getPerson).not.toHaveBeenCalled()
+    expect(job.outcomes[0].status).toBe('no_domain')
+  })
+
+  it('stops looking up profiles in a save once the first one comes back without a job', async () => {
+    const people = ['Aa', 'Bb', 'Cc', 'Dd'].map((n) => person(n, 'Nobody', { company: '', companyRef: null }))
+    const job = await saveProspects(1, people, { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getPerson).toHaveBeenCalledTimes(1)
+    expect(job.outcomes.every((o) => o.status === 'no_domain')).toBe(true)
+  })
+
+  it('reports no_domain when the profile lists no employer either', async () => {
+    const job = await saveProspects(1, [person('Lee', 'Nobody', { company: '', companyRef: null })], {
+      source, finder: finder({}), db: fakeDb as any,
+    })
+    expect(job.outcomes[0]).toMatchObject({ status: 'no_domain', message: expect.stringMatching(/where they currently work/) })
+  })
+
+  it('does not spend a profile lookup on someone who opted out', async () => {
+    const lee = person('Lee', 'Gone', { company: '', companyRef: null })
+    fakeDb.addSuppression(hashesFor({ profileUrl: lee.profileUrl }))
+    const job = await saveProspects(1, [lee], { source, finder: finder({}), db: fakeDb as any })
+    expect(job.outcomes[0].status).toBe('suppressed')
+    expect(source.getPerson).not.toHaveBeenCalled()
   })
 
   it('reports people whose company domain is unknown', async () => {

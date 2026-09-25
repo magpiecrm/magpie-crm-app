@@ -4,20 +4,24 @@
 // and llms.json route inventory:
 //   GET /v2/linkedin/organizations/search  keyword (required), count, cursor   3 credits
 //   GET /v2/linkedin/organizations         id | slug                          6-9 credits
-//   GET /v2/linkedin/people/search         title, currentCompany, keyword,    3 credits
-//                                          count, cursor
+//   GET /v2/linkedin/people/search         keyword, count, start/cursor       3 credits
 //   GET /v2/linkedin/profiles              handle                             3 credits
 //   GET /v1/balance                        (free)
 //
+// Confirmed against the live API (2026-09-25): people search matches on
+// `keyword`; adding `title` returns zero results, so job titles are sent as
+// keywords. Search hits carry only name, profile URL, headline and a free-text
+// `location` (no positions, employer or structured country), and page by
+// offset (`start`) rather than cursor.
+//
 // The docs give no value format for `currentCompany`, `industry`,
-// `headcountRange` or `geoEntityId`, and there is no endpoint to resolve a
-// place name to a `geoEntityId`. So this connector sends only parameters whose
-// meaning is unambiguous and applies industry, headcount, country and
-// seniority as post-filters over what comes back. `currentCompany` is sent as
-// the numeric org id, and results are checked against the chosen company so a
-// wrong guess about its format shows up as a warning, not as wrong people.
+// `headcountRange` or `geoEntityId`, so none of them are sent; industry,
+// headcount, country and seniority are post-filters over what comes back.
+// A person's employer is taken from their headline for display, and resolved
+// properly from their profile only when they're saved.
 
 import { env } from '../env'
+import { canonicalCountry, geoIdForCountry } from './geo'
 import { classifySeniority } from './seniority'
 import type {
   CompanyFilters,
@@ -37,6 +41,8 @@ const TIMEOUT_MS = 25_000
 const MAX_ATTEMPTS = 3
 // Several titles become one request each (the API takes a single `title`).
 const MAX_TITLES = 5
+// SocialFetch's documented maximum for `start`.
+const MAX_START = 999
 
 class SocialFetchError extends Error {
   constructor(
@@ -232,20 +238,68 @@ export function mapPerson(p: any): PersonResult | null {
   ]
   const current = positions.find((x) => x?.isCurrent !== false) ?? null
 
-  // Search hits sometimes carry only a headline; it is the best title we have.
-  const title = str(current?.title) ?? str(p?.headline) ?? ''
+  // Search hits carry only a headline; the part before "at …" / "| …" is
+  // the best title we have. Profiles carry the real current position.
+  const headline = str(p?.headline)
+  const title = str(current?.title) ?? titleFromHeadline(headline) ?? ''
   return {
     profileUrl,
     firstName,
     lastName,
     title,
     seniority: classifySeniority(title),
-    company: str(current?.organizationName) ?? str(current?.organization?.name) ?? '',
+    company: str(current?.organizationName) ?? str(current?.organization?.name) ?? companyFromHeadline(headline) ?? '',
     companyRef: str(current?.organizationId) ?? str(current?.organization?.id) ?? null,
     companyDomain: null,
-    country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? null,
+    // Only the country survives; the city-level label is dropped here.
+    country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),
     source: SOURCE,
   }
+}
+
+/** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
+export function titleFromHeadline(headline: string | null): string | null {
+  if (!headline) return null
+  const first = headline.split(/\s+(?:at|@)\s+|\s*[|•·]\s*/i)[0]?.trim()
+  return first || headline
+}
+
+/** "Business Analyst at Barclays | Agile" -> "Barclays". Display only. */
+function companyFromHeadline(headline: string | null): string | null {
+  if (!headline) return null
+  const m = headline.match(/\s(?:at|@)\s+([^|•·,;()]+)/i)
+  const company = m?.[1]?.trim().replace(/[.\s]+$/, '')
+  return company && company.length <= 80 ? company : null
+}
+
+/** "Leeds, England, United Kingdom" -> "United Kingdom". */
+function countryFromLocation(label: unknown): string | null {
+  if (typeof label !== 'string' || !label.trim()) return null
+  const last = label.split(',').pop()!.trim().replace(/\s+(metropolitan )?area$/i, '')
+  // A city-only label ("Exeter") isn't a country; keep it as-is so it doesn't
+  // masquerade as one, and let the geo filter supply the country instead.
+  return canonicalCountry(last) ?? (last || null)
+}
+
+/**
+ * Field names (never values) of a record the mapper couldn't read, so a
+ * response-shape mismatch can be diagnosed from the server log without
+ * writing anyone's personal data to it.
+ */
+function describeShape(raw: any): string {
+  if (!raw || typeof raw !== 'object') return typeof raw
+  const nested = (key: string) => {
+    const v = Array.isArray(raw[key]) ? raw[key][0] : raw[key]
+    return v && typeof v === 'object' ? `${key}{${Object.keys(v).join(',')}}` : null
+  }
+  return [
+    Object.keys(raw).join(','),
+    nested('currentPositions'),
+    nested('positions'),
+    nested('geo'),
+  ]
+    .filter(Boolean)
+    .join(' | ')
 }
 
 // --- post-filters ------------------------------------------------------------
@@ -272,7 +326,8 @@ const people_ = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`
 
 function matchesCountry(value: string | null, wanted?: string) {
   if (!wanted?.trim()) return true
-  return norm(value).includes(norm(wanted)) || norm(wanted).includes(norm(value) || '\u0000')
+  const w = norm(canonicalCountry(wanted) ?? wanted)
+  return norm(value).includes(w) || w.includes(norm(value) || '\u0000')
 }
 
 /** Company names compared loosely: "Acme Ltd" and "ACME" are the same employer. */
@@ -290,7 +345,8 @@ export function sameCompanyName(a: string, b: string): boolean {
 
 // --- composite cursors -------------------------------------------------------
 // Multi-title people search runs one paged request per title. The cursor handed
-// back to the client carries every per-title cursor; exhausted titles drop out.
+// back to the client carries every per-title position, either SocialFetch's own
+// cursor or `start:N` for offset paging; exhausted titles drop out.
 
 function encodeCursor(map: Record<string, string>): string | null {
   return Object.keys(map).length ? Buffer.from(JSON.stringify(map)).toString('base64url') : null
@@ -330,6 +386,10 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       })
       const raw: any[] = Array.isArray(res.data?.organizations) ? res.data.organizations : []
       const mapped = raw.map(mapOrganization).filter((c): c is CompanyResult => c !== null)
+      if (mapped.length < raw.length) {
+        const bad = raw.find((o) => mapOrganization(o) === null)
+        console.warn(`[SocialFetch] ${raw.length - mapped.length}/${raw.length} organizations unreadable; fields: ${describeShape(bad)}`)
+      }
 
       const filtered = mapped.filter(
         (c) =>
@@ -378,22 +438,36 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
       const slots = titles.length ? titles.slice(0, MAX_TITLES) : ['']
 
+      // Location is filtered by SocialFetch itself when the country has a known
+      // LinkedIn geo id; otherwise it falls back to filtering each page after.
+      const wantedCountry = canonicalCountry(filters.country)
+      const geoEntityId = geoIdForCountry(filters.country)
+      if (filters.country?.trim() && !geoEntityId && !filters.cursor) {
+        warnings.push(
+          `"${filters.country.trim()}" isn't in the supported country list, so it's filtered after each page comes back and pages may be thin.`,
+        )
+      }
+
+      const pageSize = Math.min(50, Math.max(1, Math.round(filters.count ?? PAGE_SIZE)))
       const prior = decodeCursor(filters.cursor)
       // On a follow-up page only titles with a cursor left are re-queried.
       const active = prior ? slots.filter((t) => prior[t]) : slots
 
       const settled = await Promise.allSettled(
-        active.map((title) =>
-          get<any>('/v2/linkedin/people/search', {
-            title: title || undefined,
-            keyword: filters.keyword?.trim() || undefined,
-            // UNCONFIRMED: the docs don't say whether this takes an org id
-            // or a name. Results are checked against the company below.
-            currentCompany: company?.ref,
-            count: PAGE_SIZE,
-            cursor: prior?.[title],
-          }).then((res) => ({ title, res })),
-        ),
+        active.map((title) => {
+          const position = prior?.[title]
+          const start = position?.startsWith('start:') ? Number(position.slice(6)) : undefined
+          // Everything goes in `keyword`: the `title` parameter returns no
+          // results, and `currentCompany`'s format is undocumented.
+          const keyword = [title, filters.keyword?.trim(), company?.name].filter(Boolean).join(' ')
+          return get<any>('/v2/linkedin/people/search', {
+            keyword: keyword || undefined,
+            geoEntityId: geoEntityId ?? undefined,
+            count: pageSize,
+            start,
+            cursor: start === undefined ? position : undefined,
+          }).then((res) => ({ title, res, start: start ?? 0 }))
+        }),
       )
 
       const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => (s as PromiseFulfilledResult<any>).value)
@@ -408,35 +482,61 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const people: PersonResult[] = []
       const seen = new Set<string>()
       let wrongCompany = 0
+      let unreadable = 0
 
-      for (const { title, res } of ok) {
-        const next = res.data?.page?.hasMore ? str(res.data?.page?.nextCursor) : null
-        if (next) nextCursors[title] = next
+      for (const { title, res, start } of ok) {
+        const page = res.data?.page
+        if (page?.hasMore) {
+          const cursor = str(page.nextCursor)
+          const returned = num(page.returnedCount) ?? (Array.isArray(res.data?.people) ? res.data.people.length : 0)
+          const nextStart = (num(page.start) ?? start) + returned
+          if (cursor) nextCursors[title] = cursor
+          else if (returned > 0 && nextStart <= MAX_START) nextCursors[title] = `start:${nextStart}`
+        }
         const total = num(res.data?.reportedTotal)
         if (total !== null) reportedTotal = Math.max(reportedTotal ?? 0, total)
 
-        for (const raw of Array.isArray(res.data?.people) ? res.data.people : []) {
+        const rawPeople: any[] = Array.isArray(res.data?.people) ? res.data.people : []
+        console.log(
+          `[SocialFetch] people/search returned ${rawPeople.length} (status=${res.data?.lookupStatus ?? '?'}, reported=${total ?? '?'})`,
+        )
+        for (const raw of rawPeople) {
           const person = mapPerson(raw)
-          if (!person || seen.has(person.profileUrl)) continue
+          if (!person) {
+            if (unreadable++ === 0) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(raw)}`)
+            continue
+          }
+          if (seen.has(person.profileUrl)) continue
           seen.add(person.profileUrl)
 
           if (company) {
-            const known = person.companyRef || person.company
+            const headlineNamesIt = norm(person.title).includes(norm(company.name))
             const matches =
               (person.companyRef && person.companyRef === company.ref) ||
-              (person.company && sameCompanyName(person.company, company.name))
-            if (known && !matches) {
+              (person.company && sameCompanyName(person.company, company.name)) ||
+              headlineNamesIt
+            if (matches) {
+              person.company = company.name
+              person.companyRef = company.ref
+            } else if (person.companyRef || person.company) {
+              // Their known employer is somewhere else.
               wrongCompany++
               continue
             }
-            // No position data at all: trust the currentCompany filter.
-            if (!person.company) person.company = company.name
-            if (!person.companyRef) person.companyRef = company.ref
+            // Otherwise the employer is unknown; it's looked up on save rather
+            // than assumed to be the chosen company.
           }
           people.push(person)
         }
       }
 
+      // Never drop records silently: a shape change would otherwise look like
+      // "no results".
+      if (unreadable > 0) {
+        warnings.push(
+          `${people_(unreadable)} returned by SocialFetch ${unreadable === 1 ? 'was' : 'were'} missing a name or profile link and ${unreadable === 1 ? 'was' : 'were'} skipped.`,
+        )
+      }
       if (wrongCompany > 0) {
         warnings.push(
           `${people_(wrongCompany)} returned by SocialFetch ${wrongCompany === 1 ? "doesn't" : "don't"} currently work at ${company?.name} and ${wrongCompany === 1 ? 'was' : 'were'} hidden.` +
@@ -444,10 +544,24 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         )
       }
 
+      if (geoEntityId && wantedCountry) {
+        // SocialFetch already filtered by location. Check it did what we
+        // asked: only labels that name a known country can disagree.
+        const elsewhere = people.filter((p) => {
+          const c = canonicalCountry(p.country)
+          return c !== null && c !== wantedCountry
+        }).length
+        if (people.length >= 5 && elsewhere > people.length / 2) {
+          warnings.push(`Most results aren't in ${wantedCountry}. The location filter for it may be wrong; please report this.`)
+        }
+        // City-only labels ("Exeter") get the searched country.
+        for (const p of people) if (!canonicalCountry(p.country)) p.country = wantedCountry
+      }
+
       const filtered = people.filter(
         (p) =>
           (!filters.seniorities?.length || (p.seniority !== null && filters.seniorities.includes(p.seniority))) &&
-          matchesCountry(p.country, filters.country),
+          (geoEntityId ? true : matchesCountry(p.country, filters.country)),
       )
       const hidden = people.length - filtered.length
       if (hidden > 0) {
@@ -460,7 +574,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
     async getPerson(profileRef: string): Promise<PersonResult | null> {
       const res = await get<any>('/v2/linkedin/profiles', { handle: profileRef })
       if (res.data?.lookupStatus !== 'found') return null
-      return mapPerson(res.data?.profile)
+      const person = mapPerson(res.data?.profile)
+      // Unconfirmed shape: log field names (never values) if no current job
+      // came through, so a mismatch can be fixed rather than guessed at.
+      if (!person?.companyRef) console.warn(`[SocialFetch] profile without a current position; fields: ${describeShape(res.data?.profile)}`)
+      return person
     },
   }
 }

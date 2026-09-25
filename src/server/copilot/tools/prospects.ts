@@ -124,7 +124,7 @@ export const prospectTools = [
   defineTool({
     name: 'searchPeople',
     description:
-      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, titles and companies only — emails are found when the user saves people to a list in Prospect Search. Seniority is derived from the title. Costs credits per title searched.',
+      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, current titles and companies only — emails are found when the user saves people to a list in Prospect Search. Every result\'s profile is looked up for their real job and employer, so this costs 3 credits per search plus 3 per result: keep count small and search once with well-chosen titles.',
     input: {
       companyRef: z.string().optional().describe('`ref` from searchCompanies.'),
       companyName: z.string().optional().describe('Required with companyRef.'),
@@ -132,14 +132,16 @@ export const prospectTools = [
       seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
       country: z.string().optional(),
       keyword: z.string().optional(),
+      count: z.number().int().min(1).max(10).optional().describe('Results per page. Defaults to 5; each result costs 3 credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
     target: 'server',
     readOnly: true,
-    handler: async ({ companyRef, companyName, titles, ...rest }) => {
+    handler: async ({ companyRef, companyName, titles, count, ...rest }) => {
       const { searchPeople } = await import('../../prospecting/search')
       const page = await searchPeople({
         ...rest,
+        count: count ?? 5,
         titles: titles === undefined ? undefined : Array.isArray(titles) ? titles : [titles],
         company: companyRef ? { ref: companyRef, name: companyName ?? companyRef } : null,
       })

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, sameCompanyName } from './socialfetch'
+import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, sameCompanyName, titleFromHeadline } from './socialfetch'
 
 // No network: every test drives the connector through a fake fetch that
 // records requests and replays canned SocialFetch envelopes.
@@ -72,7 +72,7 @@ describe('mapping', () => {
 
   it('falls back to the headline and full name', () => {
     const person = mapPerson({ handle: 'x', fullName: 'Ana María López', headline: 'CTO at Foo', currentPositions: [] })
-    expect(person).toMatchObject({ firstName: 'Ana', lastName: 'María López', title: 'CTO at Foo', seniority: 'c_suite' })
+    expect(person).toMatchObject({ firstName: 'Ana', lastName: 'María López', title: 'CTO', company: 'Foo', seniority: 'c_suite' })
   })
 
   it('rejects records with no profile URL or name', () => {
@@ -90,6 +90,16 @@ describe('mapping', () => {
   it('canonicalises profile URLs', () => {
     expect(canonicalProfileUrl('https://uk.linkedin.com/in/Jane-S?trk=x')).toBe('https://www.linkedin.com/in/jane-s')
     expect(canonicalProfileUrl(undefined, 'jane')).toBe('https://www.linkedin.com/in/jane')
+  })
+
+  it('cleans a job title out of a headline', () => {
+    expect(titleFromHeadline('Senior Business Analyst at Barclays | Agile')).toBe('Senior Business Analyst')
+    expect(titleFromHeadline('Head of Data @ Monzo')).toBe('Head of Data')
+    expect(titleFromHeadline('Product Manager | Fintech • Payments')).toBe('Product Manager')
+    expect(titleFromHeadline('Helping teams ship faster')).toBe('Helping teams ship faster')
+    // "at" inside a word is not a separator.
+    expect(titleFromHeadline('Data Analyst')).toBe('Data Analyst')
+    expect(titleFromHeadline(null)).toBeNull()
   })
 
   it('compares company names loosely', () => {
@@ -123,28 +133,141 @@ describe('searchCompanies', () => {
 })
 
 describe('searchPeople', () => {
-  it('hides people who do not work at the chosen company and warns', async () => {
+  // Shape observed from the live API on 2026-09-25: search hits carry only
+  // these fields (no positions, employer or structured country).
+  const searchHit = (handle: string, first: string, last: string, headline: string, location: string) => ({
+    sourceFamily: 'live',
+    liveNumericId: '1',
+    entityId: 'ACoAA',
+    profileUrl: `https://www.linkedin.com/in/${handle}`,
+    firstName: first,
+    lastName: last,
+    fullName: `${first} ${last}`,
+    headline,
+    isPremium: false,
+    location,
+  })
+
+  it('sends titles as the keyword, never the title parameter', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
+    await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Business Analyst'], keyword: 'fintech', count: 5 })
+    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst fintech')
+    expect(f.calls[0].searchParams.get('count')).toBe('5')
+    expect(f.calls[0].searchParams.has('title')).toBe(false)
+    expect(f.calls[0].searchParams.has('currentCompany')).toBe(false)
+  })
+
+  it('maps real search hits: title and employer from the headline, country from the location label', async () => {
     const f = fakeFetch([
       envelope({
         lookupStatus: 'found',
         people: [
-          rawPerson(),
-          rawPerson({ handle: 'bob', profileUrl: 'https://www.linkedin.com/in/bob', firstName: 'Bob', currentPositions: [{ title: 'CEO', organizationName: 'Elsewhere Inc', organizationId: '999' }] }),
-          rawPerson({ handle: 'nopos', profileUrl: 'https://www.linkedin.com/in/nopos', firstName: 'Nia', currentPositions: [], headline: 'Marketing Manager' }),
+          searchHit('ana-b', 'Ana', 'Byrne', 'Senior Business Analyst at Barclays | Agile', 'Leeds, England, United Kingdom'),
+          searchHit('raj-k', 'Raj', 'Kumar', 'Business Analyst', 'New York, New York, United States'),
+        ],
+        page: { kind: 'offset', hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Business Analyst'] })
+    expect(page.items[0]).toEqual({
+      profileUrl: 'https://www.linkedin.com/in/ana-b',
+      firstName: 'Ana',
+      lastName: 'Byrne',
+      title: 'Senior Business Analyst',
+      seniority: 'senior',
+      company: 'Barclays',
+      companyRef: null,
+      companyDomain: null,
+      country: 'United Kingdom',
+      source: 'socialfetch',
+    })
+    // City-level location is not kept anywhere on the result.
+    expect(JSON.stringify(page.items)).not.toContain('Leeds')
+    expect(page.items[1]).toMatchObject({ company: '', country: 'United States' })
+  })
+
+  it('lets SocialFetch filter supported countries by geo id, and fills in the country for city-only labels', async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('a', 'A', 'One', 'Business Analyst', 'Glasgow, Scotland'),
+          searchHit('b', 'B', 'Two', 'Business Analyst', 'Exeter'),
+          searchHit('c', 'C', 'Three', 'Business Analyst', 'United Kingdom'),
+        ],
+        page: { kind: 'offset', hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Business Analyst'], country: 'UK' })
+    expect(f.calls[0].searchParams.get('geoEntityId')).toBe('101165590')
+    expect(page.items.map((p) => [p.firstName, p.country])).toEqual([
+      ['A', 'United Kingdom'],
+      ['B', 'United Kingdom'],
+      ['C', 'United Kingdom'],
+    ])
+    expect(page.warnings).toEqual([])
+  })
+
+  it('warns when geo-filtered results come back mostly from another country', async () => {
+    const hits = Array.from({ length: 6 }, (_, i) => searchHit(`p${i}`, `P${i}`, 'X', 'BA', 'Paris, Île-de-France, France'))
+    const f = fakeFetch([envelope({ people: hits, page: { hasMore: false } })])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], country: 'Germany' })
+    expect(f.calls[0].searchParams.get('geoEntityId')).toBe('101282230')
+    expect(page.warnings.some((w) => /aren't in Germany/.test(w))).toBe(true)
+  })
+
+  it('falls back to filtering each page for countries without a geo id', async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('a', 'A', 'One', 'BA', 'Lisbon, Portugal'),
+          searchHit('b', 'B', 'Two', 'BA', 'Madrid, Spain'),
         ],
         page: { hasMore: false },
       }),
     ])
-    const page = await createSocialFetchSource(f.impl).searchPeople({ ref: '1234', name: 'Acme' }, { titles: ['marketing'] })
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], country: 'Portugal' })
+    expect(f.calls[0].searchParams.has('geoEntityId')).toBe(false)
+    expect(page.items.map((p) => p.firstName)).toEqual(['A'])
+    expect(page.warnings.some((w) => /isn't in the supported country list/.test(w))).toBe(true)
+  })
 
-    expect(f.calls[0].searchParams.get('currentCompany')).toBe('1234')
-    expect(f.calls[0].searchParams.get('title')).toBe('marketing')
-    expect(page.items.map((p) => p.firstName)).toEqual(['Jane', 'Nia'])
-    expect(page.items[1]).toMatchObject({ company: 'Acme', companyRef: '1234' })
+  it('pages by offset when SocialFetch gives no cursor', async () => {
+    const f = fakeFetch([
+      envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 25 } }),
+      envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { kind: 'offset', hasMore: false, start: 25, returnedCount: 1 } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchPeople(null, { titles: ['BA'] })
+    expect(first.nextCursor).not.toBeNull()
+    const second = await source.searchPeople(null, { titles: ['BA'], cursor: first.nextCursor! })
+    expect(f.calls[1].searchParams.get('start')).toBe('25')
+    expect(f.calls[1].searchParams.has('cursor')).toBe(false)
+    expect(second.items[0].lastName).toBe('Two')
+    expect(second.nextCursor).toBeNull()
+  })
+
+  it('with a chosen company, adds it to the keyword and only ties people to it when their headline names it', async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('in', 'In', 'Side', 'Business Analyst at Acme', 'London'),
+          searchHit('out', 'Out', 'Side', 'Business Analyst at Globex', 'London'),
+          searchHit('unk', 'Un', 'Known', 'Business Analyst', 'London'),
+        ],
+        page: { hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople({ ref: '1234', name: 'Acme' }, { titles: ['Business Analyst'] })
+    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst Acme')
+    expect(page.items.map((p) => [p.firstName, p.companyRef])).toEqual([
+      ['In', '1234'],
+      // Employer unknown: kept, but not assumed to be Acme (resolved on save).
+      ['Un', null],
+    ])
     expect(page.warnings).toContain("1 person returned by SocialFetch doesn't currently work at Acme and was hidden.")
   })
 
-  it('runs one request per title, dedupes, and pages with a composite cursor', async () => {
+  it('runs one request per title and dedupes people across them', async () => {
     const f = fakeFetch([
       envelope({ people: [rawPerson()], page: { hasMore: true, nextCursor: 'cmo-2' } }),
       envelope({ people: [rawPerson()], page: { hasMore: false } }),
@@ -158,13 +281,13 @@ describe('searchPeople', () => {
     const second = await source.searchPeople(null, { titles: ['CMO', 'Head of Marketing'], cursor: first.nextCursor! })
     // Only the title with pages left is re-queried, with its own cursor.
     expect(f.calls).toHaveLength(3)
-    expect(f.calls[2].searchParams.get('title')).toBe('CMO')
+    expect(f.calls[2].searchParams.get('keyword')).toBe('CMO')
     expect(f.calls[2].searchParams.get('cursor')).toBe('cmo-2')
     expect(second.items[0].firstName).toBe('Pat')
     expect(second.nextCursor).toBeNull()
   })
 
-  it('filters by derived seniority and country', async () => {
+  it('filters by seniority derived from the title', async () => {
     const f = fakeFetch([
       envelope({
         people: [
@@ -175,8 +298,10 @@ describe('searchPeople', () => {
         page: { hasMore: false },
       }),
     ])
-    const page = await createSocialFetchSource(f.impl).searchPeople(null, { seniorities: ['head'], country: 'United Kingdom' })
-    expect(page.items.map((p) => p.profileUrl)).toEqual(['https://www.linkedin.com/in/jane-smith-123'])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { seniorities: ['head'] })
+    // The junior analyst is hidden; both Heads of Marketing stay.
+    expect(page.items.map((p) => p.profileUrl)).toEqual(['https://www.linkedin.com/in/jane-smith-123', 'https://www.linkedin.com/in/f'])
+    expect(page.warnings).toContain("1 person didn't match your seniority or country filters and is hidden.")
   })
 })
 
