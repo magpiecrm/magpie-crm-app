@@ -1,0 +1,231 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { brevoProvider } from './brevo'
+import { cloudflareProvider } from './cloudflare'
+import { mailchimpProvider } from './mailchimp'
+import { mailgunProvider } from './mailgun'
+import { postmarkProvider } from './postmark'
+import { resendProvider } from './resend'
+import { sendgridProvider } from './sendgrid'
+import type { OutboundMessage } from './types'
+
+const msg: OutboundMessage = {
+  from: '"Acme" <hi@acme.com>',
+  fromEmail: 'hi@acme.com',
+  fromName: 'Acme',
+  to: ['lead@example.com'],
+  subject: 'Hello',
+  html: '<p>Hi</p>',
+  campaignId: 42,
+}
+
+function mockFetch(response: Partial<Response> & { jsonValue?: unknown }) {
+  const fn = vi.fn().mockResolvedValue({
+    ok: response.ok ?? true,
+    status: response.status ?? 200,
+    statusText: response.statusText ?? 'OK',
+    headers: response.headers ?? new Headers(),
+    json: async () => response.jsonValue,
+  })
+  vi.stubGlobal('fetch', fn)
+  return fn
+}
+
+afterEach(() => vi.unstubAllGlobals())
+
+describe('cloudflare', () => {
+  it('posts one request per recipient with the campaign header', async () => {
+    const fetchMock = mockFetch({ jsonValue: { success: true, result: { message_id: 'cf-1' } } })
+
+    const result = await cloudflareProvider.send(
+      { ...msg, to: ['a@example.com', 'b@example.com'] },
+      { accountId: 'acct', apiToken: 'tok' },
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/acct/email/sending/send')
+    expect((init.headers as any).Authorization).toBe('Bearer tok')
+    expect(JSON.parse(init.body).headers['X-Campaign-ID']).toBe('42')
+    expect(result.messageId).toBe('cf-1')
+  })
+
+  it('throws when the API reports success: false despite a 200', async () => {
+    mockFetch({ jsonValue: { success: false, errors: [{ message: 'bad token' }] } })
+    await expect(
+      cloudflareProvider.send(msg, { accountId: 'a', apiToken: 't' }),
+    ).rejects.toThrow(/bad token/)
+  })
+})
+
+describe('sendgrid', () => {
+  it('reads the message id from the header, since 202 has an empty body', async () => {
+    const fetchMock = mockFetch({
+      ok: true,
+      status: 202,
+      headers: new Headers({ 'x-message-id': 'sg-99' }),
+      // Deliberately no json value — calling .json() on a 202 would throw.
+      jsonValue: undefined,
+    })
+
+    const result = await sendgridProvider.send(msg, { apiKey: 'k' })
+    expect(result.messageId).toBe('sg-99')
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    // The app rewrites links itself; provider tracking would double-wrap them.
+    expect(body.tracking_settings.click_tracking.enable).toBe(false)
+    expect(body.tracking_settings.open_tracking.enable).toBe(false)
+  })
+
+  it('surfaces the error array on failure', async () => {
+    mockFetch({ ok: false, status: 401, jsonValue: { errors: [{ message: 'unauthorized' }] } })
+    await expect(sendgridProvider.send(msg, { apiKey: 'k' })).rejects.toThrow(/unauthorized/)
+  })
+})
+
+describe('mailchimp', () => {
+  it('treats an HTTP 200 error object as a failure', async () => {
+    // Mandrill returns 200 for errors; success is an array, an error is an object.
+    mockFetch({ ok: true, status: 200, jsonValue: { status: 'error', message: 'Invalid API key' } })
+    await expect(mailchimpProvider.send(msg, { apiKey: 'k' })).rejects.toThrow(/Invalid API key/)
+  })
+
+  it('treats a rejected recipient as a failure', async () => {
+    mockFetch({
+      jsonValue: [{ email: 'lead@example.com', status: 'rejected', reject_reason: 'hard-bounce' }],
+    })
+    await expect(mailchimpProvider.send(msg, { apiKey: 'k' })).rejects.toThrow(/hard-bounce/)
+  })
+
+  it('returns the id on success', async () => {
+    mockFetch({ jsonValue: [{ email: 'lead@example.com', status: 'sent', _id: 'mc-1' }] })
+    const result = await mailchimpProvider.send(msg, { apiKey: 'k' })
+    expect(result.messageId).toBe('mc-1')
+  })
+})
+
+describe('mailgun', () => {
+  it('uses basic auth, form encoding and the EU host when region is eu', async () => {
+    const fetchMock = mockFetch({ jsonValue: { id: 'mg-1' } })
+
+    await mailgunProvider.send(msg, { apiKey: 'key-123', domain: 'mg.acme.com', region: 'eu' })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.eu.mailgun.net/v3/mg.acme.com/messages')
+    expect((init.headers as any).Authorization).toBe(
+      `Basic ${Buffer.from('api:key-123').toString('base64')}`,
+    )
+
+    const params = init.body as URLSearchParams
+    expect(params.get('h:X-Campaign-ID')).toBe('42')
+    expect(params.get('o:tracking-clicks')).toBe('no')
+  })
+
+  it('defaults to the US host', async () => {
+    const fetchMock = mockFetch({ jsonValue: { id: 'mg-2' } })
+    await mailgunProvider.send(msg, { apiKey: 'k', domain: 'd.com', region: 'us' })
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.mailgun.net/v3/d.com/messages')
+  })
+})
+
+describe('postmark', () => {
+  it('sends on the broadcast stream with link tracking off', async () => {
+    const fetchMock = mockFetch({ jsonValue: { MessageID: 'pm-1', ErrorCode: 0 } })
+
+    await postmarkProvider.send(msg, { serverToken: 'tok', messageStream: 'broadcast' })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init.headers as any)['X-Postmark-Server-Token']).toBe('tok')
+    const body = JSON.parse(init.body)
+    expect(body.MessageStream).toBe('broadcast')
+    expect(body.TrackLinks).toBe('None')
+    expect(body.Headers).toEqual([{ Name: 'X-Campaign-ID', Value: '42' }])
+  })
+
+  it('throws on a non-zero ErrorCode even with a 200', async () => {
+    mockFetch({ ok: true, jsonValue: { ErrorCode: 406, Message: 'Inactive recipient' } })
+    await expect(
+      postmarkProvider.send(msg, { serverToken: 't', messageStream: 'broadcast' }),
+    ).rejects.toThrow(/Inactive recipient/)
+  })
+})
+
+describe('brevo and resend', () => {
+  it('brevo splits the sender into name and email', async () => {
+    const fetchMock = mockFetch({ jsonValue: { messageId: 'bv-1' } })
+    await brevoProvider.send(msg, { apiKey: 'k' })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect((init.headers as any)['api-key']).toBe('k')
+    const body = JSON.parse(init.body)
+    expect(body.sender).toEqual({ name: 'Acme', email: 'hi@acme.com' })
+    expect(body.to).toEqual([{ email: 'lead@example.com' }])
+  })
+
+  it('resend uses a bearer token and the raw from header', async () => {
+    const fetchMock = mockFetch({ jsonValue: { id: 'rs-1' } })
+    const result = await resendProvider.send(msg, { apiKey: 'k' })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.resend.com/emails')
+    expect((init.headers as any).Authorization).toBe('Bearer k')
+    expect(JSON.parse(init.body).from).toBe('"Acme" <hi@acme.com>')
+    expect(result.messageId).toBe('rs-1')
+  })
+})
+
+describe('retry classification', () => {
+  it('marks provider 5xx and 429 retryable, but not 4xx', async () => {
+    mockFetch({ ok: false, status: 500, jsonValue: { message: 'boom' } })
+    await expect(resendProvider.send(msg, { apiKey: 'k' })).rejects.toMatchObject({
+      retryable: true,
+    })
+
+    mockFetch({ ok: false, status: 429, jsonValue: { message: 'slow down' } })
+    await expect(resendProvider.send(msg, { apiKey: 'k' })).rejects.toMatchObject({
+      retryable: true,
+    })
+
+    // A rejected address must NOT be retried — it is a real bounce.
+    mockFetch({ ok: false, status: 422, jsonValue: { message: 'domain not verified' } })
+    await expect(resendProvider.send(msg, { apiKey: 'k' })).rejects.toMatchObject({
+      retryable: false,
+    })
+  })
+})
+
+describe('webhook normalizers', () => {
+  it('classifies a permanent resend bounce as hard', () => {
+    const out = resendProvider.parseWebhook!({
+      type: 'email.bounced',
+      data: { to: ['a@b.com'], bounce: { type: 'Permanent', message: 'no such user' } },
+    })
+    expect(out).toEqual([{ email: 'a@b.com', type: 'hard', reason: 'no such user' }])
+  })
+
+  it('ignores unrelated events', () => {
+    expect(resendProvider.parseWebhook!({ type: 'email.delivered' })).toEqual([])
+    expect(sendgridProvider.parseWebhook!([{ event: 'open', email: 'a@b.com' }])).toEqual([])
+  })
+
+  it('treats a sendgrid block as soft and a bounce as hard', () => {
+    const out = sendgridProvider.parseWebhook!([
+      { event: 'bounce', email: 'hard@b.com', type: 'bounce' },
+      { event: 'bounce', email: 'soft@b.com', type: 'blocked' },
+    ])
+    expect(out.map((b) => b.type)).toEqual(['hard', 'soft'])
+  })
+
+  it('reads mailgun severity out of the event-data envelope', () => {
+    const out = mailgunProvider.parseWebhook!({
+      'event-data': {
+        event: 'failed',
+        severity: 'permanent',
+        recipient: 'a@b.com',
+        'delivery-status': { message: 'mailbox unavailable' },
+      },
+    })
+    expect(out).toEqual([
+      { email: 'a@b.com', type: 'hard', reason: 'mailbox unavailable' },
+    ])
+  })
+})

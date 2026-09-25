@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "bunx",
+      "runtimeArgs": ["vite", "dev", "--port", "3210"],
+      "port": 3210
+    }
+  ]
+}

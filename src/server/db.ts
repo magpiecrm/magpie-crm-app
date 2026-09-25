@@ -1,0 +1,1417 @@
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
+import { join } from 'path'
+import crypto from 'crypto'
+import { env } from './env'
+import { normalizePersonaCriteria } from '../features/prospects/types'
+import type { Persona, PersonaCriteria } from '../features/prospects/types'
+import type { Survey, SurveyResponse } from '../features/survey-builder/types'
+import type { EmailTemplate } from '../features/templates/types'
+import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!storedHash || !storedHash.includes(':')) return false
+  const [salt, hash] = storedHash.split(':')
+  const verify = crypto.scryptSync(password, salt, 64).toString('hex')
+  
+  const buf1 = Buffer.from(verify, 'hex')
+  const buf2 = Buffer.from(hash, 'hex')
+  if (buf1.length !== buf2.length) {
+    return false
+  }
+  return crypto.timingSafeEqual(buf1, buf2)
+}
+
+
+
+// We will use a JSON-based database to ensure 100% compatibility across both Node.js and Bun runtimes.
+// This prevents errors like "ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'bun:'" when Node.js runs the Vite server.
+const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
+
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'survey_response'
+
+type ContactRecord = DbSchema['contacts'][number]
+
+interface DbSchema {
+  lists: Array<{ id: number; name: string; created_at: string }>
+  contacts: Array<{
+    email: string
+    first_name: string
+    last_name: string
+    job_title: string
+    company: string
+    status: string
+    created_at: string
+    /** Values of user-defined contact fields, keyed by `ContactFieldDef.key`. */
+    custom?: Record<string, ContactCustomValue>
+  }>
+  list_contacts: Array<{ list_id: number; contact_email: string }>
+  senders: Array<{ id: number; name: string; email: string }>
+  campaigns: Array<{
+    id: number
+    name: string
+    subject: string
+    preview_text: string | null
+    html_content: string
+    list_id: number | null
+    sender_id: number | null
+    status: string
+    unsubscribe_enabled: boolean
+    created_at: string
+    sent_at: string | null
+  }>
+  campaign_recipients: Array<{
+    campaign_id: number
+    contact_email: string
+    status: string
+    opened_at: string | null
+    clicked_at: string | null
+  }>
+  users: Array<{
+    email: string
+    passwordHash: string
+  }>
+  sessions: Array<{
+    id: string
+    email: string
+    expiresAt: string
+  }>
+  api_keys?: Array<{
+    id: string
+    name: string
+    key_hash: string
+    masked_key: string
+    created_at: string
+  }>
+  forms?: Array<{
+    id: string
+    name: string
+    fields: string[]
+    list_id: number
+    save_to_list_enabled?: boolean
+    save_to_list_fields?: string[]
+    welcome_email_enabled: boolean
+    welcome_email_subject: string
+    welcome_email_body: string
+    welcome_email_delay_minutes: number
+    sender_id: number | null
+    created_at: string
+  }>
+  form_submissions?: Array<{
+    form_id: string
+    contact_email: string
+    submitted_at: string
+    message?: string
+  }>
+  pending_emails?: Array<{
+    id: string
+    contact_email: string
+    first_name: string
+    subject: string
+    html: string
+    from?: string
+    send_after: string
+    sent: boolean
+  }>
+  personas?: Persona[]
+  notifications?: Array<{
+    id: string
+    type: NotificationType
+    message: string
+    contact_email?: string
+    created_at: string
+    read: boolean
+  }>
+  // Web Push endpoints, one per installed home-screen app. Pruned when the
+  // push service reports them gone (see server/push.ts).
+  push_subscriptions?: Array<{
+    endpoint: string
+    keys: { p256dh: string; auth: string }
+    created_at: string
+  }>
+  /**
+   * Brand kit — colours, fonts, logo and tone. Injected into the copilot's
+   * system prompt and used as defaults when it builds a design, so output is
+   * on-brand without being asked every time. Single row.
+   */
+  brand_kit?: {
+    name?: string
+    logoUrl?: string
+    primaryColor?: string
+    accentColor?: string
+    backgroundColor?: string
+    textColor?: string
+    fontFamily?: string
+    toneOfVoice?: string
+    websiteUrl?: string
+    footerAddress?: string
+    updated_at: string
+  }
+  /**
+   * Which provider sends outbound mail, and the credentials for each. Single
+   * row, like brand_kit. Credentials are kept per provider (not just for the
+   * active one) so switching away and back does not lose the keys, and secret
+   * fields are stored as AES-256-GCM blobs — see emailSettings.ts.
+   */
+  email_settings?: {
+    provider: string
+    defaultSender?: string
+    /** provider id -> encrypted blob of that provider's credential record. */
+    credentials: Record<string, string>
+    /** Detects rotation of the encryption secret, which would orphan the blobs. */
+    secret_fingerprint?: string
+    updated_at: string
+  }
+  /**
+   * Copilot conversations. The id doubles as the agent CLI's session id, so a
+   * stored chat can be resumed with `--resume` rather than merely replayed.
+   */
+  copilot_chats?: Array<{
+    id: string
+    title: string
+    created_at: string
+    updated_at: string
+    messages: Array<{
+      role: 'user' | 'assistant'
+      content: string
+      isError?: boolean
+      tools?: Array<{ name: string; status: string }>
+    }>
+  }>
+  surveys?: Survey[]
+  survey_responses?: SurveyResponse[]
+  email_templates?: EmailTemplate[]
+  /** Definitions of user-defined contact fields; values live on `contacts[].custom`. */
+  contact_fields?: ContactFieldDef[]
+  // Generect charges per email lookup, so results (including misses) are
+  // cached by LinkedIn URL to avoid paying twice for the same lead.
+  email_lookups?: Array<{
+    linkedin_url: string
+    email: string | null
+    looked_up_at: string
+  }>
+}
+
+class JsonDb {
+  public data: DbSchema
+
+  constructor() {
+    this.data = this.load()
+    this.seedDefaultData()
+  }
+
+  transaction(fn: (...args: any[]) => any) {
+    return (...args: any[]) => fn(...args)
+  }
+
+  private load(): DbSchema {
+    let loaded: DbSchema
+    if (existsSync(dbPath)) {
+      try {
+        loaded = JSON.parse(readFileSync(dbPath, 'utf8'))
+      } catch (err) {
+        console.error('Failed to parse database file. Starting fresh.', err)
+        loaded = this.getFreshSchema()
+      }
+    } else {
+      loaded = this.getFreshSchema()
+    }
+    
+    // Ensure all schema fields are present
+    if (!loaded.sessions) loaded.sessions = []
+    if (!loaded.users) loaded.users = []
+    if (!loaded.api_keys) loaded.api_keys = []
+    if (!loaded.forms) loaded.forms = []
+    if (!loaded.form_submissions) loaded.form_submissions = []
+    if (!loaded.pending_emails) loaded.pending_emails = []
+    if (!loaded.personas) loaded.personas = []
+    if (!loaded.notifications) loaded.notifications = []
+    if (!loaded.push_subscriptions) loaded.push_subscriptions = []
+    if (!loaded.copilot_chats) loaded.copilot_chats = []
+    if (!loaded.email_lookups) loaded.email_lookups = []
+    if (!loaded.surveys) loaded.surveys = []
+    if (!loaded.survey_responses) loaded.survey_responses = []
+    if (!loaded.email_templates) loaded.email_templates = []
+    if (!loaded.contact_fields) loaded.contact_fields = []
+
+    return loaded
+  }
+
+  private getFreshSchema(): DbSchema {
+    return {
+      lists: [],
+      contacts: [],
+      list_contacts: [],
+      senders: [],
+      campaigns: [],
+      campaign_recipients: [],
+      users: [],
+      sessions: [],
+      api_keys: [],
+      forms: [],
+      form_submissions: [],
+      pending_emails: [],
+      personas: [],
+      notifications: [],
+      push_subscriptions: [],
+      copilot_chats: [],
+      email_lookups: [],
+      surveys: [],
+      survey_responses: [],
+      email_templates: [],
+      contact_fields: [],
+    }
+  }
+
+  // --- Generect email lookup cache ---
+  // Returns { email } when this URL has been looked up before (email may be
+  // null, meaning "we already paid and Generect found nothing"), or
+  // undefined when it has never been looked up.
+  getCachedEmailLookup(linkedinUrl: string): { email: string | null } | undefined {
+    if (!this.data.email_lookups) this.data.email_lookups = []
+    const hit = this.data.email_lookups.find(l => l.linkedin_url === linkedinUrl)
+    return hit ? { email: hit.email } : undefined
+  }
+
+  setCachedEmailLookup(linkedinUrl: string, email: string | null) {
+    if (!this.data.email_lookups) this.data.email_lookups = []
+    const idx = this.data.email_lookups.findIndex(l => l.linkedin_url === linkedinUrl)
+    const entry = { linkedin_url: linkedinUrl, email, looked_up_at: new Date().toISOString() }
+    if (idx >= 0) this.data.email_lookups[idx] = entry
+    else this.data.email_lookups.push(entry)
+    this.save()
+  }
+
+  // API Key Management Helpers
+  getApiKeys() {
+    if (!this.data.api_keys) this.data.api_keys = []
+    return this.data.api_keys.map(k => ({
+      id: k.id,
+      name: k.name,
+      masked_key: k.masked_key,
+      created_at: k.created_at
+    }))
+  }
+
+  addApiKey(name: string, keyHash: string, maskedKey: string) {
+    if (!this.data.api_keys) this.data.api_keys = []
+    const id = crypto.randomUUID()
+    const record = {
+      id,
+      name,
+      key_hash: keyHash,
+      masked_key: maskedKey,
+      created_at: new Date().toISOString()
+    }
+    this.data.api_keys.push(record)
+    this.save()
+    return id
+  }
+
+  deleteApiKey(id: string) {
+    if (!this.data.api_keys) return
+    this.data.api_keys = this.data.api_keys.filter(k => k.id !== id)
+    this.save()
+  }
+
+  verifyApiKey(rawKey: string): boolean {
+    if (!this.data.api_keys) return false
+    const hash = crypto.createHash('sha256').update(rawKey).digest('hex')
+    return this.data.api_keys.some(k => k.key_hash === hash)
+  }
+
+  // Notification Helpers
+  addNotification(type: NotificationType, message: string, contactEmail?: string) {
+    if (!this.data.notifications) this.data.notifications = []
+    this.data.notifications.push({
+      id: crypto.randomUUID(),
+      type,
+      message,
+      contact_email: contactEmail,
+      created_at: new Date().toISOString(),
+      read: false,
+    })
+    this.save()
+  }
+
+  getNotifications(limit = 20) {
+    if (!this.data.notifications) this.data.notifications = []
+    return [...this.data.notifications]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit)
+  }
+
+  getUnreadNotificationCount() {
+    if (!this.data.notifications) return 0
+    return this.data.notifications.filter(n => !n.read).length
+  }
+
+  markNotificationsRead(ids?: string[]) {
+    if (!this.data.notifications) return
+    for (const n of this.data.notifications) {
+      if (!ids || ids.includes(n.id)) n.read = true
+    }
+    this.save()
+  }
+
+  /** Permanently removes notifications — all of them, or just the given ids. */
+  clearNotifications(ids?: string[]) {
+    if (!this.data.notifications) return
+    this.data.notifications = ids
+      ? this.data.notifications.filter(n => !ids.includes(n.id))
+      : []
+    this.save()
+  }
+
+  // Push Subscription Helpers
+
+  addPushSubscription(sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
+    if (!this.data.push_subscriptions) this.data.push_subscriptions = []
+    // The endpoint is the identity of a subscription; re-subscribing on the same
+    // device returns the same one, so replace rather than accumulate duplicates.
+    const existing = this.data.push_subscriptions.findIndex(s => s.endpoint === sub.endpoint)
+    const record = { endpoint: sub.endpoint, keys: sub.keys, created_at: new Date().toISOString() }
+    if (existing >= 0) {
+      this.data.push_subscriptions[existing] = record
+    } else {
+      this.data.push_subscriptions.push(record)
+    }
+    this.save()
+  }
+
+  removePushSubscription(endpoint: string) {
+    if (!this.data.push_subscriptions) return
+    this.data.push_subscriptions = this.data.push_subscriptions.filter(s => s.endpoint !== endpoint)
+    this.save()
+  }
+
+  getPushSubscriptions() {
+    if (!this.data.push_subscriptions) this.data.push_subscriptions = []
+    return [...this.data.push_subscriptions]
+  }
+
+  private saveData(data: DbSchema) {
+    const tempPath = `${dbPath}.tmp`
+    writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8')
+    renameSync(tempPath, dbPath)
+  }
+
+  private save() {
+    this.saveData(this.data)
+  }
+
+
+  // Mimics sqlite's db.run
+  run(sql: string, params: any[] = []) {
+    const cleanSql = sql.replace(/\s+/g, ' ').trim()
+
+    if (cleanSql.startsWith('INSERT INTO senders')) {
+      const id = this.data.senders.length > 0 ? Math.max(...this.data.senders.map(s => s.id)) + 1 : 1
+      this.data.senders.push({ id, name: params[0], email: params[1] })
+      this.save()
+    } else if (cleanSql.startsWith('INSERT INTO lists')) {
+      const id = this.data.lists.length > 0 ? Math.max(...this.data.lists.map(l => l.id)) + 1 : 1
+      this.data.lists.push({ id, name: params[0], created_at: params[1] })
+      this.save()
+    } else if (cleanSql.startsWith('INSERT OR IGNORE INTO list_contacts') || cleanSql.startsWith('INSERT INTO list_contacts')) {
+      let listId = params[0]
+      let email = params[1]
+      if (cleanSql.includes('VALUES (1, ?)')) {
+        listId = 1
+        email = params[0]
+      }
+      if (email) {
+        const normalizedEmail = email.toLowerCase().trim()
+        const exists = this.data.list_contacts.some(lc => lc.list_id === listId && lc.contact_email.toLowerCase().trim() === normalizedEmail)
+        if (!exists) {
+          this.data.list_contacts.push({ list_id: listId, contact_email: normalizedEmail })
+          this.save()
+        }
+      }
+    } else if (cleanSql.startsWith('INSERT OR IGNORE INTO contacts') || cleanSql.startsWith('INSERT OR REPLACE INTO contacts') || cleanSql.startsWith('INSERT OR REPLACE INTO contacts') || cleanSql.startsWith('INSERT INTO contacts')) {
+      const isSubscribeQuery = cleanSql.includes('(email, first_name, last_name, company, status, created_at)')
+      const email = params[0].toLowerCase().trim()
+      const existingIdx = this.data.contacts.findIndex(c => c.email === email)
+
+      // Deduce status: if REPLACE we might want to check the status query param in sql.
+      // But we can simplify: if contact exists, preserve status unless explicitly set in params.
+      let status = 'subscribed'
+      if (existingIdx >= 0) {
+        status = this.data.contacts[existingIdx].status
+      } else if (params[5] && params[5] !== email) {
+        status = params[5]
+      }
+
+      let contact
+      if (isSubscribeQuery) {
+        contact = {
+          email,
+          first_name: params[1] || '',
+          last_name: params[2] || '',
+          job_title: '',
+          company: params[3] || '',
+          status: 'subscribed',
+          created_at: new Date().toISOString(),
+        }
+      } else {
+        contact = {
+          email,
+          first_name: params[1] || '',
+          last_name: params[2] || '',
+          job_title: params[3] || '',
+          company: params[4] || '',
+          status,
+          created_at: params[params.length - 1] || new Date().toISOString(),
+        }
+      }
+
+      if (existingIdx >= 0) {
+        // If using INSERT OR IGNORE, we should not overwrite an existing contact!
+        if (!cleanSql.startsWith('INSERT OR IGNORE INTO contacts')) {
+          // The SQL only carries the built-in columns; custom field values
+          // would otherwise be wiped by every re-import or edit.
+          const custom = this.data.contacts[existingIdx].custom
+          this.data.contacts[existingIdx] = custom ? { ...contact, custom } : contact
+          this.save()
+        }
+      } else {
+        this.data.contacts.push(contact)
+        this.save()
+      }
+    } else if (cleanSql.startsWith('INSERT INTO campaigns')) {
+      const id = this.data.campaigns.length > 0 ? Math.max(...this.data.campaigns.map(c => c.id)) + 1 : 1
+      const hasUnsub = cleanSql.includes('unsubscribe_enabled')
+      this.data.campaigns.push({
+        id,
+        name: params[0],
+        subject: params[1],
+        preview_text: params[2] || null,
+        html_content: params[3],
+        list_id: params[4] || null,
+        sender_id: params[5] || null,
+        status: 'draft',
+        unsubscribe_enabled: hasUnsub ? !!params[6] : true,
+        created_at: hasUnsub ? (params[7] || new Date().toISOString()) : (params[6] || new Date().toISOString()),
+        sent_at: null,
+      })
+      this.save()
+    } else if (cleanSql.startsWith('INSERT OR REPLACE INTO campaign_recipients')) {
+      const cid = params[0]
+      const email = params[1].toLowerCase().trim()
+      let status = params[2]
+      if (status === undefined) {
+        if (cleanSql.includes("'sent'")) status = 'sent'
+        else if (cleanSql.includes("'bounced_soft'")) status = 'bounced_soft'
+        else status = 'sent'
+      }
+
+      const existingIdx = this.data.campaign_recipients.findIndex(cr => cr.campaign_id === cid && cr.contact_email === email)
+      const record = {
+        campaign_id: cid,
+        contact_email: email,
+        status,
+        opened_at: null,
+        clicked_at: null,
+      }
+
+      if (existingIdx >= 0) {
+        this.data.campaign_recipients[existingIdx].status = status
+      } else {
+        this.data.campaign_recipients.push(record)
+      }
+      this.save()
+    } else if (cleanSql.startsWith('UPDATE contacts SET status = ? WHERE email = ?')) {
+      const email = params[1].toLowerCase().trim()
+      const contact = this.data.contacts.find(c => c.email === email)
+      if (contact) {
+        contact.status = params[0]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE campaign_recipients SET status = ? WHERE campaign_id = ? AND contact_email = ?')) {
+      const cid = params[1]
+      const email = params[2].toLowerCase().trim()
+      const record = this.data.campaign_recipients.find(cr => cr.campaign_id == cid && cr.contact_email === email)
+      if (record) {
+        record.status = params[0]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE campaign_recipients SET status = \'opened\', opened_at = ?')) {
+      // params: [now, cid, email]
+      const cid = params[1]
+      const email = params[2].toLowerCase().trim()
+      const record = this.data.campaign_recipients.find(cr => cr.campaign_id == cid && cr.contact_email === email)
+      if (record) {
+        record.status = 'opened'
+        record.opened_at = params[0]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE campaign_recipients SET status = \'clicked\', clicked_at = ?')) {
+      // params: [now, cid, email]
+      const cid = params[1]
+      const email = params[2].toLowerCase().trim()
+      const record = this.data.campaign_recipients.find(cr => cr.campaign_id == cid && cr.contact_email === email)
+      if (record) {
+        record.status = 'clicked'
+        record.clicked_at = params[0]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE campaigns SET name = ?')) {
+      const hasUnsub = cleanSql.includes('unsubscribe_enabled')
+      const id = hasUnsub ? params[8] : params[7]
+      const campaign = this.data.campaigns.find(c => c.id == id)
+      if (campaign) {
+        campaign.name = params[0]
+        campaign.subject = params[1]
+        campaign.preview_text = params[2]
+        campaign.html_content = params[3]
+        campaign.list_id = params[4]
+        campaign.sender_id = params[5]
+        campaign.status = params[6]
+        if (hasUnsub) {
+          campaign.unsubscribe_enabled = !!params[7]
+        }
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE campaigns SET status = \'sent\', sent_at = ?')) {
+      const id = params[1]
+      const campaign = this.data.campaigns.find(c => c.id == id)
+      if (campaign) {
+        campaign.status = 'sent'
+        campaign.sent_at = params[0]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('UPDATE senders SET name = ?, email = ? WHERE id = ?')) {
+      const sender = this.data.senders.find(s => s.id == params[2])
+      if (sender) {
+        sender.name = params[0]
+        sender.email = params[1]
+        this.save()
+      }
+    } else if (cleanSql.startsWith('DELETE FROM senders WHERE id = ?')) {
+      this.data.senders = this.data.senders.filter(s => s.id != params[0])
+      this.save()
+    } else if (cleanSql.startsWith('DELETE FROM campaigns WHERE id = ?')) {
+      this.data.campaigns = this.data.campaigns.filter(c => c.id != params[0])
+      this.data.campaign_recipients = this.data.campaign_recipients.filter(cr => cr.campaign_id != params[0])
+      this.save()
+    } else if (cleanSql.startsWith('DELETE FROM list_contacts WHERE list_id = ? AND contact_email = ?')) {
+      const listId = params[0]
+      const email = params[1].toLowerCase().trim()
+      this.data.list_contacts = this.data.list_contacts.filter(lc => !(lc.list_id == listId && lc.contact_email.toLowerCase().trim() === email))
+      this.save()
+    } else if (cleanSql.startsWith('DELETE FROM contacts WHERE email = ?')) {
+      const email = params[0].toLowerCase().trim()
+      this.data.contacts = this.data.contacts.filter(c => c.email.toLowerCase().trim() !== email)
+      this.data.list_contacts = this.data.list_contacts.filter(lc => lc.contact_email.toLowerCase().trim() !== email)
+      this.data.campaign_recipients = this.data.campaign_recipients.filter(cr => cr.contact_email.toLowerCase().trim() !== email)
+      this.save()
+    } else if (cleanSql.startsWith('PRAGMA')) {
+      // Ignore
+    } else {
+      console.warn('Unhandled jsonDb.run query:', cleanSql)
+    }
+  }
+
+  // Mimics sqlite's db.prepare
+  prepare(sql: string) {
+    return {
+      run: (...params: any[]) => this.run(sql, params)
+    }
+  }
+
+  // Mimics sqlite's db.query
+  query(sql: string) {
+    const cleanSql = sql.replace(/\s+/g, ' ').trim()
+
+    return {
+      get: (...params: any[]) => {
+        if (cleanSql.startsWith('SELECT COUNT(*) as count FROM lists')) {
+          return { count: this.data.lists.length }
+        }
+        if (cleanSql.startsWith('SELECT COUNT(*) as count FROM contacts')) {
+          return { count: this.data.contacts.length }
+        }
+        if (
+          cleanSql.startsWith('SELECT * FROM senders WHERE email = ?') || 
+          cleanSql.startsWith('SELECT id FROM senders WHERE email = ?') ||
+          cleanSql.startsWith('SELECT id FROM senders WHERE LOWER(email) = ?')
+        ) {
+          return this.data.senders.find(s => s.email.toLowerCase() === params[0].toLowerCase()) || null
+        }
+        if (cleanSql.startsWith('SELECT last_insert_rowid() as id')) {
+          // Emulate returning the ID of the last insert
+          // We can return the max id from campaigns, lists, senders depending on context
+          // Since it's a mock, we inspect the size of our lists
+          return { id: Math.max(
+            this.data.lists.length,
+            this.data.senders.length,
+            this.data.campaigns.length
+          ) }
+        }
+        if (cleanSql.startsWith('SELECT c.id, c.name, c.subject')) {
+          // getCampaign(id)
+          const id = params[0]
+          const c = this.data.campaigns.find(camp => camp.id == id)
+          if (!c) return null
+          const sender = this.data.senders.find(s => s.id == c.sender_id)
+          const list = this.data.lists.find(l => l.id == c.list_id)
+
+          return {
+            id: c.id,
+            name: c.name,
+            subject: c.subject,
+            previewText: c.preview_text,
+            htmlContent: c.html_content,
+            status: c.status,
+            unsubscribeEnabled: c.unsubscribe_enabled ?? true,
+            createdAt: c.created_at,
+            sentAt: c.sent_at,
+            listId: c.list_id,
+            listName: list ? list.name : null,
+            senderId: c.sender_id,
+            senderName: sender ? sender.name : null,
+            senderEmail: sender ? sender.email : null,
+          }
+        }
+        console.warn('Unhandled jsonDb.query().get query:', cleanSql)
+        return null
+      },
+      all: (...params: any[]) => {
+        if (cleanSql.startsWith('SELECT l.id, l.name, l.created_at')) {
+          // getLists()
+          return this.data.lists.map(l => {
+            const count = this.data.list_contacts.filter(lc => lc.list_id == l.id).length
+            return {
+              id: l.id,
+              name: l.name,
+              createdAt: l.created_at,
+              totalContacts: count
+            }
+          })
+        }
+        if (cleanSql.startsWith('SELECT email, first_name, last_name, job_title, company, status, created_at FROM contacts')) {
+          // getContacts(limit, offset)
+          let result = this.data.contacts
+          if (params.length >= 2) {
+            const limit = params[0]
+            const offset = params[1]
+            result = result.slice(offset, offset + limit)
+          }
+          return result
+        }
+        if (cleanSql.startsWith('SELECT c.email, c.first_name, c.last_name, c.job_title, c.company, c.status, c.created_at FROM contacts c JOIN list_contacts lc')) {
+          // getListContacts(listId)
+          const listId = params[0]
+          const emails = this.data.list_contacts.filter(lc => lc.list_id == listId).map(lc => lc.contact_email)
+          return this.data.contacts.filter(c => emails.includes(c.email))
+        }
+        if (cleanSql.startsWith('SELECT c.id, c.name, c.subject, c.preview_text as previewText, c.status, c.created_at as createdAt, c.sent_at as sentAt, c.list_id as listId')) {
+          // getCampaigns()
+          return this.data.campaigns.map(c => {
+            const sender = this.data.senders.find(s => s.id == c.sender_id)
+            const list = this.data.lists.find(l => l.id == c.list_id)
+            return {
+              id: c.id,
+              name: c.name,
+              subject: c.subject,
+              previewText: c.preview_text,
+              status: c.status,
+              unsubscribeEnabled: c.unsubscribe_enabled ?? true,
+              createdAt: c.created_at,
+              sentAt: c.sent_at,
+              listId: c.list_id,
+              listName: list ? list.name : null,
+              senderName: sender ? sender.name : null,
+              senderEmail: sender ? sender.email : null,
+            }
+          })
+        }
+        if (cleanSql.startsWith('SELECT c.email, c.first_name, c.last_name FROM contacts c JOIN list_contacts lc ON c.email = lc.contact_email WHERE lc.list_id = ? AND c.status = \'subscribed\'') ||
+            cleanSql.startsWith('SELECT c.email, c.first_name, c.last_name FROM contacts c JOIN list_contacts lc WHERE lc.list_id = ? AND c.status = \'subscribed\'')) {
+          // sendCampaign get active contacts
+          const listId = params[0]
+          const emails = this.data.list_contacts.filter(lc => lc.list_id == listId).map(lc => lc.contact_email)
+          return this.data.contacts.filter(c => emails.includes(c.email) && c.status === 'subscribed')
+        }
+        if (cleanSql.startsWith('SELECT status, COUNT(*) as count FROM campaign_recipients')) {
+          // getCampaignStats
+          const cid = params[0]
+          const records = this.data.campaign_recipients.filter(cr => cr.campaign_id == cid)
+          const counts: Record<string, number> = {}
+          for (const r of records) {
+            counts[r.status] = (counts[r.status] || 0) + 1
+          }
+          return Object.keys(counts).map(status => ({ status, count: counts[status] }))
+        }
+        if (cleanSql.startsWith('SELECT id, name, email FROM senders')) {
+          return this.data.senders
+        }
+        console.warn('Unhandled jsonDb.query().all query:', cleanSql)
+        return []
+      }
+    }
+  }
+
+  private seedDefaultData() {
+    // 0. Auto-migrate/clean up any corrupted statuses
+    let hasCorrupt = false
+    for (const c of this.data.contacts) {
+      if (c.status === c.email || (c.status && c.status.includes('@'))) {
+        c.status = 'subscribed'
+        hasCorrupt = true
+      }
+    }
+    if (hasCorrupt) {
+      this.save()
+      console.log('[JSON DB Migration] Cleaned up corrupted contact statuses')
+    }
+
+    // 1. Seed default sender from environment. SMTP_SENDER is optional now that
+    // SMTP is only one of several providers, so its absence is normal rather
+    // than an error worth logging on every boot.
+    const senderStr = env.smtp.sender()
+    if (senderStr) {
+      const match = senderStr.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/)
+      const name = match?.[1] || 'Default Sender'
+      // No address means nothing to seed: inventing one would put a sender in
+      // the UI that the operator never configured and can't send from.
+      const email = match?.[2]?.trim()
+
+      const existingSender = email ? this.data.senders.some(s => s.email === email) : true
+      if (email && !existingSender) {
+        const id = this.data.senders.length > 0 ? Math.max(...this.data.senders.map(s => s.id)) + 1 : 1
+        this.data.senders.push({ id, name, email })
+        this.save()
+        console.log(`[JSON DB Seeder] Added default sender: ${name} <${email}>`)
+      }
+    }
+
+    // 2. Seed default list
+    if (this.data.lists.length === 0) {
+      const listId = 1
+      this.data.lists.push({ id: listId, name: 'Default Synced List', created_at: new Date().toISOString() })
+
+      const sampleContacts = [
+        { email: 'test@example.com', first_name: 'John', last_name: 'Doe', job_title: 'Developer', company: 'Example Inc' },
+        { email: 'hello@example.com', first_name: 'Jane', last_name: 'Smith', job_title: 'Marketing Director', company: 'Innovate LLC' }
+      ]
+
+      for (const c of sampleContacts) {
+        this.data.contacts.push({
+          email: c.email,
+          first_name: c.first_name,
+          last_name: c.last_name,
+          job_title: c.job_title,
+          company: c.company,
+          status: 'subscribed',
+          created_at: new Date().toISOString(),
+        })
+        this.data.list_contacts.push({ list_id: listId, contact_email: c.email })
+      }
+      this.save()
+      console.log(`[JSON DB Seeder] Created default contact list with ${sampleContacts.length} contacts.`)
+    }
+
+    // 3. Seed user from environment
+    if (!this.data.users) {
+      this.data.users = []
+    }
+    try {
+      const authEmail = env.auth.email()
+      const authPass = env.auth.password()
+      if (authEmail && authPass) {
+        const existing = this.data.users.find(u => u.email.toLowerCase() === authEmail.toLowerCase())
+        if (!existing) {
+          this.data.users.push({
+            email: authEmail,
+            passwordHash: hashPassword(authPass)
+          })
+          this.save()
+          console.log(`[JSON DB Seeder] Added user from environment: ${authEmail}`)
+        } else if (!verifyPassword(authPass, existing.passwordHash)) {
+          // AUTH_PASSWORD changed since the last seed - keep the stored hash in sync
+          existing.passwordHash = hashPassword(authPass)
+          this.save()
+          console.log(`[JSON DB Seeder] Updated password from environment: ${authEmail}`)
+        }
+      }
+    } catch (err: any) {
+      console.warn('[JSON DB Seeder] Failed to seed user from env:', err.message)
+    }
+  }
+
+  // Forms helpers
+  getForms() {
+    if (!this.data.forms) this.data.forms = []
+    return this.data.forms
+  }
+
+  getForm(id: string) {
+    if (!this.data.forms) return null
+    return this.data.forms.find(f => f.id === id) || null
+  }
+
+  addForm(data: {
+    name: string
+    fields: string[]
+    list_id: number
+    save_to_list_enabled: boolean
+    save_to_list_fields: string[]
+    welcome_email_enabled: boolean
+    welcome_email_subject: string
+    welcome_email_body: string
+    welcome_email_delay_minutes: number
+    sender_id: number | null
+  }) {
+    if (!this.data.forms) this.data.forms = []
+    const id = crypto.randomUUID()
+    this.data.forms.push({ ...data, id, created_at: new Date().toISOString() })
+    this.save()
+    return id
+  }
+
+  updateForm(id: string, data: Partial<{
+    name: string
+    fields: string[]
+    list_id: number
+    save_to_list_enabled: boolean
+    save_to_list_fields: string[]
+    welcome_email_enabled: boolean
+    welcome_email_subject: string
+    welcome_email_body: string
+    welcome_email_delay_minutes: number
+    sender_id: number | null
+  }>) {
+    if (!this.data.forms) return
+    const idx = this.data.forms.findIndex(f => f.id === id)
+    if (idx < 0) return
+    this.data.forms[idx] = { ...this.data.forms[idx], ...data }
+    this.save()
+  }
+
+  deleteForm(id: string) {
+    if (!this.data.forms) return
+    this.data.forms = this.data.forms.filter(f => f.id !== id)
+    if (this.data.form_submissions) {
+      this.data.form_submissions = this.data.form_submissions.filter(s => s.form_id !== id)
+    }
+    this.save()
+  }
+
+  // Personas helpers (buyer/ICP personas used to drive prospect search filters)
+  getPersonas(): Persona[] {
+    if (!this.data.personas) this.data.personas = []
+    // Older records may predate newer criteria fields; normalize so callers
+    // always see the full criteria shape.
+    return this.data.personas.map(p => ({ ...p, criteria: normalizePersonaCriteria(p.criteria) }))
+  }
+
+  getPersona(id: string): Persona | null {
+    if (!this.data.personas) return null
+    const persona = this.data.personas.find(p => p.id === id)
+    if (!persona) return null
+    return { ...persona, criteria: normalizePersonaCriteria(persona.criteria) }
+  }
+
+  addPersona(data: {
+    name: string
+    description: string
+    criteria: PersonaCriteria
+    painPoints: string
+    valueProp: string
+  }) {
+    if (!this.data.personas) this.data.personas = []
+    const id = crypto.randomUUID()
+    const now = new Date().toISOString()
+    this.data.personas.push({ ...data, criteria: normalizePersonaCriteria(data.criteria), id, created_at: now, updated_at: now })
+    this.save()
+    return id
+  }
+
+  updatePersona(id: string, data: Partial<{
+    name: string
+    description: string
+    criteria: PersonaCriteria
+    painPoints: string
+    valueProp: string
+  }>) {
+    if (!this.data.personas) return
+    const idx = this.data.personas.findIndex(p => p.id === id)
+    if (idx < 0) return
+    this.data.personas[idx] = { ...this.data.personas[idx], ...data, updated_at: new Date().toISOString() }
+    this.save()
+  }
+
+  deletePersona(id: string) {
+    if (!this.data.personas) return
+    this.data.personas = this.data.personas.filter(p => p.id !== id)
+    this.save()
+  }
+
+  addFormSubmission(formId: string, contactEmail: string, message?: string) {
+    if (!this.data.form_submissions) this.data.form_submissions = []
+    this.data.form_submissions.push({ form_id: formId, contact_email: contactEmail, message, submitted_at: new Date().toISOString() })
+    this.save()
+  }
+
+  getFormSubmissionCount(formId: string) {
+    if (!this.data.form_submissions) return 0
+    return this.data.form_submissions.filter(s => s.form_id === formId).length
+  }
+
+  getFormSubmissions(formId: string) {
+    if (!this.data.form_submissions) return []
+    const subs = this.data.form_submissions.filter(s => s.form_id === formId)
+    subs.sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
+    return subs.map(s => {
+      const contact = this.data.contacts.find(c => c.email.toLowerCase() === s.contact_email.toLowerCase())
+      return {
+        ...s,
+        contact
+      }
+    })
+  }
+
+  // Pending email helpers
+  addPendingEmail(contactEmail: string, firstName: string, subject: string, html: string, delayMs: number, from?: string) {
+    if (!this.data.pending_emails) this.data.pending_emails = []
+    const id = crypto.randomUUID()
+    this.data.pending_emails.push({
+      id,
+      contact_email: contactEmail,
+      first_name: firstName,
+      subject,
+      html,
+      from,
+      send_after: new Date(Date.now() + delayMs).toISOString(),
+      sent: false,
+    })
+    this.save()
+    return id
+  }
+
+  getDuePendingEmails() {
+    if (!this.data.pending_emails) return []
+    const now = new Date().toISOString()
+    return this.data.pending_emails.filter(e => !e.sent && e.send_after <= now)
+  }
+
+  markPendingEmailSent(id: string) {
+    if (!this.data.pending_emails) return
+    const record = this.data.pending_emails.find(e => e.id === id)
+    if (record) {
+      record.sent = true
+      this.save()
+    }
+  }
+
+  // Brand kit
+  getBrandKit() {
+    return this.data.brand_kit ?? null
+  }
+
+  saveBrandKit(patch: Record<string, unknown>) {
+    const next = { ...(this.data.brand_kit ?? {}), ...patch, updated_at: new Date().toISOString() }
+    // Empty strings mean "unset this", so they are dropped rather than stored.
+    for (const key of Object.keys(next)) {
+      if (next[key as keyof typeof next] === '') delete next[key as keyof typeof next]
+    }
+    this.data.brand_kit = next as any
+    this.save()
+    return this.data.brand_kit
+  }
+
+  // Email sending settings. Deliberately dumb storage — encryption and the
+  // env-var fallback live in emailSettings.ts so this stays crypto-free.
+  getEmailSettings() {
+    return this.data.email_settings ?? null
+  }
+
+  saveEmailSettings(next: NonNullable<DbSchema['email_settings']>) {
+    this.data.email_settings = { ...next, updated_at: new Date().toISOString() }
+    this.save()
+    return this.data.email_settings
+  }
+
+  // Copilot chat history
+  getCopilotChats() {
+    if (!this.data.copilot_chats) this.data.copilot_chats = []
+    // Metadata only — transcripts can be long and the list view never shows them.
+    return [...this.data.copilot_chats]
+      .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+      .map(c => ({
+        id: c.id,
+        title: c.title,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        messageCount: c.messages.length,
+      }))
+  }
+
+  getCopilotChat(id: string) {
+    if (!this.data.copilot_chats) return null
+    return this.data.copilot_chats.find(c => c.id === id) ?? null
+  }
+
+  /** Insert or replace a chat, keeping `created_at` from the original. */
+  saveCopilotChat(chat: {
+    id: string
+    title: string
+    messages: Array<{ role: 'user' | 'assistant'; content: string; isError?: boolean; tools?: Array<{ name: string; status: string }> }>
+  }) {
+    if (!this.data.copilot_chats) this.data.copilot_chats = []
+    const now = new Date().toISOString()
+    const index = this.data.copilot_chats.findIndex(c => c.id === chat.id)
+    if (index >= 0) {
+      this.data.copilot_chats[index] = {
+        ...this.data.copilot_chats[index],
+        title: chat.title || this.data.copilot_chats[index].title,
+        messages: chat.messages,
+        updated_at: now,
+      }
+    } else {
+      this.data.copilot_chats.push({
+        id: chat.id,
+        title: chat.title || 'New chat',
+        messages: chat.messages,
+        created_at: now,
+        updated_at: now,
+      })
+    }
+    this.save()
+  }
+
+  deleteCopilotChat(id: string) {
+    if (!this.data.copilot_chats) return
+    this.data.copilot_chats = this.data.copilot_chats.filter(c => c.id !== id)
+    this.save()
+  }
+
+  // Survey helpers
+  getSurveys(): Survey[] {
+    if (!this.data.surveys) this.data.surveys = []
+    return this.data.surveys
+  }
+
+  getSurvey(id: string): Survey | null {
+    return this.data.surveys?.find(s => s.id === id) ?? null
+  }
+
+  addSurvey(data: Pick<Survey, 'name' | 'design' | 'settings'>): Survey {
+    if (!this.data.surveys) this.data.surveys = []
+    const now = new Date().toISOString()
+    const survey: Survey = { ...data, id: crypto.randomUUID(), status: 'draft', created_at: now, updated_at: now, published_at: null }
+    this.data.surveys.push(survey)
+    this.save()
+    return survey
+  }
+
+  updateSurvey(id: string, patch: Partial<Omit<Survey, 'id' | 'created_at'>>): Survey | null {
+    const survey = this.data.surveys?.find(s => s.id === id)
+    if (!survey) return null
+    Object.assign(survey, patch, { updated_at: new Date().toISOString() })
+    this.save()
+    return survey
+  }
+
+  deleteSurvey(id: string) {
+    if (!this.data.surveys) return
+    this.data.surveys = this.data.surveys.filter(s => s.id !== id)
+    this.data.survey_responses = (this.data.survey_responses ?? []).filter(r => r.survey_id !== id)
+    this.save()
+  }
+
+  // Email template helpers
+  getEmailTemplates(): EmailTemplate[] {
+    if (!this.data.email_templates) this.data.email_templates = []
+    return this.data.email_templates
+  }
+
+  getEmailTemplate(id: string): EmailTemplate | null {
+    return this.data.email_templates?.find(t => t.id === id) ?? null
+  }
+
+  addEmailTemplate(data: Pick<EmailTemplate, 'name' | 'description' | 'html'>): EmailTemplate {
+    if (!this.data.email_templates) this.data.email_templates = []
+    const now = new Date().toISOString()
+    const template: EmailTemplate = { ...data, id: crypto.randomUUID(), created_at: now, updated_at: now }
+    this.data.email_templates.push(template)
+    this.save()
+    return template
+  }
+
+  updateEmailTemplate(id: string, patch: Partial<Pick<EmailTemplate, 'name' | 'description' | 'html'>>): EmailTemplate | null {
+    const template = this.data.email_templates?.find(t => t.id === id)
+    if (!template) return null
+    Object.assign(template, patch, { updated_at: new Date().toISOString() })
+    this.save()
+    return template
+  }
+
+  deleteEmailTemplate(id: string) {
+    if (!this.data.email_templates) return
+    this.data.email_templates = this.data.email_templates.filter(t => t.id !== id)
+    this.save()
+  }
+
+  // Survey response helpers
+  getSurveyResponses(surveyId: string, opts: { status?: SurveyResponse['status']; includeTest?: boolean } = {}): SurveyResponse[] {
+    return (this.data.survey_responses ?? [])
+      .filter(r => r.survey_id === surveyId)
+      .filter(r => !opts.status || r.status === opts.status)
+      .filter(r => opts.includeTest || !r.meta?.test)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))
+  }
+
+  /** Real (non-test) responses, which is what locks a survey's structure. */
+  getSurveyResponseCount(surveyId: string): number {
+    return (this.data.survey_responses ?? []).filter(r => r.survey_id === surveyId && !r.meta?.test).length
+  }
+
+  getSurveyResponse(id: string): SurveyResponse | null {
+    return this.data.survey_responses?.find(r => r.id === id) ?? null
+  }
+
+  /** The most recent response from a token-identified respondent. */
+  findSurveyResponse(surveyId: string, email: string, campaignId: number | null): SurveyResponse | null {
+    const normalized = email.toLowerCase().trim()
+    const matches = (this.data.survey_responses ?? []).filter(
+      r => r.survey_id === surveyId && r.contact_email === normalized && r.campaign_id === campaignId,
+    )
+    return matches.sort((a, b) => b.started_at.localeCompare(a.started_at))[0] ?? null
+  }
+
+  findSurveyResponseByResumeHash(surveyId: string, hash: string): SurveyResponse | null {
+    return this.data.survey_responses?.find(r => r.survey_id === surveyId && r.resume_key_hash === hash) ?? null
+  }
+
+  /** Insert or replace by id. */
+  saveSurveyResponse(response: SurveyResponse) {
+    if (!this.data.survey_responses) this.data.survey_responses = []
+    const idx = this.data.survey_responses.findIndex(r => r.id === response.id)
+    if (idx >= 0) this.data.survey_responses[idx] = response
+    else this.data.survey_responses.push(response)
+    this.save()
+  }
+
+  deleteSurveyResponse(id: string) {
+    if (!this.data.survey_responses) return
+    this.data.survey_responses = this.data.survey_responses.filter(r => r.id !== id)
+    this.save()
+  }
+
+  getSurveyResponsesForContact(email: string): SurveyResponse[] {
+    const normalized = email.toLowerCase().trim()
+    return (this.data.survey_responses ?? [])
+      .filter(r => r.contact_email === normalized && !r.meta?.test)
+      .sort((a, b) => b.started_at.localeCompare(a.started_at))
+  }
+
+  // Custom contact field helpers
+  getContactFields(): ContactFieldDef[] {
+    if (!this.data.contact_fields) this.data.contact_fields = []
+    return this.data.contact_fields
+  }
+
+  addContactField(def: Omit<ContactFieldDef, 'created_at'>): ContactFieldDef {
+    if (!this.data.contact_fields) this.data.contact_fields = []
+    if (this.data.contact_fields.some(f => f.key === def.key)) throw new Error(`A field with key "${def.key}" already exists`)
+    const record = { ...def, created_at: new Date().toISOString() }
+    this.data.contact_fields.push(record)
+    this.save()
+    return record
+  }
+
+  /** The key is immutable; everything else can change. */
+  updateContactField(key: string, patch: Partial<Pick<ContactFieldDef, 'label' | 'options'>>) {
+    const field = this.data.contact_fields?.find(f => f.key === key)
+    if (!field) throw new Error('Field not found')
+    Object.assign(field, patch)
+    this.save()
+    return field
+  }
+
+  /** Removes the definition and the value from every contact. */
+  deleteContactField(key: string) {
+    if (!this.data.contact_fields) return
+    this.data.contact_fields = this.data.contact_fields.filter(f => f.key !== key)
+    for (const c of this.data.contacts) {
+      if (c.custom && key in c.custom) delete c.custom[key]
+    }
+    this.save()
+  }
+
+  getContact(email: string): ContactRecord | null {
+    const normalized = email.toLowerCase().trim()
+    return this.data.contacts.find(c => c.email.toLowerCase() === normalized) ?? null
+  }
+
+  /**
+   * Create or patch a contact without going through the SQL shim.
+   *
+   * `create: false` only patches an existing contact. Status is never changed
+   * on an existing contact — an unsubscribed person answering a survey stays
+   * unsubscribed.
+   */
+  upsertContact(
+    email: string,
+    patch: { builtin?: Partial<Pick<ContactRecord, 'first_name' | 'last_name' | 'job_title' | 'company'>>; custom?: Record<string, ContactCustomValue> },
+    opts: { create: boolean; status?: string },
+  ): { contact: ContactRecord | null; created: boolean } {
+    const normalized = email.toLowerCase().trim()
+    let contact = this.getContact(normalized)
+    let created = false
+    if (!contact) {
+      if (!opts.create) return { contact: null, created: false }
+      contact = {
+        email: normalized,
+        first_name: '',
+        last_name: '',
+        job_title: '',
+        company: '',
+        status: opts.status ?? 'subscribed',
+        created_at: new Date().toISOString(),
+      }
+      this.data.contacts.push(contact)
+      created = true
+    }
+    Object.assign(contact, patch.builtin ?? {})
+    if (patch.custom && Object.keys(patch.custom).length) contact.custom = { ...contact.custom, ...patch.custom }
+    this.save()
+    return { contact, created }
+  }
+
+  addContactToList(listId: number, email: string) {
+    const normalized = email.toLowerCase().trim()
+    if (!this.data.list_contacts.some(lc => lc.list_id === listId && lc.contact_email === normalized)) {
+      this.data.list_contacts.push({ list_id: listId, contact_email: normalized })
+      this.save()
+    }
+  }
+
+  /**
+   * Record a campaign click, with the same status rules as /api/track/click:
+   * never regress a later status such as unsubscribed.
+   */
+  markRecipientClicked(email: string, campaignId: number) {
+    const normalized = email.toLowerCase().trim()
+    const record = this.data.campaign_recipients.find(cr => cr.campaign_id == campaignId && cr.contact_email === normalized)
+    if (!record || !['sent', 'opened', 'bounced_soft'].includes(record.status)) return
+    record.status = 'clicked'
+    record.clicked_at = new Date().toISOString()
+    this.save()
+  }
+
+  findUser(email: string) {
+    if (!this.data.users) return null
+    return this.data.users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null
+  }
+
+  getUsers() {
+    if (!this.data.users) this.data.users = []
+    return this.data.users.map(u => ({ email: u.email }))
+  }
+
+  addUser(email: string, passwordHash: string) {
+    if (!this.data.users) this.data.users = []
+    const normalizedEmail = email.toLowerCase().trim()
+    if (this.data.users.some(u => u.email.toLowerCase() === normalizedEmail)) {
+      throw new Error('User already exists')
+    }
+    this.data.users.push({ email: normalizedEmail, passwordHash })
+    this.save()
+  }
+
+  deleteUser(email: string) {
+    if (!this.data.users) return
+    const normalizedEmail = email.toLowerCase().trim()
+    
+    // Ensure we don't delete the last remaining user
+    if (this.data.users.length <= 1) {
+      throw new Error('Cannot delete the last remaining user')
+    }
+
+    this.data.users = this.data.users.filter(u => u.email.toLowerCase() !== normalizedEmail)
+    this.save()
+  }
+
+
+  markRecipientUnsubscribed(email: string, campaignId?: string | number) {
+    const normalizedEmail = email.toLowerCase().trim()
+
+    if (campaignId && !isNaN(Number(campaignId))) {
+      const record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
+      if (record) {
+        record.status = 'unsubscribed'
+      }
+    } else {
+      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && cr.status === 'sent')
+      if (records.length > 0) {
+        records.sort((a, b) => b.campaign_id - a.campaign_id)
+        records[0].status = 'unsubscribed'
+      }
+    }
+
+    this.save()
+  }
+
+  updateRecipientBounceStatus(email: string, type: string, campaignId?: string) {
+    const normalizedEmail = email.toLowerCase().trim()
+    
+    const contact = this.data.contacts.find(c => c.email === normalizedEmail)
+    if (contact) {
+      contact.status = 'bounced'
+    }
+
+    if (campaignId && !isNaN(Number(campaignId))) {
+      const record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
+      if (record) {
+        record.status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
+      }
+    } else {
+      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && cr.status === 'sent')
+      if (records.length > 0) {
+        records.sort((a, b) => b.campaign_id - a.campaign_id)
+        records[0].status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
+      }
+    }
+    
+    this.save()
+  }
+
+  findSession(id: string) {
+    if (!this.data.sessions) {
+      this.data.sessions = []
+    }
+    return this.data.sessions.find(s => s.id === id) || null
+  }
+
+  createSession(email: string): string {
+    if (!this.data.sessions) {
+      this.data.sessions = []
+    }
+    const id = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
+    this.data.sessions.push({ id, email, expiresAt })
+    this.save()
+    return id
+  }
+
+  deleteSession(id: string) {
+    if (!this.data.sessions) return
+    this.data.sessions = this.data.sessions.filter(s => s.id !== id)
+    this.save()
+  }
+}
+
+export const db = new JsonDb()
+
+// Placeholder function to maintain schema creation calls in imports
+export function initDb() {}
+
+

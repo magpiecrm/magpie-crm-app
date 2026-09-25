@@ -1,0 +1,27 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+.env
+.env.*
+.nitro
+.tanstack
+.wrangler
+.output
+.vinxi
+__unconfig*
+todos.json
+
+# Throwaway experiments / local data dumps
+scratch/
+
+# Database files
+local.db
+local_db.json
+
+# Images uploaded from the email builder (see src/server/uploads.ts) — lives
+# next to local_db.json for the same reason: real data, not source. Anchored
+# to the repo root so it doesn't also match src/routes/api/uploads/.
+/uploads/
+

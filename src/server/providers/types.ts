@@ -1,0 +1,124 @@
+// Shared types for the pluggable email-sending providers.
+//
+// This module is imported by the Settings UI as well as the server, so it must
+// stay free of node/server imports — types and plain data only.
+
+export type ProviderId =
+  | 'cloudflare'
+  | 'brevo'
+  | 'ses'
+  | 'postmark'
+  | 'sendgrid'
+  | 'mailgun'
+  | 'resend'
+  | 'mailchimp'
+  | 'smtp'
+
+type FieldType = 'text' | 'secret' | 'number' | 'select'
+
+export interface ProviderField {
+  key: string
+  label: string
+  type: FieldType
+  required?: boolean
+  placeholder?: string
+  /** Short hint shown under the input — usually where to find the value. */
+  help?: string
+  /** Only meaningful for `type: 'select'`. */
+  options?: Array<{ value: string; label: string }>
+  /** Used when the field is absent from the stored credentials. */
+  defaultValue?: string
+}
+
+export interface ProviderDescriptor {
+  id: ProviderId
+  label: string
+  /** One-line pitch shown next to the provider in the picker. */
+  summary: string
+  docsUrl: string
+  /**
+   * False for providers that need outbound SMTP ports, which are blocked on
+   * hosts like Railway. Surfaced as a warning in the UI rather than hidden,
+   * since it works fine for local and self-hosted deployments.
+   */
+  httpsOnly: boolean
+  fields: ProviderField[]
+}
+
+/**
+ * A message that has already passed the shared validation in `sendMail` —
+ * headers are CRLF-clean, recipients and sender are valid addresses.
+ */
+export interface OutboundMessage {
+  /** Raw RFC-5322 header, e.g. `"Acme" <hi@acme.com>`. */
+  from: string
+  /** Bare address extracted from `from`. */
+  fromEmail: string
+  /** Display name from `from`, when it had one. */
+  fromName?: string
+  to: string[]
+  subject: string
+  html: string
+  campaignId?: number
+}
+
+interface ProviderSendResult {
+  messageId: string
+}
+
+/** A bounce event normalized out of a provider's webhook payload. */
+export interface NormalizedBounce {
+  email: string
+  type: 'hard' | 'soft'
+  campaignId?: number
+  reason?: string
+}
+
+export type ProviderCredentials = Record<string, string>
+
+export interface EmailProvider {
+  descriptor: ProviderDescriptor
+  send(msg: OutboundMessage, creds: ProviderCredentials): Promise<ProviderSendResult>
+  /**
+   * Translates a provider webhook body into bounce events. Providers that have
+   * no webhook support (or whose bounces arrive another way, like Cloudflare's
+   * analytics poller) simply omit this.
+   */
+  parseWebhook?(body: unknown): NormalizedBounce[]
+}
+
+/** The `X-Campaign-ID` header value, when the message belongs to a campaign. */
+export function campaignHeaders(msg: OutboundMessage): Record<string, string> {
+  return msg.campaignId ? { 'X-Campaign-ID': String(msg.campaignId) } : {}
+}
+
+/**
+ * Providers report failures in wildly different shapes; funnel them all through
+ * this so the campaign loop and the retry classifier see one consistent format.
+ *
+ * `retryable` matters because a thrown error marks the recipient `bounced_soft`
+ * in `emailService.sendCampaign`. A 429 or a provider 5xx is a transient blip,
+ * not a bad address, so it must be retried rather than recorded as a bounce.
+ */
+export class ProviderSendError extends Error {
+  readonly provider: ProviderId
+  readonly status?: number
+  readonly retryable: boolean
+
+  constructor(provider: ProviderId, recipient: string, detail: string, status?: number) {
+    super(`${provider} email sending failed for ${recipient}: ${detail}`)
+    this.name = 'ProviderSendError'
+    this.provider = provider
+    this.status = status
+    this.retryable = status === 429 || (status !== undefined && status >= 500)
+  }
+}
+
+export function providerError(
+  provider: ProviderId,
+  recipient: string,
+  detail: string,
+  status?: number,
+): ProviderSendError {
+  return new ProviderSendError(provider, recipient, detail, status)
+}
