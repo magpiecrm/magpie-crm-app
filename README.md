@@ -8,7 +8,10 @@ layer:
 - Contacts, lists, and campaigns live in the app's own JSON DB
   (`src/server/db.ts`) and send over plain SMTP (`nodemailer.ts`) — no
   third-party ESP.
-- **[Generect](https://generect.com/)** — LinkedIn-based prospect ("lead") search and account usage.
+- **[SocialFetch](https://www.socialfetch.dev/)** — the only source of company and
+  people data for prospect search. Emails are generated from name + company
+  domain and, optionally, verified with a self-hosted
+  [Reacher](https://github.com/reacherhq/check-if-email-exists) instance.
 
 There is also a copilot that drives a locally installed `claude` CLI as a
 long-lived agent with its own MCP tool server, letting it search prospects,
@@ -28,7 +31,18 @@ SMTP_HOST=...            # required for sending campaigns
 SMTP_PORT=...
 SMTP_USER=...
 SMTP_SENDER=...
-GENERECT_API_KEY=...     # required for prospect search
+SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Prospecting (sfk_...)
+SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
+                         # falls back to TRACKING_SECRET. Never rotate it.
+REACHER_URL=...          # optional — or set in Settings → Prospecting;
+                         # e.g. http://reacher:8080; enables email
+                         # verification. Without it, emails are saved as
+                         # "unverified" best guesses.
+REACHER_SECRET=...       # optional — matches RCH__HEADER_SECRET on Reacher
+REACHER_FROM_EMAIL=...   # optional — SMTP FROM used for verification
+REACHER_HELLO_NAME=...   # optional — EHLO name; should match the proxy's PTR
+REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
+                         # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
 AUTH_EMAIL=...           # required — app login
 AUTH_PASSWORD=...
 TRACKING_SECRET=...      # required in production — signs tracking/unsubscribe links
@@ -63,6 +77,36 @@ in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 The copilot additionally requires the `claude` CLI to be installed and
 authenticated on the host running the dev server.
 
+### Prospect search and data protection
+
+Add your SocialFetch API key in **Settings → Prospecting** (it's stored
+encrypted in the database with `CREDENTIALS_SECRET` and takes priority over the
+`SOCIALFETCH_API_KEY` env var). "Test connection" checks it against
+SocialFetch's free balance endpoint. The optional Reacher settings live on the
+same tab.
+
+Prospect search runs company search → people search → save to list. Search
+results are fetched live from SocialFetch and never stored; only saving creates
+contacts, and that is the only point where emails are looked up.
+
+- **Email finding**: candidates are ranked from the person's name (accents,
+  hyphens, apostrophes and surname particles handled) and checked through
+  Reacher until one comes back `safe`. A verified address teaches the domain its
+  pattern (e.g. `{first}.{last}`), cached globally *without* any name or
+  address; catch-all status and MX are cached per domain too.
+- **Statuses**: `verified`, `catch_all_likely`, `risky`, `unverified` (no
+  Reacher, or greylisted), `not_found` (not saved).
+- **Suppression**: `/api/opt-out` is a public page where anyone can opt out by
+  email, LinkedIn URL, or name + company website. Identifiers are stored only as
+  HMAC hashes (`SUPPRESSION_SECRET`), matching saved contacts are deleted, and
+  suppressed people are filtered out of search results and blocked at save.
+- **Disclosure log**: every prospected contact saved gets a hashed log entry
+  (sources, timestamp, notice status). New contacts start with
+  `notice_status = pending`; nothing yet delivers the notice.
+
+Self-hosting this makes you the data controller for prospected contacts under
+UK GDPR and PECR, and you must also comply with SocialFetch's terms.
+
 ## Scripts
 
 | Command          | Description                          |
@@ -81,7 +125,7 @@ src/
     marketing/       Contacts, lists, campaigns, analytics
     collection/      Prospect collection / saved lists
   features/          Self-contained feature modules
-    prospects/       Prospect search UI + industry constants
+    prospects/       Prospect search UI (companies → people → save) + constants
     email-builder/   Block-based email designer (canvas, blocks, compiler)
     copilot/         AI chat panel
   components/        Shared components + ui/ primitive library
@@ -89,7 +133,8 @@ src/
     db.ts            JSON-file data store (contacts, lists, campaigns, ...)
     emailService.ts  Campaign send pipeline (reads db.ts, sends via nodemailer)
     nodemailer.ts    SMTP transport
-    generect.ts      Generect REST client
+    prospecting/     SocialFetch connector, email finder, Reacher client,
+                     proxy router, suppression + disclosure log, save jobs
     env.ts           Centralized API keys + base URLs
     functions/       createServerFn endpoints, split by domain
     copilot/         claude CLI session management + MCP tool server

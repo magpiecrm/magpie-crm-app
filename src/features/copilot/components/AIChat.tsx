@@ -178,7 +178,7 @@ const MODEL_OPTIONS: DropdownOption[] = [
 /**
  * Mirrors `PERMISSION_MODES` in `server/copilot/permissions.ts` (id/label/
  * description copied verbatim). Duplicated rather than imported: that module
- * pulls in the whole tool registry — db, generect, the prospect search client
+ * pulls in the whole tool registry — db, the SocialFetch client, the email finder
  * — which must not end up in the client bundle.
  */
 const PERMISSION_MODE_OPTIONS: DropdownOption[] = [

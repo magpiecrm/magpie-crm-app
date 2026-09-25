@@ -39,7 +39,7 @@ export interface TurnOptions {
 /**
  * Environment for the spawned CLI.
  *
- * Whitelisted rather than inherited so the app's own secrets — Brevo, Generect,
+ * Whitelisted rather than inherited so the app's own secrets — SocialFetch, Reacher,
  * SMTP, AUTH_PASSWORD — are never visible to the agent process. It reaches the
  * platform only through MCP, which is auth'd separately per session.
  */

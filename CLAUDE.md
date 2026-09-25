@@ -6,17 +6,25 @@ Guidance for working in this repo. See `README.md` for setup/run instructions.
 
 A TanStack Start app for B2B prospecting + email marketing. Contacts, lists,
 and campaigns are self-hosted: a local JSON DB (`src/server/db.ts`) plus SMTP
-sending via `nodemailer.ts` — there is no third-party ESP. **Generect** is
-still used for prospect search. A copilot feature shells out to a local
+sending via `nodemailer.ts` — there is no third-party ESP. **SocialFetch** is
+the only source of company/people data for prospect search. A copilot feature shells out to a local
 `claude` CLI, driving it as a long-lived MCP-tool agent rather than one-shot
 prompts.
 
 ## Architecture
 
 - **Server layer** (`src/server/`):
-  - `generect.ts` — low-level REST client for prospect search. API keys and
-    base URLs come from `src/server/env.ts`; do not read `process.env`
-    directly in new server code.
+  - `prospecting/` — prospect search and email finding. `socialfetch.ts` is
+    the only data connector, behind the `CompanySource`/`PeopleSource`
+    interfaces in `types.ts`; it maps responses down to the few allowed fields
+    (name, title, seniority, company, domain, country, profile URL) and nothing
+    else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via
+    `reacher.ts` (optional) through `proxyRouter.ts`. `save.ts` is the only
+    place contacts get created from search results; `suppression.ts` holds the
+    HMAC-hashed opt-out list. Search results are never persisted, and only
+    non-personal data (companies, domains, patterns, catch-all) is cached
+    globally — keep it that way. API keys and base URLs come from
+    `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `db.ts` — the app's own data store: a JSON file (`local_db.json`, path
     from `DATABASE_PATH`) holding contacts/lists/campaigns/personas/auth. In
     production this file lives on a mounted volume.

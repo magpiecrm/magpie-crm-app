@@ -104,7 +104,7 @@ export function buildMcpServer(sessionId: string): McpServer {
     { name: 'email-marketing', version: '1.0.0' },
     {
       instructions:
-        'Tools for the Generect + Brevo email marketing platform. Read before you write: call getLists/getCampaigns/getBlocks to obtain real IDs rather than guessing them.',
+        'Tools for this prospecting and email marketing app. Read before you write: call getLists/getCampaigns/getBlocks to obtain real IDs rather than guessing them.',
     },
   )
 

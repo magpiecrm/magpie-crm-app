@@ -3,9 +3,21 @@ import { AlertCircle, ExternalLink, Key, LogOut, RefreshCw, Eye, EyeOff, Save, T
 import { checkClaudeStatusFn, logoutClaudeFn, startClaudeLoginFn, submitClaudeCodeFn, getEnvVarsFn, saveEnvVarsFn, getApiKeysFn, createApiKeyFn, deleteApiKeyFn, getSendersFn, createSenderFn, updateSenderFn, deleteSenderFn, getUsersFn, createUserFn, deleteUserFn, checkAuthFn } from '../../../server/functions'
 import { EmailSendingTab } from '../../settings/components/EmailSendingTab'
 import { ContactFieldsTab } from '../../settings/components/ContactFieldsTab'
+import { ProspectingTab } from '../../settings/components/ProspectingTab'
 
-export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<'copilot' | 'env' | 'sending' | 'api' | 'senders' | 'users' | 'fields'>('copilot')
+const TABS = ['copilot', 'prospecting', 'env', 'sending', 'api', 'senders', 'users', 'fields'] as const
+export type SettingsTab = (typeof TABS)[number]
+
+export const isSettingsTab = (value: unknown): value is SettingsTab =>
+  typeof value === 'string' && (TABS as readonly string[]).includes(value)
+
+export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab ?? 'copilot')
+  // Deep links (e.g. the sidebar's "add your key") can land here while the
+  // page is already mounted.
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab)
+  }, [initialTab])
 
 
   // Claude CLI Auth Status State
@@ -427,6 +439,16 @@ export function SettingsPage() {
           Copilot Integration
         </button>
         <button
+          onClick={() => setActiveTab('prospecting')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+            activeTab === 'prospecting'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Prospecting
+        </button>
+        <button
           onClick={() => setActiveTab('env')}
           className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
             activeTab === 'env'
@@ -702,25 +724,6 @@ export function SettingsPage() {
                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">API Integrations & Security Secrets</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Generect API Key</label>
-                    <div className="relative flex items-center">
-                      <input
-                        type={visibleFields.GENERECT_API_KEY ? 'text' : 'password'}
-                        value={envVars.GENERECT_API_KEY || ''}
-                        onChange={(e) => handleEnvChange('GENERECT_API_KEY', e.target.value)}
-                        placeholder="GENERECT_API_KEY"
-                        className="w-full bg-background border border-border rounded-md-s pl-3 pr-10 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleFieldVisibility('GENERECT_API_KEY')}
-                        className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        {visibleFields.GENERECT_API_KEY ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold text-foreground">Email Tracking Secret</label>
                     <div className="relative flex items-center">
                       <input
@@ -814,6 +817,8 @@ export function SettingsPage() {
       )}
 
       {/* Public API Tab Content */}
+      {activeTab === 'prospecting' && <ProspectingTab />}
+
       {activeTab === 'sending' && <EmailSendingTab />}
 
       {activeTab === 'fields' && <ContactFieldsTab />}

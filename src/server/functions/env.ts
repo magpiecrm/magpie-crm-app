@@ -40,7 +40,6 @@ export const getEnvVarsFn = createServerFn({ method: 'GET' })
 
     // Ensure all standard keys exist in returned object, fallback to process.env
     const keys = [
-      'GENERECT_API_KEY',
       'SMTP_HOST',
       'SMTP_PORT',
       'SMTP_USER',

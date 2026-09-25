@@ -7,6 +7,8 @@ import type { Persona, PersonaCriteria } from '../features/prospects/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
+import type { EmailStatus, NoticeStatus } from './prospecting/types'
+import type { MailProvider } from './prospecting/proxyRouter'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -49,6 +51,12 @@ interface DbSchema {
     created_at: string
     /** Values of user-defined contact fields, keyed by `ContactFieldDef.key`. */
     custom?: Record<string, ContactCustomValue>
+    /** Where a prospected contact came from (e.g. `socialfetch`). Absent for imports and signups. */
+    source?: string
+    /** Result of email finding for prospected contacts. */
+    email_status?: EmailStatus
+    /** Whether this person has been told we hold their details. Prospected contacts start `pending`. */
+    notice_status?: NoticeStatus
   }>
   list_contacts: Array<{ list_id: number; contact_email: string }>
   senders: Array<{ id: number; name: string; email: string }>
@@ -188,13 +196,77 @@ interface DbSchema {
   email_templates?: EmailTemplate[]
   /** Definitions of user-defined contact fields; values live on `contacts[].custom`. */
   contact_fields?: ContactFieldDef[]
-  // Generect charges per email lookup, so results (including misses) are
-  // cached by LinkedIn URL to avoid paying twice for the same lead.
-  email_lookups?: Array<{
-    linkedin_url: string
-    email: string | null
-    looked_up_at: string
+  // --- Prospecting ---
+  // Only non-personal data is cached globally: companies, their domains and
+  // each domain's mail pattern and catch-all status. People found by search
+  // are never stored unless the user saves them as contacts.
+  prospect_companies?: Array<{
+    ref: string
+    name: string
+    domain: string | null
+    domain_source: 'socialfetch' | 'user'
+    /** The full company page has been fetched; a null domain is then final. */
+    page_checked?: boolean
+    updated_at: string
   }>
+  email_domains?: EmailDomainRecord[]
+  /**
+   * Global suppression list. Keyed HMAC hashes only (see
+   * prospecting/suppression.ts), never the raw email, name or URL.
+   */
+  suppression?: Array<{
+    hash: string
+    kind: SuppressionKind
+    reason: 'opt_out' | 'erasure' | 'manual'
+    created_at: string
+  }>
+  /**
+   * One entry per prospected contact saved, and per notice status change.
+   * Hashes only, so it can answer "do we hold this person, and since when"
+   * for rights requests without itself being a copy of the contact list.
+   */
+  disclosure_log?: DisclosureEntry[]
+  /**
+   * Prospecting integrations set from Settings → Prospecting. Single row.
+   * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
+   * SocialFetch API key and Reacher secret; the rest isn't sensitive.
+   */
+  prospecting_settings?: ProspectingSettingsRecord
+}
+
+export interface ProspectingSettingsRecord {
+  secrets?: string
+  reacher_url?: string
+  reacher_from_email?: string
+  reacher_hello_name?: string
+  updated_at: string
+}
+
+export type SuppressionKind = 'email' | 'profile' | 'name_domain'
+
+export interface EmailDomainRecord {
+  domain: string
+  /** e.g. `{first}.{last}`. Never stored with a name or address. */
+  pattern: string | null
+  pattern_confidence: number
+  pattern_verified_at: string | null
+  catch_all: boolean | null
+  catch_all_checked_at: string | null
+  mx_provider: MailProvider | null
+  /** False when the domain has no MX records at all. */
+  accepts_mail: boolean | null
+  mx_checked_at: string | null
+  last_used_at: string
+}
+
+interface DisclosureEntry {
+  id: string
+  contact_hash: string
+  profile_hash: string | null
+  sources: string[]
+  event: 'saved' | 'notice_status_changed' | 'opted_out'
+  notice_status: NoticeStatus | null
+  created_at: string
 }
 
 class JsonDb {
@@ -233,7 +305,10 @@ class JsonDb {
     if (!loaded.notifications) loaded.notifications = []
     if (!loaded.push_subscriptions) loaded.push_subscriptions = []
     if (!loaded.copilot_chats) loaded.copilot_chats = []
-    if (!loaded.email_lookups) loaded.email_lookups = []
+    if (!loaded.prospect_companies) loaded.prospect_companies = []
+    if (!loaded.email_domains) loaded.email_domains = []
+    if (!loaded.suppression) loaded.suppression = []
+    if (!loaded.disclosure_log) loaded.disclosure_log = []
     if (!loaded.surveys) loaded.surveys = []
     if (!loaded.survey_responses) loaded.survey_responses = []
     if (!loaded.email_templates) loaded.email_templates = []
@@ -260,7 +335,10 @@ class JsonDb {
       notifications: [],
       push_subscriptions: [],
       copilot_chats: [],
-      email_lookups: [],
+      prospect_companies: [],
+      email_domains: [],
+      suppression: [],
+      disclosure_log: [],
       surveys: [],
       survey_responses: [],
       email_templates: [],
@@ -268,23 +346,106 @@ class JsonDb {
     }
   }
 
-  // --- Generect email lookup cache ---
-  // Returns { email } when this URL has been looked up before (email may be
-  // null, meaning "we already paid and Generect found nothing"), or
-  // undefined when it has never been looked up.
-  getCachedEmailLookup(linkedinUrl: string): { email: string | null } | undefined {
-    if (!this.data.email_lookups) this.data.email_lookups = []
-    const hit = this.data.email_lookups.find(l => l.linkedin_url === linkedinUrl)
-    return hit ? { email: hit.email } : undefined
+  // --- Prospecting: company and domain caches (non-personal) ---
+  getProspectCompany(ref: string) {
+    return this.data.prospect_companies!.find((c) => c.ref === ref) ?? null
   }
 
-  setCachedEmailLookup(linkedinUrl: string, email: string | null) {
-    if (!this.data.email_lookups) this.data.email_lookups = []
-    const idx = this.data.email_lookups.findIndex(l => l.linkedin_url === linkedinUrl)
-    const entry = { linkedin_url: linkedinUrl, email, looked_up_at: new Date().toISOString() }
-    if (idx >= 0) this.data.email_lookups[idx] = entry
-    else this.data.email_lookups.push(entry)
+  /** Batch upsert — a search page caches up to 25 companies with one write. */
+  upsertProspectCompanies(
+    entries: Array<{ ref: string; name: string; domain: string | null; domain_source: 'socialfetch' | 'user'; page_checked?: boolean }>,
+  ) {
+    const list = this.data.prospect_companies!
+    const now = new Date().toISOString()
+    for (const entry of entries) {
+      const existing = list.find((c) => c.ref === entry.ref)
+      if (!existing) {
+        list.push({ ...entry, updated_at: now })
+        continue
+      }
+      // A domain the user typed in wins over whatever the provider says later,
+      // and a search hit without a website doesn't erase one we already know.
+      if (existing.domain_source === 'user' && entry.domain_source !== 'user') {
+        existing.name = entry.name
+      } else {
+        Object.assign(existing, { ...entry, domain: entry.domain ?? existing.domain, page_checked: entry.page_checked || existing.page_checked })
+      }
+      existing.updated_at = now
+    }
+    if (entries.length > 0) this.save()
+  }
+
+  getEmailDomain(domain: string): EmailDomainRecord | null {
+    return this.data.email_domains!.find((d) => d.domain === domain) ?? null
+  }
+
+  upsertEmailDomain(domain: string, patch: Partial<Omit<EmailDomainRecord, 'domain'>>): EmailDomainRecord {
+    const list = this.data.email_domains!
+    let record = list.find((d) => d.domain === domain)
+    if (!record) {
+      record = {
+        domain,
+        pattern: null,
+        pattern_confidence: 0,
+        pattern_verified_at: null,
+        catch_all: null,
+        catch_all_checked_at: null,
+        mx_provider: null,
+        accepts_mail: null,
+        mx_checked_at: null,
+        last_used_at: new Date().toISOString(),
+      }
+      list.push(record)
+    }
+    Object.assign(record, patch, { last_used_at: new Date().toISOString() })
     this.save()
+    return record
+  }
+
+  // --- Prospecting: suppression and disclosure log (hashes only) ---
+  getSuppressionHashes(): Set<string> {
+    return new Set(this.data.suppression!.map((s) => s.hash))
+  }
+
+  addSuppression(entries: Array<{ hash: string; kind: SuppressionKind }>, reason: 'opt_out' | 'erasure' | 'manual') {
+    const existing = this.getSuppressionHashes()
+    const now = new Date().toISOString()
+    let added = 0
+    for (const e of entries) {
+      if (existing.has(e.hash)) continue
+      existing.add(e.hash)
+      this.data.suppression!.push({ hash: e.hash, kind: e.kind, reason, created_at: now })
+      added++
+    }
+    if (added > 0) this.save()
+    return added
+  }
+
+  addDisclosure(entry: Omit<DisclosureEntry, 'id' | 'created_at'>) {
+    this.data.disclosure_log!.push({ ...entry, id: crypto.randomUUID(), created_at: new Date().toISOString() })
+    this.save()
+  }
+
+  getDisclosures(): DisclosureEntry[] {
+    return [...this.data.disclosure_log!]
+  }
+
+  getProspectingSettings(): ProspectingSettingsRecord | null {
+    return this.data.prospecting_settings ?? null
+  }
+
+  saveProspectingSettings(next: ProspectingSettingsRecord) {
+    this.data.prospecting_settings = next
+    this.save()
+  }
+
+  /** Patches the prospecting fields on an existing contact without touching its status. */
+  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status'>>) {
+    const contact = this.getContact(email)
+    if (!contact) return null
+    Object.assign(contact, patch)
+    this.save()
+    return contact
   }
 
   // API Key Management Helpers

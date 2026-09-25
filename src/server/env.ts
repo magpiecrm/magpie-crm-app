@@ -56,9 +56,28 @@ export const env = {
     pass: () => readEnv('SMTP_PASS') || '',
     sender: () => readEnv('SMTP_SENDER'),
   },
-  generect: {
-    baseUrl: 'https://api.generect.com/api',
-    apiKey: () => requireEnv('GENERECT_API_KEY'),
+  // SocialFetch is the only source of company and people data. Every call
+  // goes through `prospecting/socialfetch.ts`, never directly. The key is
+  // normally saved in Settings → Prospecting; this env var is the fallback
+  // (see prospecting/settings.ts).
+  socialfetch: {
+    baseUrl: () => readEnv('SOCIALFETCH_BASE_URL') || 'https://api.socialfetch.dev',
+    apiKey: () => readEnv('SOCIALFETCH_API_KEY'),
+  },
+  // Reacher (reacherhq/check-if-email-exists) runs as its own service. Optional:
+  // without it, email finding falls back to an unverified best-guess candidate.
+  // URL, secret, FROM and HELO can also be set in Settings → Prospecting.
+  reacher: {
+    url: () => readEnv('REACHER_URL')?.replace(/\/+$/, ''),
+    secret: () => readEnv('REACHER_SECRET'),
+    fromEmail: () => readEnv('REACHER_FROM_EMAIL'),
+    helloName: () => readEnv('REACHER_HELLO_NAME'),
+    /**
+     * SOCKS5 proxies for SMTP verification, as a JSON array of
+     * `{ "host", "port", "username"?, "password"?, "label"? }`. Unset means
+     * Reacher connects directly (which needs outbound port 25 on its host).
+     */
+    proxies: () => readEnv('REACHER_PROXIES'),
   },
   auth: {
     email: () => requireEnv('AUTH_EMAIL'),
@@ -92,6 +111,10 @@ export const env = {
   credentialsSecret: () => secretWithDevFallback('CREDENTIALS_SECRET', 'TRACKING_SECRET'),
   usingDefaultCredentialsSecret: () =>
     !readEnv('CREDENTIALS_SECRET') && !readEnv('TRACKING_SECRET'),
+  // Keys the HMAC hashes in the suppression list and disclosure log. Rotating
+  // it orphans every stored hash — opted-out people would reappear in search —
+  // so set it once, up front.
+  suppressionSecret: () => secretWithDevFallback('SUPPRESSION_SECRET', 'TRACKING_SECRET'),
   webhookSecret: () => readEnv('WEBHOOK_SECRET'),
   isProduction: () => readEnv('NODE_ENV') === 'production',
   // Where the JSON "database" lives — also used to derive the uploads

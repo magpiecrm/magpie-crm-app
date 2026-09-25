@@ -32,7 +32,7 @@ const navItems = [
   },
 ]
 
-import { lushaUsageFn } from '../../server/functions'
+import { prospectingStatusFn } from '../../server/functions'
 
 export function Sidebar({
   onToggleChat,
@@ -52,17 +52,11 @@ export function Sidebar({
     navigate({ to: '/login' })
   }
 
-  const { data: usageData, isLoading: isLoadingUsage } = useQuery({
-    queryKey: queryKeys.lusha.usage(),
-    queryFn: () => lushaUsageFn(),
+  const { data: status, isLoading: isLoadingUsage } = useQuery({
+    queryKey: queryKeys.prospects.status(),
+    queryFn: () => prospectingStatusFn(),
     refetchInterval: 60000, // Refresh every minute
   })
-
-  const usage = usageData?.generect
-  const searchesUsedPct =
-    usage && usage.searchesDailyLimit > 0
-      ? Math.min(100, (usage.searchesToday / usage.searchesDailyLimit) * 100)
-      : 0
 
   return (
     <aside
@@ -178,39 +172,32 @@ export function Sidebar({
 
       <div className="p-4 border-t border-border mt-auto safe-b">
         <div className="bg-accent/5 rounded-md-m p-4 border border-accent/10">
-          <p className="text-[10px] text-accent mb-2 font-bold uppercase tracking-wider">Generect Balance</p>
+          <p className="text-[10px] text-accent mb-2 font-bold uppercase tracking-wider">SocialFetch Credits</p>
           {isLoadingUsage ? (
             <Loader2 className="w-4 h-4 animate-spin text-accent" />
-          ) : !usage ? (
+          ) : !status?.socialfetch.configured ? (
+            <Link
+              to="/settings"
+              search={{ tab: 'prospecting' }}
+              onClick={onClose}
+              className="text-xs font-semibold text-accent hover:underline"
+            >
+              Add your SocialFetch API key
+            </Link>
+          ) : status.socialfetch.balance === null ? (
             <p className="text-xs text-muted-foreground">Unavailable</p>
           ) : (
-            <>
-              <div className="flex justify-between items-baseline">
-                <span className="text-xl font-display text-foreground">
-                  ${usage.balanceUsd.toFixed(2)}
-                </span>
-                <span className="text-[10px] text-muted-foreground">~$0.02 / search</span>
-              </div>
-
-              {usage.searchesDailyLimit > 0 && (
-                <>
-                  <div className="flex justify-between items-baseline mt-3">
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
-                      Searches today
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {usage.searchesToday} / {usage.searchesDailyLimit}
-                    </span>
-                  </div>
-                  <div className="w-full bg-accent/10 rounded-full h-1.5 mt-1.5 overflow-hidden">
-                    <div
-                      className="bg-accent h-1.5 rounded-full transition-all duration-700 ease-md"
-                      style={{ width: `${searchesUsedPct}%` }}
-                    />
-                  </div>
-                </>
-              )}
-            </>
+            <div className="flex justify-between items-baseline">
+              <span className="text-xl font-display text-foreground">
+                {status.socialfetch.balance.toLocaleString()}
+              </span>
+              <span className="text-[10px] text-muted-foreground">3 / search</span>
+            </div>
+          )}
+          {status && (
+            <p className="text-[10px] text-muted-foreground mt-2">
+              Email verification: {status.reacher.configured ? 'Reacher connected' : 'off (best guess only)'}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-2 mt-4">

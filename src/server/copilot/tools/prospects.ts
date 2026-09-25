@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { defineTool } from '../types'
 import { stringOrArray } from './shared'
+import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../../prospecting/types'
 
 /**
  * Everyday business shorthand that has no counterpart in LinkedIn's taxonomy.
  * Without this the model asks for "ecommerce" or "SaaS", gets nothing back, and
- * either invents a value (Generect returns 200 with zero results) or gives up.
+ * either invents a value (the industry filter then matches nothing) or gives up.
  */
 const ALIASES: Record<string, string[]> = {
   ecommerce: ['Retail', 'Retail Apparel and Fashion', 'Retail Groceries'],
@@ -33,7 +34,7 @@ export const prospectTools = [
   defineTool({
     name: 'searchIndustries',
     description:
-      'Find valid industry values. Generect matches LinkedIn\'s taxonomy exactly and returns zero results for anything outside it — never invent an industry string, always resolve it here first. Call with no query to browse everything.',
+      'Find valid industry values for searchCompanies. Company industries follow LinkedIn\'s taxonomy, so anything outside it matches nothing — never invent an industry string, always resolve it here first. Call with no query to browse everything.',
     input: {
       query: z.string().optional()
         .describe('Substring to match, e.g. "software" or "ecommerce".'),
@@ -89,71 +90,70 @@ export const prospectTools = [
   }),
 
   defineTool({
-    name: 'searchProspects',
+    name: 'searchCompanies',
     description:
-      'Search Generect for B2B prospects. Resolve industries through searchIndustries and locations through searchLocations first. This costs money per lookup, so search once with well-chosen filters rather than repeatedly narrowing.',
+      'Search companies on SocialFetch by keyword (required — e.g. a sector or product term, or a company name). Industry, headcount and country narrow the returned page after the fact, so a very narrow filter can leave few results; use nextCursor for more. Costs credits per call, so search once with a good keyword rather than repeatedly narrowing.',
     input: {
-      title: stringOrArray.optional().describe('Job titles, e.g. ["CTO", "VP Engineering"].'),
-      company: stringOrArray.optional(),
-      location: stringOrArray.optional()
-        .describe('Must be exact values from searchLocations — a bare city like "London" is a hard 400.'),
-      industry: stringOrArray.optional().describe('Must be exact values from searchIndustries.'),
-      seniority: stringOrArray.optional(),
-      excludedTitles: stringOrArray.optional(),
-      employeeCount: stringOrArray.optional().describe('e.g. ["11-50", "51-200"].'),
-      limit: z.number().int().positive().max(100).optional().describe('Defaults to 25.'),
+      keyword: z.string().min(1).describe('e.g. "payments", "logistics software", "Acme".'),
+      industry: z.string().optional().describe('Exact value from searchIndustries.'),
+      headcount: z.array(z.enum(HEADCOUNT_BUCKETS)).optional(),
+      country: z.string().optional().describe('Headquarters country, e.g. "United Kingdom".'),
+      cursor: z.string().optional().describe('nextCursor from a previous call, for the next page.'),
     },
     target: 'server',
     readOnly: true,
     handler: async (args) => {
-      // Goes through runProspectSearch, not the raw client: Generect takes only
-      // one company_name per request and mishandles multi-bucket headcounts, so
-      // calling the client directly silently dropped all but the first value.
-      const { runProspectSearch } = await import('../../prospectSearch')
-      const result = await runProspectSearch({ ...args, limit: args.limit ?? 25 })
+      const { searchCompanies } = await import('../../prospecting/search')
+      const page = await searchCompanies(args)
       return {
-        count: result.contacts.length,
-        totalMatches: result.totalMatches,
-        warnings: result.warnings.length > 0 ? result.warnings : undefined,
-        prospects: result.contacts.map((p) => ({
-          firstName: p.firstName,
-          lastName: p.lastName,
-          title: p.title,
-          company: p.company,
-          location: p.location,
-          linkedinUrl: p.linkedinUrl,
-          email: p.emailAddresses?.[0]?.email ?? null,
+        count: page.items.length,
+        nextCursor: page.nextCursor,
+        warnings: page.warnings.length > 0 ? page.warnings : undefined,
+        companies: page.items.map((c) => ({
+          ref: c.ref,
+          name: c.name,
+          domain: c.domain,
+          industry: c.industry,
+          headcount: c.headcount,
+          country: c.country,
         })),
       }
     },
   }),
 
   defineTool({
-    name: 'searchLocations',
+    name: 'searchPeople',
     description:
-      'Find valid location values. Generect validates locations against LinkedIn\'s vocabulary and returns HTTP 400 for anything outside it, which fails the whole search — never invent a location string, always resolve it here first. Bare region and city names ("California", "London") are rejected; sub-country values must be fully qualified as "Region, Country". Call with no query to browse everything.',
+      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, titles and companies only — emails are found when the user saves people to a list in Prospect Search. Seniority is derived from the title. Costs credits per title searched.',
     input: {
-      query: z.string().optional()
-        .describe('Substring to match, e.g. "london" or "united".'),
+      companyRef: z.string().optional().describe('`ref` from searchCompanies.'),
+      companyName: z.string().optional().describe('Required with companyRef.'),
+      titles: stringOrArray.optional().describe('Job title keywords, e.g. ["Head of Marketing", "CMO"]. Up to 5.'),
+      seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
+      country: z.string().optional(),
+      keyword: z.string().optional(),
+      cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
     target: 'server',
     readOnly: true,
-    handler: async ({ query }) => {
-      const { LOCATIONS } = await import(
-        '../../../features/prospects/constants/locations'
-      )
-      if (!query?.trim()) return { count: LOCATIONS.length, locations: LOCATIONS }
-
-      const q = query.toLowerCase().trim()
-      const matches = LOCATIONS.filter(l => l.toLowerCase().includes(q))
-      if (matches.length > 0) return { count: matches.length, locations: matches }
-
-      // Never answer with an empty array: an invented location is a hard 400,
-      // so the model must always have real values to choose from.
+    handler: async ({ companyRef, companyName, titles, ...rest }) => {
+      const { searchPeople } = await import('../../prospecting/search')
+      const page = await searchPeople({
+        ...rest,
+        titles: titles === undefined ? undefined : Array.isArray(titles) ? titles : [titles],
+        company: companyRef ? { ref: companyRef, name: companyName ?? companyRef } : null,
+      })
       return {
-        count: 0,
-        locations: LOCATIONS,
-        note: `No location matches "${query}". The full vocabulary is returned above — pick the closest value, or tell the user the location is not supported.`,
+        count: page.items.length,
+        nextCursor: page.nextCursor,
+        warnings: page.warnings.length > 0 ? page.warnings : undefined,
+        people: page.items.map((p) => ({
+          name: `${p.firstName} ${p.lastName}`.trim(),
+          title: p.title,
+          seniority: p.seniority,
+          company: p.company,
+          country: p.country,
+        })),
       }
     },
   }),

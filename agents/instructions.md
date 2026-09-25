@@ -10,9 +10,9 @@
 > the 20 block types and shipped a ~500-line "valid industries" list that
 > disagreed with the app's own `INDUSTRIES` constant.
 >
-> Industry values are now resolved through the `searchIndustries` tool, and
-> locations through `searchLocations`, both of which read the same constants
-> (`industries.ts` / `locations.ts`) the prospect-search and persona UIs use.
+> Industry values are now resolved through the `searchIndustries` tool, which
+> reads the same `industries.ts` constant the prospect-search and persona UIs
+> use. Prospects come from `searchCompanies` / `searchPeople` (SocialFetch).
 
 ## Where to change what
 
@@ -23,7 +23,7 @@
 | Which blocks the copilot knows about | `BLOCK_TYPES` in `src/features/email-builder/types.ts` |
 | Which tools require approval | `destructive` / `readOnly` flags on the tool, and `src/server/copilot/permissions.ts` |
 | Valid industry values | `src/features/prospects/constants/industries.ts` |
-| Valid location values | `src/features/prospects/constants/locations.ts` |
+| Valid persona location values | `src/features/prospects/constants/locations.ts` |
 
 ## Architecture
 
