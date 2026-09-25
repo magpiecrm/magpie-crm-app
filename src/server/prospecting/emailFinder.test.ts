@@ -13,6 +13,8 @@ function setup(opts: {
   mailbox?: Record<string, Reachability>
   probe?: Reachability
   mx?: string[] | Error
+  /** Per-domain MX hosts; domains not listed have none. Overrides `mx`. */
+  mxByDomain?: Record<string, string[]>
   verifier?: boolean
   domain?: Partial<EmailDomainRecord>
   smtpMessage?: Record<string, string>
@@ -47,7 +49,8 @@ function setup(opts: {
       domains.set(d, rec)
       return rec
     },
-    resolveMx: async () => {
+    resolveMx: async (d) => {
+      if (opts.mxByDomain) return opts.mxByDomain[d] ?? []
       if (opts.mx instanceof Error) throw opts.mx
       return opts.mx ?? ['aspmx.l.google.com']
     },
@@ -108,7 +111,8 @@ describe('findEmail', () => {
   it('returns the best guess as catch_all_likely without checking candidates', async () => {
     const { deps, candidateChecks, domains } = setup({ probe: 'safe' })
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result).toEqual({ email: 'jane.smith@acme.com', status: 'catch_all_likely', greylisted: false })
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'catch_all_likely', greylisted: false })
+    expect(result.detail).toMatch(/acme\.com accepts every address/)
     expect(candidateChecks()).toEqual([])
     expect(domains.get('acme.com')!.catch_all).toBe(true)
     expect(domains.get('acme.com')!.pattern).toBeNull()
@@ -120,9 +124,65 @@ describe('findEmail', () => {
     expect(checked.filter((e) => e.split('@')[0].length === 18)).toHaveLength(1)
   })
 
+  it('skips the catch-all probe for a verifier that reports catch-alls itself', async () => {
+    const { deps, checked, domains } = setup({ mailbox: { 'jane.smith@acme.com': 'safe' } })
+    deps.verifier!.detectsCatchAll = true
+    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('verified')
+    expect(checked).toEqual(['jane.smith@acme.com'])
+    expect(domains.get('acme.com')!.catch_all_checked_at).toBeNull()
+  })
+
+  it('falls back from a website subdomain that takes no mail to its parent domain', async () => {
+    const { deps, candidateChecks } = setup({
+      mxByDomain: { 'acme.com': ['aspmx.l.google.com'] },
+      mailbox: { 'jane.smith@acme.com': 'safe' },
+    })
+    const result = await findEmail(jane, 'careers.acme.com', deps)
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'verified' })
+    expect(candidateChecks()).toEqual(['jane.smith@acme.com'])
+  })
+
+  it('offers a domain from the company DNS when the website domain takes no email', async () => {
+    const { deps } = setup({ mxByDomain: {} })
+    deps.suggestMailDomain = async (d) => (d === 'jlr.com' ? 'jaguarlandrover.com' : null)
+    const result = await findEmail(jane, 'jlr.com', deps)
+    expect(result).toMatchObject({ status: 'not_found', domainProblem: true, suggestedDomain: 'jaguarlandrover.com' })
+    expect(result.detail).toMatch(/run from jaguarlandrover\.com, which does/)
+  })
+
+  it('says how likely a best guess is, using company size', async () => {
+    const { deps } = setup({ probe: 'safe' })
+    const result = await findEmail(jane, 'acme.com', deps, { headcount: 20000 })
+    expect(result.status).toBe('catch_all_likely')
+    expect(result.detail).toMatch(/About 74% of people at companies of 10,000\+ people use this format/)
+  })
+
+  it('never falls back to a registry like co.uk', async () => {
+    const { deps } = setup({ mxByDomain: { 'co.uk': ['mx.example'] } })
+    const result = await findEmail(jane, 'acme.co.uk', deps)
+    expect(result).toMatchObject({ status: 'not_found', domainProblem: true })
+  })
+
+  it('does not guess when LinkedIn hides the surname', async () => {
+    const { deps, checked } = setup({})
+    const result = await findEmail({ firstName: 'Andy', lastName: 'C.' }, 'acme.com', deps)
+    expect(result).toMatchObject({ email: null, status: 'not_found', detail: expect.stringMatching(/surname is hidden/) })
+    expect(checked).toEqual([])
+  })
+
+  it('stops after two unknowns in a row instead of spending all six checks', async () => {
+    const unknown = Object.fromEntries(['jane.smith', 'jsmith', 'jane', 'janesmith'].map((l) => [`${l}@acme.com`, 'unknown' as const]))
+    const { deps, candidateChecks } = setup({ mailbox: unknown })
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(candidateChecks()).toEqual(['jane.smith@acme.com', 'jsmith@acme.com'])
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'unverified', detail: expect.stringMatching(/stopped after 2 tries/) })
+  })
+
   it('reports not_found for a domain with no MX, without any checks', async () => {
     const { deps, checked } = setup({ mx: [] })
-    expect(await findEmail(jane, 'acme.com', deps)).toEqual({ email: null, status: 'not_found', greylisted: false })
+    expect(await findEmail(jane, 'acme.com', deps)).toEqual({
+      email: null, status: 'not_found', greylisted: false, detail: "acme.com doesn't receive email, so there's nothing to check.", domainProblem: true,
+    })
     expect(checked).toEqual([])
   })
 
@@ -133,17 +193,21 @@ describe('findEmail', () => {
 
   it('returns an unverified best guess without Reacher', async () => {
     const { deps } = setup({ verifier: false })
-    expect(await findEmail(jane, 'acme.com', deps)).toEqual({ email: 'jane.smith@acme.com', status: 'unverified', greylisted: false })
+    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
+      email: 'jane.smith@acme.com', status: 'unverified', greylisted: false, detail: expect.stringMatching(/verification is off/),
+    })
   })
 
   it('falls back to the first risky candidate', async () => {
     const { deps } = setup({ mailbox: { 'jane@acme.com': 'risky' } })
-    expect(await findEmail(jane, 'acme.com', deps)).toEqual({ email: 'jane@acme.com', status: 'risky', greylisted: false })
+    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({ email: 'jane@acme.com', status: 'risky', greylisted: false })
   })
 
   it('reports not_found when every candidate is rejected', async () => {
     const { deps, candidateChecks } = setup({})
-    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('not_found')
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result.status).toBe('not_found')
+    expect(result.detail).toBe("acme.com's mail server rejected all 6 likely address formats.")
     expect(candidateChecks().length).toBeLessThanOrEqual(6)
   })
 
@@ -152,6 +216,8 @@ describe('findEmail', () => {
       mailbox: { 'jane.smith@acme.com': 'unknown' },
       smtpMessage: { 'jane.smith@acme.com': '451 greylisted' },
     })
-    expect(await findEmail(jane, 'acme.com', deps)).toEqual({ email: 'jane.smith@acme.com', status: 'unverified', greylisted: true })
+    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
+      email: 'jane.smith@acme.com', status: 'unverified', greylisted: true, detail: expect.stringMatching(/try again later/),
+    })
   })
 })

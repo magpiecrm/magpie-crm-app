@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { Mail, BarChart3, Search, Users, Loader2, MessageSquare, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, MessageSquare, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
 import { clearAuthCookie } from '../../utils/auth'
 
 const navItems = [
@@ -194,10 +194,45 @@ export function Sidebar({
               <span className="text-[10px] text-muted-foreground">3 / search</span>
             </div>
           )}
+          {/* Optional chaining: a status fetched before this field existed
+              (e.g. across a hot reload) mustn't crash the sidebar. */}
+          {status?.neverbounce?.configured && (
+            <div className="mt-3 pt-3 border-t border-accent/10">
+              <p className="text-[10px] text-accent mb-1 font-bold uppercase tracking-wider">
+                NeverBounce Credits{!status.neverbounce.inUse && <span className="font-normal normal-case text-muted-foreground"> (not in use)</span>}
+              </p>
+              {status.neverbounce.credits === null ? (
+                <p className="text-xs text-muted-foreground">Unavailable</p>
+              ) : (
+                <div className="flex justify-between items-baseline">
+                  <span className="text-xl font-display text-foreground">{status.neverbounce.credits.toLocaleString()}</span>
+                  <span className="text-[10px] text-muted-foreground">1 / check</span>
+                </div>
+              )}
+            </div>
+          )}
           {status && (
             <p className="text-[10px] text-muted-foreground mt-2">
-              Email verification: {status.reacher.configured ? 'Reacher connected' : 'off (best guess only)'}
+              Email verification:{' '}
+              {status.verification.provider === 'reacher'
+                ? 'Reacher'
+                : status.verification.provider === 'neverbounce'
+                  ? 'NeverBounce'
+                  : 'off (best guess only)'}
             </p>
+          )}
+          {(status?.senderHealth?.level === 'critical' || status?.senderHealth?.level === 'warning') && (
+            <Link
+              to="/settings"
+              search={{ tab: 'prospecting' }}
+              onClick={onClose}
+              className={`mt-1.5 flex items-center gap-1 text-[10px] font-semibold hover:underline ${
+                status.senderHealth.level === 'critical' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3 shrink-0" />
+              {status.senderHealth.level === 'critical' ? 'Verification IP needs replacing' : 'Verification setup needs attention'}
+            </Link>
           )}
         </div>
         <div className="flex items-center gap-2 mt-4">

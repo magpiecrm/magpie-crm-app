@@ -70,9 +70,31 @@ describe('mapping', () => {
     }
   })
 
+  it('reads the company ref from a numeric id, or from the company page slug when there is no id', () => {
+    const numeric = mapPerson(rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId: 1234, isCurrent: true }] }))
+    expect(numeric?.companyRef).toBe('1234')
+    const slugOnly = mapPerson(
+      rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationUrl: 'https://www.linkedin.com/company/acme-ltd/', isCurrent: true }] }),
+    )
+    expect(slugOnly?.companyRef).toBe('acme-ltd')
+    const noPage = mapPerson(rawPerson({ currentPositions: [{ title: 'Freelance Consultant', organizationName: 'Self-employed', isCurrent: true }] }))
+    expect(noPage?.companyRef).toBeNull()
+  })
+
   it('falls back to the headline and full name', () => {
     const person = mapPerson({ handle: 'x', fullName: 'Ana María López', headline: 'CTO at Foo', currentPositions: [] })
     expect(person).toMatchObject({ firstName: 'Ana', lastName: 'María López', title: 'CTO', company: 'Foo', seniority: 'c_suite' })
+  })
+
+  it('reads numeric organisation ids, and falls back to the company page slug', () => {
+    const numeric = mapPerson(rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId: 12345, isCurrent: true }] }))
+    expect(numeric?.companyRef).toBe('12345')
+    const slugOnly = mapPerson(
+      rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationUrl: 'https://www.linkedin.com/company/acme-ltd/', isCurrent: true }] }),
+    )
+    expect(slugOnly?.companyRef).toBe('acme-ltd')
+    const noPage = mapPerson(rawPerson({ currentPositions: [{ title: 'Freelance Consultant', organizationName: 'Self-employed', isCurrent: true }] }))
+    expect(noPage).toMatchObject({ company: 'Self-employed', companyRef: null })
   })
 
   it('rejects records with no profile URL or name', () => {

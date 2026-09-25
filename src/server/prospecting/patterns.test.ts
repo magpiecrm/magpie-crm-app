@@ -73,8 +73,9 @@ describe('applyPattern', () => {
 
 describe('generateCandidates', () => {
   it('ranks the common patterns first', () => {
+    // Most common first (Sendburg 2025): first.last, flast, first, firstlast, first_last, f.last…
     expect(locals('Jane', 'Smith').slice(0, 8)).toEqual([
-      'jane.smith', 'jsmith', 'jane', 'janes', 'jane_smith', 'smithj', 'smith.jane', 'j.smith',
+      'jane.smith', 'jsmith', 'jane', 'janesmith', 'jane_smith', 'j.smith', 'smith', 'smith.jane',
     ])
   })
 

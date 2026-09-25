@@ -4,22 +4,26 @@
 // awkward names (accents, hyphens, apostrophes, particles like "van der").
 
 /**
- * Local-part patterns, most likely first. Ranking is the commonly observed
- * B2B order; `first.last` and `flast` together cover the large majority of
- * company mailboxes.
+ * Local-part patterns, most likely first. Order follows Sendburg's 2025 study
+ * of 336,782 B2B work emails (send-burg.com/research/b2b-email-formats):
+ * first.last 47.7%, flast 26.8%, first 8.1%, firstlast 2.3%, first_last 2.3%,
+ * f.last 2.1%, last 1.2%, last.first 0.65%, first.l 0.13%, first-last 0.1%.
+ * The first six cover about 89% of addresses, which matters because a person
+ * gets at most six checks. Rarer shapes follow for alternate name spellings.
  */
 const PATTERNS = [
   '{first}.{last}',
   '{f}{last}',
   '{first}',
-  '{first}{l}',
-  '{first}_{last}',
-  '{last}{f}',
-  '{last}.{first}',
-  '{f}.{last}',
   '{first}{last}',
+  '{first}_{last}',
+  '{f}.{last}',
   '{last}',
+  '{last}.{first}',
+  '{first}.{l}',
   '{first}-{last}',
+  '{first}{l}',
+  '{last}{f}',
   '{f}{l}',
   '{last}{first}',
   '{f}_{last}',

@@ -130,5 +130,48 @@ describe('classifySmtpOutcome', () => {
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: '554 5.7.1 Service unavailable; client host blocked using Spamhaus' } })).toBe('blocked')
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: 'Connection timed out' } })).toBe('timeout')
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: 'something odd' } })).toBe('ok')
+    // Shape observed from Reacher v0.11.7 when the proxy rejects the login.
+    expect(
+      classifySmtpOutcome({
+        is_reachable: 'unknown',
+        smtp: { error: { type: 'Socks5', message: 'Authentication rejected `Authentication with username `reacher`, rejected.`' } },
+      }),
+    ).toBe('blocked')
+  })
+})
+
+describe('checkEmail request', () => {
+  it('asks Reacher for plain SMTP checks, sends the secret, and routes through the proxy', async () => {
+    const { checkEmail } = await import('./reacher')
+    let sent: any = null
+    let headers: any = null
+    const fetchImpl = (async (url: string, init: any) => {
+      sent = { url, body: JSON.parse(init.body) }
+      headers = init.headers
+      return new Response(JSON.stringify({ is_reachable: 'invalid', smtp: { is_catch_all: false } }), { status: 200 })
+    }) as unknown as typeof fetch
+    const res = await checkEmail(
+      'a@b.com',
+      { host: 'p.example.com', port: 1080, username: 'u', password: 'pw' },
+      { url: 'http://localhost:8080', secret: 's3cret', helloName: 'mail.b.com' },
+      fetchImpl,
+    )
+    expect(sent.url).toBe('http://localhost:8080/v1/check_email')
+    expect(sent.body).toMatchObject({
+      to_email: 'a@b.com',
+      hotmailb2c_verif_method: 'Smtp',
+      yahoo_verif_method: 'Smtp',
+      hello_name: 'mail.b.com',
+      proxy: { host: 'p.example.com', port: 1080, username: 'u', password: 'pw' },
+    })
+    expect(headers['x-reacher-secret']).toBe('s3cret')
+    expect(res).toMatchObject({ reachability: 'invalid', isCatchAll: false, outcome: 'ok' })
+  })
+
+  it('explains a refused secret', async () => {
+    const { checkEmail } = await import('./reacher')
+    const fetchImpl = (async () => new Response('bad', { status: 400 })) as unknown as typeof fetch
+    const res = await checkEmail('a@b.com', null, { url: 'http://localhost:8080' }, fetchImpl)
+    expect(res.detail).toMatch(/secret/)
   })
 })

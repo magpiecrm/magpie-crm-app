@@ -2,6 +2,8 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../prospecting/types'
 
+const EMAIL_STATUSES = ['verified', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
+
 // Prospect search over SocialFetch. Search results are fetched live and never
 // stored; only saving (saveProspectsFn) creates contacts, and that is the only
 // place email finding runs. The logic lives in `src/server/prospecting/` so
@@ -89,7 +91,26 @@ const personInput = z.object({
   country: z.string().trim().max(100).nullable(),
   source: z.literal('socialfetch'),
   profileChecked: z.boolean().optional(),
+  email: z.string().trim().toLowerCase().email().max(254).optional(),
+  emailStatus: z.enum(EMAIL_STATUSES).optional(),
 })
+
+/**
+ * Finds and verifies one person's work email without saving them. Uses
+ * Reacher (free) and, only if the company's website isn't cached yet, one
+ * company-page lookup (6-9 credits).
+ */
+export const revealEmailFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { person: z.input<typeof personInput> }) => z.object({ person: personInput }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { revealEmail } = await import('../prospecting/reveal')
+    const { getSource, getFinderDeps } = await import('../prospecting/runtime')
+    const { isVerifiedOnly } = await import('../prospecting/settings')
+    const { db } = await import('../db')
+    return revealEmail(data.person, { source: getSource(), finder: await getFinderDeps(), db, verifiedOnly: isVerifiedOnly() })
+  })
 
 const saveInput = z.object({
   listId: z.number().int().positive(),
@@ -122,25 +143,36 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { getSocialFetchBalance } = await import('../prospecting/socialfetch')
-    const { getReacherConfig, isSocialFetchConfigured, requireSocialFetchKey } = await import('../prospecting/settings')
+    const { getNeverBounceCredits } = await import('../prospecting/neverbounce')
+    const { getActiveVerifier, getNeverBounceKey, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey } = await import(
+      '../prospecting/settings'
+    )
     const { getProxyRouter } = await import('../prospecting/runtime')
 
     const configured = isSocialFetchConfigured()
-    let balance: number | null = null
-    if (configured) {
-      try {
-        balance = await getSocialFetchBalance(requireSocialFetchKey())
-      } catch {
-        // Shown as "Unavailable"; the settings page's test gives the reason.
-      }
-    }
-    const reacher = getReacherConfig()
+    const nbKey = getNeverBounceKey()
+    // Both balance calls are free. A failure shows as "Unavailable"; the
+    // settings page's tests give the reason.
+    const [balance, nbCredits] = await Promise.all([
+      configured ? getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : Promise.resolve(null),
+      nbKey ? getNeverBounceCredits(nbKey).catch(() => null) : Promise.resolve(null),
+    ])
+    const verifier = getActiveVerifier()
+    const { db } = await import('../db')
+    const health = db.getSenderHealth()
     return {
       socialfetch: { configured, balance },
+      neverbounce: { configured: Boolean(nbKey), credits: nbCredits, inUse: verifier?.provider === 'neverbounce' },
+      verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly() },
       reacher: {
-        configured: reacher !== null,
-        proxies: reacher ? getProxyRouter().health() : [],
+        configured: verifier?.provider === 'reacher',
+        proxies: verifier?.provider === 'reacher' ? getProxyRouter().health() : [],
       },
+      // Only while Reacher is verifying: an old report shouldn't warn after switching away.
+      senderHealth:
+        health && (verifier?.provider === 'reacher' || (verifier?.provider === 'neverbounce' && verifier.fallback))
+          ? { level: health.level, checkedAt: health.checked_at }
+          : null,
     }
   })
 
@@ -162,7 +194,23 @@ const settingsInput = z.object({
   reacherSecret: z.string().trim().max(500).optional(),
   reacherFromEmail: z.string().trim().max(254).optional(),
   reacherHelloName: z.string().trim().max(253).optional(),
-  clear: z.array(z.enum(['socialfetchApiKey', 'reacherSecret'])).optional(),
+  proxies: z
+    .array(
+      z.object({
+        label: z.string().trim().max(60).optional(),
+        host: z.string().trim().min(1).max(253),
+        port: z.number().int().min(1).max(65535),
+        username: z.string().trim().max(200).optional(),
+        password: z.string().max(500).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
+  verificationProvider: z.enum(['reacher', 'neverbounce', 'none']).optional(),
+  neverbounceApiKey: z.string().trim().max(200).optional(),
+  reacherFallback: z.boolean().optional(),
+  verifiedOnly: z.boolean().optional(),
+  clear: z.array(z.enum(['socialfetchApiKey', 'reacherSecret', 'neverbounceApiKey'])).optional(),
 })
 
 export const saveProspectingSettingsFn = createServerFn({ method: 'POST' })
@@ -172,7 +220,37 @@ export const saveProspectingSettingsFn = createServerFn({ method: 'POST' })
     await requireAuth()
     const { saveProspectingSettings, getMaskedProspectingSettings } = await import('../prospecting/settings')
     saveProspectingSettings(data)
+    // New proxies or a new FROM/HELO shouldn't wait six hours to be checked.
+    const { runSenderHealthCheck } = await import('../prospecting/senderHealthMonitor')
+    runSenderHealthCheck().catch((err) => console.error('[SenderHealth] Check failed:', err?.message ?? err))
     return getMaskedProspectingSettings()
+  })
+
+/** Runs a no-real-mailbox SMTP check through Reacher, directly or via each proxy. */
+export const testVerificationFn = createServerFn({ method: 'POST' })
+  .handler(async () => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { testVerification } = await import('../prospecting/verificationTest')
+    return testVerification()
+  })
+
+/** Latest blocklist / reverse DNS / SPF report for the IPs and domain Reacher verifies from. */
+export const senderHealthFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { db } = await import('../db')
+    return db.getSenderHealth()
+  })
+
+/** Runs the sender health check now. Null when Reacher isn't in use. */
+export const checkSenderHealthFn = createServerFn({ method: 'POST' })
+  .handler(async () => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { runSenderHealthCheck } = await import('../prospecting/senderHealthMonitor')
+    return runSenderHealthCheck()
   })
 
 /**

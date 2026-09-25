@@ -59,12 +59,12 @@ describe('searchPeople profile lookups', () => {
     expect(res.items.every((p) => p.profileChecked)).toBe(true)
   })
 
-  it('stops after the first profile if it has no current job, to save credits', async () => {
+  it('keeps looking up the rest when the first person simply has no company page', async () => {
     searchPage = pageOf(hit('cat'), hit('ana'), hit('ben'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
-    expect(getPerson).toHaveBeenCalledTimes(1)
-    expect(res.refined).toEqual([])
-    expect(res.warnings[0]).toMatch(/rest of this page wasn't looked up/)
+    expect(getPerson).toHaveBeenCalledTimes(3)
+    expect(res.refined).toEqual(['https://www.linkedin.com/in/ana', 'https://www.linkedin.com/in/ben'])
+    expect(res.warnings).toEqual(['1 profile has no current job listed; showing the headline instead.'])
   })
 
   it('hides people who turn out to work somewhere other than the chosen company', async () => {
@@ -72,6 +72,19 @@ describe('searchPeople profile lookups', () => {
     const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(res.warnings).toContain("1 person doesn't currently work at Acme and was hidden.")
+  })
+
+  it('keeps the results when profile lookups fail, instead of failing the search', async () => {
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    getPerson.mockRejectedValueOnce(new Error('SocialFetch credits are exhausted.'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    // The failure stops the page: the rest would fail the same way.
+    expect(getPerson).toHaveBeenCalledTimes(1)
+    expect(res.items).toHaveLength(2)
+    expect(res.refined).toEqual([])
+    expect(res.warnings[0]).toMatch(/credits are exhausted/)
+    // A failed lookup isn't marked checked, so saving can try again.
+    expect(res.items[0].profileChecked).toBeUndefined()
   })
 
   it('never pays to look up someone who opted out', async () => {

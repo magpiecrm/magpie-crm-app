@@ -23,5 +23,10 @@ if (typeof window === 'undefined') {
   }).catch(err => {
     console.error('Failed to start email scheduler:', err)
   })
+  import('../prospecting/senderHealthMonitor').then(({ startSenderHealthMonitor }) => {
+    startSenderHealthMonitor()
+  }).catch(err => {
+    console.error('Failed to start sender health monitor:', err)
+  })
 }
 

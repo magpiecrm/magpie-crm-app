@@ -17,7 +17,7 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   }
   // Companies and domains are non-personal, so they're cached globally.
   db.upsertProspectCompanies(
-    page.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const })),
+    page.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount })),
   )
   return page
 }
@@ -35,9 +35,23 @@ const ENRICH_CONCURRENCY = 3
 
 type Db = typeof import('../db')['db']
 
+interface Enriched {
+  person: PersonResult
+  refined: boolean
+  /** The lookup itself failed (e.g. out of credits); nothing was learned. */
+  error?: string
+}
+
 /** One profile lookup (3 credits): the person's real current title and employer. */
-async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Promise<{ person: PersonResult; refined: boolean }> {
-  const profile = await source.getPerson(person.profileUrl)
+async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Promise<Enriched> {
+  let profile: PersonResult | null
+  try {
+    profile = await source.getPerson(person.profileUrl)
+  } catch (err: any) {
+    // Keep the search result rather than failing the whole page the user
+    // already paid for; not marked checked, so saving can try again.
+    return { person, refined: false, error: String(err?.message ?? err) }
+  }
   if (!profile?.companyRef) return { person: { ...person, profileChecked: true }, refined: false }
   return {
     refined: true,
@@ -98,23 +112,29 @@ export async function searchPeople(
 
   const refined: string[] = []
   if (page.items.length > 0) {
-    // Check the first profile before paying for the rest: if lookups don't
-    // come back with a current position, the rest of the page would be wasted.
+    // Check the first profile before paying for the rest: if the lookup
+    // itself fails (no credits, API down) the rest would fail too. A profile
+    // that simply lists no company page (freelancers, tiny firms) is normal
+    // and doesn't stop the others.
     const first = await enrichOne(page.items[0], source, db)
-    const results = first.refined
-      ? [first, ...(await mapLimit(page.items.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db)))]
-      : [first]
+    const results = first.error
+      ? [first]
+      : [first, ...(await mapLimit(page.items.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db)))]
     results.forEach((r, i) => {
       page.items[i] = r.person
       if (r.refined) refined.push(r.person.profileUrl)
     })
-    if (!first.refined) {
-      page.warnings.push(
-        "Couldn't read a current job from the first profile, so the rest of this page wasn't looked up, to save credits.",
-      )
-    } else if (refined.length < results.length) {
-      const missing = results.length - refined.length
-      page.warnings.push(`${missing} ${missing === 1 ? 'profile has' : 'profiles have'} no current job listed; showing the headline instead.`)
+    const failed = results.filter((r) => r.error)
+    if (first.error) {
+      page.warnings.push(`Couldn't look up profiles (${first.error}), so titles and companies come from headlines.`)
+    } else {
+      if (failed.length > 0) {
+        page.warnings.push(`${failed.length} profile ${failed.length === 1 ? 'lookup' : 'lookups'} failed (${failed[0].error}); showing the headline instead.`)
+      }
+      const missing = results.length - refined.length - failed.length
+      if (missing > 0) {
+        page.warnings.push(`${missing} ${missing === 1 ? 'profile has' : 'profiles have'} no current job listed; showing the headline instead.`)
+      }
     }
 
     // With the real employer known, people who don't work at the chosen
@@ -139,5 +159,6 @@ export async function startSave(listId: number, people: PersonResult[]) {
   if (!db.data.lists.some((l) => l.id === listId)) throw new Error(`List ${listId} does not exist`)
   const { getSource, getFinderDeps } = await import('./runtime')
   const { saveProspects } = await import('./save')
-  return saveProspects(listId, people, { source: getSource(), finder: await getFinderDeps(), db })
+  const { isVerifiedOnly } = await import('./settings')
+  return saveProspects(listId, people, { source: getSource(), finder: await getFinderDeps(), db, verifiedOnly: isVerifiedOnly() })
 }

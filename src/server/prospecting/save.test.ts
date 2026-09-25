@@ -184,6 +184,50 @@ describe('saveProspects', () => {
     expect(state.contacts[0]).toMatchObject({ job_title: 'Head of Data', company: 'Acme' })
   })
 
+  it('reuses a revealed email instead of finding it again', async () => {
+    const f = finder({})
+    const check = vi.spyOn(f.verifier!, 'check')
+    const revealed = person('Jane', 'Smith', { email: 'Jane.Smith@acme.com', emailStatus: 'verified' })
+    const job = await saveProspects(1, [revealed], { source, finder: f, db: fakeDb as any })
+    expect(check).not.toHaveBeenCalled()
+    expect(source.getPerson).not.toHaveBeenCalled()
+    expect(job.outcomes[0]).toMatchObject({ status: 'saved', email: 'jane.smith@acme.com', emailStatus: 'verified' })
+  })
+
+  it('still refuses a revealed email that has since been opted out', async () => {
+    fakeDb.addSuppression(hashesFor({ firstName: 'Jane', lastName: 'Smith', domain: 'acme.com' }))
+    const revealed = person('Jane', 'Smith', { email: 'jane.smith@acme.com', emailStatus: 'verified', profileUrl: 'https://www.linkedin.com/in/other' })
+    const job = await saveProspects(1, [revealed], { source, finder: finder({}), db: fakeDb as any })
+    expect(job.outcomes[0].status).toBe('suppressed')
+  })
+
+  // The mail server can't be checked for any of Jane's likely addresses.
+  const allUnknown = Object.fromEntries(
+    ['jane.smith', 'jsmith', 'jane', 'janesmith', 'jane_smith', 'j.smith'].map((l) => [`${l}@acme.com`, 'unknown' as const]),
+  )
+
+  it('does not save an unconfirmed address by default', async () => {
+    const f = finder(allUnknown)
+    const job = await saveProspects(1, [person('Jane', 'Smith', { companyDomain: 'acme.com' })], { source, finder: f, db: fakeDb as any })
+    expect(job.outcomes[0]).toMatchObject({ status: 'unconfirmed', message: expect.stringMatching(/no address could be confirmed/) })
+    expect(job.outcomes[0].email).toBeUndefined()
+    expect(state.contacts).toEqual([])
+    expect(state.disclosure).toEqual([])
+  })
+
+  it('refuses a revealed email that was not verified', async () => {
+    const guess = person('Jane', 'Smith', { email: 'jane.smith@acme.com', emailStatus: 'catch_all_likely' })
+    const job = await saveProspects(1, [guess], { source, finder: finder({}), db: fakeDb as any })
+    expect(job.outcomes[0].status).toBe('unconfirmed')
+    expect(state.contacts).toEqual([])
+  })
+
+  it('saves best guesses only when verified-only is switched off', async () => {
+    const f = finder(allUnknown)
+    const job = await saveProspects(1, [person('Jane', 'Smith', { companyDomain: 'acme.com' })], { source, finder: f, db: fakeDb as any, verifiedOnly: false })
+    expect(job.outcomes[0]).toMatchObject({ status: 'saved', emailStatus: 'unverified' })
+  })
+
   it('does not look up a profile again if search already checked it', async () => {
     const checked = person('Lee', 'Nobody', { company: '', companyRef: null, profileChecked: true })
     const job = await saveProspects(1, [checked], { source, finder: finder({}), db: fakeDb as any })
@@ -191,11 +235,19 @@ describe('saveProspects', () => {
     expect(job.outcomes[0].status).toBe('no_domain')
   })
 
-  it('stops looking up profiles in a save once the first one comes back without a job', async () => {
+  it('keeps looking up profiles when one person just has no company page', async () => {
+    const people = ['Aa', 'Bb', 'Cc'].map((n) => person(n, 'Nobody', { company: '', companyRef: null }))
+    await saveProspects(1, people, { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getPerson).toHaveBeenCalledTimes(3)
+  })
+
+  it('stops looking up profiles in a save once a lookup itself fails', async () => {
+    vi.mocked(source.getPerson).mockRejectedValueOnce(new Error('SocialFetch credits are exhausted.'))
     const people = ['Aa', 'Bb', 'Cc', 'Dd'].map((n) => person(n, 'Nobody', { company: '', companyRef: null }))
     const job = await saveProspects(1, people, { source, finder: finder({}), db: fakeDb as any })
     expect(source.getPerson).toHaveBeenCalledTimes(1)
-    expect(job.outcomes.every((o) => o.status === 'no_domain')).toBe(true)
+    expect(job.outcomes.filter((o) => o.status === 'error')).toHaveLength(1)
+    expect(job.outcomes.filter((o) => o.status === 'no_domain')).toHaveLength(3)
   })
 
   it('reports no_domain when the profile lists no employer either', async () => {

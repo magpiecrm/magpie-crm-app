@@ -1,0 +1,27 @@
+# Reacher (reacherhq/check-if-email-exists, AGPL-3.0) — the SMTP email
+# verifier, run as its own service and called over HTTP. Nothing from Reacher
+# is vendored into this repo.
+#
+#   bun run reacher:up      # start (reads REACHER_* from ../../.env)
+#   bun run reacher:down
+#
+# Bound to localhost only: the header secret is the only auth, so it must not
+# be reachable from the network.
+#
+# Verification needs outbound port 25. On a network that blocks it, or to get
+# a better IP reputation, route checks through SOCKS5 proxies set in
+# Settings → Prospecting (see docs/proxies.md).
+services:
+  reacher:
+    image: reacherhq/backend:v0.11.7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      RCH__HTTP_HOST: 0.0.0.0
+      RCH__HTTP_PORT: 8080
+      RCH__HEADER_SECRET: ${REACHER_SECRET:?Set REACHER_SECRET in .env}
+      # Should match the reverse DNS of the IP that connects on port 25.
+      RCH__HELLO_NAME: ${REACHER_HELLO_NAME:-localhost}
+      RCH__FROM_EMAIL: ${REACHER_FROM_EMAIL:-hello@localhost}
+      RCH__SMTP_TIMEOUT: 45

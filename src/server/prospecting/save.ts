@@ -7,9 +7,9 @@
 // in-flight progress (contacts already saved stay saved).
 
 import crypto from 'crypto'
-import { resolveCompanyDomain } from './companies'
+import { domainForPerson } from './companies'
 import { findEmail, type FinderDeps } from './emailFinder'
-import { emailHash, hashesFor, isSuppressed, normaliseDomain, profileHash } from './suppression'
+import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PeopleSource, PersonResult } from './types'
 
 const SYNC_LIMIT = 10
@@ -26,6 +26,7 @@ export type SaveStatus =
   | 'suppressed' // on the global suppression list
   | 'no_domain' // company website unknown
   | 'not_found' // no deliverable address
+  | 'unconfirmed' // a likely address, but not verified, so not saved
   | 'retrying' // greylisted; will be retried
   | 'error'
 
@@ -56,6 +57,8 @@ export interface SaveDeps {
   finder: FinderDeps
   db: typeof import('../db')['db']
   sleep?: (ms: number) => Promise<void>
+  /** Only save emails the mail server confirmed. Defaults to true. */
+  verifiedOnly?: boolean
 }
 
 const jobs = new Map<string, ProspectJob>()
@@ -81,13 +84,13 @@ async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGa
   // Already known, or already paid for during search.
   if (person.companyDomain || person.companyRef || person.profileChecked) return person
   // Only the first lookup in a job runs blind; the rest wait for it and are
-  // skipped if it came back without a current job, rather than paying for
-  // every person in a save that can't work.
+  // skipped only if the lookup itself failed (no credits, API down). A
+  // profile without a company page is normal and doesn't stop the others.
   if (gate.first) {
     if (!(await gate.first)) return person
   }
   const lookup = deps.source.getPerson(person.profileUrl)
-  gate.first ??= lookup.then((p) => Boolean(p?.companyRef)).catch(() => false)
+  gate.first ??= lookup.then(() => true).catch(() => false)
   const profile = await lookup
   if (!profile?.companyRef) return person
   return {
@@ -103,10 +106,8 @@ interface LookupGate {
   first: Promise<boolean> | null
 }
 
-async function resolveDomain(person: PersonResult, deps: SaveDeps): Promise<string | null> {
-  if (person.companyDomain) return normaliseDomain(person.companyDomain)
-  if (!person.companyRef) return null
-  return resolveCompanyDomain(person.companyRef, person.company, deps.source, deps.db)
+function resolveDomain(person: PersonResult, deps: SaveDeps): Promise<string | null> {
+  return domainForPerson(person, deps.source, deps.db)
 }
 
 async function processPerson(
@@ -125,7 +126,8 @@ async function processPerson(
       status: 'suppressed',
     }
   }
-  const person = await withEmployer(searched, deps, gate)
+  // Already revealed: reuse that address rather than finding it again.
+  const person = searched.email ? searched : await withEmployer(searched, deps, gate)
   const base = {
     profileUrl: person.profileUrl,
     name: `${person.firstName} ${person.lastName}`.trim(),
@@ -133,22 +135,33 @@ async function processPerson(
   }
   const suppressed = deps.db.getSuppressionHashes()
 
-  const domain = await resolveDomain(person, deps)
-  if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
-  if (!domain) {
-    return {
-      ...base,
-      status: 'no_domain',
-      message: person.companyRef
-        ? 'Company website unknown. Add the domain on the company first.'
-        : "Couldn't find where they currently work, so there's no email domain.",
+  let found: { email: string | null; status: EmailStatus; greylisted: boolean; detail?: string; reason?: string }
+  if (person.email) {
+    found = { email: person.email.toLowerCase().trim(), status: person.emailStatus ?? 'unverified', greylisted: false }
+  } else {
+    const domain = await resolveDomain(person, deps)
+    if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
+    if (!domain) {
+      return {
+        ...base,
+        status: 'no_domain',
+        message: person.companyRef
+          ? 'Company website unknown. Add the domain on the company first.'
+          : "Couldn't find where they currently work, so there's no email domain.",
+      }
     }
+    const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
+    found = await findEmail(person, domain, deps.finder, { headcount })
   }
-
-  const found = await findEmail(person, domain, deps.finder)
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
-  if (!found.email) return { ...base, status: 'not_found' }
-  if (isSuppressed(hashesFor({ email: found.email }), suppressed)) return { ...base, status: 'suppressed' }
+  if (found.email && (deps.verifiedOnly ?? true) && found.status !== 'verified') {
+    return { ...base, status: 'unconfirmed', message: found.reason ?? found.detail }
+  }
+  if (!found.email) return { ...base, status: 'not_found', message: found.detail }
+  const emailDomain = found.email.split('@')[1]
+  if (isSuppressed(hashesFor({ email: found.email, firstName: person.firstName, lastName: person.lastName, domain: emailDomain }), suppressed)) {
+    return { ...base, status: 'suppressed' }
+  }
 
   const existing = deps.db.getContact(found.email)
   deps.db.upsertContact(

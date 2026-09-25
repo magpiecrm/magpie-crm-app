@@ -8,6 +8,7 @@
 export const queryKeys = {
   prospects: {
     status: () => ['prospects', 'status'] as const,
+    senderHealth: () => ['prospects', 'sender-health'] as const,
     companies: (filters: unknown) => ['prospects', 'companies', filters] as const,
     people: (filters: unknown) => ['prospects', 'people', filters] as const,
     job: (id: string) => ['prospects', 'job', id] as const,

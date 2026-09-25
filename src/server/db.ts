@@ -9,6 +9,7 @@ import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
 import type { EmailStatus, NoticeStatus } from './prospecting/types'
 import type { MailProvider } from './prospecting/proxyRouter'
+import type { SenderHealthReport } from './prospecting/senderHealth'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -35,7 +36,7 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 // This prevents errors like "ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'bun:'" when Node.js runs the Vite server.
 const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'survey_response'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'survey_response' | 'verifier_alert'
 
 type ContactRecord = DbSchema['contacts'][number]
 
@@ -207,6 +208,8 @@ interface DbSchema {
     domain_source: 'socialfetch' | 'user'
     /** The full company page has been fetched; a null domain is then final. */
     page_checked?: boolean
+    /** Staff count, when known: sets how likely a first.last best guess is. */
+    headcount?: number | null
     updated_at: string
   }>
   email_domains?: EmailDomainRecord[]
@@ -232,10 +235,22 @@ interface DbSchema {
    * SocialFetch API key and Reacher secret; the rest isn't sensitive.
    */
   prospecting_settings?: ProspectingSettingsRecord
+  /**
+   * Latest blocklist / reverse DNS / SPF check of the IPs and FROM domain
+   * Reacher verifies from (prospecting/senderHealth.ts). The app's own
+   * infrastructure only; no personal data.
+   */
+  sender_health?: SenderHealthReport
 }
 
 export interface ProspectingSettingsRecord {
   secrets?: string
+  /** Which service verifies emails. Absent means "pick from what's configured". */
+  verification_provider?: 'reacher' | 'neverbounce' | 'none'
+  /** With NeverBounce, retry "couldn't be checked" results through Reacher. */
+  reacher_fallback?: boolean
+  /** Only hand over emails the mail server confirmed. Absent means true. */
+  verified_only?: boolean
   reacher_url?: string
   reacher_from_email?: string
   reacher_hello_name?: string
@@ -264,7 +279,7 @@ interface DisclosureEntry {
   contact_hash: string
   profile_hash: string | null
   sources: string[]
-  event: 'saved' | 'notice_status_changed' | 'opted_out'
+  event: 'saved' | 'revealed' | 'notice_status_changed' | 'opted_out'
   notice_status: NoticeStatus | null
   created_at: string
 }
@@ -353,7 +368,14 @@ class JsonDb {
 
   /** Batch upsert — a search page caches up to 25 companies with one write. */
   upsertProspectCompanies(
-    entries: Array<{ ref: string; name: string; domain: string | null; domain_source: 'socialfetch' | 'user'; page_checked?: boolean }>,
+    entries: Array<{
+      ref: string
+      name: string
+      domain: string | null
+      domain_source: 'socialfetch' | 'user'
+      page_checked?: boolean
+      headcount?: number | null
+    }>,
   ) {
     const list = this.data.prospect_companies!
     const now = new Date().toISOString()
@@ -367,8 +389,14 @@ class JsonDb {
       // and a search hit without a website doesn't erase one we already know.
       if (existing.domain_source === 'user' && entry.domain_source !== 'user') {
         existing.name = entry.name
+        existing.headcount = entry.headcount ?? existing.headcount
       } else {
-        Object.assign(existing, { ...entry, domain: entry.domain ?? existing.domain, page_checked: entry.page_checked || existing.page_checked })
+        Object.assign(existing, {
+          ...entry,
+          domain: entry.domain ?? existing.domain,
+          page_checked: entry.page_checked || existing.page_checked,
+          headcount: entry.headcount ?? existing.headcount,
+        })
       }
       existing.updated_at = now
     }
@@ -436,6 +464,15 @@ class JsonDb {
 
   saveProspectingSettings(next: ProspectingSettingsRecord) {
     this.data.prospecting_settings = next
+    this.save()
+  }
+
+  getSenderHealth(): SenderHealthReport | null {
+    return this.data.sender_health ?? null
+  }
+
+  saveSenderHealth(report: SenderHealthReport) {
+    this.data.sender_health = report
     this.save()
   }
 

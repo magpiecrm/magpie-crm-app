@@ -18,9 +18,11 @@ prompts.
     the only data connector, behind the `CompanySource`/`PeopleSource`
     interfaces in `types.ts`; it maps responses down to the few allowed fields
     (name, title, seniority, company, domain, country, profile URL) and nothing
-    else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via
-    `reacher.ts` (optional) through `proxyRouter.ts`. `save.ts` is the only
-    place contacts get created from search results; `suppression.ts` holds the
+    else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via the
+    verifier chosen in settings: `reacher.ts` (through `proxyRouter.ts`) or
+    `neverbounce.ts`. `reveal.ts` finds one
+    email without saving (logged to the disclosure log like a save). `save.ts`
+    is the only place contacts get created from search results; `suppression.ts` holds the
     HMAC-hashed opt-out list. Search results are never persisted, and only
     non-personal data (companies, domains, patterns, catch-all) is cached
     globally — keep it that way. API keys and base URLs come from

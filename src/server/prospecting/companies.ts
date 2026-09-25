@@ -1,4 +1,5 @@
-import type { CompanySource } from './types'
+import { normaliseDomain } from './suppression'
+import type { CompanySource, PersonResult } from './types'
 
 type Db = typeof import('../db')['db']
 
@@ -30,6 +31,7 @@ export async function resolveCompanyDomain(
       domain: company?.domain ?? null,
       domain_source: 'socialfetch',
       page_checked: true,
+      headcount: company?.headcount ?? null,
     }])
     return company?.domain ?? null
   })()
@@ -39,4 +41,20 @@ export async function resolveCompanyDomain(
   } finally {
     inflight.delete(ref)
   }
+}
+
+/**
+ * The email domain to use for a person. A domain the user set for their
+ * company always wins (it's how a wrong LinkedIn website gets corrected, e.g.
+ * jlr.com -> jaguarlandrover.com), even over one already attached to a search
+ * result from before the correction.
+ */
+export async function domainForPerson(person: PersonResult, source: CompanySource, db: Db): Promise<string | null> {
+  if (person.companyRef) {
+    const cached = db.getProspectCompany(person.companyRef)
+    if (cached?.domain_source === 'user' && cached.domain) return cached.domain
+  }
+  if (person.companyDomain) return normaliseDomain(person.companyDomain)
+  if (person.companyRef) return resolveCompanyDomain(person.companyRef, person.company, source, db)
+  return null
 }

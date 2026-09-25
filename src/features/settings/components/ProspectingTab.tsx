@@ -1,13 +1,34 @@
 import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2, ExternalLink, Eye, EyeOff, RefreshCw, Save, Trash2, Zap } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, CheckCircle2, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Save, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { getProspectingSettingsFn, saveProspectingSettingsFn, testSocialFetchKeyFn } from '../../../server/functions'
+import {
+  getProspectingSettingsFn,
+  prospectingStatusFn,
+  saveProspectingSettingsFn,
+  testSocialFetchKeyFn,
+  testVerificationFn,
+} from '../../../server/functions'
+import { SenderHealthPanel } from './SenderHealthPanel'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
 
 type Masked = Awaited<ReturnType<typeof getProspectingSettingsFn>>
+type VerificationTest = Awaited<ReturnType<typeof testVerificationFn>>
+
+interface ProxyRow {
+  label: string
+  host: string
+  port: string
+  username: string
+  /** Blank keeps the saved password. */
+  password: string
+  passwordSet: boolean
+}
+
+const toRows = (s: Masked): ProxyRow[] =>
+  s.proxies.list.map((p) => ({ label: p.label, host: p.host, port: String(p.port), username: p.username, password: '', passwordSet: p.passwordSet }))
 
 function SecretInput({
   id,
@@ -61,6 +82,10 @@ export function ProspectingTab() {
 
   // Secrets start blank: a blank secret field means "keep what's saved".
   const [apiKey, setApiKey] = useState('')
+  const [provider, setProvider] = useState<'reacher' | 'neverbounce' | 'none'>('none')
+  const [nbKey, setNbKey] = useState('')
+  const [reacherFallback, setReacherFallback] = useState(false)
+  const [verifiedOnly, setVerifiedOnly] = useState(true)
   const [reacherUrl, setReacherUrl] = useState('')
   const [reacherSecret, setReacherSecret] = useState('')
   const [fromEmail, setFromEmail] = useState('')
@@ -69,6 +94,26 @@ export function ProspectingTab() {
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
+  const [proxies, setProxies] = useState<ProxyRow[]>([])
+  // Only send the list when edited, so env-var proxies aren't copied into
+  // the database by an unrelated save.
+  const [proxiesDirty, setProxiesDirty] = useState(false)
+  const updateProxy = (i: number, patch: Partial<ProxyRow>) => {
+    setProxies((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+    setProxiesDirty(true)
+  }
+
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [verification, setVerification] = useState<VerificationTest | null>(null)
+  const [verificationError, setVerificationError] = useState('')
+
+  const { data: status } = useQuery({
+    queryKey: queryKeys.prospects.status(),
+    queryFn: () => prospectingStatusFn(),
+    refetchInterval: 60000,
+  })
+  const proxyHealth = status?.reacher.proxies ?? []
+
   const apply = (s: Masked) => {
     setSettings(s)
     setApiKey('')
@@ -76,6 +121,13 @@ export function ProspectingTab() {
     setReacherUrl(s.reacher.url)
     setFromEmail(s.reacher.fromEmail)
     setHelloName(s.reacher.helloName)
+    setNbKey('')
+    setReacherFallback(s.verification.reacherFallback)
+    setVerifiedOnly(s.verification.verifiedOnly)
+    // Nothing chosen yet: show whatever is actually in use.
+    setProvider(s.verification.chosen ?? s.verification.active ?? 'none')
+    setProxies(toRows(s))
+    setProxiesDirty(false)
   }
 
   useEffect(() => {
@@ -87,7 +139,7 @@ export function ProspectingTab() {
 
   const refreshSidebar = () => queryClient.invalidateQueries({ queryKey: queryKeys.prospects.status() })
 
-  const save = async (extra: { clear?: Array<'socialfetchApiKey' | 'reacherSecret'> } = {}) => {
+  const save = async (extra: { clear?: Array<'socialfetchApiKey' | 'reacherSecret' | 'neverbounceApiKey'> } = {}) => {
     setIsSaving(true)
     setError('')
     setSuccess('')
@@ -99,6 +151,21 @@ export function ProspectingTab() {
           reacherSecret: reacherSecret || undefined,
           reacherFromEmail: fromEmail,
           reacherHelloName: helloName,
+          verificationProvider: provider,
+          neverbounceApiKey: nbKey || undefined,
+          reacherFallback,
+          verifiedOnly,
+          proxies: proxiesDirty
+            ? proxies
+                .filter((p) => p.host.trim())
+                .map((p) => ({
+                  label: p.label || undefined,
+                  host: p.host,
+                  port: Number(p.port),
+                  username: p.username || undefined,
+                  password: p.password || undefined,
+                }))
+            : undefined,
           ...extra,
         },
       })
@@ -109,6 +176,20 @@ export function ProspectingTab() {
       setError(e?.message || 'Failed to save settings')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const runVerificationTest = async () => {
+    setIsVerifying(true)
+    setVerification(null)
+    setVerificationError('')
+    try {
+      setVerification(await testVerificationFn())
+      refreshSidebar()
+    } catch (e: any) {
+      setVerificationError(e?.message || 'Test failed')
+    } finally {
+      setIsVerifying(false)
     }
   }
 
@@ -253,77 +334,335 @@ export function ProspectingTab() {
         )}
       </div>
 
-      {/* Reacher */}
+      {/* Verification provider */}
       <div className="flex flex-col gap-3">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Email verification (optional)
+          Email verification
         </h4>
         <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-          Point this at a self-hosted{' '}
-          <a
-            href="https://github.com/reacherhq/check-if-email-exists"
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent hover:underline"
-          >
-            Reacher
-          </a>{' '}
-          server to check found emails against the mail server before saving. Without it, emails are saved as unverified
-          best guesses.
+          How found emails are checked before they're shown or saved. Without verification, every email is an unverified
+          best guess.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Reacher URL</label>
-            <input
-              id="reacher-url"
-              type="url"
-              autoComplete="off"
-              value={reacherUrl}
-              onChange={(e) => setReacherUrl(e.target.value)}
-              placeholder="http://reacher:8080"
-              className={INPUT_CLASS}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="reacher-secret" className="text-xs font-semibold text-foreground">Reacher secret</label>
+        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-3 gap-2 max-w-3xl">
+          {(
+            [
+              ['none', 'Off', 'Best guesses only'],
+              ['reacher', 'Reacher', 'Self-hosted, free. Checks come from your server or proxies.'],
+              ['neverbounce', 'NeverBounce', 'Hosted, about $0.008 per check. Their IPs, not yours.'],
+            ] as const
+          ).map(([value, label, hint]) => (
+            <label
+              key={value}
+              className={`flex items-start gap-2 p-3 rounded-md-s border cursor-pointer transition-colors ${
+                provider === value ? 'border-accent bg-accent/5' : 'border-border hover:bg-muted/40'
+              }`}
+            >
+              <input
+                type="radio"
+                name="verification-provider"
+                className="mt-0.5 text-accent focus:ring-accent"
+                checked={provider === value}
+                onChange={() => setProvider(value)}
+              />
+              <span>
+                <span className="block text-sm font-semibold text-foreground">{label}</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer max-w-2xl">
+          <input
+            type="checkbox"
+            className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+            checked={verifiedOnly}
+            onChange={(e) => setVerifiedOnly(e.target.checked)}
+          />
+          <span>
+            <span className="font-semibold">Only give verified emails (recommended)</span>
+            <span className="block text-[11px] text-muted-foreground leading-snug">
+              Reveal and Save only hand over addresses the company's mail server confirmed. Catch-all, risky and
+              unconfirmed guesses are withheld with the reason, which keeps bounces off your sending domain.
+              {provider === 'none' && ' With verification off, nothing can be confirmed, so no emails will be given.'}
+            </span>
+          </span>
+        </label>
+
+        {settings?.verification.active && settings.verification.active !== provider && (
+          <p className="text-xs text-accent">Currently using {settings.verification.active === 'reacher' ? 'Reacher' : 'NeverBounce'}. Save to switch.</p>
+        )}
+
+        {provider === 'neverbounce' && (
+          <div className="flex flex-col gap-1.5 max-w-xl mt-1">
+            <label htmlFor="neverbounce-key" className="text-xs font-semibold text-foreground">
+              NeverBounce API key
+            </label>
             <SecretInput
-              id="reacher-secret"
-              value={reacherSecret}
-              onChange={setReacherSecret}
-              placeholder={settings?.reacher.secretIsSet ? 'Saved. Enter a new one to replace it' : 'Only if RCH__HEADER_SECRET is set'}
+              id="neverbounce-key"
+              value={nbKey}
+              onChange={setNbKey}
+              placeholder={settings?.neverbounce.isSet ? `Saved (${settings.neverbounce.hint}). Enter a new key to replace it` : 'secret_...'}
             />
+            <span className="text-xs text-muted-foreground leading-relaxed">
+              {settings?.neverbounce.source === 'env'
+                ? 'Currently using NEVERBOUNCE_API_KEY from the environment. A key saved here takes priority. '
+                : settings?.neverbounce.source === 'db'
+                  ? 'Saved here and stored encrypted. '
+                  : ''}
+              One credit per check; a company's first person can take up to 6, later people 1. NeverBounce (owned by
+              ZoomInfo) receives the addresses being checked: accept its{' '}
+              <a
+                href="https://storage.googleapis.com/cws-neverbounce-assets.zoominfo.com/Never_Bounce_C2_P_SC_Cs_w_UK_Addendum_03_2026_1_fea3cada8c/Never_Bounce_C2_P_SC_Cs_w_UK_Addendum_03_2026_1_fea3cada8c.pdf"
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                data processing agreement
+              </a>{' '}
+              and list it as a sub-processor in your privacy notice.
+            </span>
+            <label className="flex items-start gap-2 mt-2 text-xs text-foreground cursor-pointer max-w-xl">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+                checked={reacherFallback}
+                onChange={(e) => setReacherFallback(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold">Retry "couldn't be checked" with Reacher</span>
+                <span className="block text-[11px] text-muted-foreground leading-snug">
+                  When NeverBounce can't reach a company's mail server, ask your Reacher server instead. Free, but those
+                  checks come from Reacher's IP (or its proxies).
+                  {!settings?.reacher.url && ' Needs a Reacher URL: pick Reacher above, fill it in, save, then switch back.'}
+                </span>
+              </span>
+            </label>
+            {settings?.neverbounce.source === 'db' && !nbKey && (
+              <button
+                type="button"
+                onClick={() => save({ clear: ['neverbounceApiKey'] })}
+                disabled={isSaving}
+                className="self-start mt-1 py-1.5 px-2 text-xs font-semibold text-destructive hover:bg-destructive/10 rounded-md-s inline-flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Remove saved key
+              </button>
+            )}
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="reacher-from" className="text-xs font-semibold text-foreground">FROM address</label>
-            <input
-              id="reacher-from"
-              type="email"
-              autoComplete="off"
-              value={fromEmail}
-              onChange={(e) => setFromEmail(e.target.value)}
-              placeholder="verify@yourdomain.com"
-              className={INPUT_CLASS}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="reacher-helo" className="text-xs font-semibold text-foreground">HELO name</label>
-            <input
-              id="reacher-helo"
-              type="text"
-              autoComplete="off"
-              value={helloName}
-              onChange={(e) => setHelloName(e.target.value)}
-              placeholder="mail.yourdomain.com"
-              className={INPUT_CLASS}
-            />
-            <span className="text-xs text-muted-foreground">Should match the reverse DNS of the IP that verifies.</span>
+        )}
+      </div>
+
+      {provider === 'reacher' && (
+        <>
+        {/* Reacher */}
+        <div className="flex flex-col gap-3">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
+            Reacher (self-hosted)
+          </h4>
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+            Point this at a self-hosted{' '}
+            <a
+              href="https://github.com/reacherhq/check-if-email-exists"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent hover:underline"
+            >
+              Reacher
+            </a>{' '}
+            server (<code className="font-mono">bun run reacher:up</code>). Checks come from its IP, or the proxies below.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Reacher URL</label>
+              <input
+                id="reacher-url"
+                type="url"
+                autoComplete="off"
+                value={reacherUrl}
+                onChange={(e) => setReacherUrl(e.target.value)}
+                placeholder="http://reacher:8080"
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="reacher-secret" className="text-xs font-semibold text-foreground">Reacher secret</label>
+              <SecretInput
+                id="reacher-secret"
+                value={reacherSecret}
+                onChange={setReacherSecret}
+                placeholder={settings?.reacher.secretIsSet ? 'Saved. Enter a new one to replace it' : 'Only if RCH__HEADER_SECRET is set'}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="reacher-from" className="text-xs font-semibold text-foreground">FROM address</label>
+              <input
+                id="reacher-from"
+                type="email"
+                autoComplete="off"
+                value={fromEmail}
+                onChange={(e) => setFromEmail(e.target.value)}
+                placeholder="verify@yourdomain.com"
+                className={INPUT_CLASS}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="reacher-helo" className="text-xs font-semibold text-foreground">HELO name</label>
+              <input
+                id="reacher-helo"
+                type="text"
+                autoComplete="off"
+                value={helloName}
+                onChange={(e) => setHelloName(e.target.value)}
+                placeholder="mail.yourdomain.com"
+                className={INPUT_CLASS}
+              />
+              <span className="text-xs text-muted-foreground">Should match the reverse DNS of the IP that verifies.</span>
+            </div>
           </div>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {settings?.proxiesConfigured
-            ? 'SOCKS5 proxies are set in REACHER_PROXIES.'
-            : 'SOCKS5 proxies are set with the REACHER_PROXIES environment variable (see the README).'}
-        </span>
+
+        {/* Proxies */}
+        <div className="flex flex-col gap-3">
+          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
+            Verification proxies (optional)
+          </h4>
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+            SOCKS5 proxies on servers with outbound port 25 open. Checks rotate across them, with stricter limits for Gmail
+            and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With none, Reacher connects
+            directly from its own IP. Setup guide: <code className="font-mono">docs/proxies.md</code>.
+          </p>
+          {settings?.proxies.source === 'env' && !proxiesDirty && (
+            <p className="text-xs text-accent">Loaded from REACHER_PROXIES. Editing and saving here stores them in Settings instead.</p>
+          )}
+
+          {proxies.length > 0 && (
+            <div className="flex flex-col gap-2 max-w-4xl">
+              {proxies.map((p, i) => (
+                <div key={i} className="grid grid-cols-2 md:grid-cols-[1fr_1.4fr_0.6fr_1fr_1fr_auto] gap-2 items-center">
+                  <input aria-label="Label" className={INPUT_CLASS} placeholder="Label (e.g. eu-1)" value={p.label} onChange={(e) => updateProxy(i, { label: e.target.value })} />
+                  <input aria-label="Host" className={INPUT_CLASS} placeholder="Host or IP" value={p.host} onChange={(e) => updateProxy(i, { host: e.target.value })} />
+                  <input aria-label="Port" className={INPUT_CLASS} placeholder="1080" inputMode="numeric" value={p.port} onChange={(e) => updateProxy(i, { port: e.target.value.replace(/\D/g, '') })} />
+                  <input aria-label="Username" className={INPUT_CLASS} placeholder="Username" autoComplete="off" value={p.username} onChange={(e) => updateProxy(i, { username: e.target.value })} />
+                  <SecretInput id={`proxy-password-${i}`} value={p.password} onChange={(v) => updateProxy(i, { password: v })} placeholder={p.passwordSet ? 'Saved' : 'Password'} />
+                  <button
+                    type="button"
+                    aria-label="Remove proxy"
+                    onClick={() => {
+                      setProxies((rows) => rows.filter((_, j) => j !== i))
+                      setProxiesDirty(true)
+                    }}
+                    className="p-2 text-muted-foreground hover:text-destructive justify-self-start"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setProxies((rows) => [...rows, { label: '', host: '', port: '1080', username: '', password: '', passwordSet: false }])
+                setProxiesDirty(true)
+              }}
+              className="py-1.5 px-3 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-md-s inline-flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add proxy
+            </button>
+          </div>
+
+          {proxyHealth.length > 0 && (
+            <div className="max-w-3xl border border-border rounded-md-s overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-semibold">Proxy</th>
+                    <th className="text-right px-3 py-2 font-semibold">OK</th>
+                    <th className="text-right px-3 py-2 font-semibold">Greylisted</th>
+                    <th className="text-right px-3 py-2 font-semibold">Blocked</th>
+                    <th className="text-right px-3 py-2 font-semibold">Timeouts</th>
+                    <th className="text-left px-3 py-2 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {proxyHealth.map((h) => (
+                    <tr key={h.label}>
+                      <td className="px-3 py-2 font-medium text-foreground">{h.label}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.ok}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.greylisted}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.blocked}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.timeouts}</td>
+                      <td className="px-3 py-2">
+                        {h.benchedUntil ? (
+                          <span className="text-destructive">Benched until {new Date(h.benchedUntil).toLocaleTimeString()}</span>
+                        ) : (
+                          <span className="text-emerald-600 dark:text-emerald-400">Active</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-t border-border">Counts since the app last started.</p>
+            </div>
+          )}
+        </div>
+        </>
+      )}
+
+      {/* Shown for the saved setup: the check runs against what's saved, not the form. */}
+      {(settings?.verification.active === 'reacher' ||
+        (settings?.verification.active === 'neverbounce' && settings.verification.reacherFallback)) && <SenderHealthPanel />}
+
+      {/* Test */}
+      <div className="flex flex-col gap-3">
+        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
+          Test verification
+        </h4>
+        <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+          Checks a made-up address at Gmail and at Microsoft 365 with the saved verifier (through Reacher: directly or
+          via each proxy; through NeverBounce: 2 credits). No real mailbox is contacted. Save your changes first.
+        </p>
+        <div>
+          <button
+            type="button"
+            onClick={runVerificationTest}
+            disabled={isVerifying}
+            className="py-2 px-3 border border-border bg-card hover:bg-muted disabled:opacity-50 text-sm font-semibold rounded-md-s inline-flex items-center gap-2 cursor-pointer"
+          >
+            {isVerifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+            {isVerifying ? 'Testing…' : 'Test verification'}
+          </button>
+        </div>
+        {verificationError && <p className="text-xs text-destructive">{verificationError}</p>}
+        {verification && !verification.configured && (
+          <p className="text-xs text-destructive">
+            Verification is off, or the chosen service isn't set up yet. Pick one above, fill it in and save first.
+          </p>
+        )}
+        {verification?.configured && (
+          <div className="max-w-3xl border border-border rounded-md-s divide-y divide-border">
+            {verification.provider === 'neverbounce' && verification.credits != null && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                NeverBounce credits left: <span className="font-semibold text-foreground">{verification.credits.toLocaleString()}</span>
+              </div>
+            )}
+            {verification.results.map((r, i) => (
+              <div key={i} className="px-3 py-2 flex items-start gap-2 text-xs">
+                {r.ok ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <span className="font-semibold text-foreground">{r.via}</span>
+                  <span className="text-muted-foreground"> → {r.provider} · {(r.ms / 1000).toFixed(1)}s</span>
+                  {r.detail && <p className="text-muted-foreground mt-0.5 break-words">{r.detail}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && (

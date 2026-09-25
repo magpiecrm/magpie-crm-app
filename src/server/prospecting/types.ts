@@ -68,6 +68,9 @@ export interface PersonResult {
    * listed a current job. Saving won't pay for the same lookup again.
    */
   profileChecked?: boolean
+  /** Set once the email has been revealed, so saving reuses it. */
+  email?: string
+  emailStatus?: EmailStatus
 }
 
 export interface CompanyRef {

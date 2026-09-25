@@ -41,6 +41,7 @@ REACHER_URL=...          # optional — or set in Settings → Prospecting;
 REACHER_SECRET=...       # optional — matches RCH__HEADER_SECRET on Reacher
 REACHER_FROM_EMAIL=...   # optional — SMTP FROM used for verification
 REACHER_HELLO_NAME=...   # optional — EHLO name; should match the proxy's PTR
+NEVERBOUNCE_API_KEY=...  # optional — or set in Settings → Prospecting
 REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
                          # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
 AUTH_EMAIL=...           # required — app login
@@ -82,8 +83,18 @@ authenticated on the host running the dev server.
 Add your SocialFetch API key in **Settings → Prospecting** (it's stored
 encrypted in the database with `CREDENTIALS_SECRET` and takes priority over the
 `SOCIALFETCH_API_KEY` env var). "Test connection" checks it against
-SocialFetch's free balance endpoint. The optional Reacher settings live on the
+SocialFetch's free balance endpoint. The Reacher and proxy settings live on the
 same tab.
+
+People search looks up every result's profile for their real current title and
+company (3 credits per result, on top of 3 per search page). **Reveal email**
+on a result finds and verifies that person's address without saving them;
+saving reuses it.
+
+Email verification is chosen in Settings → Prospecting: a self-hosted Reacher
+(`bun run reacher:up`, free, optionally through SOCKS5 proxies) or NeverBounce
+(hosted, about $0.008 per check, so no mail server ever sees your IPs). See
+[docs/proxies.md](docs/proxies.md) for setup, reverse DNS and IP reputation.
 
 Prospect search runs company search → people search → save to list. Search
 results are fetched live from SocialFetch and never stored; only saving creates

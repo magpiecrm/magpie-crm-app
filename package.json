@@ -10,7 +10,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "knip": "knip"
+    "knip": "knip",
+    "reacher:up": "docker compose -f docker/reacher/docker-compose.yml --env-file .env up -d",
+    "reacher:down": "docker compose -f docker/reacher/docker-compose.yml --env-file .env down",
+    "reacher:logs": "docker compose -f docker/reacher/docker-compose.yml --env-file .env logs -f"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -183,6 +183,21 @@ function str(v: unknown): string | null {
   return typeof v === 'string' && v.trim() ? v.trim() : null
 }
 
+/** An identifier that may arrive as a string or a number. */
+function idOf(v: unknown): string | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return str(v)
+}
+
+/** "https://www.linkedin.com/company/acme-ltd/" -> "acme-ltd". */
+function companySlug(position: any): string | null {
+  const direct = str(position?.organizationSlug) ?? str(position?.organizationHandle)
+  if (direct) return direct
+  const url = str(position?.organizationUrl) ?? str(position?.organization?.url)
+  const m = url?.match(/linkedin\.com\/(?:company|school)\/([^/?#]+)/i)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
@@ -249,7 +264,9 @@ export function mapPerson(p: any): PersonResult | null {
     title,
     seniority: classifySeniority(title),
     company: str(current?.organizationName) ?? str(current?.organization?.name) ?? companyFromHeadline(headline) ?? '',
-    companyRef: str(current?.organizationId) ?? str(current?.organization?.id) ?? null,
+    // Numeric id when present; otherwise the company page's slug, which the
+    // organizations endpoint also accepts.
+    companyRef: idOf(current?.organizationId) ?? idOf(current?.organization?.id) ?? companySlug(current) ?? null,
     companyDomain: null,
     // Only the country survives; the city-level label is dropped here.
     country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),

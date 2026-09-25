@@ -4,27 +4,10 @@ import { Plus } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
-import { Badge } from '../../../components/ui/Badge'
-import { createListFn, listsFn, prospectJobFn, saveProspectsFn } from '../../../server/functions'
-import type { EmailStatus, PersonResult } from '../../../server/prospecting/types'
+import { createListFn, listsFn, prospectingStatusFn, prospectJobFn, saveProspectsFn } from '../../../server/functions'
+import type { PersonResult } from '../../../server/prospecting/types'
+import { EmailStatusBadge } from './EmailStatusBadge'
 import type { ProspectJob, SaveStatus } from '../../../server/prospecting/save'
-
-const EMAIL_STATUS: Record<EmailStatus, { label: string; variant: 'success' | 'warning' | 'error' | 'info' | 'default'; hint: string }> = {
-  verified: { label: 'Verified', variant: 'success', hint: 'Mail server confirmed this mailbox exists' },
-  catch_all_likely: { label: 'Catch-all', variant: 'info', hint: 'Domain accepts any address; this is the most likely format' },
-  risky: { label: 'Risky', variant: 'warning', hint: 'Mailbox may exist but could bounce' },
-  unverified: { label: 'Unverified', variant: 'default', hint: 'Best guess; not checked against the mail server' },
-  not_found: { label: 'Not found', variant: 'error', hint: 'No deliverable address found' },
-}
-
-function EmailStatusBadge({ status }: { status: EmailStatus }) {
-  const s = EMAIL_STATUS[status]
-  return (
-    <span title={s.hint}>
-      <Badge variant={s.variant}>{s.label}</Badge>
-    </span>
-  )
-}
 
 const OUTCOME_LABEL: Record<SaveStatus, string> = {
   pending: 'Queued',
@@ -33,6 +16,7 @@ const OUTCOME_LABEL: Record<SaveStatus, string> = {
   suppressed: 'Opted out, not saved',
   no_domain: 'Company domain unknown',
   not_found: 'No email found',
+  unconfirmed: "Couldn't verify an email",
   retrying: 'Server asked us to retry, waiting',
   error: 'Failed',
 }
@@ -55,6 +39,13 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
     enabled: isOpen,
   })
   const lists: Array<{ id: number; name: string }> = listsData?.lists || []
+
+  const { data: status } = useQuery({
+    queryKey: queryKeys.prospects.status(),
+    queryFn: () => prospectingStatusFn(),
+    enabled: isOpen,
+  })
+  const verifiedOnly = status?.verification.verifiedOnly ?? true
 
   const createList = useMutation({
     mutationFn: (name: string) => createListFn({ data: { name } }),
@@ -165,8 +156,11 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
             )}
 
             <p className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-md-s p-3 leading-relaxed">
-              Saving looks up a work email for each person at their current company, for these people only. Anyone
-              who has opted out is skipped. New contacts are marked{' '}
+              Saving looks up a work email for each person at their current company, for these people only.{' '}
+              {verifiedOnly
+                ? 'Only emails the mail server confirms are saved; anyone who can’t be verified is left out. '
+                : 'Unconfirmed best guesses are saved too, with their status. '}
+              Anyone who has opted out is skipped. New contacts are marked{' '}
               <span className="font-semibold">notice pending</span> until they've been told how their details were found.
               {people.length > 10 && ' This many people runs in the background, and you can watch progress here.'}
             </p>
@@ -207,6 +201,7 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-foreground truncate">{o.name}</p>
                     <p className="text-muted-foreground truncate">{o.email ?? o.company}</p>
+                    {o.message && !o.email && <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">{o.message}</p>}
                   </div>
                   {o.emailStatus && <EmailStatusBadge status={o.emailStatus} />}
                   <span

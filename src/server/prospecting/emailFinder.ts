@@ -9,11 +9,13 @@
 //   4. A `safe` result on a non-catch-all domain teaches the domain its
 //      pattern. Only the pattern is stored, never the name or address.
 //
-// Without Reacher configured, steps 2-4 are skipped and the top candidate is
-// returned as `unverified`.
+// Without a verifier configured, steps 2-4 are skipped and the top candidate
+// is returned as `unverified`. With NeverBounce, step 2 is skipped: it flags
+// catch-all domains in its answer to the first real candidate.
 
 import crypto from 'crypto'
 import type { EmailDomainRecord } from '../db'
+import { firstLastLikelihood } from './formatStats'
 import { generateCandidates, type Candidate } from './patterns'
 import { providerFromMx, type Lease, type MailProvider } from './proxyRouter'
 import type { CheckResult } from './reacher'
@@ -31,18 +33,56 @@ const TRUSTED_CONFIDENCE = 0.8
  * rate limits in the proxy router.
  */
 const MAX_CHECKS_PER_PERSON = 6
+/**
+ * "Unknown" answers in a row, with nothing definite yet, before giving up on
+ * a person: the mail server itself can't be checked, so more guesses would
+ * only spend credits (NeverBounce) or probes (Reacher) for the same answer.
+ */
+const MAX_UNKNOWN_STREAK = 2
+
+// Second-level registries: "co.uk" is never anyone's mail domain.
+const PUBLIC_SUFFIX_RE = /^(co|com|org|net|ac|gov|ltd|plc|edu|me|nhs|sch)\.[a-z]{2}$/
+
+/**
+ * A company's LinkedIn website is sometimes a subdomain that takes no mail
+ * (careers.acme.com, uk.acme.com). Walk up to the first parent domain that
+ * does. DNS only, no website fetching.
+ */
+async function parentWithMail(domain: string, deps: FinderDeps): Promise<{ domain: string; rec: EmailDomainRecord } | null> {
+  const labels = domain.split('.')
+  while (labels.length > 2) {
+    labels.shift()
+    const parent = labels.join('.')
+    if (PUBLIC_SUFFIX_RE.test(parent)) return null
+    const rec = await prepareDomain(parent, deps)
+    if (rec.accepts_mail !== false) return { domain: parent, rec }
+  }
+  return null
+}
+
+/** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
+function surnameHidden(lastName: string): boolean {
+  return /^\p{L}\.?$/u.test(lastName.trim())
+}
 
 export interface FinderDeps {
   getDomain(domain: string): EmailDomainRecord | null
   updateDomain(domain: string, patch: Partial<Omit<EmailDomainRecord, 'domain'>>): EmailDomainRecord
   /** MX hostnames; `[]` when the domain has none. Throws on lookup failure. */
   resolveMx(domain: string): Promise<string[]>
-  /** Null when Reacher isn't configured. */
+  /** Null when no verifier (Reacher or NeverBounce) is configured. */
   verifier: {
     acquire(provider: MailProvider): Promise<Lease>
-    check(email: string, lease: Lease): Promise<CheckResult>
+    check(email: string, lease: Lease, provider: MailProvider): Promise<CheckResult>
+    /**
+     * The service reports catch-all domains itself (NeverBounce), so the
+     * random-address probe would only cost an extra check.
+     */
+    detectsCatchAll?: boolean
   } | null
   now(): number
+  /** Another domain that might be the real mail domain, for a suggestion. */
+  suggestMailDomain?(domain: string): Promise<string | null>
 }
 
 export interface FindResult {
@@ -50,6 +90,17 @@ export interface FindResult {
   status: EmailStatus
   /** At least one check was greylisted; worth retrying later for a better answer. */
   greylisted: boolean
+  /** Why the answer isn't a verified address, in words the user can act on. */
+  detail?: string
+  /**
+   * The same explanation without the best-guess advice ("This is the most
+   * common format…"), for when an unconfirmed address is withheld.
+   */
+  reason?: string
+  /** The domain itself takes no email, so a corrected company domain could help. */
+  domainProblem?: boolean
+  /** A domain that does take email, from the company's DNS, to offer the user. */
+  suggestedDomain?: string
 }
 
 const isStale = (iso: string | null, maxAgeMs: number, now: number) =>
@@ -85,10 +136,15 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
       }
     }
 
-    if (deps.verifier && rec.accepts_mail !== false && isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)) {
+    if (
+      deps.verifier &&
+      !deps.verifier.detectsCatchAll &&
+      rec.accepts_mail !== false &&
+      isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)
+    ) {
       const probe = `${crypto.randomBytes(9).toString('hex')}@${domain}`
       const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other')
-      const result = await deps.verifier.check(probe, lease)
+      const result = await deps.verifier.check(probe, lease, rec.mx_provider ?? 'other')
       lease.report(result.outcome)
       const catchAll =
         result.isCatchAll ?? (result.reachability === 'safe' || result.reachability === 'risky' ? true : result.reachability === 'invalid' ? false : null)
@@ -124,39 +180,103 @@ export async function findEmail(
   person: { firstName: string; lastName: string },
   rawDomain: string,
   deps: FinderDeps,
+  opts: { headcount?: number | null } = {},
 ): Promise<FindResult> {
-  const domain = rawDomain.toLowerCase().trim()
-  const rec = await prepareDomain(domain, deps)
-  if (rec.accepts_mail === false) return { email: null, status: 'not_found', greylisted: false }
+  if (surnameHidden(person.lastName)) {
+    return {
+      email: null,
+      status: 'not_found',
+      greylisted: false,
+      detail: `Their surname is hidden on LinkedIn (shown as "${person.lastName.trim()}"), so their address can't be worked out.`,
+    }
+  }
+
+  let domain = rawDomain.toLowerCase().trim()
+  let rec = await prepareDomain(domain, deps)
+  if (rec.accepts_mail === false) {
+    const parent = await parentWithMail(domain, deps)
+    if (!parent) {
+      const suggestion = (await deps.suggestMailDomain?.(domain).catch(() => null)) ?? undefined
+      return {
+        email: null,
+        status: 'not_found',
+        greylisted: false,
+        detail: suggestion
+          ? `${domain} doesn't receive email, but its DNS is run from ${suggestion}, which does.`
+          : `${domain} doesn't receive email, so there's nothing to check.`,
+        domainProblem: true,
+        suggestedDomain: suggestion,
+      }
+    }
+    ;({ domain, rec } = parent)
+  }
 
   const known = trustedPattern(rec, deps.now())
   const candidates: Candidate[] = generateCandidates(person.firstName, person.lastName, domain, {
     knownPattern: known,
     max: MAX_CHECKS_PER_PERSON,
   })
-  if (candidates.length === 0) return { email: null, status: 'not_found', greylisted: false }
+  if (candidates.length === 0) {
+    return { email: null, status: 'not_found', greylisted: false, detail: "Their name can't be turned into an email address." }
+  }
 
-  if (rec.catch_all) return { email: candidates[0].email, status: 'catch_all_likely', greylisted: false }
-  if (!deps.verifier) return { email: candidates[0].email, status: 'unverified', greylisted: false }
+  // How much to trust an unconfirmed best guess, in words.
+  const likelihood = known
+    ? 'It matches the format already confirmed for others at this company.'
+    : candidates[0].pattern === '{first}.{last}'
+      ? firstLastLikelihood(opts.headcount)
+      : 'This is the most likely format.'
+  const catchAllReason = `${domain} accepts every address, so none can be confirmed.`
+  const catchAll: FindResult = {
+    email: candidates[0].email,
+    status: 'catch_all_likely',
+    greylisted: false,
+    reason: catchAllReason,
+    detail: `${catchAllReason} ${likelihood}`,
+  }
+  if (rec.catch_all) return catchAll
+  if (!deps.verifier) {
+    return {
+      email: candidates[0].email,
+      status: 'unverified',
+      greylisted: false,
+      reason: 'Email verification is off, so no address could be confirmed.',
+      detail: `Not checked: email verification is off. ${likelihood}`,
+    }
+  }
 
   let firstRisky: string | null = null
   let greylisted = false
   let anyDefinite = false
+  let lastProblem: string | undefined
+  let tried = 0
+  let unknownStreak = 0
+  // Per-domain verdict counts for the log: company data only, no addresses.
+  const tally: Record<string, number> = {}
+  const done = (r: FindResult): FindResult => {
+    const counts = Object.entries(tally).map(([k, n]) => `${k} ${n}`).join(', ')
+    console.log(`[EmailFinder] ${domain} (${rec.mx_provider ?? '?'}): ${counts || 'no checks'} -> ${r.status}`)
+    return r
+  }
 
   for (const candidate of candidates) {
     const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other')
-    const result = await deps.verifier.check(candidate.email, lease)
+    const result = await deps.verifier.check(candidate.email, lease, rec.mx_provider ?? 'other')
     lease.report(result.outcome)
+    const verdict = result.isCatchAll ? 'catch-all' : result.reachability
+    tally[verdict] = (tally[verdict] ?? 0) + 1
+    tried++
+    if (result.detail) lastProblem = result.detail
 
     if (result.isCatchAll) {
       // The probe missed it (or it was never run); record and stop guessing.
       deps.updateDomain(domain, { catch_all: true, catch_all_checked_at: new Date(deps.now()).toISOString() })
-      return { email: candidates[0].email, status: 'catch_all_likely', greylisted: false }
+      return done(catchAll)
     }
 
     if (result.reachability === 'safe') {
       learnPattern(domain, candidate.pattern, deps)
-      return { email: candidate.email, status: 'verified', greylisted: false }
+      return done({ email: candidate.email, status: 'verified', greylisted: false })
     }
     if (result.reachability === 'risky') {
       anyDefinite = true
@@ -169,10 +289,37 @@ export async function findEmail(
     } else if (result.outcome === 'greylisted') {
       greylisted = true
     }
+
+    if (result.reachability === 'unknown' && result.outcome !== 'greylisted' && !anyDefinite) {
+      if (++unknownStreak >= MAX_UNKNOWN_STREAK) break
+    } else {
+      unknownStreak = 0
+    }
   }
 
-  if (firstRisky) return { email: firstRisky, status: 'risky', greylisted }
+  if (firstRisky) {
+    return done({
+      email: firstRisky,
+      status: 'risky',
+      greylisted,
+      reason: `${domain}'s mail server only gave a risky answer, so no address could be confirmed.`,
+      detail: 'The mail server accepted this address but flagged it as risky.',
+    })
+  }
   // Nothing definite came back (greylisting, timeouts): keep the best guess.
-  if (!anyDefinite || greylisted) return { email: candidates[0].email, status: 'unverified', greylisted }
-  return { email: null, status: 'not_found', greylisted: false }
+  if (!anyDefinite || greylisted) {
+    const reason = greylisted
+      ? `${domain}'s mail server asked us to try again later, so no address could be confirmed yet.`
+      : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}, so no address could be confirmed.`
+    return done({
+      email: candidates[0].email,
+      status: 'unverified',
+      greylisted,
+      reason,
+      detail: greylisted
+        ? `${domain}'s mail server asked us to try again later. ${likelihood}`
+        : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}, so we stopped after ${tried} ${tried === 1 ? 'try' : 'tries'}. ${likelihood}`,
+    })
+  }
+  return done({ email: null, status: 'not_found', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })
 }

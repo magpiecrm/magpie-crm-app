@@ -20,7 +20,14 @@ import { TagInput } from '../../../components/ui/TagInput'
 import { FilterAccordion } from '../../../components/ui/FilterAccordion'
 import { Button } from '../../../components/ui/Button'
 import { Sheet } from '../../../components/ui/Sheet'
-import { getPersonasFn, resolveCompanyFn, searchCompaniesFn, searchPeopleFn } from '../../../server/functions'
+import {
+  getPersonasFn,
+  resolveCompanyFn,
+  revealEmailFn,
+  searchCompaniesFn,
+  searchPeopleFn,
+  setCompanyDomainFn,
+} from '../../../server/functions'
 import {
   HEADCOUNT_BUCKETS,
   SENIORITY_LEVELS,
@@ -38,7 +45,7 @@ import { JOB_TITLES } from '../constants/jobTitles'
 import type { Persona } from '../types'
 import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
-import { PeopleResults, SENIORITY_LABEL } from './PeopleResults'
+import { PeopleResults, SENIORITY_LABEL, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
 
 type Mode = 'companies' | 'people'
@@ -268,6 +275,26 @@ export function ProspectSearch() {
     onSuccess: (res) => applyDomain(res.ref, res.domain),
   })
 
+  // Revealed emails live only here (and go into a list only if saved).
+  const [reveals, setReveals] = useState<Map<string, RevealState>>(new Map())
+  const setReveal = (url: string, state: RevealState) => setReveals((prev) => new Map(prev).set(url, state))
+  const reveal = async (person: PersonResult) => {
+    setReveal(person.profileUrl, { status: 'loading' })
+    try {
+      setReveal(person.profileUrl, await revealEmailFn({ data: { person } }))
+    } catch (err: any) {
+      setReveal(person.profileUrl, { status: 'error', message: err?.message ?? 'Something went wrong' })
+    }
+  }
+
+  // Correct a company's email domain (its LinkedIn website was wrong or takes
+  // no mail), then retry this person with it.
+  const fixDomain = async (person: PersonResult, domain: string) => {
+    if (!person.companyRef) return
+    const res = await setCompanyDomainFn({ data: { ref: person.companyRef, name: person.company || person.companyRef, domain } })
+    await reveal({ ...person, companyDomain: res.domain })
+  }
+
   const togglePerson = (p: PersonResult) =>
     setSelected((prev) => {
       const next = new Map(prev)
@@ -295,9 +322,12 @@ export function ProspectSearch() {
   // A domain added after the search ran still applies to people found at
   // that company.
   const peopleToSave = [...selected.values()].map((p) => {
+    // A revealed email is reused, so saving doesn't find and verify it again.
+    const revealed = reveals.get(p.profileUrl)
+    if (revealed?.status === 'found') return { ...p, email: revealed.email, emailStatus: revealed.emailStatus }
     const chosen = peopleSearch?.company
     if (p.companyDomain || !chosen?.domain) return p
-    return p.companyRef === chosen.ref || p.company === chosen.name ? { ...p, companyDomain: chosen.domain } : p
+    return p.companyRef === chosen.ref ? { ...p, companyDomain: chosen.domain } : p
   })
 
   const active = mode === 'companies' ? companies : people
@@ -641,7 +671,16 @@ export function ProspectSearch() {
           ) : mode === 'companies' ? (
             <CompanyResults companies={companyItems} onFindPeople={findPeople} onDomainSet={applyDomain} />
           ) : (
-            <PeopleResults people={peopleItems} refined={refined} selected={selected} onToggle={togglePerson} onToggleAll={toggleAllPeople} />
+            <PeopleResults
+              people={peopleItems}
+              refined={refined}
+              selected={selected}
+              onToggle={togglePerson}
+              onToggleAll={toggleAllPeople}
+              reveals={reveals}
+              onReveal={reveal}
+              onFixDomain={fixDomain}
+            />
           )}
 
           {hasSearched && active.hasNextPage && !active.error && (
