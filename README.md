@@ -182,3 +182,9 @@ and re-exported from `src/server/functions/index.ts`, so callers import them as
 
 Tailwind CSS v4 (configured via `@tailwindcss/vite`). Global tokens and theme
 live in `src/styles.css`.
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE). You can use, change and
+self-host it; if you run a modified version as a service for others, you must
+make your changes available to them under the same license.
