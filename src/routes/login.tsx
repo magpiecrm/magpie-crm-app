@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Eye, EyeOff, Lock, Mail, ShieldAlert, CheckCircle2 } from 'lucide-react'
-import { setAuthCookie, isAuthenticated } from '../utils/auth'
+import { markSignedIn } from '../utils/auth'
 import { loginFn } from '../server/functions/auth'
 import { MagpieLogo } from '../components/ui/MagpieLogo'
 
@@ -18,13 +18,6 @@ function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  useEffect(() => {
-    // If already authenticated, redirect to collection page
-    if (isAuthenticated()) {
-      navigate({ to: '/collection' })
-    }
-  }, [navigate])
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -34,11 +27,8 @@ function LoginPage() {
       const response = await loginFn({ data: { email, password } })
 
       if (response.success) {
-        if ('token' in response && response.token) {
-          const secureFlag = window.location.protocol === 'https:' ? '; Secure' : ''
-          document.cookie = `auth_token=${encodeURIComponent(response.token as string)}; path=/; max-age=604800; SameSite=Strict${secureFlag}`
-        }
-        setAuthCookie('authenticated')
+        // The server set the session cookie; the page never sees the token.
+        markSignedIn()
         setSuccess(true)
         await new Promise((resolve) => setTimeout(resolve, 500))
         setIsLoading(false)

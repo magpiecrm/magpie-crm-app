@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let report: any = null
 let fromDomain: string | null = 'clean-sender.example'
@@ -12,7 +12,7 @@ vi.mock('./settings', () => ({
   getListedDomainOverride: () => override,
 }))
 
-const { verificationPauseReason } = await import('./senderHealthMonitor')
+const { verificationPauseReason, runSenderHealthCheck } = await import('./senderHealthMonitor')
 
 const proxy = { host: '203.0.113.10', port: 1080, label: 'ovh-1' }
 const ip = (issues: Array<{ level: string; code: string }>, listedOn: string[] = []) => ({
@@ -59,5 +59,20 @@ describe('verificationPauseReason', () => {
     fromDomain = 'clean-sender.example'
     report = { ips: [ip([])], domain: domain('listed-sender.example', ['Spamhaus DBL']) }
     expect(verificationPauseReason(proxy)).toBeNull()
+  })
+})
+
+describe('VERIFICATION_HEALTH_CHECKS=off', () => {
+  const original = process.env.VERIFICATION_HEALTH_CHECKS
+  afterEach(() => {
+    if (original === undefined) delete process.env.VERIFICATION_HEALTH_CHECKS
+    else process.env.VERIFICATION_HEALTH_CHECKS = original
+  })
+
+  it("never pauses or checks: someone else runs this copy's verification", async () => {
+    process.env.VERIFICATION_HEALTH_CHECKS = 'off'
+    report = { ips: [ip([{ level: 'critical', code: 'listed-barracuda' }], ['Barracuda'])], domain: domain('clean-sender.example', ['Spamhaus DBL']) }
+    expect(verificationPauseReason(proxy)).toBeNull()
+    expect(await runSenderHealthCheck()).toBeNull()
   })
 })

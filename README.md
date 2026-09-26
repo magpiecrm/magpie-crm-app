@@ -69,6 +69,8 @@ SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
 DATABASE_PATH=...        # optional — defaults to ./local_db.json
 USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
                          # counts, e.g. for a hosting provider's billing)
+VERIFICATION_HEALTH_CHECKS=off  # optional — skip blocklist/DNS checks of the
+                         # verifying IPs, when someone else runs verification
 ```
 
 In production the app refuses to sign or encrypt anything until

@@ -6,6 +6,7 @@
 
 import { promises as dns } from 'dns'
 import { db } from '../db'
+import { env } from '../env'
 import { notify } from '../notify'
 import { checkSenderHealth, newCriticalIssues, type HealthDeps, type HealthTarget, type SenderHealthReport } from './senderHealth'
 import { getActiveVerifier, getListedDomainOverride, getProxyConfigs, getReacherFromDomain, type ReacherConfig } from './settings'
@@ -79,6 +80,7 @@ function targetsFor(reacher: ReacherConfig): HealthTarget[] {
  *   doesn't count: it says what kind of IP it is, not that it did harm.
  */
 export function verificationPauseReason(proxy: ProxyConfig | null): string | null {
+  if (!env.verificationHealthChecks()) return null
   const report = db.getSenderHealth()
   if (!report) return null
 
@@ -100,9 +102,11 @@ let running: Promise<SenderHealthReport | null> | null = null
 
 /**
  * Checks the IPs and FROM domain Reacher verifies from, stores the report and
- * notifies about new critical problems. Null when Reacher isn't in use.
+ * notifies about new critical problems. Null when Reacher isn't in use or
+ * the checks are off (VERIFICATION_HEALTH_CHECKS=off).
  */
 export function runSenderHealthCheck(): Promise<SenderHealthReport | null> {
+  if (!env.verificationHealthChecks()) return Promise.resolve(null)
   running ??= (async () => {
     const reacher = reacherInUse()
     if (!reacher) return null
@@ -125,7 +129,7 @@ export function runSenderHealthCheck(): Promise<SenderHealthReport | null> {
 const g = globalThis as any
 
 export function startSenderHealthMonitor() {
-  if (g.__senderHealthStarted) return
+  if (g.__senderHealthStarted || !env.verificationHealthChecks()) return
   g.__senderHealthStarted = true
   const run = () => runSenderHealthCheck().catch((err) => console.error('[SenderHealth] Check failed:', err?.message ?? err))
   setTimeout(run, FIRST_RUN_DELAY_MS)

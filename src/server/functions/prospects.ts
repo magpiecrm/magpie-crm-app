@@ -155,6 +155,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const balance = configured ? await getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : null
     const verifier = getActiveVerifier()
     const { db } = await import('../db')
+    const { env } = await import('../env')
     const health = db.getSenderHealth()
     return {
       socialfetch: { configured, balance },
@@ -163,9 +164,10 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
         configured: verifier?.provider === 'reacher',
         proxies: verifier?.provider === 'reacher' ? getProxyRouter().health() : [],
       },
-      // Only while Reacher is verifying: an old report shouldn't warn after switching away.
+      // Only while Reacher is verifying and the checks are on: an old report
+      // shouldn't warn after switching away or turning them off.
       senderHealth:
-        health && verifier?.provider === 'reacher'
+        health && verifier?.provider === 'reacher' && env.verificationHealthChecks()
           ? {
               level: health.level,
               checkedAt: health.checked_at,
@@ -245,7 +247,8 @@ export const senderHealthFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { db } = await import('../db')
-    return db.getSenderHealth()
+    const { env } = await import('../env')
+    return env.verificationHealthChecks() ? db.getSenderHealth() : null
   })
 
 /** Runs the sender health check now. Null when Reacher isn't in use. */

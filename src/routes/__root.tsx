@@ -10,7 +10,7 @@ import { useIsDesktop } from '../hooks/useMediaQuery'
 import { AIChat } from '../features/copilot/components/AIChat'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
 import { NotificationBell } from '../components/NotificationBell'
-import { isAuthenticated } from '../utils/auth'
+import { isSignedIn } from '../utils/auth'
 import { isPublicPath } from '../utils/publicRoutes'
 import { checkAuthFn } from '../server/functions'
 import { copilotStore } from '../features/copilot/copilotStore'
@@ -29,7 +29,7 @@ export const Route = createRootRouteWithContext<{
 
     let isAuth = false
     if (typeof document !== 'undefined') {
-      isAuth = isAuthenticated()
+      isAuth = await isSignedIn()
     } else {
       try {
         const res = await checkAuthFn()

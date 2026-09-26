@@ -229,6 +229,8 @@ export function getMaskedProspectingSettings() {
       verifiedOnly: isVerifiedOnly(),
       dailyCap: getVerificationDailyCap(),
       listedDomainOverride: getListedDomainOverride(),
+      /** False when VERIFICATION_HEALTH_CHECKS=off: someone else monitors the verifying IPs. */
+      healthChecks: env.verificationHealthChecks(),
     },
     credsUnreadable: readSecrets().unreadable,
     usingDefaultEncryptionSecret: env.usingDefaultCredentialsSecret(),

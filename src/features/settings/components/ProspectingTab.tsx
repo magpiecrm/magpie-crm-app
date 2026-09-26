@@ -548,7 +548,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
       )}
 
       {/* Shown for the saved setup: the check runs against what's saved, not the form. */}
-      {settings?.verification.active === 'reacher' && (
+      {settings?.verification.active === 'reacher' && settings.verification.healthChecks && (
         <SenderHealthPanel
           listedDomainOverride={settings?.verification.listedDomainOverride ?? null}
           onOverrideChange={async (domain) => {

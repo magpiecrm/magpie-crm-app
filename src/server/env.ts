@@ -137,6 +137,11 @@ export const env = {
   // so set it once, up front.
   suppressionSecret: () => secretWithDevFallback('SUPPRESSION_SECRET', 'TRACKING_SECRET'),
   webhookSecret: () => readEnv('WEBHOOK_SECRET'),
+  // "off" stops this copy's verification health checks (blocklists, reverse
+  // DNS, SPF for the IPs and FROM domain it verifies from): for a copy whose
+  // verification service is run by someone else, e.g. a hosting provider,
+  // which monitors its own IPs.
+  verificationHealthChecks: () => readEnv('VERIFICATION_HEALTH_CHECKS')?.toLowerCase() !== 'off',
   // Bearer token for GET /api/usage (monthly usage counts). Unset means the
   // endpoint is off; a hosting provider sets it to read usage for billing.
   usageApiToken: () => readEnv('USAGE_API_TOKEN'),

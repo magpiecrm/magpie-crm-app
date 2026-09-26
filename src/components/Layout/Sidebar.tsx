@@ -2,7 +2,8 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
-import { clearAuthCookie } from '../../utils/auth'
+import { markSignedOut } from '../../utils/auth'
+import { logoutFn } from '../../server/functions'
 import { MagpieWordmark } from '../ui/MagpieLogo'
 
 const navItems = [
@@ -43,8 +44,10 @@ export function Sidebar({
 }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const handleSignOut = () => {
-    clearAuthCookie()
+  const handleSignOut = async () => {
+    // Ends the session on the server too, so the cookie can't be reused.
+    await logoutFn().catch(() => {})
+    markSignedOut()
     // Signing out ends the session's working data too: search results,
     // revealed emails and saved filters, so the next person to sign in on
     // this tab doesn't see them.
