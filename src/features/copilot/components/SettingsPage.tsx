@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
-import { AlertCircle, RefreshCw, Eye, EyeOff, Save, Trash2, Copy, Plus, Mail, Pencil, Check, UserCheck } from 'lucide-react'
-import { getEnvVarsFn, saveEnvVarsFn, getApiKeysFn, createApiKeyFn, deleteApiKeyFn, getSendersFn, createSenderFn, updateSenderFn, deleteSenderFn, getUsersFn, createUserFn, deleteUserFn, checkAuthFn } from '../../../server/functions'
+import { AlertCircle, RefreshCw, Trash2, Copy, Plus, Mail, Pencil, Check, UserCheck } from 'lucide-react'
+import { getApiKeysFn, createApiKeyFn, deleteApiKeyFn, getSendersFn, createSenderFn, updateSenderFn, deleteSenderFn, getUsersFn, createUserFn, deleteUserFn, checkAuthFn } from '../../../server/functions'
 import { EmailSendingTab } from '../../settings/components/EmailSendingTab'
 import { ContactFieldsTab } from '../../settings/components/ContactFieldsTab'
 import { ProspectingTab } from '../../settings/components/ProspectingTab'
 import { CopilotTab } from '../../settings/components/CopilotTab'
 import { McpTab } from '../../settings/components/McpTab'
+import { ChangePasswordForm } from '../../settings/components/ChangePasswordForm'
 
-const TABS = ['copilot', 'mcp', 'prospecting', 'env', 'sending', 'api', 'senders', 'users', 'fields'] as const
+const TABS = ['copilot', 'mcp', 'prospecting', 'sending', 'api', 'senders', 'users', 'fields'] as const
 export type SettingsTab = (typeof TABS)[number]
 
 export const isSettingsTab = (value: unknown): value is SettingsTab =>
@@ -21,14 +22,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
     if (initialTab) setActiveTab(initialTab)
   }, [initialTab])
 
-
-  // Environment Variables State
-  const [envVars, setEnvVars] = useState<Record<string, string>>({})
-  const [isLoadingEnv, setIsLoadingEnv] = useState(false)
-  const [isSavingEnv, setIsSavingEnv] = useState(false)
-  const [envError, setEnvError] = useState<string | null>(null)
-  const [envSuccess, setEnvSuccess] = useState(false)
-  const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
 
   // API Keys State
   const [apiKeys, setApiKeys] = useState<any[]>([])
@@ -62,25 +55,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
   const [newUserPassword, setNewUserPassword] = useState('')
   const [isAddingUser, setIsAddingUser] = useState(false)
 
-
-  const fetchEnv = async () => {
-    setIsLoadingEnv(true)
-    setEnvError(null)
-    setEnvSuccess(false)
-    try {
-      const res = await getEnvVarsFn()
-      if (res.success && res.vars) {
-        setEnvVars(res.vars)
-      } else {
-        setEnvError(res.error || 'Failed to fetch environment variables')
-      }
-    } catch (e: any) {
-      console.error(e)
-      setEnvError(e.message || 'Failed to fetch environment variables')
-    } finally {
-      setIsLoadingEnv(false)
-    }
-  }
 
   const fetchApiKeys = async () => {
     setIsLoadingKeys(true)
@@ -138,50 +112,12 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
   }
 
   useEffect(() => {
-    fetchEnv()
     fetchApiKeys()
     fetchSenders()
     fetchUsers()
     fetchCurrentUser()
   }, [])
 
-
-  const handleSaveEnv = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSavingEnv(true)
-    setEnvError(null)
-    setEnvSuccess(false)
-    try {
-      const res = await saveEnvVarsFn({ data: { vars: envVars } })
-      if (res.success) {
-        setEnvSuccess(true)
-        // Refresh values after saving to sync up
-        await fetchEnv()
-        setTimeout(() => setEnvSuccess(false), 4000)
-      } else {
-        setEnvError(res.error || 'Failed to save environment variables')
-      }
-    } catch (e: any) {
-      console.error(e)
-      setEnvError(e.message || 'Failed to save environment variables')
-    } finally {
-      setIsSavingEnv(false)
-    }
-  }
-
-  const handleEnvChange = (key: string, value: string) => {
-    setEnvVars(prev => ({
-      ...prev,
-      [key]: value
-    }))
-  }
-
-  const toggleFieldVisibility = (key: string) => {
-    setVisibleFields(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }))
-  }
 
   const handleCreateApiKey = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -340,7 +276,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
     <div className="p-4 lg:p-8 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-display text-foreground mb-2">Settings</h1>
-        <p className="text-muted-foreground">Manage your application integration settings & environment variables.</p>
+        <p className="text-muted-foreground">Manage integrations, sending, API keys and users.</p>
       </div>
 
       {/* Tab Selection — scrolls horizontally on narrow screens rather than
@@ -375,16 +311,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
           }`}
         >
           Prospecting
-        </button>
-        <button
-          onClick={() => setActiveTab('env')}
-          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
-            activeTab === 'env'
-              ? 'border-accent text-accent'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          Environment Variables
         </button>
         <button
           onClick={() => setActiveTab('sending')}
@@ -442,186 +368,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
       {activeTab === 'copilot' && <CopilotTab />}
       {activeTab === 'mcp' && <McpTab />}
 
-      {/* Environment Variables Tab Content */}
-      {activeTab === 'env' && (
-        <form onSubmit={handleSaveEnv} className="flex flex-col gap-6">
-          <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold block mb-0.5">Note on Env updates</span>
-              <span>Saving updates the local <code className="font-mono">.env</code> file on disk and live-injects them into the running process in real time. No server reboot needed!</span>
-            </div>
-          </div>
-
-          {isLoadingEnv ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-              <RefreshCw className="w-5 h-5 animate-spin text-accent" />
-              <span>Loading environment variables...</span>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-6">
-              {/* 1. SMTP Setup */}
-              <div className="flex flex-col gap-3">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Zoho SMTP Server Configuration</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">SMTP Host</label>
-                    <input
-                      type="text"
-                      value={envVars.SMTP_HOST || ''}
-                      onChange={(e) => handleEnvChange('SMTP_HOST', e.target.value)}
-                      placeholder="e.g. smtp.zoho.eu"
-                      className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">SMTP Port</label>
-                    <input
-                      type="text"
-                      value={envVars.SMTP_PORT || ''}
-                      onChange={(e) => handleEnvChange('SMTP_PORT', e.target.value)}
-                      placeholder="e.g. 465"
-                      className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5 md:col-span-2">
-                    <label className="text-xs font-semibold text-foreground">SMTP Sender Identity</label>
-                    <input
-                      type="text"
-                      value={envVars.SMTP_SENDER || ''}
-                      onChange={(e) => handleEnvChange('SMTP_SENDER', e.target.value)}
-                      placeholder='e.g. "Sender Name" <hello@domain.com>'
-                      className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">SMTP Username / Email</label>
-                    <input
-                      type="email"
-                      value={envVars.SMTP_USER || ''}
-                      onChange={(e) => handleEnvChange('SMTP_USER', e.target.value)}
-                      placeholder="hello@domain.com"
-                      className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">SMTP Password</label>
-                    <div className="relative flex items-center">
-                      <input
-                        type={visibleFields.SMTP_PASS ? 'text' : 'password'}
-                        value={envVars.SMTP_PASS || ''}
-                        onChange={(e) => handleEnvChange('SMTP_PASS', e.target.value)}
-                        placeholder="SMTP Passphrase"
-                        className="w-full bg-background border border-border rounded-md-s pl-3 pr-10 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleFieldVisibility('SMTP_PASS')}
-                        className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        {visibleFields.SMTP_PASS ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 2. APIs & Secrets */}
-              <div className="flex flex-col gap-3">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">API Integrations & Security Secrets</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Email Tracking Secret</label>
-                    <div className="relative flex items-center">
-                      <input
-                        type={visibleFields.TRACKING_SECRET ? 'text' : 'password'}
-                        value={envVars.TRACKING_SECRET || ''}
-                        onChange={(e) => handleEnvChange('TRACKING_SECRET', e.target.value)}
-                        placeholder="TRACKING_SECRET"
-                        className="w-full bg-background border border-border rounded-md-s pl-3 pr-10 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleFieldVisibility('TRACKING_SECRET')}
-                        className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        {visibleFields.TRACKING_SECRET ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 3. Authentication credentials */}
-              <div className="flex flex-col gap-3">
-                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">App Sign-in Credentials</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Admin Account Email</label>
-                    <input
-                      type="email"
-                      value={envVars.AUTH_EMAIL || ''}
-                      onChange={(e) => handleEnvChange('AUTH_EMAIL', e.target.value)}
-                      placeholder="Admin User Email"
-                      className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-foreground">Admin Account Password</label>
-                    <div className="relative flex items-center">
-                      <input
-                        type={visibleFields.AUTH_PASSWORD ? 'text' : 'password'}
-                        value={envVars.AUTH_PASSWORD || ''}
-                        onChange={(e) => handleEnvChange('AUTH_PASSWORD', e.target.value)}
-                        placeholder="Admin Passphrase"
-                        className="w-full bg-background border border-border rounded-md-s pl-3 pr-10 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => toggleFieldVisibility('AUTH_PASSWORD')}
-                        className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        {visibleFields.AUTH_PASSWORD ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {envError && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md-s flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{envError}</span>
-                </div>
-              )}
-
-              {envSuccess && (
-                <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-500 text-sm rounded-md-s flex items-start gap-2">
-                  <span>Successfully updated Environment Variables! Changes are live immediately.</span>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isSavingEnv}
-                className="w-full md:w-auto md:self-end mt-4 py-2.5 px-6 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isSavingEnv ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-accent-foreground" />
-                    <span>Saving environment...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Save Environment Configuration</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </form>
-      )}
 
       {/* Public API Tab Content */}
       {activeTab === 'prospecting' && <ProspectingTab />}
@@ -1053,6 +799,8 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
               </div>
             )}
           </div>
+
+          <ChangePasswordForm />
 
           {/* Add New User */}
           <form onSubmit={handleAddUser} className="flex flex-col gap-3 p-5 bg-muted/20 border border-border/80 rounded-md-s">

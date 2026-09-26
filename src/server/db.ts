@@ -86,6 +86,12 @@ interface DbSchema {
   users: Array<{
     email: string
     passwordHash: string
+    /**
+     * Hash of the AUTH_PASSWORD last applied to this user, so a restart only
+     * resets the password when the env var itself changed, not after the user
+     * changed it in the app.
+     */
+    envPasswordHash?: string
   }>
   sessions: Array<{
     id: string
@@ -1075,15 +1081,20 @@ class JsonDb {
       if (authEmail && authPass) {
         const existing = this.data.users.find(u => u.email.toLowerCase() === authEmail.toLowerCase())
         if (!existing) {
-          this.data.users.push({
-            email: authEmail,
-            passwordHash: hashPassword(authPass)
-          })
+          const hash = hashPassword(authPass)
+          this.data.users.push({ email: authEmail, passwordHash: hash, envPasswordHash: hash })
           this.save()
           console.log(`[JSON DB Seeder] Added user from environment: ${authEmail}`)
-        } else if (!verifyPassword(authPass, existing.passwordHash)) {
-          // AUTH_PASSWORD changed since the last seed - keep the stored hash in sync
-          existing.passwordHash = hashPassword(authPass)
+        } else if (!existing.envPasswordHash) {
+          // Seeded before envPasswordHash existed, when every boot synced the
+          // password: record the current env value as the baseline.
+          if (!verifyPassword(authPass, existing.passwordHash)) existing.passwordHash = hashPassword(authPass)
+          existing.envPasswordHash = existing.passwordHash
+          this.save()
+        } else if (!verifyPassword(authPass, existing.envPasswordHash)) {
+          // AUTH_PASSWORD itself changed (e.g. to recover a lost password), so
+          // it wins over a password changed in the app.
+          existing.passwordHash = existing.envPasswordHash = hashPassword(authPass)
           this.save()
           console.log(`[JSON DB Seeder] Updated password from environment: ${authEmail}`)
         }
@@ -1575,6 +1586,15 @@ class JsonDb {
     this.save()
   }
 
+  /** Sets a user's password. Returns false when there's no such user. */
+  setUserPassword(email: string, passwordHash: string): boolean {
+    const user = this.findUser(email)
+    if (!user) return false
+    user.passwordHash = passwordHash
+    this.save()
+    return true
+  }
+
   deleteUser(email: string) {
     if (!this.data.users) return
     const normalizedEmail = email.toLowerCase().trim()
@@ -1653,6 +1673,14 @@ class JsonDb {
   deleteSession(id: string) {
     if (!this.data.sessions) return
     this.data.sessions = this.data.sessions.filter(s => s.id !== id)
+    this.save()
+  }
+
+  /** Signs a user out everywhere except `keepId` (the session making the change). */
+  deleteOtherSessions(email: string, keepId: string) {
+    if (!this.data.sessions) return
+    const target = email.toLowerCase()
+    this.data.sessions = this.data.sessions.filter(s => s.id === keepId || s.email.toLowerCase() !== target)
     this.save()
   }
 }

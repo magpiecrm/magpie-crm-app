@@ -29,10 +29,11 @@ bun run dev          # dev server on http://localhost:3000
 Create a `.env` file in the project root:
 
 ```bash
-SMTP_HOST=...            # required for sending campaigns
-SMTP_PORT=...
+SMTP_HOST=...            # optional — SMTP sending; or set any provider in
+SMTP_PORT=...            # Settings → Email Sending, which overrides these
 SMTP_USER=...
-SMTP_SENDER=...
+SMTP_PASS=...
+SMTP_SENDER=...          # optional — added to Settings → Senders on first start
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Prospecting (sfk_...)
 SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
                          # falls back to TRACKING_SECRET. Never rotate it.
@@ -47,8 +48,10 @@ ANTHROPIC_API_KEY=...    # optional — the copilot's Claude key; or set in Sett
 OPENAI_API_KEY=...       # optional — the copilot's OpenAI key; or set in Settings → Copilot
 REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
                          # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
-AUTH_EMAIL=...           # required — app login
-AUTH_PASSWORD=...
+AUTH_EMAIL=...           # required — the first login. Change passwords and
+AUTH_PASSWORD=...        # add people in Settings → Users; changing
+                         # AUTH_PASSWORD resets that login's password on the
+                         # next restart (for a forgotten password).
 TRACKING_SECRET=...      # required in production — signs tracking/unsubscribe links
                          # and encrypts stored provider credentials.
                          # Generate with: openssl rand -hex 32
@@ -66,6 +69,7 @@ In production the app refuses to sign or encrypt anything until
 `TRACKING_SECRET` (or `CREDENTIALS_SECRET`) is set, rather than falling back to a
 key that anyone reading this source would know. Rotating either secret makes
 previously stored provider credentials unreadable, so set them once, up front.
+Secrets are deliberately not editable in the app: set them where you deploy.
 
 See `src/server/env.ts` for the full list, including optional web push (VAPID)
 and Cloudflare settings.

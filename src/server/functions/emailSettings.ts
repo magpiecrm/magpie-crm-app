@@ -1,8 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 
-// Reads and writes the active sending provider. Note the deliberate difference
-// from `getEnvVarsFn`, which returns secrets in plaintext: here secret fields
-// are never echoed back, only a boolean saying whether they are set.
+// Reads and writes the active sending provider. Secret fields are never
+// echoed back, only a boolean saying whether they are set.
 
 export const getEmailSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {

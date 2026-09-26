@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 export const getUsersFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -76,4 +77,35 @@ export const deleteUserFn = createServerFn({ method: 'POST' })
     } catch (e: any) {
       return { success: false, error: e.message || 'Failed to delete user' }
     }
+  })
+
+/**
+ * Changes the signed-in user's own password. Needs the current one, so a
+ * session left open on someone else's screen can't be used to lock the owner
+ * out, and signs out that user's other sessions.
+ */
+export const changePasswordFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { currentPassword: string; newPassword: string }) =>
+    z.object({ currentPassword: z.string().max(200), newPassword: z.string().max(200) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    let session
+    try {
+      const { requireAuth } = await import('../auth.server')
+      session = await requireAuth()
+    } catch (e) {
+      return { success: false, error: 'Unauthorized' }
+    }
+
+    if (data.newPassword.trim().length < 6) {
+      return { success: false, error: 'The new password must be at least 6 characters' }
+    }
+    const { db, hashPassword, verifyPassword } = await import('../db')
+    const user = db.findUser(session.email)
+    if (!user || !verifyPassword(data.currentPassword, user.passwordHash)) {
+      return { success: false, error: 'Your current password is wrong' }
+    }
+    db.setUserPassword(user.email, hashPassword(data.newPassword))
+    db.deleteOtherSessions(user.email, session.id)
+    return { success: true }
   })

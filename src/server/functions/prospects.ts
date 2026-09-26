@@ -181,8 +181,8 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
   })
 
 // --- Settings → Prospecting ---------------------------------------------------
-// Unlike getEnvVarsFn, secrets are never sent back to the browser: only whether
-// they're set and the last four characters of the SocialFetch key.
+// Secrets are never sent back to the browser: only whether they're set and
+// the last four characters of the SocialFetch key.
 
 export const getProspectingSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
