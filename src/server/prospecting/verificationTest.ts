@@ -51,7 +51,9 @@ async function runProbes(via: string, check: (address: string) => Promise<CheckR
         detail: ok
           ? undefined
           : r.detail ??
-            (r.outcome === 'blocked'
+            (r.outcome === 'sender_rejected'
+              ? 'The mail server refused the verification FROM domain (likely on a blocklist).'
+              : r.outcome === 'blocked'
               ? 'The mail server refused this IP (likely a blocklist).'
               : r.outcome === 'timeout' || r.outcome === 'unreachable'
                 ? 'Couldn’t connect to the mail server; outbound port 25 may be blocked on this route.'

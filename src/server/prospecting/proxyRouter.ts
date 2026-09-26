@@ -7,7 +7,8 @@
 //     throttle hardest);
 //   - checks per day (adjustable in Settings).
 // And per company (mail domain), across all IPs:
-//   - paced: a short burst (one person's guesses), then about 2 a minute;
+//   - paced: a burst big enough for a first Reveal there (the catch-all
+//     test plus up to 6 guesses) and another person, then about 4 a minute;
 //   - rejected guesses per day: many rejections is what harvesting looks
 //     like, so after the cap that company waits until tomorrow. Checks that
 //     hit real mailboxes (a known format) don't count.
@@ -32,8 +33,11 @@ export type MailProvider = 'google' | 'microsoft' | 'other'
  * `unreachable`: the proxy couldn't connect to that company's mail server at
  * all (it drops connections from hosting IPs, or is down). That's the
  * destination's doing, not a sign this proxy's IP is burned.
+ * `sender_rejected`: the server refused the verification FROM/HELO domain
+ * (e.g. it's on Spamhaus's domain blocklist). A domain problem, so it doesn't
+ * count against the IP either.
  */
-export type CheckOutcome = 'ok' | 'greylisted' | 'blocked' | 'timeout' | 'unreachable'
+export type CheckOutcome = 'ok' | 'greylisted' | 'blocked' | 'timeout' | 'unreachable' | 'sender_rejected'
 
 export interface ProxyHealth {
   label: string
@@ -42,6 +46,8 @@ export interface ProxyHealth {
   blocked: number
   timeouts: number
   unreachable: number
+  /** Checks refused because of the verification (FROM/HELO) domain, not the IP. */
+  senderRejected: number
   successRate: number | null
   benchedUntil: string | null
   /** Why it's not being used right now (blocklisted, high block rate), if it isn't. */
@@ -94,7 +100,9 @@ const DAY = 24 * 60 * MINUTE
 const DEFAULTS: RouterOptions = {
   perProxyPerMinute: 20,
   perProviderPerMinute: { google: 10, microsoft: 6, other: 20 },
-  perDomainBurst: 6,
+  // A first Reveal at a company can take 7 checks (catch-all test + 6
+  // guesses), so the burst must cover that with room for a second person.
+  perDomainBurst: 12,
   domainWindowMs: 3 * MINUTE,
   rejectionsPerDomainPerDay: 20,
   dailyCapPerIp: () => 1_500,
@@ -131,6 +139,7 @@ interface ProxyState {
   blocked: number
   timeouts: number
   unreachable: number
+  senderRejected: number
   consecutiveFailures: number
   consecutiveUnreachable: number
   /** Last few results, true when blocked, for the block-rate pause. */
@@ -161,6 +170,7 @@ const newState = (config: ProxyConfig | null, label: string): ProxyState => ({
   blocked: 0,
   timeouts: 0,
   unreachable: 0,
+  senderRejected: 0,
   consecutiveFailures: 0,
   consecutiveUnreachable: 0,
   lastResults: [],
@@ -283,6 +293,11 @@ export class ProxyRouter {
   }
 
   private record(p: ProxyState, outcome: CheckOutcome) {
+    // Refused over the sender domain says nothing about this IP.
+    if (outcome === 'sender_rejected') {
+      p.senderRejected++
+      return
+    }
     p.lastResults.push(outcome === 'blocked')
     if (p.lastResults.length > this.opts.blockRateWindow) p.lastResults.shift()
 
@@ -352,6 +367,7 @@ export class ProxyRouter {
         blocked: p.blocked,
         timeouts: p.timeouts,
         unreachable: p.unreachable,
+        senderRejected: p.senderRejected,
         successRate: total > 0 ? p.ok / total : null,
         benchedUntil: p.benchedUntil > now ? new Date(p.benchedUntil).toISOString() : null,
         paused: this.opts.pausedReason(p.config),

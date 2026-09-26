@@ -117,6 +117,14 @@ describe('ProxyRouter: per-company limits', () => {
     expect(c.now()).toBe(before)
   })
 
+  it('by default, lets a whole first Reveal at a company through without waiting (catch-all test + 6 guesses)', async () => {
+    const c = clock()
+    const r = new ProxyRouter(proxies, { ...c })
+    const start = c.now()
+    for (let i = 0; i < 7; i++) await r.acquire('other', 'irbis-finance.com')
+    expect(c.now()).toBe(start)
+  })
+
   it('gives a watching user a clear message instead of waiting minutes', async () => {
     const r = new ProxyRouter(proxies, { ...clock(), perDomainBurst: 1, maxWaitMs: 5_000 })
     await r.acquire('other', 'acme.com')
@@ -215,6 +223,31 @@ describe('providerFromMx', () => {
     expect(providerFromMx(['aspmx.l.google.com'])).toBe('google')
     expect(providerFromMx(['acme-com.mail.protection.outlook.com'])).toBe('microsoft')
     expect(providerFromMx(['mx1.mailgun.org'])).toBe('other')
+  })
+})
+
+describe('sender domain rejections', () => {
+  const ionos =
+    'permanent: Requested action not taken: mailbox unavailable; Reject due to policy restrictions.; For explanation visit https://postmaster.1und1.de/en/case?c=r1102&i=ip&v=203.0.113.10&r=1M1bgp-1xBnFH2oHr-00B01v'
+  const outcome = (message: string) => classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'SmtpError', message } } })
+
+  it('recognises a refusal of the verification domain, not the IP', () => {
+    expect(outcome(ionos)).toBe('sender_rejected')
+    expect(outcome('554 5.7.1 <check@listed-sender.example>: Sender address rejected: domain listed at dbl.spamhaus.org')).toBe('sender_rejected')
+    expect(outcome('550 5.7.1 Service unavailable; Sender domain blacklisted')).toBe('sender_rejected')
+    expect(outcome('504 5.5.2 <verify1>: Helo command rejected: need fully-qualified hostname')).toBe('sender_rejected')
+  })
+
+  it('still treats a refusal of the connecting IP as an IP block', () => {
+    expect(outcome('554 5.7.1 Service unavailable; Client host [203.0.113.10] blocked using zen.spamhaus.org')).toBe('blocked')
+    // IONOS's other policy codes are about the IP.
+    expect(outcome('Reject due to policy restrictions.; For explanation visit https://postmaster.1und1.de/en/case?c=r0102&i=ip&v=1.2.3.4')).toBe('blocked')
+  })
+
+  it('never rests or pauses an IP for sender-domain refusals', async () => {
+    const r = new ProxyRouter([proxies[0]], { ...clock(), benchAfter: 1, blockRateMinChecks: 1, perProxyPerMinute: 100 })
+    for (let i = 0; i < 10; i++) (await r.acquire('other')).report('sender_rejected')
+    expect(r.health()[0]).toMatchObject({ senderRejected: 10, blocked: 0, benchedUntil: null })
   })
 })
 

@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { ArrowRight, Building2, ExternalLink, Globe } from 'lucide-react'
+import { Badge } from '../../../components/ui/Badge'
 import { setCompanyDomainFn } from '../../../server/functions'
 import type { CompanyResult } from '../../../server/prospecting/types'
 
 interface Props {
   companies: CompanyResult[]
   onFindPeople: (company: CompanyResult) => void
-  onDomainSet: (ref: string, domain: string) => void
+  onDomainSet: (ref: string, domain: string, catchAll?: boolean) => void
 }
 
 /** Inline "add domain" for companies SocialFetch has no website for. */
@@ -17,7 +18,7 @@ export function DomainCell({ company, onDomainSet }: { company: Pick<CompanyResu
   const save = useMutation({
     mutationFn: () => setCompanyDomainFn({ data: { ref: company.ref, name: company.name, domain: value } }),
     onSuccess: (res) => {
-      onDomainSet(res.ref, res.domain)
+      onDomainSet(res.ref, res.domain, res.catchAll)
       setEditing(false)
     },
   })
@@ -62,6 +63,15 @@ export function DomainCell({ company, onDomainSet }: { company: Pick<CompanyResu
   )
 }
 
+/** The company's mail server accepts every address, so no email there can be verified. */
+function CatchAllBadge() {
+  return (
+    <span title="This company's mail server accepts every address, so no email there can be verified.">
+      <Badge variant="warning">Can't verify emails</Badge>
+    </span>
+  )
+}
+
 function formatHeadcount(n: number | null) {
   if (n === null) return '—'
   return n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString()
@@ -78,6 +88,7 @@ export function CompanyResults({ companies, onFindPeople, onDomainSet }: Props) 
             </div>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="font-semibold text-foreground text-sm truncate">{c.name}</p>
+              {c.catchAll && <CatchAllBadge />}
               <p className="text-xs text-muted-foreground truncate">
                 {[c.industry, c.headcount !== null ? `${formatHeadcount(c.headcount)} staff` : null, c.country].filter(Boolean).join(' · ')}
               </p>
@@ -118,6 +129,7 @@ export function CompanyResults({ companies, onFindPeople, onDomainSet }: Props) 
                   )}
                 </div>
                 {c.companyType && <p className="text-[11px] text-muted-foreground">{c.companyType}</p>}
+                {c.catchAll && <div className="mt-1"><CatchAllBadge /></div>}
               </td>
               <td className="px-6 py-3"><DomainCell company={c} onDomainSet={onDomainSet} /></td>
               <td className="px-6 py-3 text-xs text-foreground">{c.industry ?? '—'}</td>

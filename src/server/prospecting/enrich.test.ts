@@ -15,13 +15,15 @@ const getPerson = vi.fn(async (url: string): Promise<PersonResult | null> => {
   const p = profiles[handle]
   if (!p) return null
   return {
-    profileUrl: url, firstName: handle, lastName: 'X', title: '', seniority: null, company: '', companyRef: null,
+    profileUrl: url, firstName: handle, lastName: 'Smith', title: '', seniority: null, company: '', companyRef: null,
     companyDomain: null, country: 'United Kingdom', source: 'socialfetch', ...p,
   }
 })
 let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
-vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock }) }))
+let companyPage: any
+const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
+vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }) }))
 let suppressedHashes = new Set<string>()
 let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
@@ -31,18 +33,20 @@ vi.mock('../db', () => ({
     getSuppressionHashes: () => suppressedHashes,
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     getDisclosures: () => disclosures,
+    upsertProspectCompanies: () => {},
+    getProspectingSettings: () => null,
     data: { get contacts() { return contacts } },
   },
 }))
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string }> = []
 
-const { searchPeople } = await import('./search')
+const { searchPeople, searchCompanies } = await import('./search')
 const { hashesFor, emailHash, profileHash } = await import('./suppression')
 
 const hit = (handle: string, title = 'Business Analyst'): PersonResult => ({
   profileUrl: `https://www.linkedin.com/in/${handle}`,
-  firstName: handle, lastName: 'X', title, seniority: null,
+  firstName: handle, lastName: 'Smith', title, seniority: null,
   company: '', companyRef: null, companyDomain: null, country: 'United Kingdom', source: 'socialfetch',
 })
 const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextCursor: null, reportedTotal: 100, warnings: [] })
@@ -81,7 +85,7 @@ describe('searchPeople profile lookups', () => {
     searchPage = pageOf(hit('ana'), hit('ben'))
     const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
-    expect(res.warnings).toContain("1 person doesn't currently work at Acme and was hidden.")
+    expect(res.warnings).toContain("1 person doesn't currently work at Acme and was left out.")
   })
 
   it('keeps the results when profile lookups fail, instead of failing the search', async () => {
@@ -120,7 +124,7 @@ describe('searchPeople catch-all marking', () => {
     ])
   })
 
-  it("doesn't trust a catch-all result older than 90 days", async () => {
+  it("doesn't trust a catch-all result older than 180 days", async () => {
     emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: '2020-01-01T00:00:00Z', accepts_mail: true } }
     searchPage = pageOf(hit('ana'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
@@ -165,5 +169,82 @@ describe('searchPeople and people seen before', () => {
     expect(getPerson).toHaveBeenCalledTimes(1)
     expect(res.items[0]).toMatchObject({ previously: 'revealed', company: 'Barclays', companyDomain: 'barclays.com' })
     expect(res.items[0].email).toBeUndefined()
+  })
+})
+
+describe('searchCompanies catch-all marking', () => {
+  it('marks companies whose mail domain is known to accept every address, from the cache only', async () => {
+    emailDomains = { 'natwest.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
+    const company = (ref: string, name: string, domain: string | null) => ({
+      ref, name, domain, industry: null, headcount: null, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch',
+    })
+    companyPage = { items: [company('4777', 'NatWest', 'natwest.com'), company('9', 'Acme', 'acme.com'), company('10', 'No Site', null)], nextCursor: null, reportedTotal: 3, warnings: [] }
+    const res = await searchCompanies({ keyword: 'bank' })
+    expect(res.items.map((c) => [c.name, c.catchAll ?? false])).toEqual([
+      ['NatWest', true],
+      ['Acme', false],
+      ['No Site', false],
+    ])
+  })
+})
+
+describe('searchPeople hidden surnames', () => {
+  it('leaves out people whose surname is only an initial, before paying for their profile', async () => {
+    const initialOnly = { ...hit('ana'), lastName: 'C.' }
+    searchPage = pageOf(initialOnly, hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ben'])
+    expect(res.warnings).toContain('1 person was left out because LinkedIn hides their surname (e.g. "Andy C."), so no email can be found.')
+  })
+})
+
+describe('searchPeople fills the page', () => {
+  const withCursor = (page: Page<PersonResult>, cursor: string | null) => ({ ...page, nextCursor: cursor })
+
+  it('runs another search page when people are left out, so the page still has as many as asked for', async () => {
+    searchPeopleMock.mockClear()
+    searchPeopleMock
+      .mockImplementationOnce(async () => withCursor(pageOf({ ...hit('ana'), lastName: 'C.' }, hit('ben')), 'c1'))
+      .mockImplementationOnce(async () => pageOf(hit('cat')))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 2 })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben', 'cat'])
+    expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+    // The top-up continues from where the first page ended, asking only for what's missing.
+    expect((searchPeopleMock.mock.calls as unknown as Array<[unknown, Record<string, unknown>]>)[1][1]).toMatchObject({ cursor: 'c1', count: 1 })
+    expect(res.warnings).toContain('Some results were left out, so 1 more search page was run to fill this page (3 credits each).')
+  })
+
+  it('stops after three extra searches and says so', async () => {
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation(async () => withCursor(pageOf({ ...hit(`x${Math.random()}`), lastName: 'C.' }), 'more'))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    expect(searchPeopleMock).toHaveBeenCalledTimes(4)
+    expect(res.items).toEqual([])
+    expect(res.warnings).toContain('Found 0 of 1 after 4 searches. Load more to keep looking.')
+    expect(res.warnings).toContain('4 people were left out because LinkedIn hides their surnames (e.g. "Andy C."), so no email can be found.')
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+  })
+
+  it('does not count people at known catch-all companies while verified-only is on', async () => {
+    searchPeopleMock.mockClear()
+    emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
+    searchPeopleMock
+      .mockImplementationOnce(async () => withCursor(pageOf(hit('ana')), 'c1'))
+      .mockImplementationOnce(async () => pageOf(hit('ben')))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    // Ana (catch-all) is still returned, marked, for "Show them"; Ben fills the page.
+    expect(res.items.map((p) => [p.firstName, p.catchAll ?? false])).toEqual([
+      ['ana', true],
+      ['ben', false],
+    ])
+    expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not top up when the first page is already full', async () => {
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementationOnce(async () => withCursor(pageOf(hit('ana'), hit('ben')), 'c1'))
+    await searchPeople({ titles: ['Business Analyst'], count: 2 })
+    expect(searchPeopleMock).toHaveBeenCalledTimes(1)
   })
 })

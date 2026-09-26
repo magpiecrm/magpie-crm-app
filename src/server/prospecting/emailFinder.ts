@@ -1,7 +1,7 @@
 // Finds one work email for one person at one domain.
 //
 //   1. MX lookup (cached per domain): no MX means the domain takes no mail.
-//   2. Catch-all probe (once per domain, cached 90 days): a random address is
+//   2. Catch-all probe (once per domain, cached 180 days): a random address is
 //      checked; if the server accepts it, nothing on that domain can be
 //      verified and the best-ranked guess is returned as `catch_all_likely`.
 //   3. Candidates in likelihood order — a trusted learned pattern first — are
@@ -21,8 +21,14 @@ import type { CheckResult } from './reacher'
 import type { EmailStatus } from './types'
 
 const DAY = 86_400_000
-/** Learned patterns and catch-all status are re-checked after this long. */
+/** A learned address format is re-checked after this long. */
 const DOMAIN_REFRESH_MS = 90 * DAY
+/**
+ * A company found to accept every address stays marked (and hidden from
+ * search) this long before it's tested again. Longer than for formats: mail
+ * setups rarely change, and each re-test is a check that can't succeed.
+ */
+const CATCH_ALL_REFRESH_MS = 180 * DAY
 const MX_REFRESH_MS = 30 * DAY
 /** A pattern at or above this confidence is tried first, on its own. */
 const TRUSTED_CONFIDENCE = 0.8
@@ -69,7 +75,7 @@ export function isKnownCatchAll(domain: string, getDomain: FinderDeps['getDomain
   const labels = domain.toLowerCase().trim().split('.')
   for (;;) {
     const rec = getDomain(labels.join('.'))
-    if (rec?.catch_all === true && !isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)) return true
+    if (rec?.catch_all === true && !isStale(rec.catch_all_checked_at, CATCH_ALL_REFRESH_MS, now)) return true
     if (rec?.accepts_mail !== false || labels.length <= 2) return false
     labels.shift()
     if (PUBLIC_SUFFIX_RE.test(labels.join('.'))) return false
@@ -77,7 +83,7 @@ export function isKnownCatchAll(domain: string, getDomain: FinderDeps['getDomain
 }
 
 /** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
-function surnameHidden(lastName: string): boolean {
+export function surnameHidden(lastName: string): boolean {
   return /^\p{L}\.?$/u.test(lastName.trim())
 }
 
@@ -151,7 +157,7 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
     if (
       deps.verifier &&
       rec.accepts_mail !== false &&
-      isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)
+      isStale(rec.catch_all_checked_at, CATCH_ALL_REFRESH_MS, now)
     ) {
       const probe = `${crypto.randomBytes(9).toString('hex')}@${domain}`
       const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other', domain)

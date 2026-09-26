@@ -49,6 +49,11 @@ export interface CompanyResult {
   country: string | null
   linkedinUrl: string | null
   source: SourceId
+  /**
+   * Its mail domain is already known to accept every address, so no email
+   * there can be verified. From the domain cache; no check is run for it.
+   */
+  catchAll?: boolean
 }
 
 export interface PersonResult {

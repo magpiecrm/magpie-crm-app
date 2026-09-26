@@ -78,6 +78,11 @@ export function CompanyPicker({ onPick }: { onPick: (company: CompanyResult) => 
                   <span className="block text-[10px] text-muted-foreground truncate">
                     {[c.domain, c.headcount !== null ? `${c.headcount.toLocaleString()} staff` : null, c.country].filter(Boolean).join(' · ') || 'No website listed'}
                   </span>
+                  {c.catchAll && (
+                    <span className="block text-[10px] font-semibold text-amber-700 dark:text-amber-400" title="This company's mail server accepts every address, so no email there can be verified.">
+                      Can't verify emails here
+                    </span>
+                  )}
                 </span>
               </button>
             </li>

@@ -56,7 +56,8 @@ export const setCompanyDomainFn = createServerFn({ method: 'POST' })
     const { db } = await import('../db')
     await requireAuth()
     db.upsertProspectCompanies([{ ref: data.ref, name: data.name, domain: data.domain, domain_source: 'user' }])
-    return { ref: data.ref, domain: data.domain }
+    const { companyIsCatchAll } = await import('../prospecting/search')
+    return { ref: data.ref, domain: data.domain, catchAll: companyIsCatchAll(data.domain, db) }
   })
 
 const peopleSearchInput = z.object({

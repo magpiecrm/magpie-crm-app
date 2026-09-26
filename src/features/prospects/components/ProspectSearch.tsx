@@ -62,6 +62,8 @@ interface ChosenCompany {
   ref: string
   name: string
   domain: string | null
+  /** Known to accept every address, so no email there can be verified. */
+  catchAll?: boolean
 }
 
 interface PeopleForm {
@@ -228,6 +230,22 @@ export function ProspectSearch() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const [catchAllPrompt, setCatchAllPrompt] = useState(false)
+  // The catch-all company the user chose to search anyway.
+  const [catchAllOkFor, setCatchAllOkFor] = useState<string | null>(null)
+  useEffect(() => setCatchAllPrompt(false), [peopleForm.company?.ref])
+
+  const startPeopleSearch = () => {
+    setCatchAllPrompt(false)
+    // A different search starts with no revealed emails. Re-running the
+    // same one shows the same (cached) people, so theirs stay.
+    if (JSON.stringify(peopleForm) !== JSON.stringify(peopleSearch)) {
+      queryClient.setQueryData(queryKeys.prospects.reveals(), new Map())
+    }
+    setPeopleSearch({ ...peopleForm })
+    setIsFiltersOpen(false)
+  }
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError(null)
@@ -242,12 +260,15 @@ export function ProspectSearch() {
         setFormError('Enter a job title or keyword, or pick a company.')
         return
       }
-      // A different search starts with no revealed emails. Re-running the
-      // same one shows the same (cached) people, so theirs stay.
-      if (JSON.stringify(peopleForm) !== JSON.stringify(peopleSearch)) {
-        queryClient.setQueryData(queryKeys.prospects.reveals(), new Map())
+      // A company known to accept every address can't give a verified
+      // email, so ask before spending credits searching inside it.
+      const company = peopleForm.company
+      if (company?.catchAll && verifiedOnly && catchAllOkFor !== company.ref) {
+        setCatchAllPrompt(true)
+        return
       }
-      setPeopleSearch({ ...peopleForm })
+      startPeopleSearch()
+      return
     }
     setIsFiltersOpen(false)
   }
@@ -258,8 +279,8 @@ export function ProspectSearch() {
     else setPeopleForm(EMPTY_PEOPLE_FORM)
   }
 
-  const findPeople = (c: Pick<CompanyResult, 'ref' | 'name' | 'domain'>) => {
-    setPeopleForm((f) => ({ ...f, company: { ref: c.ref, name: c.name, domain: c.domain } }))
+  const findPeople = (c: Pick<CompanyResult, 'ref' | 'name' | 'domain' | 'catchAll'>) => {
+    setPeopleForm((f) => ({ ...f, company: { ref: c.ref, name: c.name, domain: c.domain, catchAll: c.catchAll } }))
     setMode('people')
     setFormError(null)
     setExpanded((prev) => ({ ...prev, titles: true }))
@@ -267,20 +288,20 @@ export function ProspectSearch() {
 
   // Keep the chosen company chip and the cached company rows in sync with a
   // domain the user entered or looked up.
-  const applyDomain = (ref: string, domain: string | null) => {
-    setPeopleForm((f) => (f.company?.ref === ref ? { ...f, company: { ...f.company, domain } } : f))
-    setPeopleSearch((s) => (s?.company?.ref === ref ? { ...s, company: { ...s.company, domain } } : s))
+  const applyDomain = (ref: string, domain: string | null, catchAll = false) => {
+    setPeopleForm((f) => (f.company?.ref === ref ? { ...f, company: { ...f.company, domain, catchAll } } : f))
+    setPeopleSearch((s) => (s?.company?.ref === ref ? { ...s, company: { ...s.company, domain, catchAll } } : s))
     queryClient.setQueryData<InfiniteData<Page<CompanyResult>>>(queryKeys.prospects.companies(companySearch), (data) =>
       data && {
         ...data,
-        pages: data.pages.map((p) => ({ ...p, items: p.items.map((c) => (c.ref === ref ? { ...c, domain } : c)) })),
+        pages: data.pages.map((p) => ({ ...p, items: p.items.map((c) => (c.ref === ref ? { ...c, domain, catchAll } : c)) })),
       },
     )
   }
 
   const lookupDomain = useMutation({
     mutationFn: (ref: string) => resolveCompanyFn({ data: { ref } }),
-    onSuccess: (res) => applyDomain(res.ref, res.domain),
+    onSuccess: (res) => applyDomain(res.ref, res.domain, res.catchAll),
   })
 
   // Revealed emails are kept in memory next to the search results (the query
@@ -459,6 +480,12 @@ export function ProspectSearch() {
               </button>
             </div>
             <DomainCell company={peopleForm.company} onDomainSet={applyDomain} />
+            {peopleForm.company.catchAll && verifiedOnly && (
+              <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-400">
+                {peopleForm.company.name} accepts every address, so emails there can't be verified. Searching still costs
+                credits.
+              </p>
+            )}
             {!peopleForm.company.domain && (
               <button
                 type="button"
@@ -474,7 +501,7 @@ export function ProspectSearch() {
             )}
           </div>
         ) : (
-          <CompanyPicker onPick={(c) => setPeopleForm({ ...peopleForm, company: { ref: c.ref, name: c.name, domain: c.domain } })} />
+          <CompanyPicker onPick={(c) => setPeopleForm({ ...peopleForm, company: { ref: c.ref, name: c.name, domain: c.domain, catchAll: c.catchAll } })} />
         )}
       </div>
 
@@ -575,9 +602,33 @@ export function ProspectSearch() {
       )}
       {mode === 'people' && (
         <p className="text-[10px] text-muted-foreground leading-snug">
-          Up to <span className="font-semibold text-foreground">{creditsPerPage(peopleForm)} credits</span> per page: 3 for the
-          search plus 3 per result, since each profile is checked for their current job and company.
+          About <span className="font-semibold text-foreground">{creditsPerPage(peopleForm)} credits</span> per page: 3 for the
+          search plus 3 per result, since each profile is checked for their current job and company. If some results are
+          left out (hidden surnames, other employers), up to 3 more searches fill the page, costing a little more.
         </p>
+      )}
+      {mode === 'people' && catchAllPrompt && peopleForm.company?.catchAll && (
+        <div role="alert" className="border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
+          <p>
+            <span className="font-semibold">{peopleForm.company.name}</span> accepts every address, so no email you find there
+            can be verified. This search would still use up to {creditsPerPage(peopleForm)} credits.
+          </p>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setCatchAllOkFor(peopleForm.company!.ref)
+                startPeopleSearch()
+              }}
+              className="font-semibold underline underline-offset-2"
+            >
+              Search anyway
+            </button>
+            <button type="button" onClick={() => setCatchAllPrompt(false)} className="underline underline-offset-2">
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
       <button
         type="submit"

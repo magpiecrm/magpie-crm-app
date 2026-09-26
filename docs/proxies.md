@@ -100,9 +100,9 @@ checks gentle and stops using one that gets listed.
 - Per IP: 20 checks a minute; Microsoft 6 and Google 10 a minute (they
   throttle hardest); and a daily ceiling, 1,500 by default, set under
   **Daily checks per IP** in Settings → Prospecting.
-- Per company, across all IPs: a burst of 6 (one person's guesses), then
-  about 2 a minute. Saves wait for a slot; a Reveal gives up after 45 seconds
-  with a message.
+- Per company, across all IPs: up to 12 checks in any 3 minutes (a first
+  Reveal there can take 7: the catch-all test plus 6 guesses), about 4 a
+  minute after that. Saves wait for a slot; a Reveal waits up to 90 seconds.
 - Per company per day: 20 **rejected** guesses, then that company waits until
   tomorrow, since lots of rejections is what address harvesting looks like.
   Checks that hit a real mailbox (a known format) don't count.
@@ -127,5 +127,5 @@ Counts are kept in memory, so a restart resets them.
 - Greylisting (a `4xx` "try later") is normal; saves retry those people
   after 5 minutes.
 - Catch-all domains accept every address, so nothing can be verified there.
-  They're detected once per domain and cached for 90 days.
+  They're detected once per domain and remembered for 180 days, and people there are hidden from search while verified-only is on.
 - Never send email from verification IPs.

@@ -480,7 +480,7 @@ export function ProspectingTab() {
             />
             <span className="text-[11px] text-muted-foreground leading-snug">
               Each verifying IP stops for the day after this many checks; add another proxy for more. Checks to one
-              company are also paced (a few at once, then about 2 a minute) and stop for the day after 20 rejected
+              company are also paced (up to 12 at once, then about 4 a minute) and stop for the day after 20 rejected
               guesses, which is what address harvesting looks like.
             </span>
           </div>
@@ -496,6 +496,7 @@ export function ProspectingTab() {
                     <th className="text-right px-3 py-2 font-semibold">Blocked</th>
                     <th className="text-right px-3 py-2 font-semibold">Timeouts</th>
                     <th className="text-right px-3 py-2 font-semibold" title="Company mail servers that refused a connection from this proxy">Unreachable</th>
+                    <th className="text-right px-3 py-2 font-semibold" title="Checks refused because of the verification domain, not this IP">Domain refused</th>
                     <th className="text-right px-3 py-2 font-semibold">Today</th>
                     <th className="text-left px-3 py-2 font-semibold">Status</th>
                   </tr>
@@ -509,6 +510,7 @@ export function ProspectingTab() {
                       <td className="px-3 py-2 text-right tabular-nums">{h.blocked}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.timeouts}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.unreachable ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.senderRejected ?? 0}</td>
                       <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
                         {h.checksToday ?? 0} / {h.dailyCap ?? '—'}
                       </td>

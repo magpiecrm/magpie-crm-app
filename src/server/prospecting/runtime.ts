@@ -75,7 +75,7 @@ async function resolveSoaContact(domain: string): Promise<string | null> {
  * a Reveal, where someone is watching, gives up sooner with a clear message.
  */
 export async function getFinderDeps(opts: { background?: boolean } = {}): Promise<FinderDeps> {
-  const maxWaitMs = opts.background ? 10 * 60_000 : 45_000
+  const maxWaitMs = opts.background ? 10 * 60_000 : 90_000
   const { db } = await import('../db')
   // Read once per save, so a settings change mid-save doesn't split a job.
   const active = getActiveVerifier()

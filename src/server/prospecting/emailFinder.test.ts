@@ -226,6 +226,10 @@ describe('isKnownCatchAll', () => {
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: fresh }) }), NOW)).toBe(true)
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: false, catch_all_checked_at: fresh }) }), NOW)).toBe(false)
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: '2025-01-01T00:00:00Z' }) }), NOW)).toBe(false)
+    // Remembered for 180 days (learned formats only 90).
+    const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
+    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(120) }) }), NOW)).toBe(true)
+    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(200) }) }), NOW)).toBe(false)
     // Never checked: unknown, so not hidden.
     expect(isKnownCatchAll('acme.com', lookup({}), NOW)).toBe(false)
   })

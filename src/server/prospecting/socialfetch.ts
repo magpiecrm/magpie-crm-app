@@ -392,8 +392,11 @@ export function sameCompanyName(a: string, b: string): boolean {
 
 // --- composite cursors -------------------------------------------------------
 // Multi-title people search runs one paged request per title. The cursor handed
-// back to the client carries every per-title position, either SocialFetch's own
-// cursor or `start:N` for offset paging; exhausted titles drop out.
+// back to the client carries every per-title position; exhausted titles drop out.
+// A position is `start:N` (an offset, which works with any page size) or, when
+// SocialFetch only offers its own cursor, `c<size>:<cursor>`: SocialFetch
+// rejects a cursor reused with a different page size ("Pagination cursor does
+// not match this request"), so the size it was made with travels with it.
 
 function encodeCursor(map: Record<string, string>): string | null {
   return Object.keys(map).length ? Buffer.from(JSON.stringify(map)).toString('base64url') : null
@@ -523,16 +526,20 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         active.map((title) => {
           const position = prior?.[title]
           const start = position?.startsWith('start:') ? Number(position.slice(6)) : undefined
+          const sized = position?.match(/^c(\d+):(.+)$/s)
+          const cursor = start !== undefined ? undefined : sized ? sized[2] : position
+          // A cursor only works with the page size it was made with.
+          const count = sized ? Number(sized[1]) : pageSize
           // Everything goes in `keyword`: the `title` parameter returns no
           // results, and `currentCompany`'s format is undocumented.
           const keyword = [title, filters.keyword?.trim(), company?.name].filter(Boolean).join(' ')
           return get<any>('/v2/linkedin/people/search', {
             keyword: keyword || undefined,
             geoEntityId: geoEntityId ?? undefined,
-            count: pageSize,
+            count,
             start,
-            cursor: start === undefined ? position : undefined,
-          }).then((res) => ({ title, res, start: start ?? 0 }))
+            cursor,
+          }).then((res) => ({ title, res, start: start ?? 0, count }))
         }),
       )
 
@@ -550,13 +557,18 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       let wrongCompany = 0
       let unreadable = 0
 
-      for (const { title, res, start } of ok) {
+      for (const { title, res, start, count } of ok) {
         const page = res.data?.page
         if (page?.hasMore) {
           const cursor = str(page.nextCursor)
           const returned = num(page.returnedCount) ?? (Array.isArray(res.data?.people) ? res.data.people.length : 0)
           const nextStart = (num(page.start) ?? start) + returned
-          if (cursor) nextCursors[title] = cursor
+          // Offsets work with any page size, so a short top-up page or a
+          // bigger "Load more" can follow on; prefer them when SocialFetch
+          // pages by offset.
+          const offsetPaged = page.kind === 'offset' || num(page.start) !== null
+          if (offsetPaged && returned > 0 && nextStart <= MAX_START) nextCursors[title] = `start:${nextStart}`
+          else if (cursor) nextCursors[title] = `c${count}:${cursor}`
           else if (returned > 0 && nextStart <= MAX_START) nextCursors[title] = `start:${nextStart}`
         }
         const total = num(res.data?.reportedTotal)

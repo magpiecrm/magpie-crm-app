@@ -264,6 +264,33 @@ describe('searchPeople', () => {
     expect(second.nextCursor).toBeNull()
   })
 
+  // A page that's topped up with fewer results, or followed by a bigger "Load
+  // more", changes the page size between requests.
+  it('follows an offset-paged search by offset, so the page size can change between requests', async () => {
+    const f = fakeFetch([
+      envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 5, nextCursor: 'opaque-1' } }),
+      envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { kind: 'offset', hasMore: false, start: 5, returnedCount: 2 } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchPeople(null, { titles: ['BA'], count: 5 })
+    await source.searchPeople(null, { titles: ['BA'], count: 2, cursor: first.nextCursor! })
+    expect(f.calls[1].searchParams.get('start')).toBe('5')
+    expect(f.calls[1].searchParams.get('count')).toBe('2')
+    expect(f.calls[1].searchParams.has('cursor')).toBe(false)
+  })
+
+  it('reuses a SocialFetch cursor only with the page size it was made with', async () => {
+    const f = fakeFetch([
+      envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { hasMore: true, nextCursor: 'opaque-1' } }),
+      envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { hasMore: false } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchPeople(null, { titles: ['BA'], count: 5 })
+    await source.searchPeople(null, { titles: ['BA'], count: 2, cursor: first.nextCursor! })
+    expect(f.calls[1].searchParams.get('cursor')).toBe('opaque-1')
+    expect(f.calls[1].searchParams.get('count')).toBe('5')
+  })
+
   it('with a chosen company, adds it to the keyword and only ties people to it when their headline names it', async () => {
     const f = fakeFetch([
       envelope({
