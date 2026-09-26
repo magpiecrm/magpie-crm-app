@@ -249,3 +249,43 @@ describe('isKnownCatchAll', () => {
     expect(isKnownCatchAll('acme.co.uk', lookup(records), NOW)).toBe(false)
   })
 })
+
+describe('findEmail retries through another IP when a company refuses one', () => {
+  const refusing = async (labels: string[]) => {
+    const { ProxyRouter } = await import('./proxyRouter')
+    const router = new ProxyRouter(
+      labels.map((label) => ({ host: `${label}.example`, port: 1080, label })),
+      { sleep: async () => {} },
+    )
+    const used: string[] = []
+    const { deps } = setup({})
+    deps.verifier = {
+      acquire: (provider, domain) => router.acquire(provider, domain),
+      // IP "a" is refused at the greeting; "b" gets real answers.
+      check: async (email, lease) => {
+        used.push(lease.proxy?.label ?? 'direct')
+        if (lease.proxy?.label === 'a') return { reachability: 'unknown', isCatchAll: null, outcome: 'unreachable', detail: "it doesn't accept connections from the verification server" }
+        return { reachability: email.startsWith('jane.smith@') ? 'safe' : 'invalid', isCatchAll: false, outcome: 'ok' }
+      },
+    }
+    return { deps, used }
+  }
+
+  it('checks through the other IP, and keeps later checks at that company off the refused one', async () => {
+    const { deps, used } = await refusing(['a', 'b'])
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'verified' })
+    // Catch-all probe: refused by a, retried on b. Then the guess goes straight to b.
+    expect(used).toEqual(['a', 'b', 'b'])
+  })
+
+  it('stops without spending more checks once every IP has refused', async () => {
+    const { deps, used } = await refusing(['a'])
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result.status).toBe('unverified')
+    expect(result.detail).toMatch(/refuses connections from every verification IP/)
+    expect(result.detail).not.toMatch(/stopped after/)
+    // Only the catch-all probe was sent; no guess was checked.
+    expect(used).toEqual(['a'])
+  })
+})

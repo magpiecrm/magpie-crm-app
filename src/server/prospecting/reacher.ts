@@ -43,6 +43,9 @@ const SENDER_DOMAIN_REJECTION = new RegExp(
   'i',
 )
 
+const CONNECTION_REFUSAL =
+  /^permanent:.*(not allowed|not permitted|access denied|no smtp service|connection (refused|rejected|denied)|go away|client host rejected)/i
+
 export function classifySmtpOutcome(body: any): CheckOutcome {
   const smtp = body?.smtp
   const err = smtp?.error
@@ -66,6 +69,10 @@ export function classifySmtpOutcome(body: any): CheckOutcome {
   // IONOS (1&1) words every IP policy rejection this way, without a reply code
   // (its sender-domain case, r1102, is caught above).
   if (/reject due to policy restrictions/i.test(message)) return 'blocked'
+  // A flat refusal that says nothing about the address, e.g. "550 5.5.0 Not
+  // allowed." in place of the greeting: the server turns away this IP (often
+  // any hosting IP), so another IP may get through.
+  if (CONNECTION_REFUSAL.test(message) && !/user|mailbox|recipient|address|rcpt/i.test(message)) return 'unreachable'
   // Anything else is a failure we can't attribute to the proxy's IP.
   return 'ok'
 }

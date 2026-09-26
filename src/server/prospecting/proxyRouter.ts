@@ -14,6 +14,9 @@
 //     hit real mailboxes (a known format) don't count.
 // Pausing: an IP that's blocklisted (see senderHealth.ts) or whose recent
 // checks are mostly blocked stops being used until it's clean again.
+// Refusals: a company that refuses an IP (drops its connections, or rejects
+// it as a hosting or listed IP) is sent to the other IPs for a while, so a
+// refused check can be retried elsewhere and later ones skip that IP.
 //
 // In-memory by design: this app is a single process, and these are
 // short-lived signals; a restart resets them.
@@ -66,6 +69,8 @@ export interface RouterOptions {
   domainWindowMs: number
   /** Rejected guesses at one company per day before its checks wait until tomorrow. */
   rejectionsPerDomainPerDay: number
+  /** How long a company that refused an IP is kept away from it. */
+  refusalMemoryMs: number
   /** Checks per IP per day. A function, so a change in Settings applies at once. */
   dailyCapPerIp: () => number
   /** Consecutive blocks/timeouts before an IP is benched. */
@@ -105,6 +110,9 @@ const DEFAULTS: RouterOptions = {
   perDomainBurst: 12,
   domainWindowMs: 3 * MINUTE,
   rejectionsPerDomainPerDay: 20,
+  // Long enough to cover a session of Reveals at one company; short enough
+  // that a mail server that was only down gets tried again.
+  refusalMemoryMs: 6 * 60 * MINUTE,
   dailyCapPerIp: () => 1_500,
   benchAfter: 3,
   benchAfterUnreachable: 6,
@@ -122,7 +130,7 @@ const DEFAULTS: RouterOptions = {
 
 /** A limit that won't clear by waiting a minute: the caller should say so, not retry. */
 export class VerificationLimitError extends Error {
-  constructor(message: string, readonly code: 'paused' | 'daily_cap' | 'domain_rejections' | 'benched' | 'busy') {
+  constructor(message: string, readonly code: 'paused' | 'daily_cap' | 'domain_rejections' | 'benched' | 'busy' | 'refused') {
     super(message)
     this.name = 'VerificationLimitError'
   }
@@ -150,7 +158,12 @@ interface ProxyState {
 interface DomainState {
   recent: number[]
   rejections: number[]
+  /** IP label → when this company may be tried from it again. */
+  refusedBy: Map<string, number>
 }
+
+/** Outcomes where the company refused this IP, so another IP might get through. */
+export const refusedIp = (outcome: CheckOutcome) => outcome === 'unreachable' || outcome === 'blocked'
 
 export interface Lease {
   /** Null means "connect directly" — no proxies configured. */
@@ -201,16 +214,18 @@ export class ProxyRouter {
   private domain(name: string): DomainState {
     let d = this.domains.get(name)
     if (!d) {
-      d = { recent: [], rejections: [] }
+      d = { recent: [], rejections: [], refusedBy: new Map() }
       this.domains.set(name, d)
     }
     return d
   }
 
   /**
-   * Waits for an IP with capacity for this provider and company, round-robin.
-   * Throws `VerificationLimitError` straight away for limits that waiting a
-   * minute won't clear (paused, daily caps), and after `maxWaitMs` otherwise.
+   * Waits for an IP with capacity for this provider and company, round-robin,
+   * skipping IPs the company has refused lately. Throws
+   * `VerificationLimitError` straight away for limits that waiting a minute
+   * won't clear (paused, daily caps, refused by every IP), and after
+   * `maxWaitMs` otherwise.
    */
   async acquire(provider: MailProvider, domain?: string, opts: { maxWaitMs?: number } = {}): Promise<Lease> {
     const deadline = this.opts.now() + (opts.maxWaitMs ?? this.opts.maxWaitMs)
@@ -229,11 +244,21 @@ export class ProxyRouter {
         }
       }
 
+      // IPs this company hasn't refused lately.
+      const refused = target ? this.domain(target).refusedBy : null
+      const open = refused ? this.pool.filter((p) => !refused.has(p.label)) : this.pool
+      if (open.length === 0) {
+        throw new VerificationLimitError(
+          `${target}'s mail server refuses connections from ${this.pool.length === 1 ? 'the verification IP' : `all ${this.pool.length} verification IPs`}, so it can't be checked for now. A verification server at a different hosting provider may get through.`,
+          'refused',
+        )
+      }
+
       // Usable IPs: not paused, not benched, under today's cap.
       const cap = this.opts.dailyCapPerIp()
-      const reasons = this.pool.map((p) => this.opts.pausedReason(p.config))
-      const usable = this.pool.filter((p, i) => !reasons[i] && p.benchedUntil <= now && p.today.length < cap)
-      if (usable.length === 0) throw this.nothingUsable(reasons, cap, now)
+      const reasons = open.map((p) => this.opts.pausedReason(p.config))
+      const usable = open.filter((p, i) => !reasons[i] && p.benchedUntil <= now && p.today.length < cap)
+      if (usable.length === 0) throw this.nothingUsable(open, reasons, cap, now)
 
       const domainOk = !target || this.domain(target).recent.length < this.opts.perDomainBurst
       if (domainOk) {
@@ -259,16 +284,16 @@ export class ProxyRouter {
     }
   }
 
-  private nothingUsable(reasons: Array<string | null>, cap: number, now: number): VerificationLimitError {
+  private nothingUsable(open: ProxyState[], reasons: Array<string | null>, cap: number, now: number): VerificationLimitError {
     const paused = reasons.filter(Boolean) as string[]
-    if (paused.length === this.pool.length) return new VerificationLimitError(`Verification is paused: ${paused[0]}`, 'paused')
-    if (this.pool.every((p, i) => reasons[i] || p.today.length >= cap)) {
+    if (paused.length === open.length) return new VerificationLimitError(`Verification is paused: ${paused[0]}`, 'paused')
+    if (open.every((p, i) => reasons[i] || p.today.length >= cap)) {
       return new VerificationLimitError(
         `Today's verification limit is used up (${cap} checks per IP). Add another verification server or raise the limit in Settings → Prospecting.`,
         'daily_cap',
       )
     }
-    const benched = this.pool.find((p) => p.benchedUntil > now)
+    const benched = open.find((p) => p.benchedUntil > now)
     return new VerificationLimitError(
       `All verification IPs are temporarily paused after repeated blocks${benched ? `, until ${new Date(benched.benchedUntil).toLocaleTimeString()}` : ''}. Try again later.`,
       'benched',
@@ -287,6 +312,7 @@ export class ProxyRouter {
         if (reported) return
         reported = true
         if (rejected && domain) this.domain(domain).rejections.push(this.opts.now())
+        if (refusedIp(outcome) && domain) this.domain(domain).refusedBy.set(p.label, this.opts.now() + this.opts.refusalMemoryMs)
         this.record(p, outcome)
       },
     }
@@ -350,7 +376,8 @@ export class ProxyRouter {
     for (const [name, d] of this.domains) {
       d.recent = d.recent.filter((t) => t > windowStart)
       d.rejections = d.rejections.filter((t) => t > dayAgo)
-      if (!d.recent.length && !d.rejections.length) this.domains.delete(name)
+      for (const [label, until] of d.refusedBy) if (until <= now) d.refusedBy.delete(label)
+      if (!d.recent.length && !d.rejections.length && !d.refusedBy.size) this.domains.delete(name)
     }
   }
 

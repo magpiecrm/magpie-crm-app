@@ -16,7 +16,7 @@ import crypto from 'crypto'
 import type { EmailDomainRecord } from '../db'
 import { firstLastLikelihood } from './formatStats'
 import { generateCandidates, type Candidate } from './patterns'
-import { providerFromMx, type Lease, type MailProvider } from './proxyRouter'
+import { providerFromMx, refusedIp, VerificationLimitError, type Lease, type MailProvider } from './proxyRouter'
 import type { CheckResult } from './reacher'
 import type { EmailStatus } from './types'
 
@@ -44,6 +44,9 @@ const MAX_CHECKS_PER_PERSON = 6
  * only spend more probes for the same answer.
  */
 const MAX_UNKNOWN_STREAK = 2
+/** IPs one address is tried through when mail servers refuse the first. */
+const MAX_IPS_PER_CHECK = 3
+const REFUSED_EVERYWHERE = 'it refuses connections from every verification IP; one at a different hosting provider may get through'
 
 // Second-level registries: "co.uk" is never anyone's mail domain.
 const PUBLIC_SUFFIX_RE = /^(co|com|org|net|ac|gov|ltd|plc|edu|me|nhs|sch)\.[a-z]{2}$/
@@ -121,6 +124,36 @@ export interface FindResult {
   suggestedDomain?: string
 }
 
+type Verifier = NonNullable<FinderDeps['verifier']>
+
+/**
+ * Checks one address, retrying through another IP when the company's mail
+ * server refuses the one used (the router then keeps it away from that IP).
+ * `result` is null when no IP was left to check from; `exhausted` means every
+ * IP has now been refused, so further guesses there can't be checked either.
+ */
+async function verify(
+  verifier: Verifier,
+  email: string,
+  domain: string,
+  provider: MailProvider,
+): Promise<{ result: CheckResult | null; exhausted: boolean }> {
+  let result: CheckResult | null = null
+  for (let attempt = 0; attempt < MAX_IPS_PER_CHECK; attempt++) {
+    let lease: Lease
+    try {
+      lease = await verifier.acquire(provider, domain)
+    } catch (err) {
+      if (err instanceof VerificationLimitError && err.code === 'refused') return { result, exhausted: true }
+      throw err
+    }
+    result = await verifier.check(email, lease, provider)
+    lease.report(result.outcome, result.reachability === 'invalid')
+    if (!refusedIp(result.outcome)) break
+  }
+  return { result, exhausted: false }
+}
+
 const isStale = (iso: string | null, maxAgeMs: number, now: number) =>
   !iso || now - new Date(iso).getTime() > maxAgeMs
 
@@ -160,11 +193,10 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
       isStale(rec.catch_all_checked_at, CATCH_ALL_REFRESH_MS, now)
     ) {
       const probe = `${crypto.randomBytes(9).toString('hex')}@${domain}`
-      const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other', domain)
-      const result = await deps.verifier.check(probe, lease, rec.mx_provider ?? 'other')
-      lease.report(result.outcome, result.reachability === 'invalid')
-      const catchAll =
-        result.isCatchAll ?? (result.reachability === 'safe' || result.reachability === 'risky' ? true : result.reachability === 'invalid' ? false : null)
+      const { result } = await verify(deps.verifier, probe, domain, rec.mx_provider ?? 'other')
+      const catchAll = !result
+        ? null
+        : result.isCatchAll ?? (result.reachability === 'safe' || result.reachability === 'risky' ? true : result.reachability === 'invalid' ? false : null)
       if (catchAll !== null) {
         rec = deps.updateDomain(domain, { catch_all: catchAll, catch_all_checked_at: new Date(now).toISOString() })
       }
@@ -277,9 +309,11 @@ export async function findEmail(
   }
 
   for (const candidate of candidates) {
-    const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other', domain)
-    const result = await deps.verifier.check(candidate.email, lease, rec.mx_provider ?? 'other')
-    lease.report(result.outcome, result.reachability === 'invalid')
+    const { result, exhausted } = await verify(deps.verifier, candidate.email, domain, rec.mx_provider ?? 'other')
+    if (!result) {
+      lastProblem = REFUSED_EVERYWHERE
+      break
+    }
     const verdict = result.isCatchAll ? 'catch-all' : result.reachability
     tally[verdict] = (tally[verdict] ?? 0) + 1
     tried++
@@ -307,6 +341,10 @@ export async function findEmail(
       greylisted = true
     }
 
+    if (exhausted && result.reachability === 'unknown') {
+      lastProblem = REFUSED_EVERYWHERE
+      break
+    }
     if (result.reachability === 'unknown' && result.outcome !== 'greylisted' && !anyDefinite) {
       if (++unknownStreak >= MAX_UNKNOWN_STREAK) break
     } else {
@@ -335,7 +373,7 @@ export async function findEmail(
       reason,
       detail: greylisted
         ? `${domain}'s mail server asked us to try again later. ${likelihood}`
-        : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}, so we stopped after ${tried} ${tried === 1 ? 'try' : 'tries'}. ${likelihood}`,
+        : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}${tried ? `, so we stopped after ${tried} ${tried === 1 ? 'try' : 'tries'}` : ''}. ${likelihood}`,
     })
   }
   return done({ email: null, status: 'not_found', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })

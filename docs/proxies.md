@@ -119,6 +119,12 @@ checks gentle and stops using one that gets listed.
   an hour and you get a notification; 3 blocks or timeouts in a row rest it
   for 15 minutes; 6 unreachable servers in a row (its port 25 may be blocked)
   do too.
+- A company that refuses an IP (drops its connections, or turns it away as a
+  hosting or listed IP) is checked through your other IPs for the next 6
+  hours, and the refused check is retried through one of them straight away.
+  Some companies refuse whole hosting providers, so IPs at two different
+  providers reach more of them. When every IP has been refused, Reveals there
+  stop without spending more checks.
 - The health panel checks each IP and the FROM domain every 6 hours and on
   "Check now"; the proxy table shows today's checks and each IP's status.
 

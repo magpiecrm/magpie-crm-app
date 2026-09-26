@@ -269,6 +269,40 @@ describe('unreachable mail servers', () => {
   })
 })
 
+describe('companies that refuse an IP', () => {
+  it('sends that company to the other IPs for a while, without affecting other companies', async () => {
+    const c = clock()
+    const r = new ProxyRouter(proxies, { ...c, refusalMemoryMs: 60 * 60_000 })
+    const first = await r.acquire('other', 'profine-group.com')
+    expect(first.proxy?.label).toBe('a')
+    first.report('unreachable')
+    for (let i = 0; i < 3; i++) expect((await r.acquire('other', 'profine-group.com')).proxy?.label).toBe('b')
+    const elsewhere = new Set<string | undefined>()
+    for (let i = 0; i < 2; i++) elsewhere.add((await r.acquire('other', 'acme.com')).proxy?.label)
+    expect(elsewhere).toEqual(new Set(['a', 'b']))
+
+    c.advance(61 * 60_000)
+    const labels = new Set<string | undefined>()
+    for (let i = 0; i < 2; i++) labels.add((await r.acquire('other', 'profine-group.com')).proxy?.label)
+    expect(labels).toEqual(new Set(['a', 'b']))
+  })
+
+  it('says so, without waiting, once every IP has been refused', async () => {
+    const r = new ProxyRouter([proxies[0]], { ...clock() })
+    ;(await r.acquire('other', 'profine-group.com')).report('blocked')
+    await expect(r.acquire('other', 'profine-group.com')).rejects.toMatchObject({ code: 'refused' })
+    await expect(r.acquire('other', 'acme.com')).resolves.toBeTruthy()
+  })
+
+  it('treats a flat refusal in place of the greeting as unreachable', () => {
+    const outcome = (message: string) => classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'SmtpError', message } } })
+    expect(outcome('permanent: 5.5.0 Not allowed.')).toBe('unreachable')
+    expect(outcome('permanent: 554 5.7.1 Client host rejected: cannot find your hostname')).toBe('unreachable')
+    // Refusals about the address are not the IP's problem.
+    expect(outcome('permanent: 550 5.7.1 Recipient address not allowed')).toBe('ok')
+  })
+})
+
 describe('classifySmtpOutcome', () => {
   it('separates greylisting, blocks and timeouts', () => {
     expect(classifySmtpOutcome({ is_reachable: 'safe', smtp: { is_deliverable: true } })).toBe('ok')
