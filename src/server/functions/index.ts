@@ -14,6 +14,7 @@ export * from './personas'
 export * from './notifications'
 export * from './push'
 export * from './surveys'
+export * from './usage'
 export * from './templates'
 
 if (typeof window === 'undefined') {

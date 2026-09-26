@@ -30,6 +30,10 @@ key), with the app's actions as tools.
     profile lookups held in server memory for 24h (size-capped, never on
     disk) so a person isn't paid for twice. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
+  - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
+    emails found, contacts saved, emails sent), shown on Settings → Overview
+    and served by `GET /api/usage` when `USAGE_API_TOKEN` is set. Counts
+    only; record new billable actions here.
   - `db.ts` — the app's own data store: a JSON file (`local_db.json`, path
     from `DATABASE_PATH`) holding contacts/lists/campaigns/personas/auth. In
     production this file lives on a mounted volume.
@@ -65,6 +69,9 @@ key), with the app's actions as tools.
   reuse these rather than hand-rolling.
 
 ## Conventions
+
+- Production runs `serve.ts` (Bun) over the Vite build, not `vite preview`,
+  which uses about twice the memory. `bun run build && bun run start`.
 
 - TypeScript is `strict` with `noUnusedLocals`/`noUnusedParameters` — unused
   symbols fail typecheck. Verify changes with `bunx tsc --noEmit`.

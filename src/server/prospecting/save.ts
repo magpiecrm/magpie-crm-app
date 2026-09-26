@@ -11,6 +11,7 @@ import { domainForPerson } from './companies'
 import { findEmail, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PeopleSource, PersonResult } from './types'
+import { recordUsage } from '../usage'
 
 const SYNC_LIMIT = 10
 const SYNC_TIMEOUT_MS = 45_000
@@ -153,6 +154,7 @@ async function processPerson(
     }
     const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
     found = await findEmail(person, domain, deps.finder, { headcount })
+    recordUsage({ emailLookups: 1 })
   }
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
   if (found.email && (deps.verifiedOnly ?? true) && found.status !== 'verified') {
@@ -190,6 +192,8 @@ async function processPerson(
     event: 'saved',
     notice_status: 'pending',
   })
+  // A revealed address was already counted as found when it was revealed.
+  recordUsage({ contactsSaved: 1, emailsFound: person.email ? 0 : 1 })
   return { ...base, status: 'saved', email: found.email, emailStatus: found.status }
 }
 

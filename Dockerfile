@@ -1,8 +1,7 @@
 FROM oven/bun:1 as base
 WORKDIR /app
 
-# Install Node/NPM: npx installs Playwright's Chromium below, and the Vite
-# server runs on Node.
+# Install Node/NPM: npx installs Playwright's Chromium below.
 RUN apt-get update && apt-get install -y curl gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
@@ -56,5 +55,5 @@ ENV PORT=3000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
-# Run the app in production mode
-CMD ["bun", "run", "preview", "--port", "3000", "--host", "0.0.0.0"]
+# Run the app in production mode (see serve.ts; PORT is set above)
+CMD ["bun", "serve.ts"]

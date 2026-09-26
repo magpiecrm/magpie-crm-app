@@ -3,7 +3,7 @@
  * one-line intro shown at the top of its page, so it's clear what it's for.
  */
 export const SETTINGS_SECTIONS = [
-  { id: 'overview', group: null, label: 'Overview', intro: "What's set up, and what needs your attention." },
+  { id: 'overview', group: null, label: 'Overview', intro: "This month's usage, what's set up, and what needs your attention." },
   { id: 'source', group: 'Prospecting', label: 'Data source', intro: 'The SocialFetch account that prospect search uses to find companies and people.' },
   { id: 'verification', group: 'Prospecting', label: 'Email verification', intro: 'How found email addresses are checked before they are shown or saved, and the health of the servers that check them.' },
   { id: 'sending', group: 'Email', label: 'Sending', intro: 'The service your campaigns are sent through, and the default address they come from.' },

@@ -319,6 +319,9 @@ export async function searchPeople(
     cursor = nextCursor
   }
 
+  const { recordUsage } = await import('../usage')
+  recordUsage({ searches, prospects: usable() })
+
   if (lookupError) warnings.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
   if (tally.noSurname > 0) {
     warnings.push(

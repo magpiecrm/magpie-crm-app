@@ -9,6 +9,7 @@ import { db } from './db'
 import { getActiveProviderConfig } from './emailSettings'
 import { getProvider } from './providers'
 import type { OutboundMessage } from './providers/types'
+import { recordUsage } from './usage'
 
 export { resetSmtpTransport } from './providers'
 
@@ -106,7 +107,9 @@ export async function sendMail(options: SendMailOptions) {
       return { messageId: 'mock-id-' + Math.random().toString(36).substring(7) }
     }
 
-    return getProvider(config.providerId).send(message, config.creds)
+    const sent = await getProvider(config.providerId).send(message, config.creds)
+    recordUsage({ emailsSent: message.to.length })
+    return sent
   }
 
   const RETRYABLE_CODES = ['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'ECONNRESET']

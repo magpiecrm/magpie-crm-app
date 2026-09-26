@@ -31,8 +31,8 @@ async function handle({ request }: { request: Request }) {
   const { db } = await import('../../server/db')
   if (!db.verifyApiKey(key, 'mcp')) return unauthorized('Unknown or revoked MCP key.')
 
-  // Stateless: a fresh transport and server per request, as the copilot's own
-  // endpoint does. Nothing here keeps per-connection state.
+  // Stateless: a fresh transport and server per request. Nothing here keeps
+  // per-connection state.
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined })
   const server = buildPublicMcpServer()
   await server.connect(transport)

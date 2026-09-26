@@ -10,6 +10,7 @@ import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/c
 import type { EmailStatus, NoticeStatus } from './prospecting/types'
 import type { MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
+import type { UsageCounter } from './usage'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -263,6 +264,11 @@ interface DbSchema {
    * infrastructure only; no personal data.
    */
   sender_health?: SenderHealthReport
+  /**
+   * Monthly usage counts, keyed by "YYYY-MM" (see usage.ts). Counts only: no
+   * names, addresses or searches.
+   */
+  usage?: Record<string, Partial<Record<UsageCounter, number>>>
 }
 
 export interface ProspectingSettingsRecord {
@@ -1270,6 +1276,20 @@ class JsonDb {
   }
 
   // Brand kit
+  /** Adds to this month's usage counts (see usage.ts). */
+  addUsage(month: string, deltas: Partial<Record<UsageCounter, number>>) {
+    this.data.usage ??= {}
+    const row = (this.data.usage[month] ??= {})
+    for (const [key, n] of Object.entries(deltas) as Array<[UsageCounter, number]>) {
+      if (n) row[key] = (row[key] ?? 0) + n
+    }
+    this.save()
+  }
+
+  getUsage(): Record<string, Partial<Record<UsageCounter, number>>> {
+    return this.data.usage ?? {}
+  }
+
   getBrandKit() {
     return this.data.brand_kit ?? null
   }

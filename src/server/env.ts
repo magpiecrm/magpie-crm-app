@@ -126,6 +126,9 @@ export const env = {
   // so set it once, up front.
   suppressionSecret: () => secretWithDevFallback('SUPPRESSION_SECRET', 'TRACKING_SECRET'),
   webhookSecret: () => readEnv('WEBHOOK_SECRET'),
+  // Bearer token for GET /api/usage (monthly usage counts). Unset means the
+  // endpoint is off; a hosting provider sets it to read usage for billing.
+  usageApiToken: () => readEnv('USAGE_API_TOKEN'),
   isProduction: () => readEnv('NODE_ENV') === 'production',
   // Where the JSON "database" lives — also used to derive the uploads
   // directory, so uploaded files land on the same persistent volume as the DB

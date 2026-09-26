@@ -10,6 +10,7 @@
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "bun serve.ts",
     "test": "vitest run",
     "knip": "knip",
     "reacher:up": "docker compose -f docker/reacher/docker-compose.yml --env-file .env up -d",

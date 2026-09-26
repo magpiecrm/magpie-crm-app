@@ -18,6 +18,7 @@ import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templ
 import { Route as MarketingSurveysRouteImport } from './routes/marketing/surveys'
 import { Route as MarketingFormsRouteImport } from './routes/marketing/forms'
 import { Route as MarketingContactsRouteImport } from './routes/marketing/contacts'
+import { Route as ApiUsageRouteImport } from './routes/api/usage'
 import { Route as ApiUnsubscribeRouteImport } from './routes/api/unsubscribe'
 import { Route as ApiSubscribeRouteImport } from './routes/api/subscribe'
 import { Route as ApiOptOutRouteImport } from './routes/api/opt-out'
@@ -95,6 +96,11 @@ const MarketingFormsRoute = MarketingFormsRouteImport.update({
 const MarketingContactsRoute = MarketingContactsRouteImport.update({
   id: '/marketing/contacts',
   path: '/marketing/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUsageRoute = ApiUsageRouteImport.update({
+  id: '/api/usage',
+  path: '/api/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUnsubscribeRoute = ApiUnsubscribeRouteImport.update({
@@ -277,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
+  '/api/usage': typeof ApiUsageRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -321,6 +328,7 @@ export interface FileRoutesByTo {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
+  '/api/usage': typeof ApiUsageRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/collection': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
@@ -362,6 +370,7 @@ export interface FileRoutesById {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
+  '/api/usage': typeof ApiUsageRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -408,6 +417,7 @@ export interface FileRouteTypes {
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
+    | '/api/usage'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -452,6 +462,7 @@ export interface FileRouteTypes {
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
+    | '/api/usage'
     | '/s/$surveyId'
     | '/collection'
     | '/api/copilot/permission'
@@ -492,6 +503,7 @@ export interface FileRouteTypes {
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
+    | '/api/usage'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -537,6 +549,7 @@ export interface RootRouteChildren {
   ApiOptOutRoute: typeof ApiOptOutRoute
   ApiSubscribeRoute: typeof ApiSubscribeRoute
   ApiUnsubscribeRoute: typeof ApiUnsubscribeRoute
+  ApiUsageRoute: typeof ApiUsageRoute
   MarketingContactsRoute: typeof MarketingContactsRouteWithChildren
   MarketingFormsRoute: typeof MarketingFormsRouteWithChildren
   MarketingSurveysRoute: typeof MarketingSurveysRouteWithChildren
@@ -628,6 +641,13 @@ declare module '@tanstack/react-router' {
       path: '/marketing/contacts'
       fullPath: '/marketing/contacts'
       preLoaderRoute: typeof MarketingContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/usage': {
+      id: '/api/usage'
+      path: '/api/usage'
+      fullPath: '/api/usage'
+      preLoaderRoute: typeof ApiUsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/unsubscribe': {
@@ -927,6 +947,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOptOutRoute: ApiOptOutRoute,
   ApiSubscribeRoute: ApiSubscribeRoute,
   ApiUnsubscribeRoute: ApiUnsubscribeRoute,
+  ApiUsageRoute: ApiUsageRoute,
   MarketingContactsRoute: MarketingContactsRouteWithChildren,
   MarketingFormsRoute: MarketingFormsRouteWithChildren,
   MarketingSurveysRoute: MarketingSurveysRouteWithChildren,

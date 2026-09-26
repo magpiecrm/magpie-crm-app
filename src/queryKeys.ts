@@ -53,6 +53,7 @@ export const queryKeys = {
     copilot: () => ['settings', 'copilot'] as const,
     sending: () => ['settings', 'sending'] as const,
     team: () => ['settings', 'team'] as const,
+    usage: () => ['settings', 'usage'] as const,
   },
   notifications: {
     list: () => ['notifications'] as const,

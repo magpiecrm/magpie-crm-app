@@ -62,6 +62,8 @@ PUBLIC_SITE_URL=...      # optional — your website; unsubscribe page links bac
 SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
                                # embed the signup form (POST /api/subscribe)
 DATABASE_PATH=...        # optional — defaults to ./local_db.json
+USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
+                         # counts, e.g. for a hosting provider's billing)
 ```
 
 In production the app refuses to sign or encrypt anything until
@@ -154,7 +156,8 @@ UK GDPR and PECR, and you must also comply with SocialFetch's terms.
 | ---------------- | ------------------------------------ |
 | `bun run dev`    | Start the dev server (port 3000)     |
 | `bun run build`  | Production build                     |
-| `bun run preview`| Preview the production build         |
+| `bun run start`  | Run the production build (`serve.ts`) |
+| `bun run preview`| Preview the build with Vite (dev use) |
 | `bun run test`   | Run the Vitest suite                 |
 | `bun run knip`   | Find unused files/exports/deps       |
 
