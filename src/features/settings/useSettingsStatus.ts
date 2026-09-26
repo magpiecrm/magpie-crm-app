@@ -30,7 +30,9 @@ export function useSettingsStatus(): { statuses: Partial<Record<SettingsSection,
   if (p) {
     statuses.source = !p.socialfetch.configured
       ? { level: 'error', text: 'Add your SocialFetch API key to search for prospects.', action: 'Add key' }
-      : p.socialfetch.balance === null
+      : p.socialfetch.balanceHidden
+        ? { level: 'ok', text: `Prospect search is set up. ${(p.socialfetch.prospectsThisMonth ?? 0).toLocaleString()} prospects found this month.` }
+        : p.socialfetch.balance === null
         ? { level: 'warning', text: "Connected, but the credit balance couldn't be read.", action: 'Check' }
         : { level: 'ok', text: `SocialFetch connected, ${p.socialfetch.balance.toLocaleString()} credits left.` }
 

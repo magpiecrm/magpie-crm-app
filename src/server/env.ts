@@ -63,6 +63,12 @@ export const env = {
   socialfetch: {
     baseUrl: () => readEnv('SOCIALFETCH_BASE_URL') || 'https://api.socialfetch.dev',
     apiKey: () => readEnv('SOCIALFETCH_API_KEY'),
+    /**
+     * SOCIALFETCH_BALANCE=hidden: don't show the SocialFetch credit balance,
+     * e.g. when a hosting provider pays for SocialFetch; the sidebar shows
+     * this month's prospects instead.
+     */
+    balanceHidden: () => readEnv('SOCIALFETCH_BALANCE')?.toLowerCase() === 'hidden',
   },
   // Anthropic API key for the copilot (bring your own key). Normally saved in
   // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).

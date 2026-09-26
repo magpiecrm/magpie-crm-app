@@ -149,16 +149,19 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const { getActiveVerifier, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey } = await import('../prospecting/settings')
     const { getProxyRouter } = await import('../prospecting/runtime')
 
-    const configured = isSocialFetchConfigured()
-    // The balance call is free. A failure shows as "Unavailable"; the
-    // settings page's test gives the reason.
-    const balance = configured ? await getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : null
-    const verifier = getActiveVerifier()
     const { db } = await import('../db')
     const { env } = await import('../env')
+    const configured = isSocialFetchConfigured()
+    const balanceHidden = env.socialfetch.balanceHidden()
+    // The balance call is free. A failure shows as "Unavailable"; the
+    // settings page's test gives the reason.
+    const balance = configured && !balanceHidden ? await getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : null
+    const { monthOf, usageForMonth } = await import('../usage')
+    const prospectsThisMonth = balanceHidden ? usageForMonth(monthOf(new Date())).prospects : null
+    const verifier = getActiveVerifier()
     const health = db.getSenderHealth()
     return {
-      socialfetch: { configured, balance },
+      socialfetch: { configured, balance, balanceHidden, prospectsThisMonth },
       verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly() },
       reacher: {
         configured: verifier?.provider === 'reacher',

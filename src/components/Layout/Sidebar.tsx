@@ -126,9 +126,16 @@ export function Sidebar({
 
       <div className="p-4 border-t border-border mt-auto safe-b">
         <div className="bg-background rounded-md-m p-4 border border-border">
-          <p className="font-mono text-[10px] text-accent mb-2 font-medium uppercase tracking-[0.08em]">SocialFetch Credits</p>
+          <p className="font-mono text-[10px] text-accent mb-2 font-medium uppercase tracking-[0.08em]">
+            {status?.socialfetch.balanceHidden ? 'Prospects this month' : 'SocialFetch Credits'}
+          </p>
           {isLoadingUsage ? (
             <Loader2 className="w-4 h-4 animate-spin text-accent" />
+          ) : status?.socialfetch.balanceHidden ? (
+            // Someone else pays for SocialFetch, so show what's been used instead.
+            <span className="text-xl font-display font-semibold tabular-nums text-foreground">
+              {(status.socialfetch.prospectsThisMonth ?? 0).toLocaleString()}
+            </span>
           ) : !status?.socialfetch.configured ? (
             <Link
               to="/settings"

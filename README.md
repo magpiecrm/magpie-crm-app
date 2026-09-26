@@ -39,6 +39,8 @@ SES_SECRET_ACCESS_KEY=...#   in Settings → Sending (also SES_REGION, default
 EMAIL_PROVIDER=...       # optional — provider id to use when none is saved
                          #   (e.g. ses); otherwise inferred from the vars above
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
+SOCIALFETCH_BALANCE=hidden # optional — don't show the credit balance (someone
+                         #   else pays); the sidebar shows this month's prospects
 SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
                          # falls back to TRACKING_SECRET. Never rotate it.
 REACHER_URL=...          # optional — or set in Settings → Email verification;
