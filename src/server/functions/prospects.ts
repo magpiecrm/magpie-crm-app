@@ -161,11 +161,14 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const verifier = getActiveVerifier()
     const health = db.getSenderHealth()
     return {
+      /** PROSPECTING_MANAGED: the host runs search and verification; hide their setup. */
+      managed: env.prospectingManaged(),
       socialfetch: { configured, balance, balanceHidden, prospectsThisMonth },
       verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly() },
       reacher: {
         configured: verifier?.provider === 'reacher',
-        proxies: verifier?.provider === 'reacher' ? getProxyRouter().health() : [],
+        // The host's IPs aren't a managed copy's business.
+        proxies: verifier?.provider === 'reacher' && !env.prospectingManaged() ? getProxyRouter().health() : [],
       },
       // Only while Reacher is verifying and the checks are on: an old report
       // shouldn't warn after switching away or turning them off.
@@ -189,10 +192,19 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
 // Secrets are never sent back to the browser: only whether they're set and
 // the last four characters of the SocialFetch key.
 
+/** With PROSPECTING_MANAGED=on the host runs these, so users can't see or change them. */
+async function refuseIfManaged() {
+  const { env } = await import('../env')
+  if (env.prospectingManaged()) {
+    throw new Error('Prospect data and email verification are provided with your plan, so there is nothing to set up here.')
+  }
+}
+
 export const getProspectingSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
+    await refuseIfManaged()
     const { getMaskedProspectingSettings } = await import('../prospecting/settings')
     return getMaskedProspectingSettings()
   })
@@ -227,6 +239,7 @@ export const saveProspectingSettingsFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
+    await refuseIfManaged()
     const { saveProspectingSettings, getMaskedProspectingSettings } = await import('../prospecting/settings')
     saveProspectingSettings(data)
     // New proxies or a new FROM/HELO shouldn't wait six hours to be checked.
@@ -240,6 +253,7 @@ export const testVerificationFn = createServerFn({ method: 'POST' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
+    await refuseIfManaged()
     const { testVerification } = await import('../prospecting/verificationTest')
     return testVerification()
   })
@@ -259,6 +273,7 @@ export const checkSenderHealthFn = createServerFn({ method: 'POST' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
+    await refuseIfManaged()
     const { runSenderHealthCheck } = await import('../prospecting/senderHealthMonitor')
     return runSenderHealthCheck()
   })
@@ -272,6 +287,7 @@ export const testSocialFetchKeyFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
+    await refuseIfManaged()
     const { getSocialFetchBalance } = await import('../prospecting/socialfetch')
     const { requireSocialFetchKey } = await import('../prospecting/settings')
     try {

@@ -155,7 +155,7 @@ export function Sidebar({
               <span className="text-[10px] text-muted-foreground">3 / search</span>
             </div>
           )}
-          {status && (
+          {status && !status.managed && (
             <p className="text-[10px] text-muted-foreground mt-2">
               Email verification:{' '}
               {status.verification.provider === 'reacher' ? 'Reacher' : 'off (best guess only)'}

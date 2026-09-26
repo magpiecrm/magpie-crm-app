@@ -20,13 +20,20 @@ const DOT: Record<StatusLevel, string> = {
   info: '',
 }
 
+type Section = (typeof SETTINGS_SECTIONS)[number]
+
+/** Pages a managed copy (PROSPECTING_MANAGED) doesn't show: its host runs them. */
+const MANAGED_HIDDEN = new Set<SettingsSection>(['source', 'verification'])
+
 /** Menu groups in order, each with its pages. */
-const GROUPS = SETTINGS_SECTIONS.reduce<Array<{ name: string | null; sections: Array<(typeof SETTINGS_SECTIONS)[number]> }>>((groups, section) => {
-  const last = groups[groups.length - 1]
-  if (last && last.name === section.group) last.sections.push(section)
-  else groups.push({ name: section.group, sections: [section] })
-  return groups
-}, [])
+function groupsOf(sections: readonly Section[]) {
+  return sections.reduce<Array<{ name: string | null; sections: Section[] }>>((groups, section) => {
+    const last = groups[groups.length - 1]
+    if (last && last.name === section.group) last.sections.push(section)
+    else groups.push({ name: section.group, sections: [section] })
+    return groups
+  }, [])
+}
 
 /**
  * Settings: a grouped menu of pages (a dropdown on narrow screens), each
@@ -36,7 +43,10 @@ const GROUPS = SETTINGS_SECTIONS.reduce<Array<{ name: string | null; sections: A
 export function SettingsPage({ initialSection }: { initialSection?: SettingsSection }) {
   const [active, setActive] = useState<SettingsSection>(initialSection ?? 'overview')
   const queryClient = useQueryClient()
-  const { statuses, isLoading } = useSettingsStatus()
+  const { statuses, isLoading, managed } = useSettingsStatus()
+  const visible = managed ? SETTINGS_SECTIONS.filter((s) => !MANAGED_HIDDEN.has(s.id)) : SETTINGS_SECTIONS
+  const GROUPS = groupsOf(visible)
+  const hiddenPage = managed && MANAGED_HIDDEN.has(active)
 
   // Deep links (e.g. the sidebar's "add your key") can land here while the
   // page is already mounted.
@@ -117,8 +127,13 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
           </header>
 
           {active === 'overview' && <SettingsOverview statuses={statuses} isLoading={isLoading} onOpen={open} />}
-          {active === 'source' && <ProspectingTab key="source" section="source" />}
-          {active === 'verification' && <ProspectingTab key="verification" section="verification" />}
+          {hiddenPage && (
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              Prospect data and email verification are provided with your plan, so there's nothing to set up here.
+            </p>
+          )}
+          {active === 'source' && !hiddenPage && <ProspectingTab key="source" section="source" />}
+          {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}
           {active === 'senders' && <SendersTab />}
           {active === 'copilot' && <CopilotTab />}

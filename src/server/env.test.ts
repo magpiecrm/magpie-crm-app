@@ -11,6 +11,9 @@ const KEYS = [
   'SUBSCRIBE_ALLOWED_ORIGINS',
   'VAPID_SUBJECT',
   'AUTH_EMAIL',
+  'PROSPECTING_MANAGED',
+  'SOCIALFETCH_BALANCE',
+  'VERIFICATION_HEALTH_CHECKS',
 ] as const
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 
@@ -82,5 +85,23 @@ describe('vapid.subject', () => {
 
     delete process.env.AUTH_EMAIL
     expect(env.vapid.subject()).toBe('mailto:admin@example.com')
+  })
+})
+
+describe('PROSPECTING_MANAGED', () => {
+  it('is off unless set, and leaves the separate settings alone', () => {
+    delete process.env.PROSPECTING_MANAGED
+    delete process.env.SOCIALFETCH_BALANCE
+    delete process.env.VERIFICATION_HEALTH_CHECKS
+    expect(env.prospectingManaged()).toBe(false)
+    expect(env.socialfetch.balanceHidden()).toBe(false)
+    expect(env.verificationHealthChecks()).toBe(true)
+  })
+
+  it('hides the balance and turns the health checks off', () => {
+    process.env.PROSPECTING_MANAGED = 'on'
+    expect(env.prospectingManaged()).toBe(true)
+    expect(env.socialfetch.balanceHidden()).toBe(true)
+    expect(env.verificationHealthChecks()).toBe(false)
   })
 })

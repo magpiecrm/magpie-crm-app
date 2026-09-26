@@ -71,6 +71,9 @@ SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
 DATABASE_PATH=...        # optional — defaults to ./local_db.json
 USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
                          # counts, e.g. for a hosting provider's billing)
+PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
+                         # verification: hides those settings (implies
+                         # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off)
 VERIFICATION_HEALTH_CHECKS=off  # optional — skip blocklist/DNS checks of the
                          # verifying IPs, when someone else runs verification
 ```
@@ -202,6 +205,12 @@ and re-exported from `src/server/functions/index.ts`, so callers import them as
 
 Tailwind CSS v4 (configured via `@tailwindcss/vite`). Global tokens and theme
 live in `src/styles.css`.
+
+## Releases and security
+
+Run a released version (`ghcr.io/magpiecrm/magpie-crm-app:<version>`) rather
+than `latest`; see [RELEASING.md](RELEASING.md) for how versions are cut.
+Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 
 ## License
 

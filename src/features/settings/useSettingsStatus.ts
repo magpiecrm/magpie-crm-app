@@ -17,7 +17,12 @@ export interface SectionStatus {
  * Where each settings page stands, for the menu's status dots and the
  * Overview. Pages without a status (e.g. Contact fields) are left out.
  */
-export function useSettingsStatus(): { statuses: Partial<Record<SettingsSection, SectionStatus>>; isLoading: boolean } {
+export function useSettingsStatus(): {
+  statuses: Partial<Record<SettingsSection, SectionStatus>>
+  isLoading: boolean
+  /** PROSPECTING_MANAGED: Data source and Email verification are the host's, so they're hidden. */
+  managed: boolean
+} {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
   const sending = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
@@ -27,7 +32,7 @@ export function useSettingsStatus(): { statuses: Partial<Record<SettingsSection,
   const statuses: Partial<Record<SettingsSection, SectionStatus>> = {}
 
   const p = prospecting.data
-  if (p) {
+  if (p && !p.managed) {
     statuses.source = !p.socialfetch.configured
       ? { level: 'error', text: 'Add your SocialFetch API key to search for prospects.', action: 'Add key' }
       : p.socialfetch.balanceHidden
@@ -87,5 +92,5 @@ export function useSettingsStatus(): { statuses: Partial<Record<SettingsSection,
   }
 
   const isLoading = [prospecting, copilot, sending, senders, team].some((q) => q.isLoading)
-  return { statuses, isLoading }
+  return { statuses, isLoading, managed: Boolean(p?.managed) }
 }

@@ -41,7 +41,18 @@ function readList(name: string): string[] {
     .filter(Boolean)
 }
 
+/**
+ * PROSPECTING_MANAGED=on: prospect data and email verification are run by
+ * whoever hosts this copy (e.g. MagpieCRM Cloud), not its users. Settings
+ * hides Data source and Email verification and the server refuses to change
+ * them; implies SOCIALFETCH_BALANCE=hidden and VERIFICATION_HEALTH_CHECKS=off.
+ */
+function prospectingManaged(): boolean {
+  return ['on', 'true', '1', 'yes'].includes(readEnv('PROSPECTING_MANAGED')?.toLowerCase() ?? '')
+}
+
 export const env = {
+  prospectingManaged,
   // SMTP is now just one of several sending providers, so none of these may be
   // assumed present — a deployment on Resend or SES has no SMTP_* vars at all.
   // They survive as the back-compat fallback in emailSettings.ts.
@@ -68,7 +79,7 @@ export const env = {
      * e.g. when a hosting provider pays for SocialFetch; the sidebar shows
      * this month's prospects instead.
      */
-    balanceHidden: () => readEnv('SOCIALFETCH_BALANCE')?.toLowerCase() === 'hidden',
+    balanceHidden: () => prospectingManaged() || readEnv('SOCIALFETCH_BALANCE')?.toLowerCase() === 'hidden',
   },
   // Anthropic API key for the copilot (bring your own key). Normally saved in
   // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).
@@ -147,7 +158,7 @@ export const env = {
   // DNS, SPF for the IPs and FROM domain it verifies from): for a copy whose
   // verification service is run by someone else, e.g. a hosting provider,
   // which monitors its own IPs.
-  verificationHealthChecks: () => readEnv('VERIFICATION_HEALTH_CHECKS')?.toLowerCase() !== 'off',
+  verificationHealthChecks: () => !prospectingManaged() && readEnv('VERIFICATION_HEALTH_CHECKS')?.toLowerCase() !== 'off',
   // Bearer token for GET /api/usage (monthly usage counts). Unset means the
   // endpoint is off; a hosting provider sets it to read usage for billing.
   usageApiToken: () => readEnv('USAGE_API_TOKEN'),
