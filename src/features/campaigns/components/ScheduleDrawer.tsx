@@ -305,8 +305,8 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
                 
                 {/* Aura premium badge */}
                 <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-500 dark:bg-blue-500/20 border border-blue-500/20">
-                    <Sparkles className="w-3 h-3 text-blue-500" />
+                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-accent/10 text-accent border border-accent/20">
+                    <Sparkles className="w-3 h-3" />
                     Powered by Aura
                   </div>
                   <Crown className="w-3.5 h-3.5 text-amber-500" />
@@ -350,7 +350,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
             onClick={handleConfirm}
             disabled={isScheduleDisabled || isPending || isCampaignInvalid}
             isLoading={isPending}
-            className="rounded-full px-6 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-black font-semibold text-sm"
+            className="px-6"
           >
             {selectedOption === 'now' ? 'Send now' : 'Schedule'}
           </Button>

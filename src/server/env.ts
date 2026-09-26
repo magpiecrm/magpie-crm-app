@@ -64,6 +64,11 @@ export const env = {
     baseUrl: () => readEnv('SOCIALFETCH_BASE_URL') || 'https://api.socialfetch.dev',
     apiKey: () => readEnv('SOCIALFETCH_API_KEY'),
   },
+  // Anthropic API key for the copilot (bring your own key). Normally saved in
+  // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).
+  anthropic: {
+    apiKey: () => readEnv('ANTHROPIC_API_KEY'),
+  },
   // NeverBounce: hosted email verification, the alternative to Reacher. The
   // key is normally saved in Settings → Prospecting; this is the fallback.
   neverbounce: {

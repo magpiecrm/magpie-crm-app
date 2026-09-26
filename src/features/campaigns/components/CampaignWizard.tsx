@@ -275,7 +275,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           </Button>
           {campaignId && !isCampaignSent && (
             <Button
-              className="bg-zinc-900 text-zinc-50 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 border-none px-4 py-2 font-semibold text-sm transition-all"
+              className="px-4"
               onClick={() => setShowScheduleDrawer(true)}
               leftIcon={<Clock className="w-4 h-4" />}
             >

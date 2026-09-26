@@ -138,7 +138,7 @@ export function NotificationBell() {
               <button
                 onClick={push.subscribe}
                 disabled={push.busy}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-accent text-accent-foreground rounded-md-s text-xs font-semibold hover:brightness-110 active:scale-95 transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md-s text-xs font-semibold hover:bg-primary/85 active:scale-95 transition-all disabled:opacity-50"
               >
                 {push.busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellRing className="w-3.5 h-3.5" />}
                 Enable notifications

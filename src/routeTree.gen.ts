@@ -21,6 +21,7 @@ import { Route as MarketingContactsRouteImport } from './routes/marketing/contac
 import { Route as ApiUnsubscribeRouteImport } from './routes/api/unsubscribe'
 import { Route as ApiSubscribeRouteImport } from './routes/api/subscribe'
 import { Route as ApiOptOutRouteImport } from './routes/api/opt-out'
+import { Route as ApiMcpRouteImport } from './routes/api/mcp'
 import { Route as MarketingTemplatesIndexRouteImport } from './routes/marketing/templates/index'
 import { Route as MarketingSurveysIndexRouteImport } from './routes/marketing/surveys/index'
 import { Route as MarketingListsIndexRouteImport } from './routes/marketing/lists/index'
@@ -110,6 +111,11 @@ const ApiSubscribeRoute = ApiSubscribeRouteImport.update({
 const ApiOptOutRoute = ApiOptOutRouteImport.update({
   id: '/api/opt-out',
   path: '/api/opt-out',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MarketingTemplatesIndexRoute = MarketingTemplatesIndexRouteImport.update({
@@ -273,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
@@ -317,6 +324,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
@@ -404,6 +413,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/api/mcp'
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
@@ -448,6 +458,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/api/mcp'
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
@@ -488,6 +499,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/settings'
+    | '/api/mcp'
     | '/api/opt-out'
     | '/api/subscribe'
     | '/api/unsubscribe'
@@ -533,6 +545,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
+  ApiMcpRoute: typeof ApiMcpRoute
   ApiOptOutRoute: typeof ApiOptOutRoute
   ApiSubscribeRoute: typeof ApiSubscribeRoute
   ApiUnsubscribeRoute: typeof ApiUnsubscribeRoute
@@ -649,6 +662,13 @@ declare module '@tanstack/react-router' {
       path: '/api/opt-out'
       fullPath: '/api/opt-out'
       preLoaderRoute: typeof ApiOptOutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/marketing/templates/': {
@@ -923,6 +943,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
+  ApiMcpRoute: ApiMcpRoute,
   ApiOptOutRoute: ApiOptOutRoute,
   ApiSubscribeRoute: ApiSubscribeRoute,
   ApiUnsubscribeRoute: ApiUnsubscribeRoute,

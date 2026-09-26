@@ -101,6 +101,7 @@ export const prospectTools = [
       cursor: z.string().optional().describe('nextCursor from a previous call, for the next page.'),
     },
     target: 'server',
+    costsCredits: true,
     readOnly: true,
     handler: async (args) => {
       const { searchCompanies } = await import('../../prospecting/search')
@@ -136,6 +137,7 @@ export const prospectTools = [
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
     target: 'server',
+    costsCredits: true,
     readOnly: true,
     handler: async ({ companyRef, companyName, titles, count, ...rest }) => {
       const { searchPeople } = await import('../../prospecting/search')

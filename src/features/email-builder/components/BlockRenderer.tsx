@@ -82,14 +82,14 @@ export function BlockRenderer({
       )}
 
       <div
-        className={`absolute right-2 top-2 items-center gap-1 bg-white/90 dark:bg-zinc-800 shadow-md border border-slate-200 dark:border-zinc-700 p-1 rounded-md z-10 select-none ${
+        className={`absolute right-2 top-2 items-center gap-1 bg-card shadow-md border border-border p-1 rounded-md-xs z-10 select-none ${
           selectedBlockId === block.id ? 'flex' : 'hidden group-hover:flex touch-reveal'
         }`}
       >
         <div
           onPointerDown={(e) => startDrag(e, { kind: 'move', index })}
           onClick={(e) => e.stopPropagation()}
-          className="p-2 cursor-grab active:cursor-grabbing touch-none text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-zinc-300 border-r border-slate-100 dark:border-zinc-700 flex items-center"
+          className="p-2 cursor-grab active:cursor-grabbing touch-none text-muted-foreground hover:text-foreground border-r border-border flex items-center"
           title="Drag to reorder"
         >
           <GripVertical className="w-3.5 h-3.5" />
@@ -97,14 +97,14 @@ export function BlockRenderer({
         <button 
           onClick={(e) => moveBlock(block.id, 'up', e)}
           disabled={index === 0}
-          className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded text-slate-500 disabled:opacity-30"
+          className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30"
         >
           <ArrowUp className="w-3.5 h-3.5" />
         </button>
         <button 
           onClick={(e) => moveBlock(block.id, 'down', e)}
           disabled={index === blocksLength - 1}
-          className="p-1 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded text-slate-500 disabled:opacity-30"
+          className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground disabled:opacity-30"
         >
           <ArrowDown className="w-3.5 h-3.5" />
         </button>

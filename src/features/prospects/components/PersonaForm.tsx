@@ -321,7 +321,7 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
           <button
             onClick={() => onSave(persona)}
             disabled={isSaving || !persona.name.trim()}
-            className="bg-accent text-accent-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
+            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
           >
             {isSaving ? 'Saving...' : <><Check className="w-4 h-4" /> Save Persona</>}
           </button>

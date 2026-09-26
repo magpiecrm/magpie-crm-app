@@ -279,7 +279,7 @@ function CampaignsPage() {
         </div>
         <button 
           onClick={() => setWizardState({ show: true })}
-          className="bg-accent text-accent-foreground px-6 py-2.5 rounded-md-s font-medium hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-accent"
+          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
           New Campaign

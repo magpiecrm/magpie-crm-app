@@ -69,6 +69,7 @@ export const builderTools = [
       'Read the design currently open in the email builder — every block and the global style. Call this before editing so you use real block IDs and never invent one.',
     input: {},
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async (_args, ctx) => {
       const builder = requireBuilder(ctx.getClientState())
@@ -390,6 +391,7 @@ export const builderTools = [
         .describe('Viewport width in px. Defaults to 700 (desktop). Use 375 for mobile.'),
     },
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async ({ width }, ctx) => {
       const builder = requireBuilder(ctx.getClientState())
@@ -422,6 +424,7 @@ export const builderTools = [
         .describe('Return the full HTML too. Defaults to false; the lint report is usually enough.'),
     },
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async ({ includeHtml }, ctx) => {
       const builder = requireBuilder(ctx.getClientState())

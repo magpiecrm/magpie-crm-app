@@ -334,7 +334,7 @@ export function EmailSendingTab() {
         <button
           type="submit"
           disabled={isSaving}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-md-s text-sm font-semibold hover:opacity-90 disabled:opacity-60 cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md-s text-sm font-semibold hover:bg-primary/85 disabled:opacity-60 cursor-pointer"
         >
           {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {isSaving ? 'Saving...' : 'Save sending settings'}

@@ -108,7 +108,7 @@ export function SurveyBuilderHeader({
             onClick={onPublish}
             disabled={isSaving}
             aria-label="Publish"
-            className="flex items-center gap-1.5 bg-accent text-accent-foreground px-3 sm:px-4 py-2 rounded-lg text-xs font-bold hover:brightness-110 active:scale-95 transition-all shadow-sm shadow-accent/15 disabled:opacity-50"
+            className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/85 active:scale-95 transition-all shadow-sm/15 disabled:opacity-50"
           >
             <Rocket className="w-4 h-4" />
             <span className="hidden sm:inline">Publish</span>

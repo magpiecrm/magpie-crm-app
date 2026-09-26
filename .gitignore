@@ -25,3 +25,6 @@ local_db.json
 # to the repo root so it doesn't also match src/routes/api/uploads/.
 /uploads/
 
+
+# Copilot's private Claude Code config (sessions; never the host account's login)
+.copilot-claude/

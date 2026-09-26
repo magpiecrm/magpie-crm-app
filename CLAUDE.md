@@ -48,6 +48,11 @@ prompts.
     tracks sessions and per-session bearer tokens; `permissions.ts` gates
     mutating tool calls independently of the CLI's own (bypassed) permission
     prompt. The SSE turn endpoint is `src/routes/api/copilot/stream.ts`.
+    `settings.ts` holds the user's own Anthropic API key, which the CLI runs
+    with (never a Claude.ai login — Anthropic's terms don't allow apps to offer
+    or share one). `src/routes/api/mcp.ts` exposes the same tools to outside AI
+    apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
+    `browserOnly`), authorised by MCP-scoped API keys.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so
   invalidation stays consistent.

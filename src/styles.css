@@ -1,146 +1,123 @@
-@import url('https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@400;500;600;700&family=JetBrains+Mono&family=Roboto:wght@400;500;700&display=swap');
+/* Inter and Roboto stay loaded because the email builder offers them as email fonts. */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
 
+/*
+ * Design tokens mirror the MagpieCRM website: warm off-white paper, near-black
+ * ink, magpie-teal accent, Geist type. Components use the semantic colours
+ * below (bg-card, text-muted-foreground, bg-primary ...) rather than raw
+ * palette classes, so the theme lives here.
+ */
 @theme {
-  --font-display: "Calistoga", serif;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
+  --color-muted-hover: var(--muted-hover);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-secondary: var(--accent-secondary);
   --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
-  --color-card: var(--card);
+  --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.07);
-  --shadow-accent: 0 4px 14px rgba(0, 102, 255, 0.15);
-  --shadow-accent-lg: 0 8px 24px rgba(0, 102, 255, 0.25);
-  --shadow-premium: 0 2px 4px rgba(0,0,0,0.02), 0 10px 15px -3px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 2px rgb(17 19 22 / 0.05);
+  --shadow-md: 0 1px 2px rgb(17 19 22 / 0.05), 0 4px 12px -4px rgb(17 19 22 / 0.08);
+  --shadow-lg: 0 1px 2px rgb(17 19 22 / 0.05), 0 12px 32px -8px rgb(17 19 22 / 0.12);
+  --shadow-xl: 0 1px 2px rgb(17 19 22 / 0.06), 0 20px 48px -12px rgb(17 19 22 / 0.16);
+  /* Kept as names for existing markup; Magpie uses neutral elevation, never a coloured glow. */
+  --shadow-accent: var(--shadow-md);
+  --shadow-accent-lg: var(--shadow-lg);
+  --shadow-premium: var(--shadow-lg);
 
   --radius-xl: 12px;
   --radius-2xl: 16px;
-  --radius-md-xs: 8px;
-  --radius-md-s: 12px;
-  --radius-md-m: 16px;
-  --radius-md-l: 24px;
-  --radius-md-xl: 28px;
-  --radius-md-2xl: 32px;
-  --radius-md-3xl: 48px;
+  --radius-md-xs: 7px;
+  --radius-md-s: 9px;
+  --radius-md-m: 12px;
+  --radius-md-xl: 16px;
 
-  --color-md-sys-light-primary: #6750A4;
-  --color-md-sys-light-on-primary: #FFFFFF;
-  --color-md-sys-light-primary-container: #EADDFF;
-  --color-md-sys-light-on-primary-container: #21005D;
-  --color-md-sys-light-secondary: #625B71;
-  --color-md-sys-light-on-secondary: #FFFFFF;
-  --color-md-sys-light-secondary-container: #E8DEF8;
-  --color-md-sys-light-on-secondary-container: #1D192B;
-  --color-md-sys-light-tertiary: #7D5260;
-  --color-md-sys-light-on-tertiary: #FFFFFF;
-  --color-md-sys-light-tertiary-container: #FFD8E4;
-  --color-md-sys-light-on-tertiary-container: #31111D;
-  --color-md-sys-light-background: #FFFBFE;
-  --color-md-sys-light-on-background: #1C1B1F;
-  --color-md-sys-light-surface: #FFFBFE;
-  --color-md-sys-light-on-surface: #1C1B1F;
-  --color-md-sys-light-surface-variant: #E7E0EC;
-  --color-md-sys-light-on-surface-variant: #49454F;
-  --color-md-sys-light-outline: #79747E;
-  --color-md-sys-light-surface-container: #F3EDF7;
-  --color-md-sys-light-surface-container-low: #E7E0EC;
-
-  --font-roboto: "Roboto", sans-serif;
   --ease-md: cubic-bezier(0.2, 0, 0, 1);
-
-  --animate-rotate-slow: rotate-slow 60s linear infinite;
-  --animate-float: float 4s ease-in-out infinite;
-  --animate-pulse-custom: pulse-custom 2s infinite;
-
-  @keyframes rotate-slow {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-  @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-  }
-  @keyframes pulse-custom {
-    0%, 100% { transform: scale(1); opacity: 1; }
-    50% { transform: scale(1.3); opacity: 0.7; }
-  }
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
 }
 
 @layer base {
-  html {
-    zoom: 1.0;
-  }
   :root {
-    --background: #FBFBFC;
-    --foreground: #09090B;
-    --accent: #0066FF;
-    --accent-secondary: #3B82F6;
-    --accent-foreground: #FFFFFF;
-    
-    --card: #FFFFFF;
-    --card-foreground: #09090B;
-    --popover: #FFFFFF;
-    --popover-foreground: #09090B;
-    --primary: #0066FF;
-    --primary-foreground: #FFFFFF;
-    --secondary: #F4F4F5;
-    --secondary-foreground: #09090B;
-    --muted: #F4F4F5;
-    --muted-foreground: #52525B;
-    --destructive: #EF4444;
-    --destructive-foreground: #FFFFFF;
-    --border: #E4E4E7;
-    --input: #E4E4E7;
-    --ring: #0066FF;
-    --accent-rgb: 0, 102, 255;
+    --background: #f6f6f3;
+    --foreground: #111316;
+    --card: #ffffff;
+    --card-foreground: #111316;
+    --popover: #ffffff;
+    --popover-foreground: #111316;
+    --primary: #111316;
+    --primary-foreground: #f6f6f3;
+    --secondary: #efefea;
+    --secondary-foreground: #111316;
+    --muted: #efefea;
+    --muted-hover: #e6e6e0;
+    --muted-foreground: #636a75;
+    --accent: #0d7285;
+    --accent-secondary: #0a5f6f;
+    --accent-foreground: #ffffff;
+    --accent-rgb: 13, 114, 133;
+    --destructive: #c2352b;
+    --destructive-foreground: #ffffff;
+    --border: #e2e2dc;
+    --input: #cdcec6;
+    --ring: #0d7285;
     --radius: 0.75rem;
   }
 
   .dark {
-    --background: #0B0F1A;
-    --foreground: #F8FAFC;
-    --accent: #0052FF;
-    --accent-secondary: #4D7CFF;
-    --accent-foreground: #FFFFFF;
-    
-    --card: #111827;
-    --card-foreground: #F8FAFC;
-    --popover: #111827;
-    --popover-foreground: #F8FAFC;
-    --primary: #0052FF;
-    --primary-foreground: #FFFFFF;
-    --secondary: #1E293B;
-    --secondary-foreground: #F8FAFC;
-    --muted: #1E293B;
-    --muted-foreground: #94A3B8;
-    --destructive: #EF4444;
-    --destructive-foreground: #FFFFFF;
-    --border: #1E293B;
-    --input: #1E293B;
-    --ring: #0052FF;
-    --accent-rgb: 0, 82, 255;
+    --background: #0c0d0f;
+    --foreground: #eef0f2;
+    --card: #15171a;
+    --card-foreground: #eef0f2;
+    --popover: #15171a;
+    --popover-foreground: #eef0f2;
+    --primary: #eef0f2;
+    --primary-foreground: #0c0d0f;
+    --secondary: #1c1f23;
+    --secondary-foreground: #eef0f2;
+    --muted: #1c1f23;
+    --muted-hover: #24282d;
+    --muted-foreground: #8f96a1;
+    --accent: #4fc3d2;
+    --accent-secondary: #7fd3de;
+    --accent-foreground: #06262b;
+    --accent-rgb: 79, 195, 210;
+    --destructive: #f07167;
+    --destructive-foreground: #1f0806;
+    --border: #25282d;
+    --input: #353940;
+    --ring: #4fc3d2;
   }
 
   body {
-    @apply bg-background text-foreground font-body antialiased selection:bg-accent/20 selection:text-accent transition-colors duration-300;
+    @apply bg-background text-foreground font-body antialiased selection:bg-accent/20 selection:text-foreground;
+  }
+
+  /* Display type follows the website's headings: semibold, tight tracking.
+     Base layer, so an explicit font-bold or tracking-* utility still wins. */
+  .font-display {
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
   /*
@@ -160,33 +137,10 @@
 }
 
 @layer utilities {
-  .gradient-text {
-    @apply bg-gradient-to-r from-accent to-accent-secondary bg-clip-text text-transparent;
-  }
-
-  .gradient-underline {
-    @apply absolute -bottom-1 left-0 h-3 w-full rounded-sm bg-gradient-to-r from-accent/15 to-accent-secondary/10;
-  }
 
   .dot-pattern {
     background-image: radial-gradient(circle, currentColor 1px, transparent 1px);
     background-size: 32px 32px;
-  }
-
-
-  .noise-overlay {
-    position: relative;
-    isolation: isolate;
-  }
-
-  .noise-overlay::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    opacity: 0.05;
-    z-index: 1;
-    pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -226,18 +180,6 @@
   }
   .md-state-hover:active::after {
     @apply opacity-[0.08] dark:opacity-[0.12];
-  }
-
-  .glass-card {
-    @apply bg-white/70 dark:bg-card/70 backdrop-blur-xl border border-white/20 dark:border-white/5 shadow-premium;
-  }
-
-  .premium-blur {
-    @apply backdrop-blur-2xl bg-white/40 dark:bg-black/40 border border-white/10;
-  }
-
-  .font-roboto {
-    font-family: var(--font-roboto);
   }
 
   /* iOS notch / home-indicator insets. Requires viewport-fit=cover. */

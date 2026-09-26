@@ -1,4 +1,4 @@
-# Email Marketing
+# MagpieCRM
 
 A web app for sourcing B2B prospects, managing contact lists, and building &
 sending email campaigns. Built with [TanStack Start](https://tanstack.com/start)
@@ -15,7 +15,9 @@ layer:
 
 There is also a copilot that drives a locally installed `claude` CLI as a
 long-lived agent with its own MCP tool server, letting it search prospects,
-create lists/campaigns/personas, edit the email builder canvas, and more.
+create lists/campaigns/personas, edit the email builder canvas, and more. It
+runs with your own Anthropic API key. The same tools are available to outside
+AI apps (Claude Code and Desktop, ChatGPT/OpenAI, Cursor, …) over MCP.
 
 ## Getting started
 
@@ -42,6 +44,7 @@ REACHER_SECRET=...       # optional — matches RCH__HEADER_SECRET on Reacher
 REACHER_FROM_EMAIL=...   # optional — SMTP FROM used for verification
 REACHER_HELLO_NAME=...   # optional — EHLO name; should match the proxy's PTR
 NEVERBOUNCE_API_KEY=...  # optional — or set in Settings → Prospecting
+ANTHROPIC_API_KEY=...    # optional — the copilot's key; or set in Settings → Copilot
 REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
                          # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
 AUTH_EMAIL=...           # required — app login
@@ -75,8 +78,28 @@ in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 `https://your-app.example.com/api/webhooks/bounce`) and `WEBHOOK_SECRET`
 (matching the app's).
 
-The copilot additionally requires the `claude` CLI to be installed and
-authenticated on the host running the dev server.
+### Copilot and AI apps (MCP)
+
+The copilot needs the `claude` CLI installed on the host and **your own
+Anthropic API key** (Settings → Copilot, or `ANTHROPIC_API_KEY`), created in
+the [Claude Console](https://platform.claude.com/). Usage is billed to the
+key's owner. The app never signs the CLI in to a Claude.ai account: Anthropic's
+terms don't allow apps to offer or relay Claude.ai login, or to share one
+Pro/Max subscription between users
+([details](https://code.claude.com/docs/en/legal-and-compliance)). The CLI runs
+with its own config directory (`.copilot-claude/` next to the database), so a
+Claude.ai login on the host is never picked up.
+
+**Settings → AI apps (MCP)** connects outside AI apps to the same tools over
+MCP at `/api/mcp` (Streamable HTTP). Create a key per app there and copy the
+ready-made setup for Claude Code, Claude Desktop, Cursor, the OpenAI Codex CLI
+or the OpenAI Responses API; anything else that speaks MCP over HTTP works with
+`Authorization: Bearer <key>`. MCP keys are separate from the public API keys
+used by signup forms, and can be revoked individually. Tools that only work
+against a design open in the browser stay inside the app's own copilot. Apps
+that connect from the cloud (the OpenAI API, ChatGPT, Claude on the web) need
+the app on a public https address, and ChatGPT/claude.ai connectors also need
+an OAuth sign-in flow that isn't built yet.
 
 ### Prospect search and data protection
 

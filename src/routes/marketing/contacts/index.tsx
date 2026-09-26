@@ -450,7 +450,7 @@ function ContactsPage() {
                   listIds: selectedListIds
                 })
               }}
-              className="px-6 py-2.5 bg-accent text-accent-foreground shadow-accent hover:brightness-110 active:scale-95 transition-all text-sm font-bold rounded-xl disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5 cursor-pointer"
+              className="px-6 py-2.5 bg-primary text-primary-foreground hover:bg-primary/85 active:scale-95 transition-all text-sm font-bold rounded-xl disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5 cursor-pointer"
             >
               {createContactMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
               Create

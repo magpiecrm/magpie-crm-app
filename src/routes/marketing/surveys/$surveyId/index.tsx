@@ -86,7 +86,7 @@ function SurveyResultsPage() {
           ) : (
             <button
               onClick={() => statusMutation.mutate('publish')}
-              className="flex items-center gap-2 px-4 py-2 text-sm rounded-md-s bg-accent text-accent-foreground font-medium hover:brightness-110 cursor-pointer"
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-md-s bg-primary text-primary-foreground font-medium hover:bg-primary/85 cursor-pointer"
             >
               <Rocket className="w-4 h-4" /> {survey.status === 'closed' ? 'Reopen' : 'Publish'}
             </button>

@@ -21,7 +21,10 @@ export const getApiKeysFn = createServerFn({ method: 'GET' })
 
 // Create and hash a new API key
 export const createApiKeyFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { name: string }) => d)
+  .inputValidator((d: { name: string; scope?: 'api' | 'mcp' }) => ({
+    name: String(d?.name ?? ''),
+    scope: d?.scope === 'mcp' ? ('mcp' as const) : ('api' as const),
+  }))
   .handler(async ({ data }) => {
     try {
       const { requireAuth } = await import('../auth.server')
@@ -30,7 +33,7 @@ export const createApiKeyFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'Unauthorized' }
     }
 
-    const { name } = data
+    const { name, scope } = data
     if (!name || !name.trim()) {
       return { success: false, error: 'Name is required' }
     }
@@ -40,22 +43,32 @@ export const createApiKeyFn = createServerFn({ method: 'POST' })
       const { db } = await import('../db')
       // Generate a secure raw API key
       const rawRandomBytes = crypto.randomBytes(24).toString('hex')
-      const rawKey = `vtl_${rawRandomBytes}`
+      // MCP keys get their own prefix, so they're recognisable wherever they're pasted.
+      const rawKey = scope === 'mcp' ? `vtl_mcp_${rawRandomBytes}` : `vtl_${rawRandomBytes}`
       
       // Hash the key using SHA-256
       const hash = crypto.createHash('sha256').update(rawKey).digest('hex')
       
       // Mask the key: vtl_abc...wxyz
-      const maskedKey = `${rawKey.slice(0, 7)}****************${rawKey.slice(-4)}`
+      const maskedKey = `${rawKey.slice(0, scope === 'mcp' ? 11 : 7)}****************${rawKey.slice(-4)}`
 
       // Add to database
-      db.addApiKey(name.trim(), hash, maskedKey)
+      db.addApiKey(name.trim(), hash, maskedKey, scope)
 
       // Return the rawKey only ONCE during creation
       return { success: true, rawKey }
     } catch (e: any) {
       return { success: false, error: e.message || 'Failed to generate API key' }
     }
+  })
+
+// MCP keys (for AI apps connecting to /api/mcp), listed separately from API keys.
+export const getMcpKeysFn = createServerFn({ method: 'GET' })
+  .handler(async () => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { db } = await import('../db')
+    return { keys: db.getApiKeys('mcp') }
   })
 
 // Revoke/Delete an API key by ID

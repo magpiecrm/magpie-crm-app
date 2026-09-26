@@ -25,19 +25,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyle =
-      'inline-flex items-center justify-center font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-accent/50 active:scale-98 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer'
+      'inline-flex items-center justify-center font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer'
 
     const variants = {
       primary:
-        'bg-accent text-accent-foreground shadow-sm shadow-accent/10 hover:brightness-110 dark:hover:brightness-105 active:brightness-95',
+        'bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90',
       secondary:
-        'bg-secondary text-secondary-foreground hover:bg-muted active:bg-muted/80 border border-border/50',
+        'bg-card text-foreground border border-input hover:bg-muted active:bg-muted-hover',
       outline:
-        'border border-border bg-transparent text-foreground hover:bg-card/80 active:bg-card shadow-sm',
+        'border border-input bg-transparent text-foreground hover:bg-muted active:bg-muted-hover',
       ghost:
-        'text-muted-foreground hover:text-foreground hover:bg-muted/65 active:bg-muted',
+        'text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted-hover',
       danger:
-        'bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95 shadow-sm',
+        'bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95',
     }
 
     const sizes = {

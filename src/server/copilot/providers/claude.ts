@@ -12,7 +12,7 @@ const MCP_SERVER_NAME = 'emailmarketing'
 export const claudeProvider: CopilotProvider = {
   id: 'claude',
   label: 'Claude',
-  description: 'Anthropic Claude Code CLI. Uses your local login.',
+  description: 'Runs Claude Code with your own Anthropic API key.',
   command: 'claude',
 
   buildArgs(opts: SpawnOptions): string[] {
@@ -71,6 +71,18 @@ export const claudeProvider: CopilotProvider = {
 
     switch (msg.type) {
       case 'system': {
+        // The CLI retries a rejected API key ten times over ~2.5 minutes,
+        // which looks like a frozen copilot. A 401/403 won't fix itself.
+        if (msg.subtype === 'api_retry' && (msg.error_status === 401 || msg.error_status === 403)) {
+          return [{
+            type: 'error',
+            fatal: true,
+            message:
+              msg.error_status === 401
+                ? 'Anthropic rejected the copilot\'s API key. Check it in Settings → Copilot.'
+                : 'This Anthropic API key isn\'t allowed to use the API. Check its workspace and permissions in the Claude Console.',
+          }]
+        }
         if (msg.subtype !== 'init') return []
         const server = (msg.mcp_servers ?? []).find((s: any) => s.name === MCP_SERVER_NAME)
         // MCP startup is async and non-blocking in the CLI, so `pending` here

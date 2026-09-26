@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { Eye, EyeOff, Lock, Mail, ShieldAlert, CheckCircle2 } from 'lucide-react'
 import { setAuthCookie, isAuthenticated } from '../utils/auth'
 import { loginFn } from '../server/functions/auth'
+import { MagpieLogo } from '../components/ui/MagpieLogo'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
@@ -54,44 +55,40 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full flex items-center justify-center bg-background relative overflow-hidden px-4">
-      {/* Decorative blurred background shapes */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full bg-accent/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-accent-secondary/10 blur-[120px] pointer-events-none" />
-
-      <div className="w-full max-w-md z-10">
+    <div className="min-h-[100dvh] w-full flex items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-accent to-accent-secondary text-accent-foreground shadow-premium mb-4 animate-float">
-            <Lock className="w-6 h-6" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-md-m bg-card border border-border mb-5">
+            <MagpieLogo size={36} />
           </div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-foreground">
+          <h1 className="text-3xl font-semibold font-display text-foreground">
             Welcome Back
           </h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            Sign in to access your B2B Prospecting & Email Marketing dashboard
+            Sign in to your MagpieCRM workspace
           </p>
         </div>
 
         {/* Card wrapper */}
-        <div className="glass-card p-6 sm:p-8 rounded-2xl border border-border shadow-xl">
+        <div className="bg-card p-6 sm:p-8 rounded-2xl border border-border shadow-lg">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 flex items-start gap-3 text-destructive text-sm animate-pulse-custom">
+              <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 flex items-start gap-3 text-destructive text-sm">
                 <ShieldAlert className="w-5 h-5 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
             )}
 
             {success && (
-              <div className="p-4 rounded-xl bg-green-500/10 border border-green-500/20 flex items-start gap-3 text-green-500 text-sm">
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-3 text-emerald-700 dark:text-emerald-400 text-sm">
                 <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 animate-bounce" />
                 <span>Login successful! Redirecting...</span>
               </div>
             )}
 
             <div className="space-y-2">
-              <label htmlFor="email-input" className="text-sm font-semibold text-foreground/90 block">
+              <label htmlFor="email-input" className="text-sm font-medium text-foreground block">
                 Email Address
               </label>
               <div className="relative">
@@ -105,7 +102,7 @@ function LoginPage() {
                   placeholder="you@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-sm"
+                  className="w-full pl-10 pr-4 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
                   disabled={isLoading || success}
                 />
               </div>
@@ -113,7 +110,7 @@ function LoginPage() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label htmlFor="password-input" className="text-sm font-semibold text-foreground/90 block">
+                <label htmlFor="password-input" className="text-sm font-medium text-foreground block">
                   Password
                 </label>
               </div>
@@ -128,7 +125,7 @@ function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent transition-all text-sm"
+                  className="w-full pl-10 pr-10 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
                   disabled={isLoading || success}
                 />
                 <button
@@ -146,15 +143,13 @@ function LoginPage() {
               id="login-submit-button"
               type="submit"
               disabled={isLoading || success}
-              className={`w-full py-3 px-4 rounded-xl text-sm font-semibold text-accent-foreground shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                isLoading || success
-                  ? 'bg-accent/70 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-accent to-accent-secondary hover:brightness-110 active:scale-[0.98]'
+              className={`w-full py-3 px-4 rounded-md-s text-sm font-medium bg-primary text-primary-foreground transition-colors flex items-center justify-center gap-2 cursor-pointer ${
+                isLoading || success ? 'opacity-70 cursor-not-allowed' : 'hover:bg-primary/85'
               }`}
             >
               {isLoading ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-accent-foreground border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
                   <span>Signing In...</span>
                 </>
               ) : (

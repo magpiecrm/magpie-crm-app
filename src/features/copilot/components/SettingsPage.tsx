@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import { AlertCircle, ExternalLink, Key, LogOut, RefreshCw, Eye, EyeOff, Save, Trash2, Copy, Plus, Mail, Pencil, Check, UserCheck } from 'lucide-react'
-import { checkClaudeStatusFn, logoutClaudeFn, startClaudeLoginFn, submitClaudeCodeFn, getEnvVarsFn, saveEnvVarsFn, getApiKeysFn, createApiKeyFn, deleteApiKeyFn, getSendersFn, createSenderFn, updateSenderFn, deleteSenderFn, getUsersFn, createUserFn, deleteUserFn, checkAuthFn } from '../../../server/functions'
+import { AlertCircle, RefreshCw, Eye, EyeOff, Save, Trash2, Copy, Plus, Mail, Pencil, Check, UserCheck } from 'lucide-react'
+import { getEnvVarsFn, saveEnvVarsFn, getApiKeysFn, createApiKeyFn, deleteApiKeyFn, getSendersFn, createSenderFn, updateSenderFn, deleteSenderFn, getUsersFn, createUserFn, deleteUserFn, checkAuthFn } from '../../../server/functions'
 import { EmailSendingTab } from '../../settings/components/EmailSendingTab'
 import { ContactFieldsTab } from '../../settings/components/ContactFieldsTab'
 import { ProspectingTab } from '../../settings/components/ProspectingTab'
+import { CopilotTab } from '../../settings/components/CopilotTab'
+import { McpTab } from '../../settings/components/McpTab'
 
-const TABS = ['copilot', 'prospecting', 'env', 'sending', 'api', 'senders', 'users', 'fields'] as const
+const TABS = ['copilot', 'mcp', 'prospecting', 'env', 'sending', 'api', 'senders', 'users', 'fields'] as const
 export type SettingsTab = (typeof TABS)[number]
 
 export const isSettingsTab = (value: unknown): value is SettingsTab =>
@@ -19,16 +21,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
     if (initialTab) setActiveTab(initialTab)
   }, [initialTab])
 
-
-  // Claude CLI Auth Status State
-  const [claudeStatus, setClaudeStatus] = useState<any>(null)
-  const [isLoadingStatus, setIsLoadingStatus] = useState(false)
-  const [isLoggingIn, setIsLoggingIn] = useState(false)
-  const [loginUrl, setLoginUrl] = useState<string | null>(null)
-  const [verificationCode, setVerificationCode] = useState('')
-  const [isSubmittingCode, setIsSubmittingCode] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(null)
-  const [authSuccess, setAuthSuccess] = useState(false)
 
   // Environment Variables State
   const [envVars, setEnvVars] = useState<Record<string, string>>({})
@@ -70,23 +62,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
   const [newUserPassword, setNewUserPassword] = useState('')
   const [isAddingUser, setIsAddingUser] = useState(false)
 
-
-  const fetchStatus = async () => {
-    setIsLoadingStatus(true)
-    setAuthError(null)
-    setAuthSuccess(false)
-    try {
-      const res: any = await checkClaudeStatusFn()
-      if (res.success) {
-        setClaudeStatus(res.status)
-      }
-    } catch (e: any) {
-      console.error(e)
-      setAuthError(e.message || 'Failed to fetch status')
-    } finally {
-      setIsLoadingStatus(false)
-    }
-  }
 
   const fetchEnv = async () => {
     setIsLoadingEnv(true)
@@ -163,7 +138,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
   }
 
   useEffect(() => {
-    fetchStatus()
     fetchEnv()
     fetchApiKeys()
     fetchSenders()
@@ -171,62 +145,6 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
     fetchCurrentUser()
   }, [])
 
-
-  const handleStartLogin = async () => {
-    setIsLoggingIn(true)
-    setAuthError(null)
-    setLoginUrl(null)
-    setAuthSuccess(false)
-    try {
-      const res: any = await startClaudeLoginFn()
-      if (res.success && res.url) {
-        setLoginUrl(res.url)
-        window.open(res.url, '_blank')
-      } else {
-        setAuthError(res.error || 'Failed to start login flow')
-        setIsLoggingIn(false)
-      }
-    } catch (e: any) {
-      setAuthError(e.message || 'An error occurred')
-      setIsLoggingIn(false)
-    }
-  }
-
-  const handleSubmitCode = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!verificationCode.trim()) return
-    setIsSubmittingCode(true)
-    setAuthError(null)
-    try {
-      const res: any = await submitClaudeCodeFn({ data: { code: verificationCode } })
-      if (res.success) {
-        setAuthSuccess(true)
-        setIsLoggingIn(false)
-        setLoginUrl(null)
-        setVerificationCode('')
-        await fetchStatus()
-      } else {
-        setAuthError(res.error || 'Verification failed')
-      }
-    } catch (e: any) {
-      setAuthError(e.message || 'An error occurred')
-    } finally {
-      setIsSubmittingCode(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    if (!window.confirm('Are you sure you want to log out from the Claude CLI?')) return
-    setIsLoadingStatus(true)
-    try {
-      await logoutClaudeFn()
-      await fetchStatus()
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setIsLoadingStatus(false)
-    }
-  }
 
   const handleSaveEnv = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -436,7 +354,17 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          Copilot Integration
+          Copilot
+        </button>
+        <button
+          onClick={() => setActiveTab('mcp')}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 transition-all cursor-pointer shrink-0 whitespace-nowrap ${
+            activeTab === 'mcp'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          AI apps (MCP)
         </button>
         <button
           onClick={() => setActiveTab('prospecting')}
@@ -511,129 +439,8 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
       </div>
 
       {/* Copilot Tab Content */}
-      {activeTab === 'copilot' && (
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-4">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Claude CLI Auth Status</h4>
-
-            {isLoadingStatus ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-                <RefreshCw className="w-4 h-4 animate-spin text-accent" />
-                <span>Checking authentication status...</span>
-              </div>
-            ) : claudeStatus ? (
-              <div className="p-5 bg-muted/40 border border-border/80 rounded-md-s flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-foreground">Status:</span>
-                  <span className={`text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full ${
-                    claudeStatus.loggedIn
-                      ? 'bg-green-500/10 text-green-500 border border-green-500/20'
-                      : 'bg-destructive/10 text-destructive border border-destructive/20'
-                  }`}>
-                    {claudeStatus.loggedIn ? 'Authenticated' : 'Not Logged In'}
-                  </span>
-                </div>
-
-                {claudeStatus.loggedIn && (
-                  <>
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
-                      <span className="text-muted-foreground">Account Email:</span>
-                      <span className="font-mono text-foreground font-semibold break-all">{claudeStatus.email}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Subscription:</span>
-                      <span className="capitalize text-foreground font-semibold">{claudeStatus.subscriptionType || 'Pro/Max'}</span>
-                    </div>
-
-                    <button
-                      onClick={handleLogout}
-                      className="mt-3 w-full py-2.5 px-3 border border-destructive/20 hover:bg-destructive/10 text-destructive text-sm font-semibold rounded-md-s transition-all flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      <span>Log Out from Claude CLI</span>
-                    </button>
-                  </>
-                )}
-
-                {!claudeStatus.loggedIn && !isLoggingIn && (
-                  <button
-                    onClick={handleStartLogin}
-                    className="w-full py-2.5 px-3 bg-accent hover:bg-accent/95 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Key className="w-4 h-4" />
-                    <span>Authenticate Claude CLI</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm text-muted-foreground py-2">Unable to check status.</div>
-            )}
-          </div>
-
-          {isLoggingIn && (
-            <div className="border border-border/80 p-5 rounded-md-s bg-muted/20 flex flex-col gap-4">
-              <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
-                <AlertCircle className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-foreground">Sign-in Page Opened</span>
-                  <span>An authorization tab has been opened. If not, click below:</span>
-                </div>
-              </div>
-
-              {loginUrl && (
-                <a
-                  href={loginUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-1.5 py-2 px-3 bg-accent-secondary/15 hover:bg-accent-secondary/25 text-accent-secondary text-sm font-semibold rounded-md-s border border-accent-secondary/25 transition-all text-center"
-                >
-                  <span>Open Authorization Link</span>
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              )}
-
-              <form onSubmit={handleSubmitCode} className="flex flex-col gap-2">
-                <label htmlFor="auth-verification-code" className="text-xs font-bold text-foreground/80">
-                  Verification Code
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id="auth-verification-code"
-                    type="text"
-                    required
-                    placeholder="Paste Cai OAuth code here..."
-                    value={verificationCode}
-                    onChange={(e) => setVerificationCode(e.target.value)}
-                    disabled={isSubmittingCode}
-                    className="flex-1 bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!verificationCode.trim() || isSubmittingCode}
-                    className="px-4 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground rounded-md-s text-sm font-semibold transition-all shrink-0 cursor-pointer"
-                  >
-                    {isSubmittingCode ? 'Verifying...' : 'Submit'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {authError && (
-            <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md-s flex items-start gap-2 animate-pulse-custom">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{authError}</span>
-            </div>
-          )}
-
-          {authSuccess && (
-            <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-500 text-sm rounded-md-s flex items-start gap-2">
-              <RefreshCw className="w-4 h-4 shrink-0 mt-0.5 animate-spin" />
-              <span>Successfully authenticated Claude CLI! Status updated.</span>
-            </div>
-          )}
-        </div>
-      )}
+      {activeTab === 'copilot' && <CopilotTab />}
+      {activeTab === 'mcp' && <McpTab />}
 
       {/* Environment Variables Tab Content */}
       {activeTab === 'env' && (
@@ -797,7 +604,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
               <button
                 type="submit"
                 disabled={isSavingEnv}
-                className="w-full md:w-auto md:self-end mt-4 py-2.5 px-6 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full md:w-auto md:self-end mt-4 py-2.5 px-6 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
               >
                 {isSavingEnv ? (
                   <>
@@ -853,7 +660,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
               <button
                 type="submit"
                 disabled={isGeneratingKey || !newKeyName.trim()}
-                className="px-4 py-2.5 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md shrink-0 cursor-pointer flex items-center gap-1.5 w-full md:w-auto justify-center"
+                className="px-4 py-2.5 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md shrink-0 cursor-pointer flex items-center gap-1.5 w-full md:w-auto justify-center"
               >
                 {isGeneratingKey ? (
                   <>
@@ -1076,7 +883,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
                             type="button"
                             onClick={() => handleSaveEdit(sender.id)}
                             disabled={isSavingSender || !editName.trim() || !editEmail.trim()}
-                            className="px-3 py-1.5 text-xs font-semibold bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground rounded-md-s transition-all flex items-center gap-1.5 cursor-pointer"
+                            className="px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground rounded-md-s transition-all flex items-center gap-1.5 cursor-pointer"
                           >
                             {isSavingSender ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                             Save
@@ -1151,7 +958,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
             <button
               type="submit"
               disabled={isAddingSender || !newSenderName.trim() || !newSenderEmail.trim()}
-              className="w-full md:w-auto md:self-end px-4 py-2.5 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full md:w-auto md:self-end px-4 py-2.5 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {isAddingSender ? (
                 <><RefreshCw className="w-4 h-4 animate-spin" /><span>Adding...</span></>
@@ -1170,7 +977,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
             <UserCheck className="w-4 h-4 shrink-0 mt-0.5" />
             <div>
               <span className="font-semibold block mb-0.5">User Account Management</span>
-              <span>Add and delete users who can log in to your email marketing system. Users can access all aspects of the prospecting and email campaigns.</span>
+              <span>Add and delete users who can log in to MagpieCRM. Users can access all aspects of the prospecting and email campaigns.</span>
             </div>
           </div>
 
@@ -1279,7 +1086,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
             <button
               type="submit"
               disabled={isAddingUser || !newUserEmail.trim() || !newUserPassword.trim() || newUserPassword.trim().length < 6}
-              className="w-full md:w-auto md:self-end px-4 py-2.5 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full md:w-auto md:self-end px-4 py-2.5 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
             >
               {isAddingUser ? (
                 <><RefreshCw className="w-4 h-4 animate-spin" /><span>Adding...</span></>

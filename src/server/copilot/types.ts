@@ -78,6 +78,13 @@ export interface CopilotTool<Shape extends ZodRawShape = ZodRawShape> {
   destructive?: boolean
   /** Read-only. Never gated, and safe to retry. */
   readOnly?: boolean
+  /**
+   * Only works against a design open in the browser (the live builder state),
+   * so it's left out of the public MCP server that outside AI apps use.
+   */
+  browserOnly?: boolean
+  /** Spends paid credits (SocialFetch). Said so to outside AI apps, which run tools unattended. */
+  costsCredits?: boolean
   handler: (
     args: ZodInfer<ZodObject<Shape>>,
     ctx: ToolContext,

@@ -293,7 +293,7 @@ function CampaignDetailPage() {
           <div className="relative">
             <button 
               onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground font-semibold rounded-xl hover:brightness-110 active:scale-95 shadow-accent transition-all text-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/85 active:scale-95 transition-all text-sm"
             >
               <Download className="w-4 h-4" />
               <span>Export report</span>

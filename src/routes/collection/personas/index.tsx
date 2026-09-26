@@ -53,7 +53,7 @@ function PersonasPage() {
         </div>
         <Link
           to="/collection/personas/new"
-          className="bg-accent text-accent-foreground px-6 py-2.5 rounded-md-s font-medium hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-accent cursor-pointer"
+          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           New Persona
@@ -77,7 +77,7 @@ function PersonasPage() {
           </p>
           <Link
             to="/collection/personas/new"
-            className="bg-accent text-accent-foreground px-5 py-2.5 rounded-md-s font-medium hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer"
+            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Create Persona
           </Link>

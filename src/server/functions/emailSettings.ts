@@ -95,7 +95,7 @@ export const sendProviderTestEmailFn = createServerFn({ method: 'POST' })
         to: data.to,
         subject: `[TEST] Sending via ${label}`,
         html:
-          `<p>This is a test message from your email marketing app.</p>` +
+          `<p>This is a test message from MagpieCRM.</p>` +
           `<p>If you are reading it, <strong>${label}</strong> is configured correctly.</p>`,
       })
       return {

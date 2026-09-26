@@ -378,7 +378,7 @@ export function PreviewTestModal({
                 <Button
                   onClick={handleSendTest}
                   isLoading={sendTestMutation.isPending}
-                  className="w-full bg-[#1e293b] hover:bg-slate-800 text-white font-bold py-3"
+                  className="w-full py-3"
                 >
                   Send Test
                 </Button>

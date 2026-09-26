@@ -123,7 +123,7 @@ export function ContactFieldsTab() {
             <button
               type="submit"
               disabled={!label.trim() || !!keyError || createMutation.isPending}
-              className="bg-accent text-accent-foreground px-4 py-2 rounded-md-s text-sm font-medium hover:brightness-110 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Add field
             </button>

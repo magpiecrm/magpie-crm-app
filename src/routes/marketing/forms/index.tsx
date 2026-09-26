@@ -237,7 +237,7 @@ function FormBuilder({
                       type="button"
                       disabled={!newListName.trim() || createListMutation.isPending}
                       onClick={() => createListMutation.mutate(newListName.trim())}
-                      className="px-3 py-2 bg-accent text-accent-foreground rounded-md-s text-sm font-medium hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer whitespace-nowrap"
+                      className="px-3 py-2 bg-primary text-primary-foreground rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer whitespace-nowrap"
                     >
                       {createListMutation.isPending ? 'Creating...' : 'Create'}
                     </button>
@@ -413,7 +413,7 @@ function FormBuilder({
           <button
             onClick={() => onSave(form)}
             disabled={isSaving || !form.name.trim() || (form.save_to_list_enabled && !form.list_id)}
-            className="bg-accent text-accent-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
+            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
           >
             {isSaving ? 'Saving...' : <><Check className="w-4 h-4" /> Save Form</>}
           </button>
@@ -551,7 +551,7 @@ function FormsPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-accent text-accent-foreground px-6 py-2.5 rounded-md-s font-medium hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-accent cursor-pointer"
+          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           New Form
@@ -575,7 +575,7 @@ function FormsPage() {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-accent text-accent-foreground px-5 py-2.5 rounded-md-s font-medium hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer"
+            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Create Form
           </button>

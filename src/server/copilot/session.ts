@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process'
+import { copilotConfigDir, requireAnthropicKey } from './settings'
 import { db } from '../db'
 import { getProvider } from './providers'
 import type { CopilotEvent, CopilotProvider } from './providers'
@@ -42,13 +43,19 @@ export interface TurnOptions {
  * Whitelisted rather than inherited so the app's own secrets — SocialFetch, Reacher,
  * SMTP, AUTH_PASSWORD — are never visible to the agent process. It reaches the
  * platform only through MCP, which is auth'd separately per session.
+ *
+ * The CLI authenticates with the user's own Anthropic API key and runs from
+ * the app's own config directory, so it can never fall back to a Claude.ai
+ * login on this machine (see copilot/settings.ts for why).
  */
 function safeEnv(): NodeJS.ProcessEnv {
-  const keep = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'TERM', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_RUNTIME_DIR']
+  const keep = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'TERM', 'TMPDIR', 'XDG_RUNTIME_DIR']
   const env: NodeJS.ProcessEnv = {}
   for (const key of keep) {
     if (process.env[key]) env[key] = process.env[key]
   }
+  env.ANTHROPIC_API_KEY = requireAnthropicKey()
+  env.CLAUDE_CONFIG_DIR = copilotConfigDir()
   return env
 }
 
@@ -107,6 +114,9 @@ function start(opts: TurnOptions, resume: boolean): RunningSession {
         entry.sawOutput = true
         if (event.type === 'done' || event.type === 'error') entry.busy = false
         emit(event)
+        // Nothing more will come of this process; stop it rather than let it
+        // keep retrying in the background.
+        if (event.type === 'error' && event.fatal) child.kill()
       }
     }
   })

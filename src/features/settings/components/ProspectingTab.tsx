@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Save, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ExternalLink, Plus, RefreshCw, Save, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
+import { SecretInput } from '../../../components/ui/SecretInput'
 import {
   getProspectingSettingsFn,
   prospectingStatusFn,
@@ -29,48 +30,6 @@ interface ProxyRow {
 
 const toRows = (s: Masked): ProxyRow[] =>
   s.proxies.list.map((p) => ({ label: p.label, host: p.host, port: String(p.port), username: p.username, password: '', passwordSet: p.passwordSet }))
-
-function SecretInput({
-  id,
-  value,
-  onChange,
-  placeholder,
-}: {
-  id: string
-  value: string
-  onChange: (value: string) => void
-  placeholder: string
-}) {
-  const [visible, setVisible] = useState(false)
-  return (
-    <div className="relative flex items-center">
-      <input
-        id={id}
-        type={visible ? 'text' : 'password'}
-        // Browsers ignore autocomplete="off" on password fields; "new-password"
-        // plus the password-manager opt-outs keeps saved logins and stray form
-        // history from being filled in as an API key.
-        autoComplete="new-password"
-        data-1p-ignore
-        data-lpignore="true"
-        data-form-type="other"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`${INPUT_CLASS} pr-10 font-mono`}
-      />
-      <button
-        type="button"
-        aria-label={visible ? 'Hide' : 'Show'}
-        onClick={() => setVisible((v) => !v)}
-        className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-      >
-        {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-      </button>
-    </div>
-  )
-}
 
 export function ProspectingTab() {
   const queryClient = useQueryClient()
@@ -683,7 +642,7 @@ export function ProspectingTab() {
       <button
         type="submit"
         disabled={isSaving}
-        className="w-full md:w-auto md:self-end py-2.5 px-6 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+        className="w-full md:w-auto md:self-end py-2.5 px-6 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
       >
         {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
         <span>{isSaving ? 'Saving...' : 'Save prospecting settings'}</span>

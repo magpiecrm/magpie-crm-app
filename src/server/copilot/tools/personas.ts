@@ -32,6 +32,7 @@ export const personaTools = [
       'Read the unsaved persona currently open in the persona builder. Call this before updatePersona so you can extend the existing values instead of overwriting them.',
     input: {},
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async (_args, ctx) => {
       const persona = ctx.getClientState().persona

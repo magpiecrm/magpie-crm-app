@@ -36,6 +36,8 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 // This prevents errors like "ERR_UNSUPPORTED_ESM_URL_SCHEME: Received protocol 'bun:'" when Node.js runs the Vite server.
 const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
+type ApiKeyScope = 'api' | 'mcp'
+
 export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'survey_response' | 'verifier_alert'
 
 type ContactRecord = DbSchema['contacts'][number]
@@ -96,6 +98,13 @@ interface DbSchema {
     key_hash: string
     masked_key: string
     created_at: string
+    /**
+     * `api` (the default, and every key made before scopes existed): the
+     * public API such as signup forms, which may sit in a website's code.
+     * `mcp`: full access for an AI app over MCP. Neither works as the other.
+     */
+    scope?: ApiKeyScope
+    last_used_at?: string
   }>
   forms?: Array<{
     id: string
@@ -237,6 +246,11 @@ interface DbSchema {
    * SocialFetch API key and Reacher secret; the rest isn't sensitive.
    */
   prospecting_settings?: ProspectingSettingsRecord
+  /**
+   * Copilot settings from Settings → Copilot. `secrets` is an AES-256-GCM blob
+   * (see copilot/settings.ts) holding the Anthropic API key.
+   */
+  copilot_settings?: { secrets?: string; updated_at: string }
   /**
    * Latest blocklist / reverse DNS / SPF check of the IPs and FROM domain
    * Reacher verifies from (prospecting/senderHealth.ts). The app's own
@@ -463,6 +477,15 @@ class JsonDb {
     return [...this.data.disclosure_log!]
   }
 
+  getCopilotSettings(): { secrets?: string; updated_at: string } | null {
+    return this.data.copilot_settings ?? null
+  }
+
+  saveCopilotSettings(next: { secrets?: string; updated_at: string }) {
+    this.data.copilot_settings = next
+    this.save()
+  }
+
   getProspectingSettings(): ProspectingSettingsRecord | null {
     return this.data.prospecting_settings ?? null
   }
@@ -491,17 +514,20 @@ class JsonDb {
   }
 
   // API Key Management Helpers
-  getApiKeys() {
+  getApiKeys(scope: ApiKeyScope = 'api') {
     if (!this.data.api_keys) this.data.api_keys = []
-    return this.data.api_keys.map(k => ({
-      id: k.id,
-      name: k.name,
-      masked_key: k.masked_key,
-      created_at: k.created_at
-    }))
+    return this.data.api_keys
+      .filter(k => (k.scope ?? 'api') === scope)
+      .map(k => ({
+        id: k.id,
+        name: k.name,
+        masked_key: k.masked_key,
+        created_at: k.created_at,
+        last_used_at: k.last_used_at ?? null,
+      }))
   }
 
-  addApiKey(name: string, keyHash: string, maskedKey: string) {
+  addApiKey(name: string, keyHash: string, maskedKey: string, scope: ApiKeyScope = 'api') {
     if (!this.data.api_keys) this.data.api_keys = []
     const id = crypto.randomUUID()
     const record = {
@@ -509,7 +535,8 @@ class JsonDb {
       name,
       key_hash: keyHash,
       masked_key: maskedKey,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      scope,
     }
     this.data.api_keys.push(record)
     this.save()
@@ -522,10 +549,19 @@ class JsonDb {
     this.save()
   }
 
-  verifyApiKey(rawKey: string): boolean {
+  verifyApiKey(rawKey: string, scope: ApiKeyScope = 'api'): boolean {
     if (!this.data.api_keys) return false
     const hash = crypto.createHash('sha256').update(rawKey).digest('hex')
-    return this.data.api_keys.some(k => k.key_hash === hash)
+    const key = this.data.api_keys.find(k => k.key_hash === hash && (k.scope ?? 'api') === scope)
+    if (!key) return false
+    // At most one write a minute per key, so a busy AI client doesn't rewrite
+    // the whole database file on every call.
+    const now = Date.now()
+    if (!key.last_used_at || now - Date.parse(key.last_used_at) > 60_000) {
+      key.last_used_at = new Date(now).toISOString()
+      this.save()
+    }
+    return true
   }
 
   // Notification Helpers

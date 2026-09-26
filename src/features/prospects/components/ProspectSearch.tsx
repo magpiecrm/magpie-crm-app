@@ -581,7 +581,7 @@ export function ProspectSearch() {
       )}
       <button
         type="submit"
-        className="w-full bg-accent text-accent-foreground py-2 rounded-md-s text-xs font-semibold hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+        className="w-full bg-primary text-primary-foreground py-2 rounded-md-s text-xs font-semibold hover:bg-primary/85 active:scale-95 transition-all flex items-center justify-center gap-2"
       >
         <Search className="w-3.5 h-3.5" />
         {mode === 'companies' ? 'Search companies' : 'Search people'}

@@ -80,6 +80,7 @@ export const surveyBuilderTools = [
       'Read the survey open in the survey builder: every page, block, question, option id, logic rule and the theme, plus lint issues. Call this before editing so you use real ids.',
     input: {},
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async (_args, ctx) => {
       const state = ctx.getClientState()
@@ -343,6 +344,7 @@ export const surveyBuilderTools = [
       width: z.number().int().min(320).max(1200).optional().describe('Viewport width. Defaults to 800; use 375 for mobile.'),
     },
     target: 'server',
+    browserOnly: true,
     readOnly: true,
     handler: async ({ pageId, width }, ctx) => {
       const design = currentDesign(ctx.getClientState())

@@ -62,7 +62,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         <p className="text-sm text-muted-foreground">{(detailsData as any)?.error || 'An unexpected error occurred.'}</p>
         <button 
           onClick={onClose}
-          className="px-4 py-2 bg-accent text-accent-foreground rounded-xl font-semibold text-sm cursor-pointer"
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-xl font-semibold text-sm cursor-pointer"
         >
           Go Back
         </button>

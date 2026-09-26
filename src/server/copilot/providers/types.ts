@@ -6,7 +6,8 @@ export type CopilotEvent =
   | { type: 'tool_result'; id: string; isError: boolean; preview: string }
   | { type: 'usage'; costUsd?: number; warning?: string }
   | { type: 'done'; text: string }
-  | { type: 'error'; message: string }
+  /** `fatal`: retrying can't help (e.g. a rejected API key), so the CLI is stopped. */
+  | { type: 'error'; message: string; fatal?: boolean }
 
 export interface SpawnOptions {
   /** UUID we assign, so the session can be resumed after a restart. */

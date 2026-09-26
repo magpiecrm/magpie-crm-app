@@ -424,7 +424,7 @@ function ImportContactsPage() {
               onClick={() => alert('Integrations coming soon!')}
               className="bg-card border border-border rounded-2xl p-6 hover:border-accent/40 cursor-pointer shadow-premium transition-all hover:-translate-y-0.5 flex flex-col items-start text-left space-y-4"
             >
-              <div className="p-3 bg-blue-500/10 text-blue-600 rounded-xl">
+              <div className="p-3 bg-accent/10 text-accent rounded-xl">
                 <Puzzle className="w-6 h-6" />
               </div>
               <div>
@@ -491,7 +491,7 @@ function ImportContactsPage() {
               </p>
               <p className="text-xs text-muted-foreground">Excel (.xlsx, .xls), CSV, or plain text. You can map headers to Email, First Name, Last Name, and Company in the next step.</p>
             </div>
-            <label className={`px-5 py-2.5 bg-accent text-accent-foreground rounded-xl text-xs font-semibold shadow-accent transition-all ${
+            <label className={`px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-semibold transition-all ${
               isParsingFile ? 'opacity-60 pointer-events-none' : 'hover:brightness-110 active:scale-95 cursor-pointer'
             }`}>
               Choose file
@@ -525,7 +525,7 @@ function ImportContactsPage() {
           <div className="flex justify-between items-center">
             <button
               onClick={() => handleParse(rawText)}
-              className="px-4 py-2 bg-accent text-accent-foreground font-semibold rounded-xl transition-all text-xs cursor-pointer hover:brightness-110 active:scale-95 shadow-accent"
+              className="px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl transition-all text-xs cursor-pointer hover:bg-primary/85 active:scale-95"
             >
               Parse & Map Data
             </button>
@@ -657,7 +657,7 @@ function ImportContactsPage() {
               <button
                 disabled={importMutation.isPending}
                 onClick={handleSubmit}
-                className="px-5 py-2.5 bg-accent text-accent-foreground font-semibold rounded-xl hover:brightness-110 active:scale-95 shadow-accent transition-all text-sm flex items-center gap-2 cursor-pointer"
+                className="px-5 py-2.5 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/85 active:scale-95 transition-all text-sm flex items-center gap-2 cursor-pointer"
               >
                 {importMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Confirm Import

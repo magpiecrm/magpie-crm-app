@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 // The agent loop that used to live here — a one-shot `claude -p` invocation
 // whose reply was scraped for a JSON blob, re-spawned once per tool call — has
@@ -6,177 +7,45 @@ import { createServerFn } from '@tanstack/react-start'
 // stream-json, with the platform's actions exposed as real MCP tools. See
 // `src/routes/api/copilot/stream.ts` for the entry point.
 //
-// What remains here is CLI *authentication*, which is still a shell-out.
+// What remains here is the copilot's settings: the user's own Anthropic API
+// key, which the CLI runs with (see `copilot/settings.ts`). The app no longer
+// signs the CLI in to a Claude.ai account: Anthropic doesn't allow products to
+// offer or relay Claude.ai login, or to share one subscription between users.
 
-interface ActiveAuth {
-  child: any
-  stdout: string
-  stderr: string
-  url: string | null
-  resolvePromise: ((val: any) => void) | null
-}
-
-// Store on globalThis so it survives module re-evaluation (Vite HMR / multi-import)
-const GLOBAL_AUTH_KEY = Symbol.for('tanstack-start:claude-active-auth')
-const g = globalThis as any
-if (!g[GLOBAL_AUTH_KEY]) g[GLOBAL_AUTH_KEY] = null
-
-function getActiveAuth(): ActiveAuth | null { return g[GLOBAL_AUTH_KEY] }
-function setActiveAuth(val: ActiveAuth | null) { g[GLOBAL_AUTH_KEY] = val }
-
-export const checkClaudeStatusFn = createServerFn({ method: 'GET' })
+export const getCopilotSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
-
-    const { exec } = await import('child_process')
-    return new Promise<any>((resolve) => {
-      exec('claude auth status', (_err, stdout) => {
-        try {
-          const parsed = JSON.parse(stdout.trim())
-          resolve({ success: true, status: parsed })
-        } catch (e) {
-          resolve({ success: true, status: { loggedIn: false, error: 'Could not parse status' } })
-        }
-      })
-    })
+    const { getMaskedCopilotSettings } = await import('../copilot/settings')
+    return getMaskedCopilotSettings()
   })
 
-export const startClaudeLoginFn = createServerFn({ method: 'POST' })
-  .handler(async () => {
-    const { requireAuth } = await import('../auth.server')
-    await requireAuth()
-
-    const { spawn } = await import('child_process')
-
-    const prev = getActiveAuth()
-    if (prev && prev.child) {
-      try { prev.child.kill() } catch (e) {}
-    }
-
-    const auth: ActiveAuth = { child: null, stdout: '', stderr: '', url: null, resolvePromise: null }
-    setActiveAuth(auth)
-
-    return new Promise<any>((resolve) => {
-      const child = spawn('claude', ['auth', 'login'], { stdio: ['pipe', 'pipe', 'pipe'] })
-      auth.child = child
-
-      let urlSent = false
-
-      const checkOutput = (data: string) => {
-        const a = getActiveAuth()
-        if (!a) return
-        a.stdout += data
-        const match = a.stdout.match(/(https:\/\/claude\.com\/cai\/oauth\/authorize[^\s\n\r]*)/)
-        if (match && !urlSent) {
-          urlSent = true
-          a.url = match[0]
-          resolve({ success: true, url: match[0], promptCode: true })
-        }
-      }
-
-      child.stdout.on('data', (chunk) => checkOutput(chunk.toString()))
-      child.stderr.on('data', (chunk) => checkOutput(chunk.toString()))
-
-      child.on('close', (code) => {
-        if (!urlSent) {
-          resolve({ success: false, error: `Process exited with code ${code}` })
-        }
-        const a = getActiveAuth()
-        if (a && a.resolvePromise) {
-          a.resolvePromise({ success: false, error: `Process exited with code ${code}` })
-        }
-        setActiveAuth(null)
+export const saveCopilotSettingsFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { anthropicApiKey?: string; clear?: Array<'anthropicApiKey'> }) =>
+    z
+      .object({
+        anthropicApiKey: z.string().trim().max(300).optional(),
+        clear: z.array(z.literal('anthropicApiKey')).optional(),
       })
-
-      setTimeout(() => {
-        if (!urlSent) {
-          try { child.kill() } catch (e) {}
-          resolve({ success: false, error: 'Timeout waiting for authorization URL' })
-          setActiveAuth(null)
-        }
-      }, 10000)
-    })
-  })
-
-export const submitClaudeCodeFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { code: string }) => d)
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
-
-    const { code } = data
-    const auth = getActiveAuth()
-
-    if (!auth || !auth.child) {
-      return { success: false, error: 'No active login session. Please click "Authenticate Claude CLI" first.' }
-    }
-
-    return new Promise<any>((resolve) => {
-      auth.resolvePromise = resolve
-
-      auth.child.stdin.write(`${code}\n`)
-
-      let finished = false
-
-      const checkResult = () => {
-        const a = getActiveAuth()
-        if (!a || finished) return
-        const out = a.stdout.toLowerCase()
-        if (out.includes('success') || out.includes('signed in') || out.includes('logged in')) {
-          finished = true
-          resolve({ success: true, output: a.stdout })
-          setActiveAuth(null)
-        }
-      }
-
-      auth.child.stdout.on('data', (chunk: any) => {
-        const a = getActiveAuth()
-        if (!a) return
-        a.stdout += chunk.toString()
-        checkResult()
-      })
-
-      auth.child.on('close', (exitCode: any) => {
-        if (finished) return
-        finished = true
-        const a = getActiveAuth()
-        if (exitCode === 0) {
-          resolve({ success: true, output: a ? a.stdout : 'Success' })
-        } else {
-          resolve({ success: false, error: `Login failed (exit code ${exitCode})`, output: a ? a.stdout : '' })
-        }
-        setActiveAuth(null)
-      })
-
-      setTimeout(() => {
-        if (!finished) {
-          finished = true
-          const a = getActiveAuth()
-          if (a && a.child) {
-            try { a.child.kill() } catch (e) {}
-          }
-          resolve({ success: false, error: 'Timeout waiting for verification. Try logging in again.' })
-          setActiveAuth(null)
-        }
-      }, 60000)
-    })
+    const { saveCopilotSettings, getMaskedCopilotSettings } = await import('../copilot/settings')
+    saveCopilotSettings(data)
+    return getMaskedCopilotSettings()
   })
 
-export const logoutClaudeFn = createServerFn({ method: 'POST' })
-  .handler(async () => {
+/** Checks the typed key (or the saved one) against Anthropic with a free call. */
+export const testAnthropicKeyFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { apiKey?: string }) => z.object({ apiKey: z.string().trim().max(300).optional() }).parse(d))
+  .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
-
-    const { exec } = await import('child_process')
-    return new Promise<any>((resolve) => {
-      exec('claude auth logout', (err, stdout) => {
-        resolve({ success: !err, output: stdout })
-      })
-    })
+    const { testAnthropicKey } = await import('../copilot/settings')
+    return testAnthropicKey(data.apiKey)
   })
-
-
 
 export const getCopilotProvidersFn = createServerFn({ method: 'GET' })
   .handler(async () => {

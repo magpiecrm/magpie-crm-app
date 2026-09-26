@@ -206,12 +206,12 @@ const PERMISSION_MODE_OPTIONS: DropdownOption[] = [
 
 /** Values match the CLI's --effort choices exactly (`claude --help`). */
 const EFFORT_OPTIONS: DropdownOption[] = [
-  { id: '', label: 'Default', description: 'The model paces itself.', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
-  { id: 'low', label: 'Low', description: 'Fastest, least thorough.', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
-  { id: 'medium', label: 'Medium', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
-  { id: 'high', label: 'High', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
-  { id: 'xhigh', label: 'XHigh', description: 'Best for hard, agentic requests.', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
-  { id: 'max', label: 'Max', description: 'Slowest; correctness over cost.', icon: <Gauge className="w-3.5 h-3.5 text-sky-500" /> },
+  { id: '', label: 'Default', description: 'The model paces itself.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
+  { id: 'low', label: 'Low', description: 'Fastest, least thorough.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
+  { id: 'medium', label: 'Medium', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
+  { id: 'high', label: 'High', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
+  { id: 'xhigh', label: 'XHigh', description: 'Best for hard, agentic requests.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
+  { id: 'max', label: 'Max', description: 'Slowest; correctness over cost.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
 ]
 
 /**
@@ -639,7 +639,7 @@ export function AIChat({
               <div className="flex gap-2">
                 <button
                   onClick={() => respondToPermission(pendingPermission.id, true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-accent text-accent-foreground rounded-md-s text-xs font-semibold hover:brightness-110 transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-md-s text-xs font-semibold hover:bg-primary/85 transition-all cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" /> Allow
                 </button>

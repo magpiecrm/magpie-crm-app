@@ -76,7 +76,7 @@ function ListsPage() {
           />
           <button 
             onClick={() => setShowModal(true)}
-            className="bg-accent text-accent-foreground px-6 py-2.5 rounded-md-s font-medium hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-accent cursor-pointer"
+            className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Create New List
@@ -178,7 +178,7 @@ function ListsPage() {
               <button
                 disabled={createMutation.isPending || !newListName.trim()}
                 onClick={() => createMutation.mutate(newListName.trim())}
-                className="px-4 py-2 bg-accent text-accent-foreground rounded-lg hover:brightness-110 active:scale-95 shadow-accent disabled:opacity-50 disabled:pointer-events-none transition-all text-sm font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all text-sm font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                 Create List

@@ -20,7 +20,7 @@ self.addEventListener('push', (event) => {
     payload = { body: event.data ? event.data.text() : '' }
   }
 
-  const title = payload.title || 'Email Marketing'
+  const title = payload.title || 'MagpieCRM'
   const options = {
     body: payload.body || '',
     icon: '/logo192.png',

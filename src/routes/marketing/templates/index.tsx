@@ -93,7 +93,7 @@ function TemplatesPage() {
         </div>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-accent text-accent-foreground px-6 py-2.5 rounded-md-s font-medium hover:brightness-110 active:scale-95 transition-all flex items-center gap-2 shadow-accent cursor-pointer shrink-0"
+          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
           New Template
@@ -117,7 +117,7 @@ function TemplatesPage() {
           </p>
           <button
             onClick={() => setShowCreate(true)}
-            className="bg-accent text-accent-foreground px-5 py-2.5 rounded-md-s font-medium hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer"
+            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Create Template
           </button>
@@ -303,7 +303,7 @@ function CreateTemplateView({
           <button
             type="submit"
             disabled={isSaving}
-            className="bg-accent text-accent-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:brightness-110 disabled:opacity-50 cursor-pointer"
+            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 cursor-pointer"
           >
             {isSaving ? 'Creating…' : 'Create & open builder'}
           </button>
