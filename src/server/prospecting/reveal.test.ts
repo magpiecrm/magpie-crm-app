@@ -4,8 +4,10 @@ import type { CompanySource, PersonResult } from './types'
 
 // Reveal against an in-memory db, a fake company source and a fake Reacher.
 
+let allowance: any = null
 const state = { suppression: [] as Array<{ hash: string }>, disclosure: [] as any[], companies: [] as any[] }
 const fakeDb = {
+  getAllowance: () => allowance,
   getSuppressionHashes: () => new Set(state.suppression.map((s) => s.hash)),
   addDisclosure: (e: any) => state.disclosure.push(e),
   getProspectCompany: (ref: string) => state.companies.find((c) => c.ref === ref) ?? null,
@@ -42,6 +44,7 @@ const jane: PersonResult = {
 }
 
 beforeEach(() => {
+  allowance = null
   state.suppression = []
   state.disclosure = []
   state.companies = []
@@ -50,6 +53,13 @@ beforeEach(() => {
 })
 
 describe('revealEmail', () => {
+  it('stops before looking anything up when the plan has no reveals left', async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { reveals: 20 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, reveals: 20 } }
+    await expect(revealEmail(jane, { source, finder, db: fakeDb as any })).rejects.toThrow(/used all 20 email reveals/)
+    expect(check).not.toHaveBeenCalled()
+    expect(source.getCompany).not.toHaveBeenCalled()
+  })
+
   it('finds and verifies the address, and logs the reveal as hashes only', async () => {
     const res = await revealEmail(jane, { source, finder, db: fakeDb as any })
     expect(res).toEqual({ status: 'found', email: 'jane.smith@acme.com', emailStatus: 'verified', domain: 'acme.com', greylisted: false })

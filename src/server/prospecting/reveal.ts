@@ -13,6 +13,7 @@ import { findEmail, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PersonResult } from './types'
 import { recordUsage } from '../usage'
+import { requireAllowance } from '../allowance'
 
 export type RevealResult =
   | { status: 'found'; email: string; emailStatus: EmailStatus; domain: string; greylisted: boolean; note?: string }
@@ -37,6 +38,8 @@ export interface RevealDeps {
 }
 
 export async function revealEmail(person: PersonResult, deps: RevealDeps): Promise<RevealResult> {
+  // A plan's reveal allowance: checked before anything is looked up.
+  requireAllowance('reveals')
   const suppressed = deps.db.getSuppressionHashes()
   // "Unavailable" rather than "opted out": the reason isn't shown, so the
   // button can't be used to learn who has opted out.

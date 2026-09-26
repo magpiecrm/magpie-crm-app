@@ -4,6 +4,7 @@ import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
 import type { SectionStatus, StatusLevel } from '../useSettingsStatus'
+import { AllowanceMeter } from './AllowanceMeter'
 
 const ORDER: Record<StatusLevel, number> = { error: 0, warning: 1, ok: 2, info: 3 }
 
@@ -68,6 +69,7 @@ export function SettingsOverview({
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
+      <AllowanceMeter />
       <UsageThisMonth />
       <div className="flex flex-col gap-3">
         <p className="text-sm text-foreground">

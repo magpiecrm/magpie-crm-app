@@ -19,7 +19,9 @@ const state = {
   disclosure: [] as any[],
 }
 
+let allowance: any = null
 const fakeDb = {
+  getAllowance: () => allowance,
   get data() {
     return { contacts: state.contacts, lists: [{ id: 1, name: 'Leads' }] }
   },
@@ -128,6 +130,18 @@ beforeEach(() => {
 })
 
 describe('saveProspects', () => {
+  it("doesn't look for new addresses once the plan's reveals are used up", async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { reveals: 5 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, reveals: 5 } }
+    try {
+      const job = await saveProspects(1, [person('Jane', 'Smith')], { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any })
+      expect(job.outcomes[0]).toMatchObject({ status: 'limit' })
+      expect(state.contacts).toEqual([])
+      expect(source.getCompany).not.toHaveBeenCalled()
+    } finally {
+      allowance = null
+    }
+  })
+
   it('finds, verifies and saves a contact with notice pending and a hashed disclosure entry', async () => {
     const job = await saveProspects(1, [person('Jane', 'Smith')], {
       source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any,

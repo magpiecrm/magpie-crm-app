@@ -192,7 +192,8 @@ export function ProspectSearch() {
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
-      }),
+        // What's left of a plan's allowance changed.
+      }).finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() })),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: peopleSearch !== null,
@@ -325,6 +326,7 @@ export function ProspectSearch() {
     } catch (err: any) {
       setReveal(person.profileUrl, { status: 'error', message: err?.message ?? 'Something went wrong' })
     }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() })
   }
 
   // Correct a company's email domain (its LinkedIn website was wrong or takes

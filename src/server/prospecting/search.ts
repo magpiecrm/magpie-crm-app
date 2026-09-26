@@ -268,15 +268,19 @@ export async function searchPeople(
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { isVerifiedOnly } = await import('./settings')
+  const { remaining, requireAllowance } = await import('../allowance')
   const { company, ...filters } = input
   const source = getSource()
   const verifiedOnly = isVerifiedOnly()
+  // A plan's prospect allowance: none left stops here, before anything is paid for.
+  const left = remaining('prospects')
+  if (left === 0) requireAllowance('prospects')
 
   // Results per page apply to each job title, as the search itself does.
   const titles = new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   const slots = Math.min(MAX_TITLES_SEARCHED, Math.max(1, titles))
   const perSlot = filters.count ?? DEFAULT_PAGE_SIZE
-  const target = perSlot * slots
+  const target = Math.min(perSlot * slots, left)
 
   const items: PersonResult[] = []
   const refined: string[] = []
@@ -296,7 +300,7 @@ export async function searchPeople(
     const page = await source.searchPeople(company ?? null, {
       ...filters,
       cursor,
-      count: searches === 0 ? perSlot : Math.max(1, Math.ceil(need / slots)),
+      count: searches === 0 ? Math.min(perSlot, Math.ceil(target / slots)) : Math.max(1, Math.ceil(need / slots)),
     })
     searches++
     // The first search's notes describe the whole query; later top-ups would repeat them.
@@ -319,6 +323,11 @@ export async function searchPeople(
     cursor = nextCursor
   }
 
+  // Never more than the allowance has left, even if a search returned extra.
+  for (let i = items.length - 1; i >= 0 && usable() > left; i--) {
+    if (!(verifiedOnly && items[i].catchAll)) items.splice(i, 1)
+  }
+
   const { recordUsage } = await import('../usage')
   recordUsage({ searches, prospects: usable() })
 
@@ -338,6 +347,9 @@ export async function searchPeople(
   }
   if (searches > 1) {
     warnings.push(`Some results were left out, so ${plural(searches - 1, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
+  }
+  if (target < perSlot * slots) {
+    warnings.push(`Your plan has ${plural(left, 'prospect', 'prospects')} left this month, so this page shows at most that many. Upgrade to get more.`)
   }
   if (!lookupError && usable() < target && nextCursor) {
     warnings.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)

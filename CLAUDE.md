@@ -33,7 +33,10 @@ key), with the app's actions as tools.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview
     and served by `GET /api/usage` when `USAGE_API_TOKEN` is set. Counts
-    only; record new billable actions here.
+    only; record new billable actions here. `allowance.ts` holds optional
+    monthly limits a host sets through `/api/usage/allowance` (prospects,
+    reveals, emails sent); check one with `requireAllowance` before an action
+    that uses it. Unset means no limits.
   - `db.ts` — the app's own data store: a JSON file (`local_db.json`, path
     from `DATABASE_PATH`) holding contacts/lists/campaigns/personas/auth. In
     production this file lives on a mounted volume.

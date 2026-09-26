@@ -12,10 +12,12 @@ const state: {
   runs: Array<{ sql: string; params: any[] }>
   html: string
   surveys: Array<{ id: string; name: string; status: string }>
-} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [] }
+  allowance: any
+} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null }
 
 vi.mock('./db', () => ({
   db: {
+    getAllowance: () => state.allowance,
     get data() {
       return { contacts: state.contacts, list_contacts: state.list_contacts }
     },
@@ -61,6 +63,7 @@ beforeEach(() => {
   state.runs = []
   state.html = '<p>Hi</p>'
   state.surveys = []
+  state.allowance = null
   // Avoids the getRequest() fallback for the tracking base URL.
   process.env.PUBLIC_URL = 'https://example.test'
 })
@@ -116,6 +119,19 @@ describe('sendCampaign with no reachable recipients', () => {
     ]
     await expect(emailService.sendCampaign(1)).rejects.toThrow(/1 unsubscribed/)
     await expect(emailService.sendCampaign(1)).rejects.toThrow(/1 bounced/)
+  })
+})
+
+describe('sendCampaign with a plan allowance', () => {
+  it('refuses a campaign bigger than the emails left, before sending any', async () => {
+    const { sendMail } = await import('./nodemailer')
+    ;(sendMail as any).mockClear()
+    state.allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { emailsSent: 1000 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, emailsSent: 999 } }
+    state.contacts = [{ email: 'a@b.com', status: 'subscribed' }, { email: 'c@b.com', status: 'subscribed' }]
+    state.list_contacts = [{ list_id: 1, contact_email: 'a@b.com' }, { list_id: 1, contact_email: 'c@b.com' }]
+    await expect(emailService.sendCampaign(1)).rejects.toThrow('Sending this campaign needs 2 emails, but your plan has 1 left this month.')
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(state.runs.some((r) => /status = 'sent'/.test(r.sql))).toBe(false)
   })
 })
 

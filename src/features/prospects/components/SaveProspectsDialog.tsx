@@ -18,6 +18,7 @@ const OUTCOME_LABEL: Record<SaveStatus, string> = {
   not_found: 'No email found',
   unconfirmed: "Couldn't verify an email",
   retrying: 'Server asked us to retry, waiting',
+  limit: "Plan's email reveals used up",
   error: 'Failed',
 }
 

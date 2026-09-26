@@ -11,6 +11,7 @@ import type { EmailStatus, NoticeStatus } from './prospecting/types'
 import type { MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
 import type { UsageCounter } from './usage'
+import type { Allowance } from './allowance'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -269,6 +270,8 @@ interface DbSchema {
    * names, addresses or searches.
    */
   usage?: Record<string, Partial<Record<UsageCounter, number>>>
+  /** This billing period's allowances, when a host sets them (see allowance.ts). */
+  allowance?: Allowance | null
 }
 
 export interface ProspectingSettingsRecord {
@@ -1288,6 +1291,15 @@ class JsonDb {
 
   getUsage(): Record<string, Partial<Record<UsageCounter, number>>> {
     return this.data.usage ?? {}
+  }
+
+  getAllowance(): Allowance | null {
+    return this.data.allowance ?? null
+  }
+
+  setAllowance(allowance: Allowance | null) {
+    this.data.allowance = allowance
+    this.save()
   }
 
   getBrandKit() {

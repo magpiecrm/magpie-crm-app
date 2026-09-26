@@ -5,6 +5,7 @@
 // Increments are gathered in memory and written a couple of seconds later in
 // one go, so sending a campaign doesn't rewrite the database once per email.
 
+import { countAgainstAllowance } from './allowance'
 import { db } from './db'
 
 const USAGE_COUNTERS = [
@@ -57,6 +58,8 @@ export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {
     if (n) row[key] = (row[key] ?? 0) + n
   }
   pending.set(month, row)
+  // Straight away, so the next search or send already sees what's left.
+  countAgainstAllowance({ prospects: deltas.prospects, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent })
   // unref: a pending count must not keep the process (or a test run) alive.
   g.__usageTimer ??= setTimeout(flush, FLUSH_MS).unref?.() ?? null
 }

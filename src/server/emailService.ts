@@ -6,6 +6,7 @@ import { getAppUrl } from './appUrl'
 import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
 import { formatCustomValue } from '../features/contacts/contactFields'
+import { AllowanceError, requireAllowance } from './allowance'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -488,6 +489,9 @@ export async function sendCampaign(id: number) {
     )
   }
 
+  // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
+  requireAllowance('emailsSent', contacts.length, 'Sending this campaign')
+
   const senderEmail = campaign.sender?.email
   const senderName = campaign.sender?.name
   const from = senderName ? `"${senderName}" <${senderEmail}>` : senderEmail
@@ -613,6 +617,8 @@ export async function sendCampaign(id: number) {
       })
       logRecipientStmt.run(id, email)
     } catch (err) {
+      // Out of allowance isn't the recipient's fault: stop, without marking anyone bounced.
+      if (err instanceof AllowanceError) throw err
       console.error(`Failed to send campaign email to ${email}:`, err)
       // Save recipient as bounced
       db.run(

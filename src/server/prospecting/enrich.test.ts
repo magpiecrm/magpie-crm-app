@@ -25,9 +25,11 @@ let companyPage: any
 const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
 vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }) }))
 let suppressedHashes = new Set<string>()
+let allowance: any = null
 let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
   db: {
+    getAllowance: () => allowance,
     getProspectCompany: (ref: string) =>
       ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com' } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com' } : null,
     getSuppressionHashes: () => suppressedHashes,
@@ -53,10 +55,29 @@ const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextC
 
 beforeEach(() => {
   getPerson.mockClear()
+  allowance = null
   suppressedHashes = new Set()
   emailDomains = {}
   disclosures = []
   contacts = []
+})
+
+describe('searchPeople with a plan allowance', () => {
+  it('shows and pays for no more people than the plan has left', async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 99 } }
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+    expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 1 })
+    expect(res.warnings).toContain('Your plan has 1 prospect left this month, so this page shows at most that many. Upgrade to get more.')
+  })
+
+  it('stops before searching when none are left', async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 100 } }
+    const calls = searchPeopleMock.mock.calls.length
+    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow(/used all 100 prospects/)
+    expect(searchPeopleMock.mock.calls.length).toBe(calls)
+  })
 })
 
 describe('searchPeople profile lookups', () => {

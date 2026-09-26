@@ -70,7 +70,9 @@ SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
                                # embed the signup form (POST /api/subscribe)
 DATABASE_PATH=...        # optional — defaults to ./local_db.json
 USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
-                         # counts, e.g. for a hosting provider's billing)
+                         # counts, e.g. for a hosting provider's billing) and
+                         # /api/usage/allowance (monthly limits a host sells
+                         # up front; see src/server/allowance.ts)
 PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
                          # verification: hides those settings (implies
                          # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off)

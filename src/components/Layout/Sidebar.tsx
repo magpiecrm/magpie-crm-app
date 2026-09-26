@@ -3,7 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
 import { markSignedOut } from '../../utils/auth'
-import { logoutFn } from '../../server/functions'
+import { getUsageFn, logoutFn } from '../../server/functions'
+import { AllowanceMeter } from '../../features/settings/components/AllowanceMeter'
 import { MagpieWordmark } from '../ui/MagpieLogo'
 
 const navItems = [
@@ -65,6 +66,9 @@ export function Sidebar({
     queryFn: () => prospectingStatusFn(),
     refetchInterval: 60000, // Refresh every minute
   })
+  // A hosting plan's allowances, when there are any, take this panel's place.
+  const { data: usage } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60000 })
+  const hasAllowance = Boolean(usage?.allowance?.items.length)
 
   return (
     <aside
@@ -127,9 +131,11 @@ export function Sidebar({
       <div className="p-4 border-t border-border mt-auto safe-b">
         <div className="bg-background rounded-md-m p-4 border border-border">
           <p className="font-mono text-[10px] text-accent mb-2 font-medium uppercase tracking-[0.08em]">
-            {status?.socialfetch.balanceHidden ? 'Prospects this month' : 'SocialFetch Credits'}
+            {hasAllowance ? 'Your plan this month' : status?.socialfetch.balanceHidden ? 'Prospects this month' : 'SocialFetch Credits'}
           </p>
-          {isLoadingUsage ? (
+          {hasAllowance ? (
+            <AllowanceMeter compact />
+          ) : isLoadingUsage ? (
             <Loader2 className="w-4 h-4 animate-spin text-accent" />
           ) : status?.socialfetch.balanceHidden ? (
             // Someone else pays for SocialFetch, so show what's been used instead.

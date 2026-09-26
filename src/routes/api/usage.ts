@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import { createFileRoute } from '@tanstack/react-router'
 
 /**
@@ -15,24 +14,14 @@ import { createFileRoute } from '@tanstack/react-router'
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
 
-function tokenMatches(given: string, expected: string): boolean {
-  // Compare digests so the check takes the same time whatever the length.
-  const a = crypto.createHash('sha256').update(given).digest()
-  const b = crypto.createHash('sha256').update(expected).digest()
-  return crypto.timingSafeEqual(a, b)
-}
-
 export const Route = createFileRoute('/api/usage')({
   server: {
     handlers: {
       GET: async ({ request }: { request: Request }) => {
         const { env } = await import('../../server/env')
-        const expected = env.usageApiToken()
-        if (!expected) return json({ error: 'Not found' }, 404)
-
-        const auth = request.headers.get('authorization') ?? ''
-        const given = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-        if (!given || !tokenMatches(given, expected)) return json({ error: 'Unauthorized' }, 401)
+        if (!env.usageApiToken()) return json({ error: 'Not found' }, 404)
+        const { hasUsageToken } = await import('../../server/usageToken')
+        if (!hasUsageToken(request)) return json({ error: 'Unauthorized' }, 401)
 
         const { getUsage, usageForMonth } = await import('../../server/usage')
         const month = new URL(request.url).searchParams.get('month')

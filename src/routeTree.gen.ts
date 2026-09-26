@@ -41,6 +41,7 @@ import { Route as MarketingCampaignsIdRouteImport } from './routes/marketing/cam
 import { Route as CollectionPersonasNewRouteImport } from './routes/collection/personas/new'
 import { Route as CollectionPersonasPersonaIdRouteImport } from './routes/collection/personas/$personaId'
 import { Route as ApiWebhooksBounceRouteImport } from './routes/api/webhooks/bounce'
+import { Route as ApiUsageAllowanceRouteImport } from './routes/api/usage.allowance'
 import { Route as ApiUploadsFilenameRouteImport } from './routes/api/uploads/$filename'
 import { Route as ApiTrackOpenRouteImport } from './routes/api/track/open'
 import { Route as ApiTrackClickRouteImport } from './routes/api/track/click'
@@ -216,6 +217,11 @@ const ApiWebhooksBounceRoute = ApiWebhooksBounceRouteImport.update({
   path: '/api/webhooks/bounce',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUsageAllowanceRoute = ApiUsageAllowanceRouteImport.update({
+  id: '/allowance',
+  path: '/allowance',
+  getParentRoute: () => ApiUsageRoute,
+} as any)
 const ApiUploadsFilenameRoute = ApiUploadsFilenameRouteImport.update({
   id: '/api/uploads/$filename',
   path: '/api/uploads/$filename',
@@ -289,7 +295,7 @@ export interface FileRoutesByFullPath {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
-  '/api/usage': typeof ApiUsageRoute
+  '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
@@ -304,6 +310,7 @@ export interface FileRoutesByFullPath {
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
+  '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -335,7 +342,7 @@ export interface FileRoutesByTo {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
-  '/api/usage': typeof ApiUsageRoute
+  '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/collection': typeof CollectionIndexRoute
@@ -346,6 +353,7 @@ export interface FileRoutesByTo {
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
+  '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -378,7 +386,7 @@ export interface FileRoutesById {
   '/api/opt-out': typeof ApiOptOutRoute
   '/api/subscribe': typeof ApiSubscribeRoute
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
-  '/api/usage': typeof ApiUsageRoute
+  '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
@@ -393,6 +401,7 @@ export interface FileRoutesById {
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
+  '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -441,6 +450,7 @@ export interface FileRouteTypes {
     | '/api/track/click'
     | '/api/track/open'
     | '/api/uploads/$filename'
+    | '/api/usage/allowance'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -483,6 +493,7 @@ export interface FileRouteTypes {
     | '/api/track/click'
     | '/api/track/open'
     | '/api/uploads/$filename'
+    | '/api/usage/allowance'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -529,6 +540,7 @@ export interface FileRouteTypes {
     | '/api/track/click'
     | '/api/track/open'
     | '/api/uploads/$filename'
+    | '/api/usage/allowance'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -561,7 +573,7 @@ export interface RootRouteChildren {
   ApiOptOutRoute: typeof ApiOptOutRoute
   ApiSubscribeRoute: typeof ApiSubscribeRoute
   ApiUnsubscribeRoute: typeof ApiUnsubscribeRoute
-  ApiUsageRoute: typeof ApiUsageRoute
+  ApiUsageRoute: typeof ApiUsageRouteWithChildren
   AuthLinkRoute: typeof AuthLinkRoute
   MarketingContactsRoute: typeof MarketingContactsRouteWithChildren
   MarketingFormsRoute: typeof MarketingFormsRouteWithChildren
@@ -817,6 +829,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksBounceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/usage/allowance': {
+      id: '/api/usage/allowance'
+      path: '/allowance'
+      fullPath: '/api/usage/allowance'
+      preLoaderRoute: typeof ApiUsageAllowanceRouteImport
+      parentRoute: typeof ApiUsageRoute
+    }
     '/api/uploads/$filename': {
       id: '/api/uploads/$filename'
       path: '/api/uploads/$filename'
@@ -904,6 +923,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ApiUsageRouteChildren {
+  ApiUsageAllowanceRoute: typeof ApiUsageAllowanceRoute
+}
+
+const ApiUsageRouteChildren: ApiUsageRouteChildren = {
+  ApiUsageAllowanceRoute: ApiUsageAllowanceRoute,
+}
+
+const ApiUsageRouteWithChildren = ApiUsageRoute._addFileChildren(
+  ApiUsageRouteChildren,
+)
+
 interface MarketingContactsRouteChildren {
   MarketingContactsImportRoute: typeof MarketingContactsImportRoute
   MarketingContactsIndexRoute: typeof MarketingContactsIndexRoute
@@ -967,7 +998,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOptOutRoute: ApiOptOutRoute,
   ApiSubscribeRoute: ApiSubscribeRoute,
   ApiUnsubscribeRoute: ApiUnsubscribeRoute,
-  ApiUsageRoute: ApiUsageRoute,
+  ApiUsageRoute: ApiUsageRouteWithChildren,
   AuthLinkRoute: AuthLinkRoute,
   MarketingContactsRoute: MarketingContactsRouteWithChildren,
   MarketingFormsRoute: MarketingFormsRouteWithChildren,

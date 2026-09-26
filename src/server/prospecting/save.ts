@@ -12,6 +12,7 @@ import { findEmail, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PeopleSource, PersonResult } from './types'
 import { recordUsage } from '../usage'
+import { remaining } from '../allowance'
 
 const SYNC_LIMIT = 10
 const SYNC_TIMEOUT_MS = 45_000
@@ -29,6 +30,7 @@ export type SaveStatus =
   | 'not_found' // no deliverable address
   | 'unconfirmed' // a likely address, but not verified, so not saved
   | 'retrying' // greylisted; will be retried
+  | 'limit' // the plan's email reveals for this month are used up
   | 'error'
 
 interface SaveOutcome {
@@ -141,6 +143,10 @@ async function processPerson(
   if (person.email) {
     found = { email: person.email.toLowerCase().trim(), status: person.emailStatus ?? 'unverified', greylisted: false }
   } else {
+    // Finding a new address uses one of the plan's email reveals.
+    if (remaining('reveals') < 1) {
+      return { ...base, status: 'limit', message: "Your plan's email reveals for this month are used up. Upgrade to get more." }
+    }
     const domain = await resolveDomain(person, deps)
     if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
     if (!domain) {
