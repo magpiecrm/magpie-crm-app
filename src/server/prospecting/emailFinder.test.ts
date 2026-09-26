@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EmailDomainRecord } from '../db'
-import { findEmail, type FinderDeps } from './emailFinder'
+import { findEmail, isKnownCatchAll, type FinderDeps } from './emailFinder'
 import type { Reachability } from './reacher'
 
 const NOW = Date.parse('2026-09-01T00:00:00Z')
@@ -219,5 +219,37 @@ describe('findEmail', () => {
     expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
       email: 'jane.smith@acme.com', status: 'unverified', greylisted: true, detail: expect.stringMatching(/try again later/),
     })
+  })
+})
+
+describe('isKnownCatchAll', () => {
+  const rec = (patch: Partial<EmailDomainRecord>): EmailDomainRecord => ({
+    domain: 'x', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: null, catch_all_checked_at: null,
+    mx_provider: null, accepts_mail: true, mx_checked_at: null, last_used_at: '', ...patch,
+  })
+  const fresh = new Date(NOW - 86_400_000).toISOString()
+  const lookup = (records: Record<string, EmailDomainRecord>) => (d: string) => records[d] ?? null
+
+  it('is true only for a fresh catch-all result', () => {
+    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: fresh }) }), NOW)).toBe(true)
+    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: false, catch_all_checked_at: fresh }) }), NOW)).toBe(false)
+    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: '2025-01-01T00:00:00Z' }) }), NOW)).toBe(false)
+    // Never checked: unknown, so not hidden.
+    expect(isKnownCatchAll('acme.com', lookup({}), NOW)).toBe(false)
+  })
+
+  it('follows a mail-less subdomain up to the parent the finder would use', () => {
+    const records = {
+      'careers.acme.com': rec({ accepts_mail: false }),
+      'acme.com': rec({ catch_all: true, catch_all_checked_at: fresh }),
+    }
+    expect(isKnownCatchAll('careers.acme.com', lookup(records), NOW)).toBe(true)
+    // A subdomain that takes mail itself is judged on its own.
+    expect(isKnownCatchAll('uk.acme.com', lookup({ ...records, 'uk.acme.com': rec({ accepts_mail: true }) }), NOW)).toBe(false)
+  })
+
+  it('never walks up to a public suffix like co.uk', () => {
+    const records = { 'acme.co.uk': rec({ accepts_mail: false }), 'co.uk': rec({ catch_all: true, catch_all_checked_at: fresh }) }
+    expect(isKnownCatchAll('acme.co.uk', lookup(records), NOW)).toBe(false)
   })
 })

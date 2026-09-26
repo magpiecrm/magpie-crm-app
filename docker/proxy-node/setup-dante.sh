@@ -31,7 +31,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq dante-server ufw >/dev/null
 
-IFACE="$(ip route get 1.1.1.1 | awk '{for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit }}')"
+# Pin outgoing connections to the server's IPv4 address. Most VPSs also have
+# IPv6, and mail hosts with AAAA records (Gmail) would otherwise be reached
+# over an address with no reverse DNS that the health check never looks at.
+EXTERNAL_IP="$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')"
 
 echo "==> Creating proxy user '$PROXY_USER' (no shell, no home)"
 id "$PROXY_USER" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$PROXY_USER"
@@ -41,7 +44,7 @@ echo "==> Writing /etc/danted.conf"
 cat > /etc/danted.conf <<CONF
 logoutput: syslog
 internal: 0.0.0.0 port = $PORT
-external: $IFACE
+external: $EXTERNAL_IP
 socksmethod: username
 user.privileged: root
 user.unprivileged: nobody

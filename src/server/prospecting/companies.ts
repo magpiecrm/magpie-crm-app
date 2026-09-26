@@ -9,14 +9,16 @@ const inflight = new Map<string, Promise<string | null>>()
 
 /**
  * The company's mail domain: from the cache when known, otherwise from its
- * SocialFetch company page (6-9 credits), fetched at most once per company —
- * a page with no website is remembered so it isn't paid for again.
+ * SocialFetch company page (1 credit with the page name, 6-9 without), fetched
+ * at most once per company — a page with no website is remembered so it isn't
+ * paid for again.
  */
 export async function resolveCompanyDomain(
   ref: string,
   fallbackName: string,
   source: CompanySource,
   db: Db,
+  slug?: string | null,
 ): Promise<string | null> {
   const cached = db.getProspectCompany(ref)
   if (cached?.domain || cached?.page_checked || cached?.domain_source === 'user') return cached.domain
@@ -24,7 +26,8 @@ export async function resolveCompanyDomain(
   const pending = inflight.get(ref)
   if (pending) return pending
   const task = (async () => {
-    const company = await source.getCompany(ref)
+    const pageSlug = slug ?? cached?.slug ?? null
+    const company = await source.getCompany(ref, pageSlug)
     db.upsertProspectCompanies([{
       ref,
       name: company?.name ?? cached?.name ?? fallbackName,
@@ -32,6 +35,7 @@ export async function resolveCompanyDomain(
       domain_source: 'socialfetch',
       page_checked: true,
       headcount: company?.headcount ?? null,
+      slug: pageSlug,
     }])
     return company?.domain ?? null
   })()
@@ -55,6 +59,6 @@ export async function domainForPerson(person: PersonResult, source: CompanySourc
     if (cached?.domain_source === 'user' && cached.domain) return cached.domain
   }
   if (person.companyDomain) return normaliseDomain(person.companyDomain)
-  if (person.companyRef) return resolveCompanyDomain(person.companyRef, person.company, source, db)
+  if (person.companyRef) return resolveCompanyDomain(person.companyRef, person.company, source, db, person.companySlug)
   return null
 }

@@ -12,6 +12,7 @@ import type { MailProvider } from './proxyRouter'
 import { withFallback } from './verifiers'
 import { getActiveVerifier, getProxyConfigs, requireSocialFetchKey } from './settings'
 import { createSocialFetchSource } from './socialfetch'
+import { withProfileCache } from './profileCache'
 import type { CompanySource, PeopleSource } from './types'
 
 let source: (CompanySource & PeopleSource) | null = null
@@ -19,7 +20,9 @@ let router: ProxyRouter | null = null
 let routerKey = ''
 
 export function getSource(): CompanySource & PeopleSource {
-  source ??= createSocialFetchSource(fetch, requireSocialFetchKey)
+  // Profile lookups are remembered for a day (in memory only), so a person who
+  // turns up again isn't paid for twice.
+  source ??= withProfileCache(createSocialFetchSource(fetch, requireSocialFetchKey))
   return source
 }
 

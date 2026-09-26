@@ -25,7 +25,9 @@ prompts.
     is the only place contacts get created from search results; `suppression.ts` holds the
     HMAC-hashed opt-out list. Search results are never persisted, and only
     non-personal data (companies, domains, patterns, catch-all) is cached
-    globally — keep it that way. API keys and base URLs come from
+    globally — keep it that way. The one exception is `profileCache.ts`:
+    profile lookups held in server memory for 24h (size-capped, never on
+    disk) so a person isn't paid for twice. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `db.ts` — the app's own data store: a JSON file (`local_db.json`, path
     from `DATABASE_PATH`) holding contacts/lists/campaigns/personas/auth. In

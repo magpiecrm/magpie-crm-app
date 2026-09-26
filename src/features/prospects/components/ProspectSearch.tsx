@@ -22,6 +22,7 @@ import { Button } from '../../../components/ui/Button'
 import { Sheet } from '../../../components/ui/Sheet'
 import {
   getPersonasFn,
+  prospectingStatusFn,
   resolveCompanyFn,
   revealEmailFn,
   searchCompaniesFn,
@@ -109,6 +110,8 @@ const inputClass =
 // Every search page costs SocialFetch credits, so results are never refetched
 // behind the user's back — only an explicit Search or Load more spends.
 const noRefetch = { staleTime: Infinity, gcTime: 30 * 60_000, refetchOnWindowFocus: false, retry: false } as const
+
+const NO_REVEALS: Map<string, RevealState> = new Map()
 
 export function ProspectSearch() {
   const queryClient = useQueryClient()
@@ -239,6 +242,11 @@ export function ProspectSearch() {
         setFormError('Enter a job title or keyword, or pick a company.')
         return
       }
+      // A different search starts with no revealed emails. Re-running the
+      // same one shows the same (cached) people, so theirs stay.
+      if (JSON.stringify(peopleForm) !== JSON.stringify(peopleSearch)) {
+        queryClient.setQueryData(queryKeys.prospects.reveals(), new Map())
+      }
       setPeopleSearch({ ...peopleForm })
     }
     setIsFiltersOpen(false)
@@ -275,9 +283,20 @@ export function ProspectSearch() {
     onSuccess: (res) => applyDomain(res.ref, res.domain),
   })
 
-  // Revealed emails live only here (and go into a list only if saved).
-  const [reveals, setReveals] = useState<Map<string, RevealState>>(new Map())
-  const setReveal = (url: string, state: RevealState) => setReveals((prev) => new Map(prev).set(url, state))
+  // Revealed emails are kept in memory next to the search results (the query
+  // cache), so they survive moving around the app, and a reveal still running
+  // when the user leaves lands anyway. A different search clears them, and
+  // closing or reloading the tab loses them with the results. They're
+  // personal data, so they're never written to storage, and only go into a
+  // list if saved.
+  const { data: reveals = NO_REVEALS } = useQuery({
+    queryKey: queryKeys.prospects.reveals(),
+    // Local state, not fetched: hand back whatever is already cached.
+    queryFn: () => queryClient.getQueryData<Map<string, RevealState>>(queryKeys.prospects.reveals()) ?? new Map(),
+    ...noRefetch,
+  })
+  const setReveal = (url: string, state: RevealState) =>
+    queryClient.setQueryData<Map<string, RevealState>>(queryKeys.prospects.reveals(), (prev) => new Map(prev).set(url, state))
   const reveal = async (person: PersonResult) => {
     setReveal(person.profileUrl, { status: 'loading' })
     try {
@@ -304,7 +323,29 @@ export function ProspectSearch() {
     })
 
   const companyItems = companies.data?.pages.flatMap((p) => p.items) ?? []
-  const peopleItems = people.data?.pages.flatMap((p) => p.items) ?? []
+  const allPeople = people.data?.pages.flatMap((p) => p.items) ?? []
+
+  // People at companies that accept every address can't get a verified
+  // email, so while verified-only is on they're hidden (with a count and a
+  // way to show them). Shares the sidebar's status query.
+  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  const verifiedOnly = status?.verification?.verifiedOnly ?? true
+  const [showCatchAll, setShowCatchAll] = useState(false)
+  useEffect(() => setShowCatchAll(false), [peopleSearch])
+  // A reveal can discover a catch-all company: mark everyone there now, and
+  // later searches hide them (the finder cached it).
+  const catchAllCompanies = new Set(
+    allPeople.flatMap((p) => {
+      const r = reveals.get(p.profileUrl)
+      const found = (r?.status === 'unconfirmed' && r.catchAll) || (r?.status === 'found' && r.emailStatus === 'catch_all_likely')
+      return found ? [p.companyRef ?? p.companyDomain ?? ''].filter(Boolean) : []
+    }),
+  )
+  const isCatchAll = (p: PersonResult) =>
+    Boolean(p.catchAll) || catchAllCompanies.has(p.companyRef ?? '') || catchAllCompanies.has(p.companyDomain ?? '')
+  const catchAllCount = allPeople.filter((p) => p.catchAll).length
+  const hidingCatchAll = verifiedOnly && !showCatchAll && catchAllCount > 0
+  const peopleItems = hidingCatchAll ? allPeople.filter((p) => !p.catchAll) : allPeople
   // Titles checked against profiles, by the search itself or the button.
   // Results whose title and company came from their profile (✓ in the table).
   const refined = new Set(people.data?.pages.flatMap((p) => p.refined ?? []) ?? [])
@@ -425,7 +466,7 @@ export function ProspectSearch() {
                 onClick={() => lookupDomain.mutate(peopleForm.company!.ref)}
                 className="block text-[10px] text-muted-foreground hover:text-foreground underline"
               >
-                {lookupDomain.isPending ? 'Looking up…' : 'Or look it up on the company page (6–9 credits)'}
+                {lookupDomain.isPending ? 'Looking up…' : 'Or look it up on the company page (1–9 credits)'}
               </button>
             )}
             {lookupDomain.isSuccess && !lookupDomain.data.domain && lookupDomain.data.ref === peopleForm.company.ref && (
@@ -630,6 +671,19 @@ export function ProspectSearch() {
           </div>
         </div>
 
+        {mode === 'people' && verifiedOnly && catchAllCount > 0 && (
+          <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <span>
+              {hidingCatchAll
+                ? `${catchAllCount} ${catchAllCount === 1 ? 'person works at a company' : 'people work at companies'} that accept every address, so no email there can be verified. Hidden for now.`
+                : `Showing ${catchAllCount} ${catchAllCount === 1 ? 'person' : 'people'} at companies that accept every address; their emails can't be verified.`}
+            </span>
+            <button type="button" onClick={() => setShowCatchAll((v) => !v)} className="font-semibold text-accent hover:underline">
+              {hidingCatchAll ? 'Show them' : 'Hide them'}
+            </button>
+          </div>
+        )}
+
         {warnings.length > 0 && (
           <div className="px-6 py-2 border-b border-border bg-amber-500/10 shrink-0 flex flex-col gap-1">
             {warnings.map((w, i) => (
@@ -667,7 +721,13 @@ export function ProspectSearch() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : shownCount === 0 ? (
-            renderEmpty(active.hasNextPage ? 'Nothing on this page matched your filters. Load more to keep looking.' : 'No results. Try a broader keyword or fewer filters.')
+            renderEmpty(
+              mode === 'people' && hidingCatchAll
+                ? 'Everyone found so far works at a company that accepts every address. Show them, or load more to keep looking.'
+                : active.hasNextPage
+                  ? 'Nothing on this page matched your filters. Load more to keep looking.'
+                  : 'No results. Try a broader keyword or fewer filters.',
+            )
           ) : mode === 'companies' ? (
             <CompanyResults companies={companyItems} onFindPeople={findPeople} onDomainSet={applyDomain} />
           ) : (
@@ -680,6 +740,8 @@ export function ProspectSearch() {
               reveals={reveals}
               onReveal={reveal}
               onFixDomain={fixDomain}
+              isCatchAll={isCatchAll}
+              verifiedOnly={verifiedOnly}
             />
           )}
 

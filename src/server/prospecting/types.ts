@@ -60,6 +60,8 @@ export interface PersonResult {
   seniority: Seniority | null
   company: string
   companyRef: string | null
+  /** LinkedIn company page name (e.g. `acme-ltd`): company data, for the cheaper company lookup. */
+  companySlug?: string | null
   companyDomain: string | null
   country: string | null
   source: SourceId
@@ -68,6 +70,16 @@ export interface PersonResult {
    * listed a current job. Saving won't pay for the same lookup again.
    */
   profileChecked?: boolean
+  /**
+   * Their company is already known to accept every address, so no email
+   * there can be verified. Company data (from the domain cache), not personal.
+   */
+  catchAll?: boolean
+  /**
+   * Already a contact (`saved`: details and email come from the contact, and
+   * the profile isn't looked up again) or revealed before (`revealed`).
+   */
+  previously?: 'saved' | 'revealed'
   /** Set once the email has been revealed, so saving reuses it. */
   email?: string
   emailStatus?: EmailStatus
@@ -107,7 +119,8 @@ export interface Page<T> {
 
 export interface CompanySource {
   searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>>
-  getCompany(ref: string): Promise<CompanyResult | null>
+  /** `slug` (the LinkedIn company page name) allows a cheaper lookup when known. */
+  getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null>
 }
 
 export interface PeopleSource {

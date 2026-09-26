@@ -68,8 +68,8 @@ async function runProbes(via: string, check: (address: string) => Promise<CheckR
           : r.detail ??
             (r.outcome === 'blocked'
               ? 'The mail server refused this IP (likely a blocklist).'
-              : r.outcome === 'timeout'
-                ? 'Timed out; outbound port 25 may be blocked.'
+              : r.outcome === 'timeout' || r.outcome === 'unreachable'
+                ? 'Couldn’t connect to the mail server; outbound port 25 may be blocked on this route.'
                 : 'No definite answer from the mail server.'),
       }
     }),

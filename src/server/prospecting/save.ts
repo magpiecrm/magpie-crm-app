@@ -99,6 +99,7 @@ async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGa
     seniority: profile.seniority ?? person.seniority,
     company: profile.company || person.company,
     companyRef: profile.companyRef,
+    companySlug: profile.companySlug ?? null,
   }
 }
 

@@ -60,6 +60,23 @@ async function parentWithMail(domain: string, deps: FinderDeps): Promise<{ domai
   return null
 }
 
+/**
+ * Whether `domain` is already known (from an earlier check, still fresh) to
+ * accept every address, following the same walk to a parent domain that
+ * `findEmail` takes when the domain itself takes no mail. Cache only: no DNS,
+ * no checks, so search results can be marked without any SMTP traffic.
+ */
+export function isKnownCatchAll(domain: string, getDomain: FinderDeps['getDomain'], now: number): boolean {
+  const labels = domain.toLowerCase().trim().split('.')
+  for (;;) {
+    const rec = getDomain(labels.join('.'))
+    if (rec?.catch_all === true && !isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)) return true
+    if (rec?.accepts_mail !== false || labels.length <= 2) return false
+    labels.shift()
+    if (PUBLIC_SUFFIX_RE.test(labels.join('.'))) return false
+  }
+}
+
 /** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
 function surnameHidden(lastName: string): boolean {
   return /^\p{L}\.?$/u.test(lastName.trim())

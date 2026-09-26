@@ -16,7 +16,12 @@ export interface ProxyConfig {
 /** Mail provider behind a domain's MX, which sets how hard we may probe it. */
 export type MailProvider = 'google' | 'microsoft' | 'other'
 
-export type CheckOutcome = 'ok' | 'greylisted' | 'blocked' | 'timeout'
+/**
+ * `unreachable`: the proxy couldn't connect to that company's mail server at
+ * all (it drops connections from hosting IPs, or is down). That's the
+ * destination's doing, not a sign this proxy's IP is burned.
+ */
+export type CheckOutcome = 'ok' | 'greylisted' | 'blocked' | 'timeout' | 'unreachable'
 
 export interface ProxyHealth {
   label: string
@@ -24,6 +29,7 @@ export interface ProxyHealth {
   greylisted: number
   blocked: number
   timeouts: number
+  unreachable: number
   successRate: number | null
   benchedUntil: string | null
 }
@@ -35,6 +41,13 @@ export interface RouterOptions {
   perProviderPerMinute: Record<MailProvider, number>
   /** Consecutive blocks/timeouts before a proxy is benched. */
   benchAfter: number
+  /**
+   * Consecutive "couldn't connect" results before a proxy is benched. Higher
+   * than `benchAfter`: one company refusing connections gives at most two in
+   * a row (the finder stops after two unknowns), so only several companies in
+   * a row point at the proxy itself, e.g. its host blocking port 25.
+   */
+  benchAfterUnreachable: number
   benchMs: number
   /** How long `acquire` waits for a free slot before giving up. */
   maxWaitMs: number
@@ -46,6 +59,7 @@ const DEFAULTS: RouterOptions = {
   perProxyPerMinute: 20,
   perProviderPerMinute: { google: 10, microsoft: 6, other: 60 },
   benchAfter: 3,
+  benchAfterUnreachable: 6,
   benchMs: 15 * 60_000,
   maxWaitMs: 60_000,
   now: () => Date.now(),
@@ -60,7 +74,9 @@ interface ProxyState {
   greylisted: number
   blocked: number
   timeouts: number
+  unreachable: number
   consecutiveFailures: number
+  consecutiveUnreachable: number
   benchedUntil: number
 }
 
@@ -86,7 +102,9 @@ export class ProxyRouter {
       greylisted: 0,
       blocked: 0,
       timeouts: 0,
+      unreachable: 0,
       consecutiveFailures: 0,
+      consecutiveUnreachable: 0,
       benchedUntil: 0,
     }))
   }
@@ -146,6 +164,12 @@ export class ProxyRouter {
     if (outcome === 'ok') {
       p.ok++
       p.consecutiveFailures = 0
+      p.consecutiveUnreachable = 0
+      return
+    }
+    if (outcome === 'unreachable') {
+      p.unreachable++
+      if (++p.consecutiveUnreachable >= this.opts.benchAfterUnreachable) this.bench(p)
       return
     }
     if (outcome === 'greylisted') {
@@ -157,11 +181,14 @@ export class ProxyRouter {
     if (outcome === 'blocked') p.blocked++
     else p.timeouts++
     p.consecutiveFailures++
-    if (p.consecutiveFailures >= this.opts.benchAfter) {
-      p.benchedUntil = this.opts.now() + this.opts.benchMs
-      p.consecutiveFailures = 0
-      console.warn(`[ProxyRouter] Benched ${p.label} for ${Math.round(this.opts.benchMs / 60_000)} min`)
-    }
+    if (p.consecutiveFailures >= this.opts.benchAfter) this.bench(p)
+  }
+
+  private bench(p: ProxyState) {
+    p.benchedUntil = this.opts.now() + this.opts.benchMs
+    p.consecutiveFailures = 0
+    p.consecutiveUnreachable = 0
+    console.warn(`[ProxyRouter] Benched ${p.label} for ${Math.round(this.opts.benchMs / 60_000)} min`)
   }
 
   private prune(now: number) {
@@ -182,6 +209,7 @@ export class ProxyRouter {
         greylisted: p.greylisted,
         blocked: p.blocked,
         timeouts: p.timeouts,
+        unreachable: p.unreachable,
         successRate: total > 0 ? p.ok / total : null,
         benchedUntil: p.benchedUntil > now ? new Date(p.benchedUntil).toISOString() : null,
       }

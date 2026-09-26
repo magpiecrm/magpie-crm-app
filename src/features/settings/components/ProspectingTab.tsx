@@ -581,6 +581,7 @@ export function ProspectingTab() {
                     <th className="text-right px-3 py-2 font-semibold">Greylisted</th>
                     <th className="text-right px-3 py-2 font-semibold">Blocked</th>
                     <th className="text-right px-3 py-2 font-semibold">Timeouts</th>
+                    <th className="text-right px-3 py-2 font-semibold" title="Company mail servers that refused a connection from this proxy">Unreachable</th>
                     <th className="text-left px-3 py-2 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -592,6 +593,7 @@ export function ProspectingTab() {
                       <td className="px-3 py-2 text-right tabular-nums">{h.greylisted}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.blocked}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.timeouts}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{h.unreachable ?? 0}</td>
                       <td className="px-3 py-2">
                         {h.benchedUntil ? (
                           <span className="text-destructive">Benched until {new Date(h.benchedUntil).toLocaleTimeString()}</span>

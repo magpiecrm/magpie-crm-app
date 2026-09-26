@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, MessageSquare, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
 import { clearAuthCookie } from '../../utils/auth'
@@ -47,8 +47,18 @@ export function Sidebar({
   onClose?: () => void
 }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const handleSignOut = () => {
     clearAuthCookie()
+    // Signing out ends the session's working data too: search results,
+    // revealed emails and saved filters, so the next person to sign in on
+    // this tab doesn't see them.
+    queryClient.clear()
+    try {
+      sessionStorage.clear()
+    } catch {
+      // storage unavailable; nothing was kept there
+    }
     navigate({ to: '/login' })
   }
 
@@ -231,7 +241,11 @@ export function Sidebar({
               }`}
             >
               <AlertTriangle className="w-3 h-3 shrink-0" />
-              {status.senderHealth.level === 'critical' ? 'Verification IP needs replacing' : 'Verification setup needs attention'}
+              {status.senderHealth.level !== 'critical'
+                ? 'Verification setup needs attention'
+                : status.senderHealth.problem === 'domain'
+                  ? 'Verification domain is blocklisted'
+                  : 'Verification IP needs replacing'}
             </Link>
           )}
         </div>

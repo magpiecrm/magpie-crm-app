@@ -2,8 +2,10 @@
 // get the same caching, suppression and save behaviour.
 
 import type { CompanyFilters, CompanyResult, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
-import { sameCompanyName } from './socialfetch'
-import { hashesFor, isSuppressed } from './suppression'
+import { isKnownCatchAll } from './emailFinder'
+import { sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { classifySeniority } from './seniority'
+import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
 export async function searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
   const { getSource } = await import('./runtime')
@@ -17,7 +19,14 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   }
   // Companies and domains are non-personal, so they're cached globally.
   db.upsertProspectCompanies(
-    page.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount })),
+    page.items.map((c) => ({
+      ref: c.ref,
+      name: c.name,
+      domain: c.domain,
+      domain_source: 'socialfetch' as const,
+      headcount: c.headcount,
+      slug: slugFromCompanyUrl(c.linkedinUrl),
+    })),
   )
   return page
 }
@@ -62,10 +71,58 @@ async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Pr
       seniority: profile.seniority ?? person.seniority,
       company: profile.company || person.company,
       companyRef: profile.companyRef,
+      companySlug: profile.companySlug ?? null,
       companyDomain: db.getProspectCompany(profile.companyRef)?.domain ?? null,
       country: person.country ?? profile.country,
     },
   }
+}
+
+/**
+ * People already saved as contacts are filled in from the contact (title,
+ * company, email) instead of paying for their profile again; people only
+ * revealed before are marked. Matched through the profile hashes in the
+ * disclosure log, so nothing new is stored. Returns how many were saved.
+ */
+function markPreviouslySeen(items: PersonResult[], db: Db): number {
+  const savedAs = new Map<string, string>()
+  const revealed = new Set<string>()
+  for (const d of db.getDisclosures()) {
+    if (!d.profile_hash) continue
+    if (d.event === 'saved') savedAs.set(d.profile_hash, d.contact_hash)
+    else if (d.event === 'revealed') revealed.add(d.profile_hash)
+  }
+  if (savedAs.size === 0 && revealed.size === 0) return 0
+
+  let contactsByHash: Map<string, (typeof db.data.contacts)[number]> | null = null
+  let saved = 0
+  items.forEach((p, i) => {
+    const hash = profileHash(p.profileUrl)
+    if (!hash) return
+    const contactHash = savedAs.get(hash)
+    if (contactHash) {
+      contactsByHash ??= new Map(db.data.contacts.map((c) => [emailHash(c.email), c]))
+      const contact = contactsByHash.get(contactHash)
+      // A deleted contact falls through to a normal lookup.
+      if (contact) {
+        items[i] = {
+          ...p,
+          title: contact.job_title || p.title,
+          seniority: contact.job_title ? classifySeniority(contact.job_title) : p.seniority,
+          company: contact.company || p.company,
+          email: contact.email,
+          emailStatus: contact.email_status,
+          previously: 'saved',
+          profileChecked: true,
+        }
+        saved++
+        return
+      }
+    }
+    // Their email was never kept, so they're still looked up.
+    if (revealed.has(hash)) items[i] = { ...p, previously: 'revealed' }
+  })
+  return saved
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -110,20 +167,22 @@ export async function searchPeople(
     )
   }
 
+  const alreadySaved = markPreviouslySeen(page.items, db)
+  const toLookUp = page.items.filter((p) => p.previously !== 'saved')
+
   const refined: string[] = []
-  if (page.items.length > 0) {
+  if (toLookUp.length > 0) {
     // Check the first profile before paying for the rest: if the lookup
     // itself fails (no credits, API down) the rest would fail too. A profile
     // that simply lists no company page (freelancers, tiny firms) is normal
     // and doesn't stop the others.
-    const first = await enrichOne(page.items[0], source, db)
+    const first = await enrichOne(toLookUp[0], source, db)
     const results = first.error
       ? [first]
-      : [first, ...(await mapLimit(page.items.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db)))]
-    results.forEach((r, i) => {
-      page.items[i] = r.person
-      if (r.refined) refined.push(r.person.profileUrl)
-    })
+      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db)))]
+    const byUrl = new Map(results.map((r) => [r.person.profileUrl, r.person]))
+    page.items = page.items.map((p) => byUrl.get(p.profileUrl) ?? p)
+    for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
     const failed = results.filter((r) => r.error)
     if (first.error) {
       page.warnings.push(`Couldn't look up profiles (${first.error}), so titles and companies come from headlines.`)
@@ -136,19 +195,33 @@ export async function searchPeople(
         page.warnings.push(`${missing} ${missing === 1 ? 'profile has' : 'profiles have'} no current job listed; showing the headline instead.`)
       }
     }
+  }
+  if (alreadySaved > 0) {
+    page.warnings.push(
+      `${alreadySaved} ${alreadySaved === 1 ? 'person is' : 'people are'} already in your contacts, so their details come from there and no profile lookup was paid for.`,
+    )
+  }
 
-    // With the real employer known, people who don't work at the chosen
-    // company can be hidden.
-    if (company) {
-      const before = page.items.length
-      page.items = page.items.filter(
-        (p) => !refined.includes(p.profileUrl) || p.companyRef === company.ref || sameCompanyName(p.company, company.name),
-      )
-      const hidden = before - page.items.length
-      if (hidden > 0) {
-        page.warnings.push(`${hidden} ${hidden === 1 ? "person doesn't" : "people don't"} currently work at ${company.name} and ${hidden === 1 ? 'was' : 'were'} hidden.`)
-      }
+  // With the real employer known, people who don't work at the chosen
+  // company can be hidden.
+  if (company && page.items.length > 0) {
+    const before = page.items.length
+    page.items = page.items.filter(
+      (p) => !refined.includes(p.profileUrl) || p.companyRef === company.ref || sameCompanyName(p.company, company.name),
+    )
+    const hidden = before - page.items.length
+    if (hidden > 0) {
+      page.warnings.push(`${hidden} ${hidden === 1 ? "person doesn't" : "people don't"} currently work at ${company.name} and ${hidden === 1 ? 'was' : 'were'} hidden.`)
     }
+  }
+
+  // Mark people at companies already known to accept every address. The
+  // page decides whether to hide them (it does while verified-only is on).
+  // Only the cache is read: finding out about a new company would take an
+  // SMTP check, and that waits until someone is actually revealed or saved.
+  const now = Date.now()
+  for (const p of page.items) {
+    if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = true
   }
 
   return { ...page, refined }

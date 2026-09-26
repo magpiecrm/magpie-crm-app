@@ -28,7 +28,7 @@ export const searchCompaniesFn = createServerFn({ method: 'POST' })
 
 const companyRefInput = z.object({ ref: z.string().trim().min(1).max(200) })
 
-/** Fetches the company page when its domain isn't known yet (6-9 credits, then cached). */
+/** Fetches the company page when its domain isn't known yet (1 credit with its page name, else 6-9; then cached). */
 export const resolveCompanyFn = createServerFn({ method: 'POST' })
   .inputValidator((d: z.input<typeof companyRefInput>) => companyRefInput.parse(d))
   .handler(async ({ data }) => {
@@ -87,10 +87,12 @@ const personInput = z.object({
   seniority: z.enum(SENIORITY_LEVELS).nullable(),
   company: z.string().trim().max(300),
   companyRef: z.string().trim().max(200).nullable(),
+  companySlug: z.string().trim().max(200).nullable().optional(),
   companyDomain: z.string().trim().max(253).nullable(),
   country: z.string().trim().max(100).nullable(),
   source: z.literal('socialfetch'),
   profileChecked: z.boolean().optional(),
+  previously: z.enum(['saved', 'revealed']).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   emailStatus: z.enum(EMAIL_STATUSES).optional(),
 })
@@ -98,7 +100,7 @@ const personInput = z.object({
 /**
  * Finds and verifies one person's work email without saving them. Uses
  * Reacher (free) and, only if the company's website isn't cached yet, one
- * company-page lookup (6-9 credits).
+ * company-page lookup (1 credit, or 6-9 without the page name).
  */
 export const revealEmailFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { person: z.input<typeof personInput> }) => z.object({ person: personInput }).parse(d))
@@ -171,7 +173,16 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       // Only while Reacher is verifying: an old report shouldn't warn after switching away.
       senderHealth:
         health && (verifier?.provider === 'reacher' || (verifier?.provider === 'neverbounce' && verifier.fallback))
-          ? { level: health.level, checkedAt: health.checked_at }
+          ? {
+              level: health.level,
+              checkedAt: health.checked_at,
+              // What the worst problem is about, for the sidebar's wording.
+              problem: health.ips.some((i) => i.level === 'critical')
+                ? ('ip' as const)
+                : health.domain?.level === 'critical'
+                  ? ('domain' as const)
+                  : ('setup' as const),
+            }
           : null,
     }
   })

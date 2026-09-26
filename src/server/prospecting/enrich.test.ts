@@ -23,15 +23,22 @@ let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock }) }))
 let suppressedHashes = new Set<string>()
+let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
   db: {
-    getProspectCompany: (ref: string) => (ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com' } : null),
+    getProspectCompany: (ref: string) =>
+      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com' } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com' } : null,
     getSuppressionHashes: () => suppressedHashes,
+    getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
+    getDisclosures: () => disclosures,
+    data: { get contacts() { return contacts } },
   },
 }))
+let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
+let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string }> = []
 
 const { searchPeople } = await import('./search')
-const { hashesFor } = await import('./suppression')
+const { hashesFor, emailHash, profileHash } = await import('./suppression')
 
 const hit = (handle: string, title = 'Business Analyst'): PersonResult => ({
   profileUrl: `https://www.linkedin.com/in/${handle}`,
@@ -43,6 +50,9 @@ const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextC
 beforeEach(() => {
   getPerson.mockClear()
   suppressedHashes = new Set()
+  emailDomains = {}
+  disclosures = []
+  contacts = []
 })
 
 describe('searchPeople profile lookups', () => {
@@ -52,7 +62,7 @@ describe('searchPeople profile lookups', () => {
     expect(res.refined).toEqual(['https://www.linkedin.com/in/ana', 'https://www.linkedin.com/in/ben'])
     expect(res.items.map((p) => [p.title, p.company, p.companyDomain])).toEqual([
       ['Lead Business Analyst', 'Barclays', 'barclays.com'],
-      ['Business Analyst', 'Acme', null],
+      ['Business Analyst', 'Acme', 'acme.com'],
     ])
     expect(res.warnings).toEqual([])
     // Marked so saving doesn't pay for the same lookup again.
@@ -94,5 +104,66 @@ describe('searchPeople profile lookups', () => {
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(getPerson).toHaveBeenCalledTimes(1)
     expect(getPerson).toHaveBeenCalledWith('https://www.linkedin.com/in/ben')
+  })
+})
+
+describe('searchPeople catch-all marking', () => {
+  const now = new Date().toISOString()
+
+  it('marks people at companies already known to accept every address, from the cache only', async () => {
+    emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: now, accepts_mail: true } }
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.company, p.catchAll ?? false])).toEqual([
+      ['Barclays', true],
+      ['Acme', false],
+    ])
+  })
+
+  it("doesn't trust a catch-all result older than 90 days", async () => {
+    emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: '2020-01-01T00:00:00Z', accepts_mail: true } }
+    searchPage = pageOf(hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items[0].catchAll).toBeUndefined()
+  })
+})
+
+describe('searchPeople and people seen before', () => {
+  it('fills an already-saved person from their contact and pays for no profile lookup', async () => {
+    contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays', email_status: 'verified' }]
+    disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('ana.x@barclays.com') }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ben'])
+    expect(res.items[0]).toMatchObject({
+      previously: 'saved',
+      title: 'Head of Analytics',
+      seniority: 'head',
+      company: 'Barclays',
+      email: 'ana.x@barclays.com',
+      emailStatus: 'verified',
+      profileChecked: true,
+    })
+    expect(res.items[1]).toMatchObject({ company: 'Acme' })
+    expect(res.items[1].previously).toBeUndefined()
+    expect(res.warnings).toContain('1 person is already in your contacts, so their details come from there and no profile lookup was paid for.')
+  })
+
+  it('looks a saved person up normally when their contact has since been deleted', async () => {
+    disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('gone@barclays.com') }]
+    searchPage = pageOf(hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson).toHaveBeenCalledTimes(1)
+    expect(res.items[0]).toMatchObject({ company: 'Barclays' })
+    expect(res.items[0].previously).toBeUndefined()
+  })
+
+  it('marks people revealed before but still looks them up (their email was never kept)', async () => {
+    disclosures = [{ event: 'revealed', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: 'x' }]
+    searchPage = pageOf(hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson).toHaveBeenCalledTimes(1)
+    expect(res.items[0]).toMatchObject({ previously: 'revealed', company: 'Barclays', companyDomain: 'barclays.com' })
+    expect(res.items[0].email).toBeUndefined()
   })
 })

@@ -210,6 +210,8 @@ interface DbSchema {
     page_checked?: boolean
     /** Staff count, when known: sets how likely a first.last best guess is. */
     headcount?: number | null
+    /** LinkedIn company page name, for the 1-credit company lookup. */
+    slug?: string | null
     updated_at: string
   }>
   email_domains?: EmailDomainRecord[]
@@ -375,6 +377,7 @@ class JsonDb {
       domain_source: 'socialfetch' | 'user'
       page_checked?: boolean
       headcount?: number | null
+      slug?: string | null
     }>,
   ) {
     const list = this.data.prospect_companies!
@@ -390,12 +393,14 @@ class JsonDb {
       if (existing.domain_source === 'user' && entry.domain_source !== 'user') {
         existing.name = entry.name
         existing.headcount = entry.headcount ?? existing.headcount
+        existing.slug = entry.slug ?? existing.slug
       } else {
         Object.assign(existing, {
           ...entry,
           domain: entry.domain ?? existing.domain,
           page_checked: entry.page_checked || existing.page_checked,
           headcount: entry.headcount ?? existing.headcount,
+          slug: entry.slug ?? existing.slug,
         })
       }
       existing.updated_at = now

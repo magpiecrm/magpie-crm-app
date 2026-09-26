@@ -107,7 +107,7 @@ describe('revealEmail', () => {
       getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
     }
     const res = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any })
-    expect(res).toEqual({ status: 'unconfirmed', message: 'acme.com accepts every address, so none can be confirmed.' })
+    expect(res).toEqual({ status: 'unconfirmed', message: 'acme.com accepts every address, so none can be confirmed.', catchAll: true })
     expect(JSON.stringify(res)).not.toContain('jane.smith@')
     expect(state.disclosure).toEqual([])
     expect(check).not.toHaveBeenCalled()

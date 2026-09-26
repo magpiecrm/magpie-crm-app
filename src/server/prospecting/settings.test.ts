@@ -15,7 +15,16 @@ vi.mock('../db', () => ({
 
 const settings = await import('./settings')
 
-const ENV_KEYS = ['SOCIALFETCH_API_KEY', 'REACHER_URL', 'REACHER_SECRET', 'NEVERBOUNCE_API_KEY'] as const
+// Every env var the settings read, so a developer's own .env can't leak in.
+const ENV_KEYS = [
+  'SOCIALFETCH_API_KEY',
+  'REACHER_URL',
+  'REACHER_SECRET',
+  'REACHER_FROM_EMAIL',
+  'REACHER_HELLO_NAME',
+  'REACHER_PROXIES',
+  'NEVERBOUNCE_API_KEY',
+] as const
 const original = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
 
 beforeEach(() => {

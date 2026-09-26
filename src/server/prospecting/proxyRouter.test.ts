@@ -123,6 +123,24 @@ describe('providerFromMx', () => {
   })
 })
 
+describe('unreachable mail servers', () => {
+  it("counts a company refusing connections separately, without benching after one company's two tries", async () => {
+    const r = new ProxyRouter([proxies[0]], { ...clock() })
+    for (let i = 0; i < 2; i++) (await r.acquire('other')).report('unreachable')
+    expect(r.health()[0]).toMatchObject({ unreachable: 2, blocked: 0, timeouts: 0, benchedUntil: null })
+    // A normal answer in between resets the run.
+    ;(await r.acquire('other')).report('ok')
+    for (let i = 0; i < 5; i++) (await r.acquire('other')).report('unreachable')
+    expect(r.health()[0].benchedUntil).toBeNull()
+  })
+
+  it('benches a proxy that can reach nobody (e.g. its host blocked port 25)', async () => {
+    const r = new ProxyRouter([proxies[0]], { ...clock(), benchAfterUnreachable: 6 })
+    for (let i = 0; i < 6; i++) (await r.acquire('other')).report('unreachable')
+    expect(r.health()[0].benchedUntil).not.toBeNull()
+  })
+})
+
 describe('classifySmtpOutcome', () => {
   it('separates greylisting, blocks and timeouts', () => {
     expect(classifySmtpOutcome({ is_reachable: 'safe', smtp: { is_deliverable: true } })).toBe('ok')
@@ -130,6 +148,11 @@ describe('classifySmtpOutcome', () => {
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: '554 5.7.1 Service unavailable; client host blocked using Spamhaus' } })).toBe('blocked')
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: 'Connection timed out' } })).toBe('timeout')
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { type: 'SmtpError', message: 'something odd' } })).toBe('ok')
+    // The proxy's own reply: it couldn't connect onward to the company's server.
+    expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'Socks5', message: 'Error with reply: TTL expired.' } } })).toBe('unreachable')
+    expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'Socks5', message: 'Error with reply: Host unreachable.' } } })).toBe('unreachable')
+    // The proxy itself refusing the connection is still the proxy's problem.
+    expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'Socks5', message: 'Connection refused (os error 111)' } } })).toBe('blocked')
     // Shape observed from Reacher v0.11.7 when the proxy rejects the login.
     expect(
       classifySmtpOutcome({

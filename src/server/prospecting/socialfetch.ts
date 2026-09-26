@@ -3,6 +3,7 @@
 // Endpoints used, all confirmed against SocialFetch's published OpenAPI spec
 // and llms.json route inventory:
 //   GET /v2/linkedin/organizations/search  keyword (required), count, cursor   3 credits
+//   GET /v1/linkedin/companies             url (company page, by slug)          1 credit
 //   GET /v2/linkedin/organizations         id | slug                          6-9 credits
 //   GET /v2/linkedin/people/search         keyword, count, start/cursor       3 credits
 //   GET /v2/linkedin/profiles              handle                             3 credits
@@ -227,6 +228,33 @@ function mapOrganization(o: any): CompanyResult | null {
   }
 }
 
+/**
+ * The 1-credit company page (`/v1/linkedin/companies`): the same website and
+ * headcount as the 6-9 credit organization lookup, but only by page URL.
+ */
+function mapCompanyPage(d: any, ref: string): CompanyResult | null {
+  const c = d?.company
+  const name = str(c?.name)
+  if (!name) return null
+  return {
+    ref: idOf(c?.id) ?? ref,
+    name,
+    domain: domainFromWebsite(c?.website),
+    industry: str(c?.industry),
+    headcount: num(d?.metrics?.employees) ?? rangeFloor(c?.employeeRange),
+    companyType: null,
+    country: null,
+    linkedinUrl: str(c?.url) ?? null,
+    source: SOURCE,
+  }
+}
+
+/** "https://www.linkedin.com/company/acme-ltd" -> "acme-ltd". */
+export function slugFromCompanyUrl(url: string | null | undefined): string | null {
+  const m = url?.match(/linkedin\.com\/company\/([^/?#]+)/i)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
 function splitFullName(full: string | null): [string, string] {
   if (!full) return ['', '']
   const parts = full.trim().split(/\s+/)
@@ -267,6 +295,8 @@ export function mapPerson(p: any): PersonResult | null {
     // Numeric id when present; otherwise the company page's slug, which the
     // organizations endpoint also accepts.
     companyRef: idOf(current?.organizationId) ?? idOf(current?.organization?.id) ?? companySlug(current) ?? null,
+    // The page name too, for the 1-credit company lookup (the id costs 6).
+    companySlug: companySlug(current),
     companyDomain: null,
     // Only the country survives; the city-level label is dropped here.
     country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),
@@ -440,9 +470,28 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
     },
 
-    async getCompany(ref: string): Promise<CompanyResult | null> {
-      const params = /^\d+$/.test(ref) ? { id: ref } : { slug: ref }
-      const res = await get<any>('/v2/linkedin/organizations', params)
+    async getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null> {
+      const numeric = /^\d+$/.test(ref)
+      // The company page by URL costs 1 credit; the organization lookup 6 (by
+      // id) or 9 (by slug). The page needs the slug, so without one only the
+      // organization lookup can be used.
+      const pageSlug = slug ?? (numeric ? null : ref)
+      if (pageSlug) {
+        try {
+          const res = await get<any>('/v1/linkedin/companies', {
+            url: `https://www.linkedin.com/company/${encodeURIComponent(pageSlug)}/`,
+          })
+          if (res.data?.lookupStatus === 'found') {
+            const company = mapCompanyPage(res.data, ref)
+            if (company) return company
+          }
+          // A school or other non-company page: fall through to the organization lookup.
+        } catch (err) {
+          // Out of credits or a bad key won't be fixed by the other endpoint.
+          if (err instanceof SocialFetchError && (err.code === 'credits_exhausted' || err.code === 'unauthorized')) throw err
+        }
+      }
+      const res = await get<any>('/v2/linkedin/organizations', numeric ? { id: ref } : { slug: ref })
       if (res.data?.lookupStatus !== 'found') return null
       return mapOrganization(res.data?.organization)
     },

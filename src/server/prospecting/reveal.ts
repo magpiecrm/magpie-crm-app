@@ -23,6 +23,8 @@ export type RevealResult =
       canFixDomain?: boolean
       /** A domain from the company's DNS that does take email, to offer in one click. */
       suggestedDomain?: string
+      /** Their company accepts every address, so nobody there can be verified. */
+      catchAll?: boolean
     }
 
 export interface RevealDeps {
@@ -66,7 +68,11 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   // An unconfirmed guess is never handed over (or logged as disclosed) while
   // verified-only is on.
   if ((deps.verifiedOnly ?? true) && found.status !== 'verified') {
-    return { status: 'unconfirmed', message: found.reason ?? found.detail ?? 'No address could be confirmed.' }
+    return {
+      status: 'unconfirmed',
+      message: found.reason ?? found.detail ?? 'No address could be confirmed.',
+      catchAll: found.status === 'catch_all_likely' || undefined,
+    }
   }
 
   deps.db.addDisclosure({

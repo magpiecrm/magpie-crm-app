@@ -33,6 +33,9 @@ interface Props {
   onReveal: (person: PersonResult) => void
   /** Saves `domain` as the person's company email domain, then retries. */
   onFixDomain: (person: PersonResult, domain: string) => Promise<void>
+  /** Their company accepts every address, so no email there can be verified. */
+  isCatchAll: (person: PersonResult) => boolean
+  verifiedOnly: boolean
 }
 
 /** "Use a different domain" for a company whose LinkedIn website is wrong. */
@@ -119,11 +122,15 @@ function EmailCell({
   state,
   onReveal,
   onFixDomain,
+  catchAll,
+  verifiedOnly,
 }: {
   person: PersonResult
   state?: RevealState
   onReveal: Props['onReveal']
   onFixDomain: Props['onFixDomain']
+  catchAll: boolean
+  verifiedOnly: boolean
 }) {
   if (state?.status === 'loading') {
     return (
@@ -163,9 +170,46 @@ function EmailCell({
       </div>
     )
   }
+  // Already a contact: the email is theirs from when they were saved.
+  if (!state && person.previously === 'saved' && person.email) {
+    const email = person.email
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-sm text-foreground break-all">{email}</span>
+          <button
+            type="button"
+            title="Copy"
+            onClick={() => navigator.clipboard?.writeText(email)}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          {person.emailStatus && <EmailStatusBadge status={person.emailStatus} />}
+          <span className="text-[10px] text-muted-foreground">Already in your contacts</span>
+        </span>
+      </div>
+    )
+  }
+  // Nothing to reveal: the company accepts every address, and only verified
+  // emails are handed over. (With verified-only off, Reveal still gives the
+  // best guess, marked as catch-all.)
+  if (catchAll && verifiedOnly) {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <EmailStatusBadge status="catch_all_likely" />
+        <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">
+          Their company accepts every address, so no email can be verified.
+        </span>
+      </div>
+    )
+  }
   const failed = state ? state.message : null
   return (
     <div className="flex flex-col items-start gap-1">
+      {catchAll && <EmailStatusBadge status="catch_all_likely" />}
       <button
         type="button"
         onClick={() => onReveal(person)}
@@ -175,6 +219,7 @@ function EmailCell({
         <Mail className="w-3 h-3" /> {failed ? 'Try again' : 'Reveal email'}
       </button>
       {failed && <span className="text-[10px] text-muted-foreground leading-snug max-w-[12rem]">{failed}</span>}
+      {!failed && person.previously === 'revealed' && <span className="text-[10px] text-muted-foreground">Revealed before</span>}
     </div>
   )
 }
@@ -192,7 +237,18 @@ function TitleText({ person, refined }: { person: PersonResult; refined: boolean
   )
 }
 
-export function PeopleResults({ people, refined, selected, onToggle, onToggleAll, reveals, onReveal, onFixDomain }: Props) {
+export function PeopleResults({
+  people,
+  refined,
+  selected,
+  onToggle,
+  onToggleAll,
+  reveals,
+  onReveal,
+  onFixDomain,
+  isCatchAll,
+  verifiedOnly,
+}: Props) {
   const allSelected = people.length > 0 && people.every((p) => selected.has(p.profileUrl))
 
   return (
@@ -214,7 +270,14 @@ export function PeopleResults({ people, refined, selected, onToggle, onToggleAll
               <p className="text-xs text-muted-foreground"><TitleText person={p} refined={refined.has(p.profileUrl)} /></p>
               <p className="text-xs text-foreground truncate mt-0.5">{p.company}{p.country ? ` · ${p.country}` : ''}</p>
               {p.seniority && <div className="mt-1.5"><Badge>{SENIORITY_LABEL[p.seniority]}</Badge></div>}
-              <div className="mt-2"><EmailCell person={p} state={reveals.get(p.profileUrl)} onReveal={onReveal} onFixDomain={onFixDomain} /></div>
+              <div className="mt-2"><EmailCell
+                  person={p}
+                  state={reveals.get(p.profileUrl)}
+                  onReveal={onReveal}
+                  onFixDomain={onFixDomain}
+                  catchAll={isCatchAll(p)}
+                  verifiedOnly={verifiedOnly}
+                /></div>
             </div>
           </li>
         ))}
@@ -269,7 +332,14 @@ export function PeopleResults({ people, refined, selected, onToggle, onToggleAll
               <td className="px-3 py-3 text-sm text-foreground">{p.company || '—'}</td>
               <td className="px-3 py-3 text-xs text-foreground">{p.country ?? '—'}</td>
               <td className="px-3 py-3">
-                <EmailCell person={p} state={reveals.get(p.profileUrl)} onReveal={onReveal} onFixDomain={onFixDomain} />
+                <EmailCell
+                  person={p}
+                  state={reveals.get(p.profileUrl)}
+                  onReveal={onReveal}
+                  onFixDomain={onFixDomain}
+                  catchAll={isCatchAll(p)}
+                  verifiedOnly={verifiedOnly}
+                />
               </td>
             </tr>
           ))}

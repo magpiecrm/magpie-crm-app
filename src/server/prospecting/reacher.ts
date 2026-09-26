@@ -35,6 +35,10 @@ export function classifySmtpOutcome(body: any): CheckOutcome {
   const err = smtp?.error
   const rawMessage = err?.message ?? smtp?.message ?? (typeof err === 'string' ? err : '')
   const message = typeof rawMessage === 'string' ? rawMessage : JSON.stringify(rawMessage ?? '')
+  // The proxy answered but couldn't connect onward (SOCKS5 replies 3-6, e.g.
+  // "Error with reply: TTL expired."): the company's mail server refuses
+  // connections from it, or is down. Not the proxy's fault.
+  if (/reply:\s*(TTL expired|host unreachable|network unreachable|connection refused)/i.test(message)) return 'unreachable'
   // The proxy itself failed (bad credentials, refused, unreachable): count it
   // against the proxy so a misconfigured one gets benched.
   if (err?.type === 'Socks5' || /socks|proxy|authentication rejected/i.test(message)) return 'blocked'
@@ -99,11 +103,17 @@ export async function checkEmail(
       : 'unknown'
     const catchAll = json?.smtp?.is_catch_all
     const rawError = json?.smtp?.error?.message ?? json?.smtp?.message
+    const outcome = classifySmtpOutcome(json)
     return {
       reachability,
       isCatchAll: typeof catchAll === 'boolean' ? catchAll : null,
-      outcome: classifySmtpOutcome(json),
-      detail: rawError ? (typeof rawError === 'string' ? rawError : JSON.stringify(rawError)).slice(0, 300) : undefined,
+      outcome,
+      detail:
+        outcome === 'unreachable'
+          ? "it doesn't accept connections from the verification server"
+          : rawError
+            ? (typeof rawError === 'string' ? rawError : JSON.stringify(rawError)).slice(0, 300)
+            : undefined,
     }
   } catch {
     console.warn('[Reacher] check_email request failed or timed out')

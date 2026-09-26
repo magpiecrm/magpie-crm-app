@@ -60,6 +60,7 @@ describe('mapping', () => {
       seniority: 'head',
       company: 'Acme Ltd',
       companyRef: '1234',
+      companySlug: null,
       companyDomain: null,
       country: 'United Kingdom',
       source: 'socialfetch',
@@ -68,17 +69,6 @@ describe('mapping', () => {
     for (const dropped of ['Manchester', 'cdn.example', '5400', 'Long bio', 'Somewhere']) {
       expect(serialised).not.toContain(dropped)
     }
-  })
-
-  it('reads the company ref from a numeric id, or from the company page slug when there is no id', () => {
-    const numeric = mapPerson(rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId: 1234, isCurrent: true }] }))
-    expect(numeric?.companyRef).toBe('1234')
-    const slugOnly = mapPerson(
-      rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationUrl: 'https://www.linkedin.com/company/acme-ltd/', isCurrent: true }] }),
-    )
-    expect(slugOnly?.companyRef).toBe('acme-ltd')
-    const noPage = mapPerson(rawPerson({ currentPositions: [{ title: 'Freelance Consultant', organizationName: 'Self-employed', isCurrent: true }] }))
-    expect(noPage?.companyRef).toBeNull()
   })
 
   it('falls back to the headline and full name', () => {
@@ -95,6 +85,11 @@ describe('mapping', () => {
     expect(slugOnly?.companyRef).toBe('acme-ltd')
     const noPage = mapPerson(rawPerson({ currentPositions: [{ title: 'Freelance Consultant', organizationName: 'Self-employed', isCurrent: true }] }))
     expect(noPage).toMatchObject({ company: 'Self-employed', companyRef: null })
+    // The page name is kept alongside the id, for the cheaper company lookup.
+    const both = mapPerson(
+      rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId: 12345, organizationUrl: 'https://www.linkedin.com/company/acme-ltd/', isCurrent: true }] }),
+    )
+    expect(both).toMatchObject({ companyRef: '12345', companySlug: 'acme-ltd' })
   })
 
   it('rejects records with no profile URL or name', () => {
@@ -199,6 +194,7 @@ describe('searchPeople', () => {
       seniority: 'senior',
       company: 'Barclays',
       companyRef: null,
+      companySlug: null,
       companyDomain: null,
       country: 'United Kingdom',
       source: 'socialfetch',
@@ -361,9 +357,52 @@ describe('errors and retries', () => {
     expect(f.calls[0].searchParams.get('id')).toBe('999')
   })
 
-  it('looks companies up by slug when the ref is not numeric', async () => {
+  // The 1-credit company page, by URL, when the page name is known.
+  const companyPage = () => envelope({
+    lookupStatus: 'found',
+    company: { id: '4777', name: 'NatWest', website: 'http://www.natwest.com', employeeRange: '10,001+ employees', industry: 'Banking' },
+    metrics: { employees: 7048 },
+  })
+
+  it('uses the 1-credit company page when the page name is known', async () => {
+    const f = fakeFetch([companyPage()])
+    expect(await createSocialFetchSource(f.impl).getCompany('4777', 'natwest')).toMatchObject({
+      ref: '4777',
+      name: 'NatWest',
+      domain: 'natwest.com',
+      headcount: 7048,
+      industry: 'Banking',
+    })
+    expect(f.calls).toHaveLength(1)
+    expect(f.calls[0].pathname).toBe('/v1/linkedin/companies')
+    expect(f.calls[0].searchParams.get('url')).toBe('https://www.linkedin.com/company/natwest/')
+  })
+
+  it('uses the company page for a slug ref too, instead of the 9-credit slug lookup', async () => {
+    const f = fakeFetch([companyPage()])
+    expect(await createSocialFetchSource(f.impl).getCompany('natwest')).toMatchObject({ domain: 'natwest.com' })
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/v1/linkedin/companies'])
+  })
+
+  it('falls back to the organization lookup when the company page fails or is not a company', async () => {
+    const f = fakeFetch([
+      new Response('{"error":{"message":"bad url"}}', { status: 400 }),
+      envelope({ lookupStatus: 'found', organization: { liveOrganizationId: '5', name: 'Beta', website: 'beta.dev' } }),
+    ])
+    expect(await createSocialFetchSource(f.impl).getCompany('5', 'beta-inc')).toMatchObject({ ref: '5', domain: 'beta.dev' })
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/v1/linkedin/companies', '/v2/linkedin/organizations'])
+    expect(f.calls[1].searchParams.get('id')).toBe('5')
+  })
+
+  it('only uses the organization lookup (by id) when there is no page name', async () => {
     const f = fakeFetch([envelope({ lookupStatus: 'found', organization: { liveOrganizationId: '5', name: 'Beta', website: 'beta.dev' } })])
-    expect(await createSocialFetchSource(f.impl).getCompany('beta-inc')).toMatchObject({ ref: '5', domain: 'beta.dev' })
-    expect(f.calls[0].searchParams.get('slug')).toBe('beta-inc')
+    await createSocialFetchSource(f.impl).getCompany('5')
+    expect(f.calls.map((c) => c.pathname)).toEqual(['/v2/linkedin/organizations'])
+  })
+
+  it("doesn't fall back when out of credits", async () => {
+    const f = fakeFetch([new Response('{"error":{"message":"insufficient credits"}}', { status: 402 })])
+    await expect(createSocialFetchSource(f.impl).getCompany('5', 'beta-inc')).rejects.toMatchObject({ code: 'credits_exhausted' })
+    expect(f.calls).toHaveLength(1)
   })
 })
