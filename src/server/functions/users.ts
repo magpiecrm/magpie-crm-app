@@ -29,6 +29,11 @@ export const createUserFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'Unauthorized' }
     }
 
+    const { env } = await import('../env')
+    if (!env.signIn.passwordLogin()) {
+      return { success: false, error: 'Password sign-in is turned off here, so users are added by your hosting provider.' }
+    }
+
     const { email, password } = data
     if (!email || !email.trim()) {
       return { success: false, error: 'Email is required' }
@@ -97,6 +102,10 @@ export const changePasswordFn = createServerFn({ method: 'POST' })
       return { success: false, error: 'Unauthorized' }
     }
 
+    const { env } = await import('../env')
+    if (!env.signIn.passwordLogin()) {
+      return { success: false, error: 'Password sign-in is turned off here.' }
+    }
     if (data.newPassword.trim().length < 6) {
       return { success: false, error: 'The new password must be at least 6 characters' }
     }

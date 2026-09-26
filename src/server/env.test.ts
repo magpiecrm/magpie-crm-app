@@ -14,6 +14,7 @@ const KEYS = [
   'PROSPECTING_MANAGED',
   'SOCIALFETCH_BALANCE',
   'VERIFICATION_HEALTH_CHECKS',
+  'PASSWORD_LOGIN',
 ] as const
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 
@@ -103,5 +104,16 @@ describe('PROSPECTING_MANAGED', () => {
     expect(env.prospectingManaged()).toBe(true)
     expect(env.socialfetch.balanceHidden()).toBe(true)
     expect(env.verificationHealthChecks()).toBe(false)
+  })
+})
+
+describe('PASSWORD_LOGIN', () => {
+  it('is on unless set to off', () => {
+    delete process.env.PASSWORD_LOGIN
+    expect(env.signIn.passwordLogin()).toBe(true)
+    process.env.PASSWORD_LOGIN = 'OFF'
+    expect(env.signIn.passwordLogin()).toBe(false)
+    process.env.PASSWORD_LOGIN = 'on'
+    expect(env.signIn.passwordLogin()).toBe(true)
   })
 })

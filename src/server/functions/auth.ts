@@ -18,6 +18,15 @@ export const checkAuthFn = createServerFn({ method: 'GET' })
   })
 
 /**
+ * How people sign in here, for the sign-in page: with a password, or (when
+ * PASSWORD_LOGIN=off) through the hosting provider's sign-in at `signInUrl`.
+ */
+export const signInOptionsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { env } = await import('../env')
+  return { passwordLogin: env.signIn.passwordLogin(), signInUrl: env.signIn.url() ?? null }
+})
+
+/**
  * Signs in with email and password. The session cookie is set on the
  * response as HttpOnly (see auth.server.ts), so the page never sees the
  * token. Wrong passwords are limited (see server/login.ts).
@@ -27,6 +36,10 @@ export const loginFn = createServerFn({ method: 'POST' })
     z.object({ email: z.string().max(320), password: z.string().max(200).optional() }).parse(d),
   )
   .handler(async ({ data }) => {
+    const { env } = await import('../env')
+    if (!env.signIn.passwordLogin()) {
+      return { success: false, error: 'Password sign-in is turned off here. Sign in through your hosting provider.' }
+    }
     if (!data.password) {
       return { success: false, error: 'Password is required' }
     }

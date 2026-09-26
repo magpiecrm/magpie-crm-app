@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Check, Mail, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import { checkAuthFn, createUserFn, deleteUserFn, getUsersFn } from '../../../server/functions'
+import { checkAuthFn, createUserFn, deleteUserFn, getUsersFn, signInOptionsFn } from '../../../server/functions'
 import { ChangePasswordForm } from './ChangePasswordForm'
 
 /** Settings → Team and login: who can sign in, and your own password. */
@@ -14,6 +14,8 @@ export function TeamTab() {
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [isAddingUser, setIsAddingUser] = useState(false)
+  // False when PASSWORD_LOGIN=off: the hosting provider runs sign-in.
+  const [passwordLogin, setPasswordLogin] = useState(true)
 
   const fetchUsers = async () => {
     setIsLoadingUsers(true)
@@ -44,6 +46,9 @@ export function TeamTab() {
   useEffect(() => {
     fetchUsers()
     fetchCurrentUser()
+    signInOptionsFn()
+      .then((o) => setPasswordLogin(o.passwordLogin))
+      .catch(() => {})
   }, [])
 
   // --- User Handlers ---
@@ -165,6 +170,12 @@ export function TeamTab() {
         )}
       </div>
 
+      {!passwordLogin ? (
+        <p className="text-sm text-muted-foreground p-4 bg-muted/20 border border-border/80 rounded-md-s">
+          Sign-in is run by your hosting provider, so passwords and new users are managed there, not here.
+        </p>
+      ) : (
+      <>
       <ChangePasswordForm />
 
       {/* Add New User */}
@@ -208,6 +219,8 @@ export function TeamTab() {
           )}
         </button>
       </form>
+      </>
+      )}
     </div>
   )
 }

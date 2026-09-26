@@ -76,6 +76,13 @@ PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
                          # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off)
 VERIFICATION_HEALTH_CHECKS=off  # optional — skip blocklist/DNS checks of the
                          # verifying IPs, when someone else runs verification
+SIGN_IN_LINK_SECRET=...  # optional — shared with a hosting portal: turns on
+                         # one-time sign-in links at /auth/link (format in
+                         # src/server/signInLink.ts). At least 32 characters
+PASSWORD_LOGIN=off       # optional — no password sign-in; people come in
+                         # through links from the host's portal
+SIGN_IN_URL=...          # optional — where the sign-in page sends people when
+                         # PASSWORD_LOGIN=off (the host's portal)
 ```
 
 In production the app refuses to sign or encrypt anything until

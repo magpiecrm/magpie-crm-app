@@ -49,6 +49,15 @@ export function setSessionCookie(sessionId: string) {
   setCookie(SESSION_COOKIE, sessionId, { httpOnly: true, secure: https, sameSite: 'lax', path: '/', maxAge: WEEK_SECONDS })
 }
 
+/**
+ * The same session cookie as a Set-Cookie header value, for server routes
+ * that build their own Response (e.g. /auth/link).
+ */
+export function sessionCookieHeader(sessionId: string, request: Request): string {
+  const https = request.headers.get('x-forwarded-proto') === 'https' || request.url.startsWith('https:')
+  return `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; Path=/; Max-Age=${WEEK_SECONDS}; HttpOnly; SameSite=Lax${https ? '; Secure' : ''}`
+}
+
 /** Ends this request's session on the server and clears its cookie. */
 export function endSession() {
   const token = getCookie(SESSION_COOKIE)

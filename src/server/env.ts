@@ -162,6 +162,16 @@ export const env = {
   // Bearer token for GET /api/usage (monthly usage counts). Unset means the
   // endpoint is off; a hosting provider sets it to read usage for billing.
   usageApiToken: () => readEnv('USAGE_API_TOKEN'),
+  // Sign-in run by whoever hosts this copy (see signInLink.ts). All unset:
+  // the normal email-and-password sign-in.
+  signIn: {
+    /** Shared with the hosting portal; enables one-time links at /auth/link. */
+    linkSecret: () => readEnv('SIGN_IN_LINK_SECRET'),
+    /** PASSWORD_LOGIN=off: nobody signs in with a password here, only through links. */
+    passwordLogin: () => readEnv('PASSWORD_LOGIN')?.toLowerCase() !== 'off',
+    /** Where the sign-in page sends people when password sign-in is off. */
+    url: () => readEnv('SIGN_IN_URL'),
+  },
   isProduction: () => readEnv('NODE_ENV') === 'production',
   // Where the JSON "database" lives — also used to derive the uploads
   // directory, so uploaded files land on the same persistent volume as the DB
