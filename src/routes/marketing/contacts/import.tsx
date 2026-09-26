@@ -560,7 +560,7 @@ function ImportContactsPage() {
           </div>
 
           {/* Interactive mapping table */}
-          <div className="overflow-x-auto border border-border rounded-xl">
+          <div className="overflow-x-auto border border-border">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-muted/40 border-b border-border">

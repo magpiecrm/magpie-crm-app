@@ -84,7 +84,7 @@ function FormSubmissionsPage() {
         </div>
       </div>
 
-      <div className="card border border-border rounded-md-m overflow-hidden">
+      <div className="card border border-border overflow-hidden">
         {submissionsLoading ? (
           <div className="p-4 lg:p-8 text-center text-muted-foreground text-sm">
             Loading submissions...

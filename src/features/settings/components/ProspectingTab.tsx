@@ -486,7 +486,7 @@ export function ProspectingTab() {
           </div>
 
           {proxyHealth.length > 0 && (
-            <div className="max-w-3xl border border-border rounded-md-s overflow-hidden">
+            <div className="max-w-3xl border border-border overflow-hidden">
               <table className="w-full text-xs">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr>
@@ -572,7 +572,7 @@ export function ProspectingTab() {
           </p>
         )}
         {verification?.configured && (
-          <div className="max-w-3xl border border-border rounded-md-s divide-y divide-border">
+          <div className="max-w-3xl border border-border divide-y divide-border">
             {verification.results.map((r, i) => (
               <div key={i} className="px-3 py-2 flex items-start gap-2 text-xs">
                 {r.ok ? (

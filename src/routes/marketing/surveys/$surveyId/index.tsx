@@ -303,7 +303,7 @@ function ResponsesTab({ survey }: { survey: Survey }) {
         </div>
       </div>
 
-      <div className="card border border-border rounded-md-m overflow-x-auto">
+      <div className="card border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-muted-foreground border-b border-border">
             <tr>

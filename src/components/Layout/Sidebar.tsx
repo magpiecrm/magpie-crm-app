@@ -1,34 +1,28 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, MessageSquare, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
 import { clearAuthCookie } from '../../utils/auth'
 import { MagpieWordmark } from '../ui/MagpieLogo'
 
 const navItems = [
   {
-    label: 'Data Collection',
+    label: 'Contacts',
     items: [
       { label: 'Prospect Search', to: '/collection/prospect-search', icon: Search },
       { label: 'Personas', to: '/collection/personas', icon: UserCircle },
+      { label: 'Contacts', to: '/marketing/contacts', icon: Contact },
+      { label: 'Lists', to: '/marketing/lists', icon: Users },
     ],
   },
   {
     label: 'Email Marketing',
     items: [
-      { label: 'Contacts', to: '/marketing/contacts', icon: Contact },
       { label: 'Campaigns', to: '/marketing/campaigns', icon: Mail },
       { label: 'Templates', to: '/marketing/templates', icon: LayoutTemplate },
       { label: 'Forms', to: '/marketing/forms', icon: FileText },
       { label: 'Surveys', to: '/marketing/surveys', icon: ClipboardList },
       { label: 'Analytics', to: '/marketing/analytics', icon: BarChart3 },
-      { label: 'Lists', to: '/marketing/lists', icon: Users },
-    ],
-  },
-  {
-    label: 'AI Agent',
-    items: [
-      { label: 'CLI Chat', to: '/ai-chat', icon: MessageSquare },
     ],
   },
 ]

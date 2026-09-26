@@ -722,7 +722,7 @@ export function SettingsPage({ initialTab }: { initialTab?: SettingsTab }) {
             ) : apiKeys.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">No active API keys found. Generate one above.</p>
             ) : (
-              <div className="border border-border rounded-md-m overflow-hidden bg-card">
+              <div className="border border-border overflow-hidden bg-card">
                 {/* Mobile: the four columns do not fit, so each key becomes a
                     card. Matches the table/card split used on the lists and
                     analytics pages. */}

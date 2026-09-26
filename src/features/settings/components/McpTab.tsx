@@ -130,7 +130,7 @@ export function McpTab() {
           </div>
         )}
         {keys.length > 0 && (
-          <div className="max-w-2xl border border-border rounded-md-s divide-y divide-border">
+          <div className="max-w-2xl border border-border divide-y divide-border">
             {keys.map((k) => (
               <div key={k.id} className="px-3 py-2 flex items-center gap-3 text-xs">
                 <div className="min-w-0 flex-1">

@@ -609,7 +609,7 @@ function ContactsPage() {
       </div>
 
       {/* Table Card */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-card border border-border overflow-hidden shadow-sm">
         {/* Mobile card list — the 7-column table below is unreadable under md */}
         <ul className="md:hidden divide-y divide-border">
           {isLoading ? (

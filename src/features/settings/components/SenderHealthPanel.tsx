@@ -113,7 +113,7 @@ export function SenderHealthPanel({
       )}
 
       {report && (
-        <div className="max-w-3xl border border-border rounded-md-s divide-y divide-border">
+        <div className="max-w-3xl border border-border divide-y divide-border">
           {report.ips.map((ip) => (
             <div key={`${ip.label}-${ip.host}`} className="px-3 py-2.5 flex flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
