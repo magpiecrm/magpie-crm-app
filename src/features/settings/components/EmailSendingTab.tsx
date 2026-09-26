@@ -200,7 +200,7 @@ export function EmailSendingTab() {
             <span className="font-semibold block mb-0.5">Using environment variables</span>
             <span>
               No provider has been saved yet, so sending falls back to your{' '}
-              <code className="font-mono">CLOUDFLARE_*</code> /{' '}
+              <code className="font-mono">SES_*</code>, <code className="font-mono">CLOUDFLARE_*</code> or{' '}
               <code className="font-mono">SMTP_*</code> variables. Saving here overrides them.
             </span>
           </div>

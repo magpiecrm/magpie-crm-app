@@ -108,6 +108,17 @@ export const env = {
     },
     isConfigured: () => Boolean(readEnv('VAPID_PUBLIC_KEY') && readEnv('VAPID_PRIVATE_KEY')),
   },
+  // Amazon SES from the environment, e.g. a hosting provider's shared
+  // sending. Anything saved in Settings → Sending still wins, field by field.
+  ses: {
+    region: () => readEnv('SES_REGION'),
+    accessKeyId: () => readEnv('SES_ACCESS_KEY_ID'),
+    secretAccessKey: () => readEnv('SES_SECRET_ACCESS_KEY'),
+    configurationSet: () => readEnv('SES_CONFIGURATION_SET'),
+  },
+  // Which sending provider to use when none is saved in Settings → Sending
+  // (a provider id such as "ses"). Unset: inferred from the env vars present.
+  emailProvider: () => readEnv('EMAIL_PROVIDER'),
   cloudflare: {
     apiToken: () => readEnv('CLOUDFLARE_API_TOKEN'),
     accountId: () => readEnv('CLOUDFLARE_ACCOUNT_ID'),

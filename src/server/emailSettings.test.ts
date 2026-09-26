@@ -37,6 +37,13 @@ vi.mock('./env', () => ({
       pass: () => envState.SMTP_PASS || '',
       sender: () => envState.SMTP_SENDER,
     },
+    ses: {
+      region: () => envState.SES_REGION,
+      accessKeyId: () => envState.SES_ACCESS_KEY_ID,
+      secretAccessKey: () => envState.SES_SECRET_ACCESS_KEY,
+      configurationSet: () => envState.SES_CONFIGURATION_SET,
+    },
+    emailProvider: () => envState.EMAIL_PROVIDER,
     credentialsSecret: () => 'test-secret',
     usingDefaultCredentialsSecret: () => false,
     trackingSecret: () => 'test-secret',
@@ -51,6 +58,33 @@ beforeEach(() => {
   dbState.settings = null
   dbState.senders = []
   for (const key of Object.keys(envState)) delete envState[key]
+})
+
+describe('SES from the environment', () => {
+  it('is used when its keys are set, with the region defaulting', () => {
+    envState.SES_ACCESS_KEY_ID = 'AKIATEST'
+    envState.SES_SECRET_ACCESS_KEY = 'secret'
+    const config = getActiveProviderConfig()
+    expect(config.providerId).toBe('ses')
+    expect(config.creds).toMatchObject({ accessKeyId: 'AKIATEST', secretAccessKey: 'secret', region: 'us-east-1' })
+    expect(config.missingFields).toEqual([])
+    // The secret is never sent back to the settings form.
+    expect(JSON.stringify(getMaskedSettings())).not.toContain('"secret"')
+  })
+
+  it('EMAIL_PROVIDER picks the provider explicitly', () => {
+    envState.EMAIL_PROVIDER = 'ses'
+    envState.SES_REGION = 'eu-west-2'
+    const config = getActiveProviderConfig()
+    expect(config.providerId).toBe('ses')
+    expect(config.creds.region).toBe('eu-west-2')
+    expect(config.missingFields.length).toBeGreaterThan(0)
+  })
+
+  it('ignores an unknown EMAIL_PROVIDER', () => {
+    envState.EMAIL_PROVIDER = 'carrier-pigeon'
+    expect(getActiveProviderConfig().providerId).toBe('smtp')
+  })
 })
 
 describe('back-compat with no saved settings', () => {

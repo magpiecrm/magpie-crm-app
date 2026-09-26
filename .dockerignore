@@ -1,0 +1,18 @@
+# Never bake secrets or real data into an image.
+.env
+.env.*
+local_db.json*
+uploads/
+.copilot-claude/
+
+# Rebuilt inside the image, or not needed there.
+node_modules
+dist
+.output
+.nitro
+.tanstack
+.vinxi
+.git
+.github
+scratch/
+*.log

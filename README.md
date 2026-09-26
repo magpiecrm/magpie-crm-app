@@ -33,6 +33,11 @@ SMTP_PORT=...            # Settings → Sending, which overrides these
 SMTP_USER=...
 SMTP_PASS=...
 SMTP_SENDER=...          # optional — added to Settings → Sender addresses on first start
+SES_ACCESS_KEY_ID=...    # optional — send through Amazon SES without saving it
+SES_SECRET_ACCESS_KEY=...#   in Settings → Sending (also SES_REGION, default
+                         #   us-east-1, and SES_CONFIGURATION_SET)
+EMAIL_PROVIDER=...       # optional — provider id to use when none is saved
+                         #   (e.g. ses); otherwise inferred from the vars above
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
 SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
                          # falls back to TRACKING_SECRET. Never rotate it.

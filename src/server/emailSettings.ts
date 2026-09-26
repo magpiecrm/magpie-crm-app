@@ -42,7 +42,15 @@ function envCredentials(providerId: ProviderId): ProviderCredentials {
       pass: env.smtp.pass(),
     })
   }
-  // The other providers never had env vars in this app.
+  if (providerId === 'ses') {
+    return stripEmpty({
+      region: env.ses.region(),
+      accessKeyId: env.ses.accessKeyId(),
+      secretAccessKey: env.ses.secretAccessKey(),
+      configurationSet: env.ses.configurationSet(),
+    })
+  }
+  // The other providers are only configured in Settings → Sending.
   return {}
 }
 
@@ -69,8 +77,11 @@ function encryptCreds(creds: ProviderCredentials): string {
   return encryptToken(creds, env.credentialsSecret())
 }
 
-/** Which provider a deployment with no saved settings implicitly used. */
+/** The provider to use when none is saved: EMAIL_PROVIDER, else inferred from the env vars present. */
 function inferProviderFromEnv(): ProviderId {
+  const chosen = env.emailProvider()
+  if (chosen && isProviderId(chosen)) return chosen
+  if (env.ses.accessKeyId() && env.ses.secretAccessKey()) return 'ses'
   if (env.cloudflare.apiToken() && env.cloudflare.accountId()) return 'cloudflare'
   return 'smtp'
 }

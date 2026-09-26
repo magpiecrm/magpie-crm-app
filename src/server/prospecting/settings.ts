@@ -10,6 +10,7 @@ import { db } from '../db'
 import { env } from '../env'
 import { decryptToken, encryptToken } from '../crypto'
 import { parseProxyConfig, type ProxyConfig } from './proxyRouter'
+import type { ReacherConfig } from './reacher'
 
 interface Secrets {
   socialfetchApiKey?: string
@@ -18,12 +19,7 @@ interface Secrets {
   proxies?: ProxyConfig[]
 }
 
-export interface ReacherConfig {
-  url: string
-  secret?: string
-  fromEmail?: string
-  helloName?: string
-}
+export type { ReacherConfig }
 
 type Source = 'db' | 'env' | null
 

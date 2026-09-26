@@ -6,11 +6,18 @@
 //   headers: x-reacher-secret (when RCH__HEADER_SECRET is set on the backend)
 //   body:    { to_email, from_email?, hello_name?, proxy?: { host, port, username?, password? } }
 //   returns: { is_reachable: 'safe'|'risky'|'invalid'|'unknown', mx, smtp, misc, syntax }
+//
+// Self-contained apart from proxyRouter.ts (both import nothing else from the
+// app), so the hosted service's shared verification gateway can reuse them.
 
 import type { CheckOutcome, ProxyConfig } from './proxyRouter'
-import type { ReacherConfig } from './settings'
 
-export type ReacherCheckConfig = ReacherConfig
+export interface ReacherConfig {
+  url: string
+  secret?: string
+  fromEmail?: string
+  helloName?: string
+}
 
 export type Reachability = 'safe' | 'risky' | 'invalid' | 'unknown'
 
