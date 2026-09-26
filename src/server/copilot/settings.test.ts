@@ -13,15 +13,19 @@ vi.mock('../db', () => ({
 const settings = await import('./settings')
 
 const KEY = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789'
-const original = process.env.ANTHROPIC_API_KEY
+const OPENAI_KEY = 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789'
+const original = { anthropic: process.env.ANTHROPIC_API_KEY, openai: process.env.OPENAI_API_KEY }
 
 beforeEach(() => {
   stored = null
   delete process.env.ANTHROPIC_API_KEY
+  delete process.env.OPENAI_API_KEY
 })
 afterEach(() => {
-  if (original === undefined) delete process.env.ANTHROPIC_API_KEY
-  else process.env.ANTHROPIC_API_KEY = original
+  if (original.anthropic === undefined) delete process.env.ANTHROPIC_API_KEY
+  else process.env.ANTHROPIC_API_KEY = original.anthropic
+  if (original.openai === undefined) delete process.env.OPENAI_API_KEY
+  else process.env.OPENAI_API_KEY = original.openai
 })
 
 describe('copilot settings', () => {
@@ -65,5 +69,40 @@ describe('copilot settings', () => {
 
     const rejected = vi.fn(async () => new Response('{}', { status: 401 }))
     expect(await settings.testAnthropicKey(KEY, rejected as unknown as typeof fetch)).toMatchObject({ ok: false, error: expect.stringMatching(/rejected/) })
+  })
+
+  it('keeps an OpenAI key alongside the Anthropic one', () => {
+    settings.saveCopilotSettings({ anthropicApiKey: KEY })
+    settings.saveCopilotSettings({ openaiApiKey: OPENAI_KEY })
+    expect(JSON.stringify(stored)).not.toContain(OPENAI_KEY)
+    expect(settings.requireAnthropicKey()).toBe(KEY)
+    expect(settings.requireOpenAIKey()).toBe(OPENAI_KEY)
+    expect(settings.getMaskedCopilotSettings().openai).toEqual({ isSet: true, hint: '…6789', source: 'db' })
+    settings.saveCopilotSettings({ clear: ['openaiApiKey'] })
+    expect(settings.hasKey('openaiApiKey')).toBe(false)
+    expect(settings.hasKey('anthropicApiKey')).toBe(true)
+  })
+
+  it('catches a key pasted into the wrong box', () => {
+    expect(() => settings.saveCopilotSettings({ openaiApiKey: KEY })).toThrow(/OpenAI API key/)
+    expect(() => settings.saveCopilotSettings({ anthropicApiKey: OPENAI_KEY })).toThrow(/sk-ant-/)
+    // Nothing is saved when either key is wrong.
+    expect(() => settings.saveCopilotSettings({ anthropicApiKey: KEY, openaiApiKey: 'hunter2' })).toThrow()
+    expect(stored).toBeNull()
+  })
+
+  it('falls back to OPENAI_API_KEY', () => {
+    process.env.OPENAI_API_KEY = 'sk-proj-fromtheenvironment0000000000'
+    expect(settings.getMaskedCopilotSettings().openai.source).toBe('env')
+  })
+
+  it('tests an OpenAI key against the model list', async () => {
+    const ok = vi.fn(async () => new Response('{}', { status: 200 }))
+    expect(await settings.testOpenAIKey(OPENAI_KEY, ok as unknown as typeof fetch)).toEqual({ ok: true })
+    const [url, init] = ok.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/models')
+    expect((init.headers as Record<string, string>).authorization).toBe(`Bearer ${OPENAI_KEY}`)
+    const rejected = vi.fn(async () => new Response('{}', { status: 401 }))
+    expect(await settings.testOpenAIKey(OPENAI_KEY, rejected as unknown as typeof fetch)).toMatchObject({ ok: false, error: expect.stringMatching(/rejected/) })
   })
 })

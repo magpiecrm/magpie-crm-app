@@ -69,6 +69,11 @@ export const env = {
   anthropic: {
     apiKey: () => readEnv('ANTHROPIC_API_KEY'),
   },
+  // OpenAI API key, the copilot's other bring-your-own-key option (see
+  // copilot/openai.ts). Also normally saved in Settings → Copilot.
+  openai: {
+    apiKey: () => readEnv('OPENAI_API_KEY'),
+  },
   // Reacher (reacherhq/check-if-email-exists) runs as its own service. Optional:
   // without it, email finding falls back to an unverified best-guess candidate.
   // URL, secret, FROM and HELO can also be set in Settings → Prospecting.

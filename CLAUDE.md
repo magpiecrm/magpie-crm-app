@@ -51,7 +51,9 @@ prompts.
     prompt. The SSE turn endpoint is `src/routes/api/copilot/stream.ts`.
     `settings.ts` holds the user's own Anthropic API key, which the CLI runs
     with (never a Claude.ai login — Anthropic's terms don't allow apps to offer
-    or share one). `src/routes/api/mcp.ts` exposes the same tools to outside AI
+    or share one), and OpenAI API key. OpenAI models don't use the CLI:
+    `openai.ts` calls the Responses API and runs the tool loop in-process,
+    through the same `executeTool`/approval gate in `mcp.ts`. `src/routes/api/mcp.ts` exposes the same tools to outside AI
     apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
     `browserOnly`), authorised by MCP-scoped API keys.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for

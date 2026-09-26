@@ -1,6 +1,7 @@
 import { spawn } from 'child_process'
 import type { CopilotProvider } from './types'
 import { claudeProvider } from './claude'
+import { hasKey } from '../settings'
 
 const PROVIDERS: CopilotProvider[] = [claudeProvider]
 
@@ -29,16 +30,31 @@ export function isInstalled(provider: CopilotProvider): Promise<boolean> {
   })
 }
 
-/** Provider list for the settings UI, with live availability. */
+/**
+ * Provider list for the settings UI and the chat's model picker.
+ * `available`: it can run on this server (Claude needs its CLI installed;
+ * OpenAI runs in-process). `keySet`: the user's API key for it is saved.
+ */
 export async function listProviders() {
-  return Promise.all(
+  const claude = await Promise.all(
     PROVIDERS.map(async p => ({
       id: p.id,
       label: p.label,
       description: p.description,
       available: await isInstalled(p),
+      keySet: hasKey('anthropicApiKey'),
     })),
   )
+  return [
+    ...claude,
+    {
+      id: 'openai',
+      label: 'OpenAI',
+      description: 'Calls OpenAI models on the API with your own OpenAI API key.',
+      available: true,
+      keySet: hasKey('openaiApiKey'),
+    },
+  ]
 }
 
 export type { CopilotProvider, CopilotEvent, SpawnOptions } from './types'

@@ -8,7 +8,8 @@ import { z } from 'zod'
 // `src/routes/api/copilot/stream.ts` for the entry point.
 //
 // What remains here is the copilot's settings: the user's own Anthropic API
-// key, which the CLI runs with (see `copilot/settings.ts`). The app no longer
+// key, which the CLI runs with, and OpenAI API key, which `copilot/openai.ts`
+// calls OpenAI with (see `copilot/settings.ts`). The app no longer
 // signs the CLI in to a Claude.ai account: Anthropic doesn't allow products to
 // offer or relay Claude.ai login, or to share one subscription between users.
 
@@ -21,11 +22,12 @@ export const getCopilotSettingsFn = createServerFn({ method: 'GET' })
   })
 
 export const saveCopilotSettingsFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { anthropicApiKey?: string; clear?: Array<'anthropicApiKey'> }) =>
+  .inputValidator((d: { anthropicApiKey?: string; openaiApiKey?: string; clear?: Array<'anthropicApiKey' | 'openaiApiKey'> }) =>
     z
       .object({
         anthropicApiKey: z.string().trim().max(300).optional(),
-        clear: z.array(z.literal('anthropicApiKey')).optional(),
+        openaiApiKey: z.string().trim().max(300).optional(),
+        clear: z.array(z.enum(['anthropicApiKey', 'openaiApiKey'])).optional(),
       })
       .parse(d),
   )
@@ -45,6 +47,16 @@ export const testAnthropicKeyFn = createServerFn({ method: 'POST' })
     await requireAuth()
     const { testAnthropicKey } = await import('../copilot/settings')
     return testAnthropicKey(data.apiKey)
+  })
+
+/** Checks the typed key (or the saved one) against OpenAI with a free call. */
+export const testOpenAIKeyFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { apiKey?: string }) => z.object({ apiKey: z.string().trim().max(300).optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { testOpenAIKey } = await import('../copilot/settings')
+    return testOpenAIKey(data.apiKey)
   })
 
 export const getCopilotProvidersFn = createServerFn({ method: 'GET' })

@@ -43,7 +43,8 @@ REACHER_URL=...          # optional — or set in Settings → Prospecting;
 REACHER_SECRET=...       # optional — matches RCH__HEADER_SECRET on Reacher
 REACHER_FROM_EMAIL=...   # optional — SMTP FROM used for verification
 REACHER_HELLO_NAME=...   # optional — EHLO name; should match the proxy's PTR
-ANTHROPIC_API_KEY=...    # optional — the copilot's key; or set in Settings → Copilot
+ANTHROPIC_API_KEY=...    # optional — the copilot's Claude key; or set in Settings → Copilot
+OPENAI_API_KEY=...       # optional — the copilot's OpenAI key; or set in Settings → Copilot
 REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
                          # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
 AUTH_EMAIL=...           # required — app login
@@ -79,10 +80,18 @@ in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 
 ### Copilot and AI apps (MCP)
 
-The copilot needs the `claude` CLI installed on the host and **your own
-Anthropic API key** (Settings → Copilot, or `ANTHROPIC_API_KEY`), created in
-the [Claude Console](https://platform.claude.com/). Usage is billed to the
-key's owner. The app never signs the CLI in to a Claude.ai account: Anthropic's
+The copilot runs on Claude or OpenAI models, with **your own API key** for
+either (Settings → Copilot), and you pick the model in the chat. Usage is
+billed to the key's owner.
+
+- **Claude** needs the `claude` CLI installed on the host and an Anthropic API
+  key (or `ANTHROPIC_API_KEY`) from the
+  [Claude Console](https://platform.claude.com/).
+- **OpenAI** (GPT-6) needs only an OpenAI API key (or `OPENAI_API_KEY`) from the
+  [OpenAI platform](https://platform.openai.com/api-keys). The app calls the
+  API itself, with `store: false`, and runs the same tools and approvals.
+
+For Claude, the app never signs the CLI in to a Claude.ai account: Anthropic's
 terms don't allow apps to offer or relay Claude.ai login, or to share one
 Pro/Max subscription between users
 ([details](https://code.claude.com/docs/en/legal-and-compliance)). The CLI runs

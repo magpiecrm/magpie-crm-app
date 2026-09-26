@@ -6,6 +6,7 @@ import type { CopilotEvent, CopilotProvider } from './providers'
 import { buildSystemPrompt } from './prompt'
 import { drainClientActions, emitEvent, getSession } from './state'
 import type { PermissionMode } from './permissions'
+import { isOpenAITurnRunning, runOpenAITurn, stopOpenAISession } from './openai'
 
 interface RunningSession {
   child: ChildProcess
@@ -161,13 +162,18 @@ function start(opts: TurnOptions, resume: boolean): RunningSession {
 }
 
 /**
- * Send one user turn, starting the CLI if this is the first.
+ * Send one user turn. OpenAI models run in this process (see openai.ts);
+ * Claude runs in the CLI, which is started if this is the first turn.
  *
  * The process is long-lived, so the model keeps the whole conversation itself —
  * we no longer replay the transcript, and a turn needing five tool calls costs
  * one process rather than five.
  */
-export function sendTurn(opts: TurnOptions): RunningSession {
+export function sendTurn(opts: TurnOptions): void {
+  if (opts.providerId === 'openai') {
+    void runOpenAITurn({ sessionId: opts.sessionId, message: opts.message, model: opts.model, effort: opts.effort })
+    return
+  }
   let entry = running.get(opts.sessionId)
   if (!entry || entry.child.exitCode !== null) {
     const session = getSession(opts.sessionId)
@@ -177,10 +183,10 @@ export function sendTurn(opts: TurnOptions): RunningSession {
   }
   entry.busy = true
   entry.child.stdin?.write(entry.provider.encodeTurn(opts.message))
-  return entry
 }
 
 export function isRunning(sessionId: string): boolean {
+  if (isOpenAITurnRunning(sessionId)) return true
   const entry = running.get(sessionId)
   return !!entry && entry.child.exitCode === null
 }
@@ -191,6 +197,7 @@ export function takeClientActions(sessionId: string) {
 }
 
 export function stopSession(sessionId: string) {
+  stopOpenAISession(sessionId)
   const entry = running.get(sessionId)
   if (!entry) return
   try {

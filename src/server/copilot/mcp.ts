@@ -91,9 +91,65 @@ function applyToClientState(session: CopilotSessionState, action: ClientAction) 
   }
 }
 
-interface Gate {
+export interface Gate {
   needsApproval(tool: CopilotTool<any>): boolean
   awaitApproval(tool: CopilotTool<any>, args: unknown): Promise<boolean>
+}
+
+type ToolContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+
+export interface ToolOutcome {
+  isError?: boolean
+  content: ToolContent[]
+}
+
+/**
+ * Run one tool call: ask for approval when the gate says so, run the handler,
+ * and turn the result (or failure) into content for the model. Shared by the
+ * MCP servers and the OpenAI loop, so every model gets the same tools, the
+ * same approvals and the same error text.
+ */
+export async function executeTool(tool: CopilotTool<any>, args: unknown, ctx: ToolContext, gate: Gate | null): Promise<ToolOutcome> {
+  try {
+    if (gate?.needsApproval(tool)) {
+      const approved = await gate.awaitApproval(tool, args)
+      if (!approved) {
+        return {
+          isError: true,
+          content: [{
+            type: 'text',
+            text: `${tool.name} was declined by the user. Do not retry it; ask what they would like instead.`,
+          }],
+        }
+      }
+    }
+
+    const result = await tool.handler(args as any, ctx)
+
+    // Tools that render something return the pixels too, so the model can
+    // actually look at its own output instead of reasoning about markup.
+    if (isImageResult(result)) {
+      const { __image, ...rest } = result
+      return {
+        content: [
+          { type: 'text', text: JSON.stringify(rest, null, 2) },
+          { type: 'image', data: __image.data, mimeType: __image.mimeType },
+        ],
+      }
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+  } catch (err: any) {
+    // Return the failure as a tool error rather than throwing, so the
+    // model sees what went wrong and can correct itself. The old harness
+    // surfaced validation failures straight to the user and gave up.
+    return {
+      isError: true,
+      content: [{ type: 'text', text: `${tool.name} failed: ${err?.message ?? String(err)}` }],
+    }
+  }
 }
 
 /**
@@ -121,51 +177,9 @@ function registerTools(
           openWorldHint: tool.costsCredits ?? false,
         },
       },
-      async (args: any) => {
-        try {
-          if (gate?.needsApproval(tool)) {
-            const approved = await gate.awaitApproval(tool, args)
-            if (!approved) {
-              return {
-                isError: true,
-                content: [{
-                  type: 'text' as const,
-                  text: `${tool.name} was declined by the user. Do not retry it; ask what they would like instead.`,
-                }],
-              }
-            }
-          }
-
-          const result = await tool.handler(args, ctx)
-
-          // Tools that render something return the pixels too, so the model can
-          // actually look at its own output instead of reasoning about markup.
-          if (isImageResult(result)) {
-            const { __image, ...rest } = result
-            return {
-              content: [
-                { type: 'text' as const, text: JSON.stringify(rest, null, 2) },
-                { type: 'image' as const, data: __image.data, mimeType: __image.mimeType },
-              ],
-            }
-          }
-
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-          }
-        } catch (err: any) {
-          // Return the failure as a tool error rather than throwing, so the
-          // model sees what went wrong and can correct itself. The old harness
-          // surfaced validation failures straight to the user and gave up.
-          return {
-            isError: true,
-            content: [{ type: 'text' as const, text: `${tool.name} failed: ${err?.message ?? String(err)}` }],
-          }
-        }
-      },
+      (args: any) => executeTool(tool, args, ctx, gate) as Promise<any>,
     )
   }
-
 }
 
 /**
@@ -217,7 +231,24 @@ export function buildMcpServer(sessionId: string): McpServer {
     },
   )
 
-  const ctx: ToolContext = {
+  registerTools(server, COPILOT_TOOLS, sessionToolContext(sessionId), sessionGate(sessionId))
+  return server
+}
+
+/**
+ * The approval gate for one in-app copilot conversation: its permission mode
+ * decides what needs asking, and the user answers in the chat.
+ */
+export function sessionGate(sessionId: string): Gate {
+  return {
+    needsApproval: (tool) => needsApproval(tool.name, getSession(sessionId)?.permissionMode ?? 'ask'),
+    awaitApproval: (tool, args) => awaitApproval(sessionId, tool, args),
+  }
+}
+
+/** Tool context for one in-app copilot conversation, with its live browser state. */
+export function sessionToolContext(sessionId: string): ToolContext {
+  return {
     sessionId,
     getClientState: () => getSession(sessionId)?.clientState ?? {},
     emitClientAction: (action) => {
@@ -240,11 +271,4 @@ export function buildMcpServer(sessionId: string): McpServer {
       applyToClientState(session, action)
     },
   }
-
-  registerTools(server, COPILOT_TOOLS, ctx, {
-    needsApproval: (tool) => needsApproval(tool.name, getSession(sessionId)?.permissionMode ?? 'ask'),
-    awaitApproval: (tool, args) => awaitApproval(sessionId, tool, args),
-  })
-
-  return server
 }

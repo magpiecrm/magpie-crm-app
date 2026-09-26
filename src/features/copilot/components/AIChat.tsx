@@ -3,7 +3,7 @@ import { Bot, ArrowUp, BrainCircuit, Cpu, AlertCircle, Trash2, User, X, Check, L
 import type { PersonaFormValues, PersonaUpdates } from '../../prospects/components/PersonaForm'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { listCopilotChatsFn, deleteCopilotChatFn } from '../../../server/functions'
+import { listCopilotChatsFn, deleteCopilotChatFn, getCopilotProvidersFn } from '../../../server/functions'
 import { useCopilotStream, type PermissionMode, type ToolCall } from '../useCopilotStream'
 import { createPortal } from 'react-dom'
 import { Dialog } from '../../../components/ui/Dialog'
@@ -156,6 +156,19 @@ const CLAUDE_MODELS = [
   { label: 'Haiku 4.5 (fastest)', value: 'claude-haiku-4-5' },
 ] as const
 
+/**
+ * OpenAI models, run on the API with the user's own OpenAI key (see
+ * server/copilot/openai.ts). Option ids carry an `openai:` prefix so one
+ * picker chooses both the provider and the model.
+ */
+const OPENAI_PREFIX = 'openai:'
+const OPENAI_MODELS = [
+  { label: 'GPT-6 Astra (most capable)', value: 'gpt-6-astra' },
+  { label: 'GPT-6 Sol (balanced)', value: 'gpt-6-sol' },
+  { label: 'GPT-6 Luna (fastest)', value: 'gpt-6-luna' },
+] as const
+const OPENAI_DEFAULT_OPTION = `${OPENAI_PREFIX}gpt-6-sol`
+
 interface DropdownOption {
   id: string
   label: string
@@ -172,6 +185,12 @@ const MODEL_OPTIONS: DropdownOption[] = [
     label: m.label,
     shortLabel: m.label.split(' (')[0],
     icon: <Cpu className="w-3.5 h-3.5 text-orange-500" />,
+  })),
+  ...OPENAI_MODELS.map(m => ({
+    id: `${OPENAI_PREFIX}${m.value}`,
+    label: m.label,
+    shortLabel: m.label.split(' (')[0],
+    icon: <Cpu className="w-3.5 h-3.5 text-emerald-500" />,
   })),
 ]
 
@@ -204,7 +223,10 @@ const PERMISSION_MODE_OPTIONS: DropdownOption[] = [
   },
 ]
 
-/** Values match the CLI's --effort choices exactly (`claude --help`). */
+/**
+ * Values match the Claude CLI's --effort choices exactly (`claude --help`),
+ * which are also the reasoning efforts GPT-6 models take.
+ */
 const EFFORT_OPTIONS: DropdownOption[] = [
   { id: '', label: 'Default', description: 'The model paces itself.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
   { id: 'low', label: 'Low', description: 'Fastest, least thorough.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },
@@ -367,8 +389,16 @@ export function AIChat({
   surveyBuilderContext,
   onSurveyBuilderAction,
 }: AIChatProps) {
-  const provider = 'claude' as const
-  const [selectedModel, setSelectedModel] = useState<string>('')
+  // Until the user picks a model, use Claude unless only an OpenAI key is set.
+  const [pickedModel, setPickedModel] = useState<string | null>(null)
+  const { data: providerInfo } = useQuery({
+    queryKey: queryKeys.copilot.providers(),
+    queryFn: () => getCopilotProvidersFn(),
+    staleTime: 60_000,
+  })
+  const keySet = (id: string) => providerInfo?.providers.some(p => p.id === id && p.keySet) ?? false
+  const selectedModel = pickedModel ?? (!keySet('claude') && keySet('openai') ? OPENAI_DEFAULT_OPTION : '')
+  const provider = selectedModel.startsWith(OPENAI_PREFIX) ? 'openai' : 'claude'
   const [effort, setEffort] = useState<string>('')
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('auto-safe')
   const [prompt, setPrompt] = useState('')
@@ -489,7 +519,8 @@ export function AIChat({
     if (!prompt.trim() || isStreaming) return
     const text = prompt
     setPrompt('')
-    void send(text, { provider, model: selectedModel || undefined, effort: effort || undefined, permissionMode })
+    const model = provider === 'openai' ? selectedModel.slice(OPENAI_PREFIX.length) : selectedModel
+    void send(text, { provider, model: model || undefined, effort: effort || undefined, permissionMode })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -712,7 +743,7 @@ export function AIChat({
                 selectedId={permissionMode}
                 onSelect={(id) => setPermissionMode(id as PermissionMode)}
               />
-              <ComposerDropdown options={MODEL_OPTIONS} selectedId={selectedModel} onSelect={setSelectedModel} />
+              <ComposerDropdown options={MODEL_OPTIONS} selectedId={selectedModel} onSelect={setPickedModel} />
               <ComposerDropdown options={EFFORT_OPTIONS} selectedId={effort} onSelect={setEffort} align="right" />
             </div>
 

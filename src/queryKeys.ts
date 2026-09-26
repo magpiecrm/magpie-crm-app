@@ -45,6 +45,7 @@ export const queryKeys = {
   copilot: {
     chats: () => ['copilot', 'chats'] as const,
     chat: (id: string) => ['copilot', 'chats', id] as const,
+    providers: () => ['copilot', 'providers'] as const,
   },
   notifications: {
     list: () => ['notifications'] as const,
