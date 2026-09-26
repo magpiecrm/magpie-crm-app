@@ -1,7 +1,7 @@
 // Prospecting integrations: the SocialFetch API key and the optional Reacher
 // verification service.
 //
-// Values saved in Settings → Prospecting live in the DB (secrets encrypted with
+// Values saved in Settings → Data source and Email verification live in the DB (secrets encrypted with
 // the credentials secret, like the email provider settings) so they survive
 // redeploys; the SOCIALFETCH_* / REACHER_* env vars still work as a fallback.
 // A saved value always wins over the env var.
@@ -46,7 +46,7 @@ function socialfetchKey(): { value?: string; source: Source } {
 /** The key to call SocialFetch with. Throws a message that points at Settings. */
 export function requireSocialFetchKey(): string {
   const { value } = socialfetchKey()
-  if (!value) throw new Error('No SocialFetch API key yet. Add one in Settings → Prospecting.')
+  if (!value) throw new Error('No SocialFetch API key yet. Add one in Settings → Data source.')
   return value
 }
 
@@ -81,7 +81,7 @@ export function getActiveVerifier(): ActiveVerifier {
 
 const DEFAULT_DAILY_CAP = 1_500
 
-/** Checks per verifying IP per day (Settings → Prospecting). */
+/** Checks per verifying IP per day (Settings → Email verification). */
 export function getVerificationDailyCap(): number {
   return db.getProspectingSettings()?.verification_daily_cap ?? DEFAULT_DAILY_CAP
 }

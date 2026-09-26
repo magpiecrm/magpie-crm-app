@@ -180,7 +180,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     }
   })
 
-// --- Settings → Prospecting ---------------------------------------------------
+// --- Settings → Data source / Email verification -----------------------------
 // Secrets are never sent back to the browser: only whether they're set and
 // the last four characters of the SocialFetch key.
 

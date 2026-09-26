@@ -35,7 +35,7 @@ function CopyBlock({ label, code, note }: { label: string; code: string; note?: 
 }
 
 /**
- * Settings → AI apps (MCP): keys and copy-paste setup for connecting Claude,
+ * Settings → Connect AI apps: keys and copy-paste setup for connecting Claude,
  * ChatGPT/OpenAI, Cursor and other MCP clients to this app's `/api/mcp`.
  */
 export function McpTab() {

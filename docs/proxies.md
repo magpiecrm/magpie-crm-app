@@ -16,7 +16,7 @@ bun run reacher:down
 
 It reads `REACHER_SECRET` (required) and optionally `REACHER_HELLO_NAME` /
 `REACHER_FROM_EMAIL` from `.env`. The app finds it through `REACHER_URL` and
-`REACHER_SECRET` in `.env`, or the same fields in **Settings → Prospecting**.
+`REACHER_SECRET` in `.env`, or the same fields in **Settings → Email verification**.
 Then press **Test verification** there: it checks a made-up address at Gmail
 and at Microsoft 365 (no real mailbox is contacted) and reports whether each
 route got a definite answer.
@@ -67,7 +67,7 @@ that:
 (This configuration was tested: SMTP through the proxy works, other ports
 and wrong passwords are refused, and Reacher's checks go through it.)
 
-Then in **Settings → Prospecting → Verification proxies** add the server's IP,
+Then in **Settings → Email verification → Verification proxies** add the server's IP,
 port `1080` and the same username/password, save, and run **Test
 verification**. Proxies saved there are stored encrypted; `REACHER_PROXIES`
 (a JSON array of `{host, port, username, password, label}`) is the env-var
@@ -83,7 +83,7 @@ real mail host:
 2. In your VPS provider's panel, set the IP's **reverse DNS (PTR)** to that
    same hostname.
 3. Set **HELO name** to that hostname and **FROM address** to an address on
-   that domain (Settings → Prospecting, or `REACHER_HELLO_NAME` /
+   that domain (Settings → Email verification, or `REACHER_HELLO_NAME` /
    `REACHER_FROM_EMAIL`).
 
 Use a domain you don't send campaigns from, so a verification IP getting
@@ -99,7 +99,7 @@ checks gentle and stops using one that gets listed.
 
 - Per IP: 20 checks a minute; Microsoft 6 and Google 10 a minute (they
   throttle hardest); and a daily ceiling, 1,500 by default, set under
-  **Daily checks per IP** in Settings → Prospecting.
+  **Daily checks per IP** in Settings → Email verification.
 - Per company, across all IPs: up to 12 checks in any 3 minutes (a first
   Reveal there can take 7: the catch-all test plus 6 guesses), about 4 a
   minute after that. Saves wait for a slot; a Reveal waits up to 90 seconds.

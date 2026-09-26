@@ -1,6 +1,6 @@
 // Runs the sender health check (senderHealth.ts) against the live settings:
 // every six hours in the background, and on demand from Settings →
-// Prospecting. A newly blocklisted IP or domain raises a notification (bell
+// Email verification. A newly blocklisted IP or domain raises a notification (bell
 // and push), so an IP can be swapped out before verification quietly stops
 // working.
 
@@ -85,7 +85,7 @@ export function verificationPauseReason(proxy: ProxyConfig | null): string | nul
   const domain = report.domain
   // A report about a domain we no longer use is stale, not a reason to stop.
   if (domain && domain.domain === getReacherFromDomain() && domain.listedOn.length > 0 && getListedDomainOverride() !== domain.domain) {
-    return `the FROM domain ${domain.domain} is on ${domain.listedOn.join(', ')}. Switch to a clean domain, or choose "Keep verifying anyway" in Settings → Prospecting while testing.`
+    return `the FROM domain ${domain.domain} is on ${domain.listedOn.join(', ')}. Switch to a clean domain, or choose "Keep verifying anyway" in Settings → Email verification while testing.`
   }
 
   const ip = report.ips.find((i) => i.host === (proxy?.host ?? 'this server'))

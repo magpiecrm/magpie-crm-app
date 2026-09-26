@@ -247,7 +247,7 @@ interface DbSchema {
    */
   disclosure_log?: DisclosureEntry[]
   /**
-   * Prospecting integrations set from Settings → Prospecting. Single row.
+   * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
    * SocialFetch API key and Reacher secret; the rest isn't sensitive.
    */

@@ -5,7 +5,7 @@ import { changePasswordFn } from '../../../server/functions'
 const inputClass =
   'bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50'
 
-/** Settings → Users: change your own password. Signs you out on other devices. */
+/** Settings → Team and login: change your own password. Signs you out on other devices. */
 export function ChangePasswordForm() {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')

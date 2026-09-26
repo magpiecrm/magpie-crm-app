@@ -129,7 +129,7 @@ export function Sidebar({
           ) : !status?.socialfetch.configured ? (
             <Link
               to="/settings"
-              search={{ tab: 'prospecting' }}
+              search={{ tab: 'source' }}
               onClick={onClose}
               className="text-xs font-semibold text-accent hover:underline"
             >
@@ -154,7 +154,7 @@ export function Sidebar({
           {(status?.senderHealth?.level === 'critical' || status?.senderHealth?.level === 'warning') && (
             <Link
               to="/settings"
-              search={{ tab: 'prospecting' }}
+              search={{ tab: 'verification' }}
               onClick={onClose}
               className={`mt-1.5 flex items-center gap-1 text-[10px] font-semibold hover:underline ${
                 status.senderHealth.level === 'critical' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'

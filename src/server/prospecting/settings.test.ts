@@ -41,7 +41,7 @@ afterEach(() => {
 describe('SocialFetch key', () => {
   it('explains where to add a key when none is set', () => {
     expect(settings.isSocialFetchConfigured()).toBe(false)
-    expect(() => settings.requireSocialFetchKey()).toThrow(/Settings → Prospecting/)
+    expect(() => settings.requireSocialFetchKey()).toThrow(/Settings → Data source/)
   })
 
   it('stores the key encrypted and uses it', () => {

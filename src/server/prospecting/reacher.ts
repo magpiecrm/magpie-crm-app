@@ -139,7 +139,7 @@ export async function checkEmail(
         outcome === 'unreachable'
           ? "it doesn't accept connections from the verification server"
           : outcome === 'sender_rejected'
-            ? 'it refuses checks from your verification domain, which is likely on a blocklist. See Settings → Prospecting'
+            ? 'it refuses checks from your verification domain, which is likely on a blocklist. See Settings → Email verification'
             : rawError
             ? (typeof rawError === 'string' ? rawError : JSON.stringify(rawError)).slice(0, 300)
             : undefined,

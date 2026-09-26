@@ -69,7 +69,7 @@ export function SharePanel({ surveyId, status, name }: { surveyId: string; statu
         <p className="text-xs text-muted-foreground leading-relaxed">
           If the survey sits inside your own app, your server can ask for a personal link for the signed-in user. Their answers go
           straight to their contact profile, and they never see or fill in the Email question. Create an API key under Settings →
-          Public API. If the email isn't a contact yet, one is only created when the survey has a list set (Settings in the builder).
+          Signup forms and API. If the email isn't a contact yet, one is only created when the survey has a list set (Settings in the builder).
         </p>
         <CopyBox label="Server code" value={surveySignedEmbedExample(origin, surveyId)} multiline />
       </div>

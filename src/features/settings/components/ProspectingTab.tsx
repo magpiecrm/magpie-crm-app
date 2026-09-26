@@ -31,7 +31,12 @@ interface ProxyRow {
 const toRows = (s: Masked): ProxyRow[] =>
   s.proxies.list.map((p) => ({ label: p.label, host: p.host, port: String(p.port), username: p.username, password: '', passwordSet: p.passwordSet }))
 
-export function ProspectingTab() {
+/**
+ * Settings → Data source (the SocialFetch key) or Email verification
+ * (Reacher, proxies, health, test). One form behind both pages: they share
+ * the saved prospecting settings, and blank secret fields mean "keep".
+ */
+export function ProspectingTab({ section }: { section: 'source' | 'verification' }) {
   const queryClient = useQueryClient()
   const [settings, setSettings] = useState<Masked | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -212,6 +217,8 @@ export function ProspectingTab() {
         </div>
       )}
 
+      {section === 'source' && (
+        <>
       {/* SocialFetch */}
       <div className="flex flex-col gap-3">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
@@ -290,14 +297,18 @@ export function ProspectingTab() {
         )}
       </div>
 
+        </>
+      )}
+
+      {section === 'verification' && (
+        <>
       {/* Verification provider */}
       <div className="flex flex-col gap-3">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Email verification
+          Verification service
         </h4>
         <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-          How found emails are checked before they're shown or saved. Without verification, every email is an unverified
-          best guess.
+          Without verification, every email is an unverified best guess.
         </p>
         <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-2xl">
           {(
@@ -593,6 +604,9 @@ export function ProspectingTab() {
         )}
       </div>
 
+        </>
+      )}
+
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md-s flex items-start gap-2">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -612,7 +626,7 @@ export function ProspectingTab() {
         className="w-full md:w-auto md:self-end py-2.5 px-6 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
       >
         {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-        <span>{isSaving ? 'Saving...' : 'Save prospecting settings'}</span>
+        <span>{isSaving ? 'Saving...' : 'Save'}</span>
       </button>
     </form>
   )

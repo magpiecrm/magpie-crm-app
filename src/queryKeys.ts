@@ -47,6 +47,13 @@ export const queryKeys = {
     chat: (id: string) => ['copilot', 'chats', id] as const,
     providers: () => ['copilot', 'providers'] as const,
   },
+  settings: {
+    /** Everything the settings menu's status dots and Overview read. */
+    all: () => ['settings'] as const,
+    copilot: () => ['settings', 'copilot'] as const,
+    sending: () => ['settings', 'sending'] as const,
+    team: () => ['settings', 'team'] as const,
+  },
   notifications: {
     list: () => ['notifications'] as const,
   },

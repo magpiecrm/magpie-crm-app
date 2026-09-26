@@ -375,7 +375,7 @@ describe('errors and retries', () => {
 
   it('reports a bad key clearly', async () => {
     const f = fakeFetch([new Response('{}', { status: 401 })])
-    await expect(createSocialFetchSource(f.impl).searchCompanies({ keyword: 'x' })).rejects.toThrow(/Settings → Prospecting/)
+    await expect(createSocialFetchSource(f.impl).searchCompanies({ keyword: 'x' })).rejects.toThrow(/Settings → Data source/)
   })
 
   it('treats not_found lookups as null', async () => {

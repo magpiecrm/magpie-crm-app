@@ -5,7 +5,7 @@ import { buildPublicMcpServer } from '../../server/copilot/mcp'
 /**
  * Public MCP endpoint for outside AI apps: Claude (Code, Desktop), ChatGPT and
  * the OpenAI API, Cursor, and anything else that speaks MCP over Streamable
- * HTTP. Set up from Settings → AI apps (MCP).
+ * HTTP. Set up from Settings → Connect AI apps.
  *
  * Authorisation is an MCP key (`vtl_mcp_…`) sent as a Bearer token. Those keys
  * are their own scope: the public-API keys used by signup forms (which may sit
@@ -26,7 +26,7 @@ function unauthorized(message: string) {
 async function handle({ request }: { request: Request }) {
   const auth = request.headers.get('authorization') ?? ''
   const key = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  if (!key) return unauthorized('Missing MCP key. Create one in Settings → AI apps (MCP) and send it as "Authorization: Bearer <key>".')
+  if (!key) return unauthorized('Missing MCP key. Create one in Settings → Connect AI apps and send it as "Authorization: Bearer <key>".')
 
   const { db } = await import('../../server/db')
   if (!db.verifyApiKey(key, 'mcp')) return unauthorized('Unknown or revoked MCP key.')

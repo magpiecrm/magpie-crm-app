@@ -30,14 +30,14 @@ Create a `.env` file in the project root:
 
 ```bash
 SMTP_HOST=...            # optional — SMTP sending; or set any provider in
-SMTP_PORT=...            # Settings → Email Sending, which overrides these
+SMTP_PORT=...            # Settings → Sending, which overrides these
 SMTP_USER=...
 SMTP_PASS=...
-SMTP_SENDER=...          # optional — added to Settings → Senders on first start
-SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Prospecting (sfk_...)
+SMTP_SENDER=...          # optional — added to Settings → Sender addresses on first start
+SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
 SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
                          # falls back to TRACKING_SECRET. Never rotate it.
-REACHER_URL=...          # optional — or set in Settings → Prospecting;
+REACHER_URL=...          # optional — or set in Settings → Email verification;
                          # e.g. http://reacher:8080; enables email
                          # verification. Without it, emails are saved as
                          # "unverified" best guesses.
@@ -49,7 +49,7 @@ OPENAI_API_KEY=...       # optional — the copilot's OpenAI key; or set in Sett
 REACHER_PROXIES=...      # optional — JSON array of SOCKS5 proxies:
                          # [{"host":"1.2.3.4","port":1080,"username":"u","password":"p","label":"eu-1"}]
 AUTH_EMAIL=...           # required — the first login. Change passwords and
-AUTH_PASSWORD=...        # add people in Settings → Users; changing
+AUTH_PASSWORD=...        # add people in Settings → Team and login; changing
                          # AUTH_PASSWORD resets that login's password on the
                          # next restart (for a forgotten password).
 TRACKING_SECRET=...      # required in production — signs tracking/unsubscribe links
@@ -102,7 +102,7 @@ Pro/Max subscription between users
 with its own config directory (`.copilot-claude/` next to the database), so a
 Claude.ai login on the host is never picked up.
 
-**Settings → AI apps (MCP)** connects outside AI apps to the same tools over
+**Settings → Connect AI apps** connects outside AI apps to the same tools over
 MCP at `/api/mcp` (Streamable HTTP). Create a key per app there and copy the
 ready-made setup for Claude Code, Claude Desktop, Cursor, the OpenAI Codex CLI
 or the OpenAI Responses API; anything else that speaks MCP over HTTP works with
@@ -115,7 +115,7 @@ an OAuth sign-in flow that isn't built yet.
 
 ### Prospect search and data protection
 
-Add your SocialFetch API key in **Settings → Prospecting** (it's stored
+Add your SocialFetch API key in **Settings → Data source** (it's stored
 encrypted in the database with `CREDENTIALS_SECRET` and takes priority over the
 `SOCIALFETCH_API_KEY` env var). "Test connection" checks it against
 SocialFetch's free balance endpoint. The Reacher and proxy settings live on the

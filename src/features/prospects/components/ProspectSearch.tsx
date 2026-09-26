@@ -751,10 +751,10 @@ export function ProspectSearch() {
             <div className="px-6 py-16 flex flex-col items-center gap-2 text-destructive text-center">
               <AlertCircle className="w-6 h-6" />
               <span className="text-xs font-semibold max-w-md">{(active.error as Error).message}</span>
-              {/Settings → Prospecting/.test((active.error as Error).message) && (
+              {/Settings → Data source/.test((active.error as Error).message) && (
                 <Link
                   to="/settings"
-                  search={{ tab: 'prospecting' }}
+                  search={{ tab: 'source' }}
                   className="mt-2 text-xs font-semibold text-accent hover:underline"
                 >
                   Open prospecting settings

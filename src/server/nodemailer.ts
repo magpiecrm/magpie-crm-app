@@ -47,7 +47,7 @@ export async function sendMail(options: SendMailOptions) {
   const rawFrom = options.from || defaultSender
   if (!rawFrom) {
     throw new Error(
-      'No sender configured — set a default sender in Settings → Email Sending.',
+      'No sender configured — set a default sender in Settings → Sending.',
     )
   }
 

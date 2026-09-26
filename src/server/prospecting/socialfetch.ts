@@ -140,7 +140,7 @@ async function errorMessage(res: Response): Promise<string> {
 
 function classify(status: number, message: string): SocialFetchError {
   if (status === 401 || status === 403) {
-    return new SocialFetchError('SocialFetch rejected the API key. Check it in Settings → Prospecting.', status, 'unauthorized')
+    return new SocialFetchError('SocialFetch rejected the API key. Check it in Settings → Data source.', status, 'unauthorized')
   }
   if (status === 402) {
     return new SocialFetchError('SocialFetch credits are exhausted. Top up your balance to keep searching.', status, 'credits_exhausted')
@@ -416,7 +416,7 @@ function decodeCursor(cursor: string | undefined): Record<string, string> | null
 
 function envKey(): string {
   const key = env.socialfetch.apiKey()
-  if (!key) throw new Error('No SocialFetch API key yet. Add one in Settings → Prospecting.')
+  if (!key) throw new Error('No SocialFetch API key yet. Add one in Settings → Data source.')
   return key
 }
 

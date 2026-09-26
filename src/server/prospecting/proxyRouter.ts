@@ -289,7 +289,7 @@ export class ProxyRouter {
     if (paused.length === open.length) return new VerificationLimitError(`Verification is paused: ${paused[0]}`, 'paused')
     if (open.every((p, i) => reasons[i] || p.today.length >= cap)) {
       return new VerificationLimitError(
-        `Today's verification limit is used up (${cap} checks per IP). Add another verification server or raise the limit in Settings → Prospecting.`,
+        `Today's verification limit is used up (${cap} checks per IP). Add another verification server or raise the limit in Settings → Email verification.`,
         'daily_cap',
       )
     }

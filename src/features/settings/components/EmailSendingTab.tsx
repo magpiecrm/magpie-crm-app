@@ -313,7 +313,7 @@ export function EmailSendingTab() {
           />
           <span className="text-xs text-muted-foreground">
             Used when a message does not name its own sender. Additional from-addresses are managed
-            in the Senders tab.
+            on the Sender addresses page.
           </span>
         </div>
       </div>

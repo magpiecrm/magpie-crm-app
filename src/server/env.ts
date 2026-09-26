@@ -58,7 +58,7 @@ export const env = {
   },
   // SocialFetch is the only source of company and people data. Every call
   // goes through `prospecting/socialfetch.ts`, never directly. The key is
-  // normally saved in Settings → Prospecting; this env var is the fallback
+  // normally saved in Settings → Data source; this env var is the fallback
   // (see prospecting/settings.ts).
   socialfetch: {
     baseUrl: () => readEnv('SOCIALFETCH_BASE_URL') || 'https://api.socialfetch.dev',
@@ -76,7 +76,7 @@ export const env = {
   },
   // Reacher (reacherhq/check-if-email-exists) runs as its own service. Optional:
   // without it, email finding falls back to an unverified best-guess candidate.
-  // URL, secret, FROM and HELO can also be set in Settings → Prospecting.
+  // URL, secret, FROM and HELO can also be set in Settings → Email verification.
   reacher: {
     url: () => readEnv('REACHER_URL')?.replace(/\/+$/, ''),
     secret: () => readEnv('REACHER_SECRET'),

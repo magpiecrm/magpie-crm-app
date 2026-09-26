@@ -348,7 +348,7 @@ function ContactMappingControl({
         </select>
       )}
       <p className="text-[10px] text-muted-foreground leading-snug">
-        Answers are written to the respondent's profile. Add custom fields in Settings → Contact Fields.
+        Answers are written to the respondent's profile. Add custom fields in Settings → Contact fields.
       </p>
     </div>
   )
