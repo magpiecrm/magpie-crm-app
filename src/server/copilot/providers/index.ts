@@ -1,60 +1,25 @@
-import { spawn } from 'child_process'
-import type { CopilotProvider } from './types'
-import { claudeProvider } from './claude'
 import { hasKey } from '../settings'
+import type { ModelAdapter } from '../agent'
+import { anthropicAdapter } from './anthropic'
+import { openaiAdapter } from './openai'
 
-const PROVIDERS: CopilotProvider[] = [claudeProvider]
+const ADAPTERS: ModelAdapter[] = [anthropicAdapter, openaiAdapter]
+const KEY_FIELD = { claude: 'anthropicApiKey', openai: 'openaiApiKey' } as const
 
-const byId = new Map(PROVIDERS.map(p => [p.id, p]))
-
-/**
- * Resolve a provider id to its definition.
- *
- * Everything downstream spawns `provider.command`, never the caller's string,
- * so an unknown id fails here rather than becoming an arbitrary executable.
- */
-export function getProvider(id: string): CopilotProvider {
-  const provider = byId.get(id)
-  if (!provider) {
-    throw new Error(`Unknown copilot provider "${id}". Available: ${[...byId.keys()].join(', ')}.`)
-  }
-  return provider
+/** The adapter for a provider id from the chat ("claude" or "openai"). */
+export function getAdapter(id: string): ModelAdapter {
+  const adapter = ADAPTERS.find((a) => a.id === id)
+  if (!adapter) throw new Error(`Unknown copilot provider "${id}". Available: ${ADAPTERS.map((a) => a.id).join(', ')}.`)
+  return adapter
 }
 
-/** Whether the provider's CLI is actually installed and on PATH. */
-export function isInstalled(provider: CopilotProvider): Promise<boolean> {
-  return new Promise(resolve => {
-    const probe = spawn(provider.command, ['--version'], { stdio: 'ignore' })
-    probe.on('error', () => resolve(false))
-    probe.on('close', code => resolve(code === 0))
-  })
+/** Provider list for the chat's model picker: which ones have a key saved. */
+export function listProviders() {
+  return ADAPTERS.map((a) => ({
+    id: a.id,
+    label: a.id === 'claude' ? 'Claude' : a.label,
+    keySet: hasKey(KEY_FIELD[a.id as keyof typeof KEY_FIELD]),
+  }))
 }
 
-/**
- * Provider list for the settings UI and the chat's model picker.
- * `available`: it can run on this server (Claude needs its CLI installed;
- * OpenAI runs in-process). `keySet`: the user's API key for it is saved.
- */
-export async function listProviders() {
-  const claude = await Promise.all(
-    PROVIDERS.map(async p => ({
-      id: p.id,
-      label: p.label,
-      description: p.description,
-      available: await isInstalled(p),
-      keySet: hasKey('anthropicApiKey'),
-    })),
-  )
-  return [
-    ...claude,
-    {
-      id: 'openai',
-      label: 'OpenAI',
-      description: 'Calls OpenAI models on the API with your own OpenAI API key.',
-      available: true,
-      keySet: hasKey('openaiApiKey'),
-    },
-  ]
-}
-
-export type { CopilotProvider, CopilotEvent, SpawnOptions } from './types'
+export type { CopilotEvent } from './types'

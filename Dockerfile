@@ -1,14 +1,12 @@
 FROM oven/bun:1 as base
 WORKDIR /app
 
-# Install Node/NPM so we can install the claude and gemini CLIs globally
+# Install Node/NPM: npx installs Playwright's Chromium below, and the Vite
+# server runs on Node.
 RUN apt-get update && apt-get install -y curl gnupg && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
-
-# Install the claude and gemini CLI tools globally
-RUN npm install -g @anthropic-ai/claude-code @google/gemini-cli
 
 # System libraries Chromium needs, so the copilot's `previewEmail` tool can
 # render a design to an image. Without these the browser binary is present but
@@ -36,12 +34,9 @@ RUN npx --yes playwright@1.63.0 install chromium
 # Build the project
 RUN bun run build
 
-# The claude CLI refuses to run with permission-bypass enabled as root, which
-# is what the copilot needs (see src/server/copilot/providers/claude.ts).
-# Run the app as an unprivileged user so that check doesn't trip in
-# production the way it never does in local dev. gosu lets the entrypoint
-# start as root (needed to chown the mounted volume below) and then drop to
-# that user before exec'ing the real process.
+# Run the app as an unprivileged user. gosu lets the entrypoint start as root
+# (needed to chown the mounted volume below) and then drop to that user before
+# exec'ing the real process.
 RUN apt-get update && apt-get install -y --no-install-recommends gosu && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system appuser && \

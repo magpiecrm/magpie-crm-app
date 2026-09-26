@@ -192,8 +192,8 @@ interface DbSchema {
     updated_at: string
   }
   /**
-   * Copilot conversations. The id doubles as the agent CLI's session id, so a
-   * stored chat can be resumed with `--resume` rather than merely replayed.
+   * Copilot conversations. After a restart the agent rebuilds the
+   * conversation from these messages, so a stored chat can be continued.
    */
   copilot_chats?: Array<{
     id: string

@@ -13,10 +13,9 @@ layer:
   domain and, optionally, verified with a self-hosted
   [Reacher](https://github.com/reacherhq/check-if-email-exists) instance.
 
-There is also a copilot that drives a locally installed `claude` CLI as a
-long-lived agent with its own MCP tool server, letting it search prospects,
-create lists/campaigns/personas, edit the email builder canvas, and more. It
-runs with your own Anthropic API key. The same tools are available to outside
+There is also a copilot, an agent running on Claude or OpenAI models with
+your own API key, that can search prospects, create lists/campaigns/personas,
+edit the email builder canvas, and more. The same tools are available to outside
 AI apps (Claude Code and Desktop, ChatGPT/OpenAI, Cursor, …) over MCP.
 
 ## Getting started
@@ -86,21 +85,17 @@ in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 
 The copilot runs on Claude or OpenAI models, with **your own API key** for
 either (Settings → Copilot), and you pick the model in the chat. Usage is
-billed to the key's owner.
+billed to the key's owner. The app calls the Anthropic or OpenAI API itself
+and runs the tools in-process, so there's nothing else to install.
 
-- **Claude** needs the `claude` CLI installed on the host and an Anthropic API
-  key (or `ANTHROPIC_API_KEY`) from the
-  [Claude Console](https://platform.claude.com/).
-- **OpenAI** (GPT-6) needs only an OpenAI API key (or `OPENAI_API_KEY`) from the
-  [OpenAI platform](https://platform.openai.com/api-keys). The app calls the
-  API itself, with `store: false`, and runs the same tools and approvals.
-
-For Claude, the app never signs the CLI in to a Claude.ai account: Anthropic's
-terms don't allow apps to offer or relay Claude.ai login, or to share one
-Pro/Max subscription between users
-([details](https://code.claude.com/docs/en/legal-and-compliance)). The CLI runs
-with its own config directory (`.copilot-claude/` next to the database), so a
-Claude.ai login on the host is never picked up.
+- **Claude:** an Anthropic API key (or `ANTHROPIC_API_KEY`) from the
+  [Claude Console](https://platform.claude.com/). Never a Claude.ai login:
+  Anthropic's terms don't allow apps to offer or relay Claude.ai sign-in, or
+  to share one Pro/Max subscription between users
+  ([details](https://code.claude.com/docs/en/legal-and-compliance)).
+- **OpenAI** (GPT-6): an OpenAI API key (or `OPENAI_API_KEY`) from the
+  [OpenAI platform](https://platform.openai.com/api-keys). Requests use
+  `store: false`.
 
 **Settings → Connect AI apps** connects outside AI apps to the same tools over
 MCP at `/api/mcp` (Streamable HTTP). Create a key per app there and copy the
@@ -183,7 +178,7 @@ src/
                      proxy router, suppression + disclosure log, save jobs
     env.ts           Centralized API keys + base URLs
     functions/       createServerFn endpoints, split by domain
-    copilot/         claude CLI session management + MCP tool server
+    copilot/         copilot agent loop (Anthropic/OpenAI), tools, MCP server
   queryKeys.ts       Centralized TanStack Query key factory
 ```
 

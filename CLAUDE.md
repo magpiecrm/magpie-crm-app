@@ -7,9 +7,9 @@ Guidance for working in this repo. See `README.md` for setup/run instructions.
 A TanStack Start app for B2B prospecting + email marketing. Contacts, lists,
 and campaigns are self-hosted: a local JSON DB (`src/server/db.ts`) plus SMTP
 sending via `nodemailer.ts` — there is no third-party ESP. **SocialFetch** is
-the only source of company/people data for prospect search. A copilot feature shells out to a local
-`claude` CLI, driving it as a long-lived MCP-tool agent rather than one-shot
-prompts.
+the only source of company/people data for prospect search. A copilot runs
+an in-process agent loop over the Anthropic or OpenAI API (the user's own
+key), with the app's actions as tools.
 
 ## Architecture
 
@@ -43,18 +43,16 @@ prompts.
     domain file, not a single mega-file. Callers import from
     `'.../server/functions'`.
   - `copilot/` — the copilot's own subsystem, separate from `functions/`:
-    `session.ts` spawns the `claude` CLI as a long-lived subprocess per chat
-    session; `mcp.ts` + `tools/*` expose the app's actions to it as MCP tools
-    over a local HTTP endpoint (`src/routes/api/copilot/mcp.ts`); `state.ts`
-    tracks sessions and per-session bearer tokens; `permissions.ts` gates
-    mutating tool calls independently of the CLI's own (bypassed) permission
-    prompt. The SSE turn endpoint is `src/routes/api/copilot/stream.ts`.
-    `settings.ts` holds the user's own Anthropic API key, which the CLI runs
-    with (never a Claude.ai login — Anthropic's terms don't allow apps to offer
-    or share one), and OpenAI API key. OpenAI models don't use the CLI:
-    `openai.ts` calls the Responses API and runs the tool loop in-process,
-    through the same `executeTool`/approval gate in `mcp.ts`. `src/routes/api/mcp.ts` exposes the same tools to outside AI
-    apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
+    `agent.ts` runs the tool loop in-process, calling the model API through
+    an adapter in `providers/` (`anthropic.ts`, `openai.ts`); `tools/*` are
+    the app's actions, run through `executeTool` in `mcp.ts` (validation,
+    approval gate, error text); `state.ts` tracks sessions and their event
+    bus; `permissions.ts` decides which tool calls need the user's approval.
+    The SSE turn endpoint is `src/routes/api/copilot/stream.ts`.
+    `settings.ts` holds the user's own Anthropic and OpenAI API keys (never a
+    Claude.ai or ChatGPT login — Anthropic's terms don't allow apps to offer
+    or share one). `src/routes/api/mcp.ts` exposes the same tools to outside
+    AI apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
     `browserOnly`), authorised by MCP-scoped API keys.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so

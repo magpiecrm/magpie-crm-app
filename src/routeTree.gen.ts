@@ -46,7 +46,6 @@ import { Route as ApiSurveySurveyIdRouteImport } from './routes/api/survey/$surv
 import { Route as ApiFormSubmitFormIdRouteImport } from './routes/api/form-submit/$formId'
 import { Route as ApiCopilotStreamRouteImport } from './routes/api/copilot/stream'
 import { Route as ApiCopilotPermissionRouteImport } from './routes/api/copilot/permission'
-import { Route as ApiCopilotMcpRouteImport } from './routes/api/copilot/mcp'
 import { Route as MarketingSurveysSurveyIdIndexRouteImport } from './routes/marketing/surveys/$surveyId/index'
 import { Route as MarketingTemplatesTemplateIdEditRouteImport } from './routes/marketing/templates/$templateId/edit'
 import { Route as MarketingSurveysSurveyIdEditRouteImport } from './routes/marketing/surveys/$surveyId/edit'
@@ -240,11 +239,6 @@ const ApiCopilotPermissionRoute = ApiCopilotPermissionRouteImport.update({
   path: '/api/copilot/permission',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCopilotMcpRoute = ApiCopilotMcpRouteImport.update({
-  id: '/api/copilot/mcp',
-  path: '/api/copilot/mcp',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const MarketingSurveysSurveyIdIndexRoute =
   MarketingSurveysSurveyIdIndexRouteImport.update({
     id: '/$surveyId/',
@@ -289,7 +283,6 @@ export interface FileRoutesByFullPath {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
   '/collection/': typeof CollectionIndexRoute
-  '/api/copilot/mcp': typeof ApiCopilotMcpRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
@@ -330,7 +323,6 @@ export interface FileRoutesByTo {
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/collection': typeof CollectionIndexRoute
-  '/api/copilot/mcp': typeof ApiCopilotMcpRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
@@ -376,7 +368,6 @@ export interface FileRoutesById {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
   '/collection/': typeof CollectionIndexRoute
-  '/api/copilot/mcp': typeof ApiCopilotMcpRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
@@ -423,7 +414,6 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/s/$surveyId'
     | '/collection/'
-    | '/api/copilot/mcp'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
@@ -464,7 +454,6 @@ export interface FileRouteTypes {
     | '/api/unsubscribe'
     | '/s/$surveyId'
     | '/collection'
-    | '/api/copilot/mcp'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
@@ -509,7 +498,6 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/s/$surveyId'
     | '/collection/'
-    | '/api/copilot/mcp'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
@@ -555,7 +543,6 @@ export interface RootRouteChildren {
   MarketingTemplatesRoute: typeof MarketingTemplatesRouteWithChildren
   SSurveyIdRoute: typeof SSurveyIdRoute
   CollectionIndexRoute: typeof CollectionIndexRoute
-  ApiCopilotMcpRoute: typeof ApiCopilotMcpRoute
   ApiCopilotPermissionRoute: typeof ApiCopilotPermissionRoute
   ApiCopilotStreamRoute: typeof ApiCopilotStreamRoute
   ApiFormSubmitFormIdRoute: typeof ApiFormSubmitFormIdRoute
@@ -839,13 +826,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCopilotPermissionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/copilot/mcp': {
-      id: '/api/copilot/mcp'
-      path: '/api/copilot/mcp'
-      fullPath: '/api/copilot/mcp'
-      preLoaderRoute: typeof ApiCopilotMcpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/marketing/surveys/$surveyId/': {
       id: '/marketing/surveys/$surveyId/'
       path: '/$surveyId'
@@ -953,7 +933,6 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingTemplatesRoute: MarketingTemplatesRouteWithChildren,
   SSurveyIdRoute: SSurveyIdRoute,
   CollectionIndexRoute: CollectionIndexRoute,
-  ApiCopilotMcpRoute: ApiCopilotMcpRoute,
   ApiCopilotPermissionRoute: ApiCopilotPermissionRoute,
   ApiCopilotStreamRoute: ApiCopilotStreamRoute,
   ApiFormSubmitFormIdRoute: ApiFormSubmitFormIdRoute,

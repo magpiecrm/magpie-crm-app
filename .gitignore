@@ -26,5 +26,5 @@ local_db.json
 /uploads/
 
 
-# Copilot's private Claude Code config (sessions; never the host account's login)
+# Left behind by older versions, whose copilot ran the Claude Code CLI
 .copilot-claude/

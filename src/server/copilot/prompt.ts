@@ -6,8 +6,8 @@ import type { CopilotClientState } from './types'
 
 /**
  * Render one Zod field as a compact type hint. Deliberately shallow: the model
- * gets the authoritative JSON Schema through MCP, and this reference exists to
- * tell it *when* to use a tool, not to restate the schema.
+ * gets the authoritative JSON Schema with each tool's definition, and this
+ * reference exists to tell it *when* to use a tool, not to restate the schema.
  */
 function describeField(name: string, schema: z.ZodTypeAny): string {
   const optional = schema.safeParse(undefined).success

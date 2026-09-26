@@ -144,15 +144,12 @@ interface AIChatProps {
 }
 
 /**
- * Current Claude model IDs the CLI's --model flag accepts (verified against
- * the installed CLI: full ids and short aliases like "opus"/"sonnet" both
- * resolve, but full ids are unambiguous about which generation actually runs).
- * "CLI Default" with no --model omitted resolves to whatever the CLI ships as
- * its own default (currently Opus 5) rather than duplicating that choice here.
+ * Claude models on the Anthropic API (IDs from Anthropic's models overview).
+ * The default option sends no model, so the server's default (Opus 5.5) runs.
  */
 const CLAUDE_MODELS = [
-  { label: 'Opus 5 (most capable)', value: 'claude-opus-5' },
-  { label: 'Sonnet 5 (balanced)', value: 'claude-sonnet-5' },
+  { label: 'Fable 5.1 (most capable)', value: 'claude-fable-5-1' },
+  { label: 'Sonnet 5 (faster, cheaper)', value: 'claude-sonnet-5' },
   { label: 'Haiku 4.5 (fastest)', value: 'claude-haiku-4-5' },
 ] as const
 
@@ -179,7 +176,7 @@ interface DropdownOption {
 }
 
 const MODEL_OPTIONS: DropdownOption[] = [
-  { id: '', label: 'Claude (Default)', shortLabel: 'Default', icon: <Cpu className="w-3.5 h-3.5 text-orange-500" /> },
+  { id: '', label: 'Opus 5.5 (default)', shortLabel: 'Opus 5.5', icon: <Cpu className="w-3.5 h-3.5 text-orange-500" /> },
   ...CLAUDE_MODELS.map(m => ({
     id: m.value,
     label: m.label,
@@ -224,8 +221,8 @@ const PERMISSION_MODE_OPTIONS: DropdownOption[] = [
 ]
 
 /**
- * Values match the Claude CLI's --effort choices exactly (`claude --help`),
- * which are also the reasoning efforts GPT-6 models take.
+ * Effort levels both APIs take (Anthropic's `output_config.effort`, OpenAI's
+ * `reasoning.effort`). Haiku 4.5 has no effort setting, so it's ignored there.
  */
 const EFFORT_OPTIONS: DropdownOption[] = [
   { id: '', label: 'Default', description: 'The model paces itself.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },

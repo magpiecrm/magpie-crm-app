@@ -52,8 +52,7 @@ export const Route = createFileRoute('/api/copilot/stream')({
         }
 
         // Prefer a live session; fall back to reviving a stored chat (the agent
-        // CLI keeps its own transcript, so it can genuinely be continued);
-        // otherwise start fresh.
+        // rebuilds the conversation from its transcript); otherwise start fresh.
         let session = body.sessionId ? getSession(body.sessionId) : undefined
         if (!session && body.sessionId) {
           const { db } = await import('../../../server/db')
@@ -62,12 +61,6 @@ export const Route = createFileRoute('/api/copilot/stream')({
         session ??= createSession()
         if (body.clientState) updateClientState(session.id, body.clientState)
         setPermissionMode(session.id, body.permissionMode ?? DEFAULT_PERMISSION_MODE)
-
-        // The CLI is a separate process on this machine, so it must reach the
-        // MCP endpoint over the loopback interface — not whatever host the
-        // browser happened to use (LAN IP, Tailscale name, ...).
-        const port = new URL(request.url).port || '3000'
-        const mcpUrl = `http://127.0.0.1:${port}/api/copilot/mcp`
 
         const encoder = new TextEncoder()
         const toolNamesUsed: string[] = []
@@ -78,8 +71,8 @@ export const Route = createFileRoute('/api/copilot/stream')({
          * Append this turn to the stored transcript.
          *
          * Persisted server-side rather than in the browser so the history
-         * survives a reload and stays paired with the CLI session id that can
-         * resume it.
+         * survives a reload, and so the agent can rebuild the conversation
+         * from it after a restart.
          */
         const persistTurn = async (reply: string, isError: boolean) => {
           try {
@@ -131,22 +124,10 @@ export const Route = createFileRoute('/api/copilot/stream')({
 
             send('session', { sessionId: session.id })
 
-            // Subscribe BEFORE starting the turn. The CLI usually takes about a
-            // second to emit anything, but subscribing afterwards is a race that
-            // would silently drop the opening events.
+            // Subscribe BEFORE starting the turn, or its opening events could be
+            // emitted before anyone is listening.
             unsubscribe = subscribeSession(session.id, (event: SessionEvent) => {
               switch (event.type) {
-                case 'session':
-                  // Advisory, not fatal — sent as `notice` (not `error`) so the
-                  // client keeps reading the rest of this turn instead of
-                  // treating it as a terminal failure.
-                  if (event.mcpError) {
-                    send('notice', {
-                      message: `The copilot's tools failed to load — ${event.mcpError}. It can still talk, but cannot act.`,
-                    })
-                  }
-                  break
-
                 case 'text':
                   assistantText += (assistantText ? '\n' : '') + event.text
                   send('text', { text: event.text })
@@ -207,8 +188,6 @@ export const Route = createFileRoute('/api/copilot/stream')({
                 message: body.message,
                 model: body.model,
                 effort: body.effort,
-                permissionMode: body.permissionMode ?? DEFAULT_PERMISSION_MODE,
-                mcpUrl,
               })
             } catch (err: any) {
               send('error', { message: err?.message ?? String(err) })

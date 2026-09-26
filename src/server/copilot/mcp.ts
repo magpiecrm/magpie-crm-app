@@ -108,8 +108,8 @@ export interface ToolOutcome {
 /**
  * Run one tool call: ask for approval when the gate says so, run the handler,
  * and turn the result (or failure) into content for the model. Shared by the
- * MCP servers and the OpenAI loop, so every model gets the same tools, the
- * same approvals and the same error text.
+ * public MCP server and the copilot's agent loop, so every model gets the same
+ * tools, the same approvals and the same error text.
  */
 export async function executeTool(tool: CopilotTool<any>, args: unknown, ctx: ToolContext, gate: Gate | null): Promise<ToolOutcome> {
   try {
@@ -153,9 +153,9 @@ export async function executeTool(tool: CopilotTool<any>, args: unknown, ctx: To
 }
 
 /**
- * Register `tools` on `server`. Shared by the in-app copilot (with its approval
- * gate) and the public MCP server (without one: outside AI apps ask their own
- * user before running a tool that isn't read-only).
+ * Register `tools` on the public MCP server. There's no approval gate here:
+ * outside AI apps ask their own user before running a tool that isn't
+ * read-only. (The in-app copilot calls `executeTool` with its gate directly.)
  */
 function registerTools(
   server: McpServer,
@@ -210,28 +210,6 @@ export function buildPublicMcpServer(): McpServer {
   registerTools(server, PUBLIC_TOOLS, ctx, null, (tool) =>
     tool.costsCredits ? `${tool.description} Spends SocialFetch credits on every call.` : tool.description,
   )
-  return server
-}
-
-/**
- * Build an MCP server exposing the copilot tool registry, bound to one
- * conversation.
- *
- * This runs in-process rather than as a spawned stdio server: the tool handlers
- * need the same database and the same per-session client state as the rest of
- * the app, and an HTTP transport on localhost gets that with no IPC and no
- * second copy of the data layer.
- */
-export function buildMcpServer(sessionId: string): McpServer {
-  const server = new McpServer(
-    { name: 'email-marketing', version: '1.0.0' },
-    {
-      instructions:
-        'Tools for this prospecting and email marketing app. Read before you write: call getLists/getCampaigns/getBlocks to obtain real IDs rather than guessing them.',
-    },
-  )
-
-  registerTools(server, COPILOT_TOOLS, sessionToolContext(sessionId), sessionGate(sessionId))
   return server
 }
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, CheckCircle2, ExternalLink, RefreshCw, Save, Trash2, Zap } from 'lucide-react'
 import { SecretInput } from '../../../components/ui/SecretInput'
 import {
-  getCopilotProvidersFn,
   getCopilotSettingsFn,
   saveCopilotSettingsFn,
   testAnthropicKeyFn,
@@ -28,7 +27,7 @@ const KEYS: KeySpec[] = [
     field: 'anthropicApiKey',
     masked: 'anthropic',
     title: 'Anthropic API key',
-    intro: 'For Claude models. The copilot runs Claude Code with this key, and usage is billed to its account.',
+    intro: 'For Claude models. The copilot calls the Anthropic API with this key, and usage is billed to its account.',
     link: { href: 'https://platform.claude.com/settings/keys', label: 'Create a key in the Claude Console' },
     placeholder: 'sk-ant-...',
     envVar: 'ANTHROPIC_API_KEY',
@@ -173,21 +172,16 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
 }
 
 /**
- * Settings → Copilot: the user's own Anthropic and/or OpenAI API key. Claude
- * runs through the Claude Code CLI, OpenAI models through the API directly.
- * There is deliberately no Claude.ai or ChatGPT sign-in here; see
- * server/copilot/settings.ts.
+ * Settings → Copilot: the user's own Anthropic and/or OpenAI API key, which
+ * the copilot calls those APIs with. There is deliberately no Claude.ai or
+ * ChatGPT sign-in here; see server/copilot/settings.ts.
  */
 export function CopilotTab() {
   const [settings, setSettings] = useState<Masked | null>(null)
-  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
   const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     getCopilotSettingsFn().then(setSettings).catch((e) => setLoadError(e?.message || 'Failed to load settings'))
-    getCopilotProvidersFn()
-      .then((res) => setCliInstalled(res.providers.some((p) => p.id === 'claude' && p.available)))
-      .catch(() => setCliInstalled(null))
   }, [])
 
   const noKey = settings && !settings.anthropic.isSet && !settings.openai.isSet
@@ -212,27 +206,13 @@ export function CopilotTab() {
 
       <div className="flex flex-col gap-2">
         <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Claude Code on this server
+          Why an API key
         </h4>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-          {cliInstalled === false ? (
-            <span className="text-destructive">
-              The <code className="font-mono">claude</code> CLI isn't installed on this server, so Claude models won't
-              run. Install Claude Code (see the README) and reload this page. OpenAI models don't need it.
-            </span>
-          ) : cliInstalled ? (
-            'Installed. It runs with the Anthropic key above in its own settings folder, so it never uses a Claude.ai login on this machine. OpenAI models don\'t need it.'
-          ) : (
-            'Checking…'
-          )}
-        </p>
         <p className="text-[11px] text-muted-foreground leading-relaxed max-w-2xl">
-          Why a key rather than signing in with Claude.ai or ChatGPT: those subscriptions are for one person's own
-          use and can't be shared between an app's users, and Anthropic's terms don't allow apps to offer Claude.ai
-          sign-in at all. An API key
-          can be used by everyone in your team's copy of this app, billed to its owner. The chat's contents (including
-          contact data the copilot reads) go to the provider you pick, so list it as a sub-processor in your privacy
-          notice.
+          Claude.ai and ChatGPT subscriptions are for one person's own use and can't be shared between an app's
+          users, and Anthropic's terms don't allow apps to offer Claude.ai sign-in at all. An API key can be used by
+          everyone in your team's copy of this app, billed to its owner. The chat's contents (including contact data
+          the copilot reads) go to the provider you pick, so list it as a sub-processor in your privacy notice.
         </p>
       </div>
     </div>

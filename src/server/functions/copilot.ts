@@ -1,17 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 
-// The agent loop that used to live here — a one-shot `claude -p` invocation
-// whose reply was scraped for a JSON blob, re-spawned once per tool call — has
-// been replaced by `src/server/copilot/`: a long-lived CLI session driven over
-// stream-json, with the platform's actions exposed as real MCP tools. See
-// `src/routes/api/copilot/stream.ts` for the entry point.
-//
-// What remains here is the copilot's settings: the user's own Anthropic API
-// key, which the CLI runs with, and OpenAI API key, which `copilot/openai.ts`
-// calls OpenAI with (see `copilot/settings.ts`). The app no longer
-// signs the CLI in to a Claude.ai account: Anthropic doesn't allow products to
-// offer or relay Claude.ai login, or to share one subscription between users.
+// The copilot itself lives in `src/server/copilot/` (entry point:
+// `src/routes/api/copilot/stream.ts`). What's here is its settings: the
+// user's own Anthropic and OpenAI API keys (see `copilot/settings.ts`), plus
+// the stored chat history.
 
 export const getCopilotSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -66,7 +59,7 @@ export const getCopilotProvidersFn = createServerFn({ method: 'GET' })
     const { listProviders } = await import('../copilot/providers')
     const { PERMISSION_MODES, DEFAULT_PERMISSION_MODE } = await import('../copilot/permissions')
     return {
-      providers: await listProviders(),
+      providers: listProviders(),
       permissionModes: PERMISSION_MODES,
       defaultPermissionMode: DEFAULT_PERMISSION_MODE,
     }

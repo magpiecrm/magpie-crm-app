@@ -1,20 +1,13 @@
 // Copilot credentials: bring your own Anthropic or OpenAI API key.
 //
-// Claude runs through the Claude Code CLI, and Anthropic's terms require
-// products to authenticate it with an API key rather than a Claude.ai
-// (Free/Pro/Max) login, which is for one person's own use and can't be shared
-// between an app's users (code.claude.com/docs/en/legal-and-compliance).
-// OpenAI models are called on the API directly (copilot/openai.ts), again
-// only with an API key, never a ChatGPT login. So a key is the only way in:
+// The copilot calls Anthropic's and OpenAI's APIs directly (copilot/agent.ts)
+// with the user's own key, never a Claude.ai or ChatGPT login: those are for
+// one person's own use and can't be shared between an app's users, and
+// Anthropic's terms don't allow apps to offer Claude.ai sign-in
+// (code.claude.com/docs/en/legal-and-compliance). So a key is the only way in:
 // saved here (encrypted, like the prospecting keys) or set as
 // ANTHROPIC_API_KEY / OPENAI_API_KEY. Usage is billed to whoever owns the key.
-//
-// The Claude CLI also gets its own config directory, so it never picks up a
-// Claude.ai login (or MCP servers, settings) belonging to the account the app
-// runs as.
 
-import { mkdirSync } from 'fs'
-import { dirname, join } from 'path'
 import { db } from '../db'
 import { env } from '../env'
 import { decryptToken, encryptToken } from '../crypto'
@@ -153,16 +146,4 @@ export async function testOpenAIKey(typed?: string, fetchImpl: typeof fetch = fe
   } catch {
     return { ok: false, error: 'Couldn’t reach OpenAI.' }
   }
-}
-
-/**
- * A config directory owned by the app, next to its database, so the CLI never
- * sees the host account's own Claude login, settings or MCP servers.
- */
-export function copilotConfigDir(): string {
-  const dbPath = env.databasePath()
-  const base = dbPath ? dirname(dbPath) : process.cwd()
-  const dir = join(base, '.copilot-claude')
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  return dir
 }
