@@ -49,7 +49,14 @@ function Lists({ listedOn, unchecked, total }: { listedOn: string[]; unchecked: 
  * verifies from. Checked every six hours in the background; a new listing
  * also raises a notification.
  */
-export function SenderHealthPanel() {
+export function SenderHealthPanel({
+  listedDomainOverride,
+  onOverrideChange,
+}: {
+  /** The blocklisted FROM domain the user chose to keep verifying with. */
+  listedDomainOverride: string | null
+  onOverrideChange: (domain: string | null) => Promise<void>
+}) {
   const queryClient = useQueryClient()
   const [isChecking, setIsChecking] = useState(false)
   const [error, setError] = useState('')
@@ -146,6 +153,23 @@ export function SenderHealthPanel() {
                     <IssueRow key={issue.code} issue={issue} />
                   ))}
                 </ul>
+              )}
+              {report.domain.listedOn.length > 0 && (
+                <label className="flex items-start gap-2 mt-1 text-xs text-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+                    checked={listedDomainOverride === report.domain.domain}
+                    onChange={(e) => onOverrideChange(e.target.checked ? report.domain!.domain : null)}
+                  />
+                  <span>
+                    <span className="font-semibold">Keep verifying anyway (testing)</span>
+                    <span className="block text-[11px] text-muted-foreground leading-snug">
+                      Verification is paused while this domain is listed. Tick this to keep testing with it until your
+                      replacement domain is ready; some mail servers will refuse checks that name it.
+                    </span>
+                  </span>
+                </label>
               )}
             </div>
           )}

@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { firstLastLikelihood } from './formatStats'
 import { domainFromSoaContact, suggestMailDomain } from './mailDomainHint'
-import { withFallback } from './verifiers'
-import type { CheckResult } from './reacher'
 
 describe('domainFromSoaContact', () => {
   it('strips the mailbox label', () => {
@@ -51,33 +49,5 @@ describe('firstLastLikelihood', () => {
     expect(firstLastLikelihood(20000)).toBe('About 74% of people at companies of 10,000+ people use this format.')
     expect(firstLastLikelihood(8)).toBe('About 38% of people at companies of 1–10 people use this format.')
     expect(firstLastLikelihood(null)).toBe('About 48% of work emails use this format.')
-  })
-})
-
-describe('withFallback', () => {
-  const r = (reachability: CheckResult['reachability'], isCatchAll: boolean | null = null): CheckResult => ({ reachability, isCatchAll, outcome: 'ok' })
-
-  it('only asks the fallback when the primary could not check', async () => {
-    let asked = 0
-    const check = withFallback(async () => r('invalid'), async () => { asked++; return r('safe') })
-    expect((await check('a@b.com', 'other')).reachability).toBe('invalid')
-    expect(asked).toBe(0)
-  })
-
-  it('uses a definite fallback answer', async () => {
-    const check = withFallback(async () => ({ ...r('unknown'), detail: 'NeverBounce could not reach the mail server.' }), async () => r('safe'))
-    expect((await check('a@b.com', 'microsoft')).reachability).toBe('safe')
-  })
-
-  it('keeps the primary explanation when the fallback is also unsure', async () => {
-    const check = withFallback(async () => ({ ...r('unknown'), detail: 'primary' }), async () => ({ ...r('unknown'), detail: 'fallback' }))
-    expect((await check('a@b.com', 'other')).detail).toBe('primary')
-  })
-
-  it('treats catch-all as definite on either side', async () => {
-    let asked = 0
-    const check = withFallback(async () => r('unknown', true), async () => { asked++; return r('safe') })
-    expect((await check('a@b.com', 'other')).isCatchAll).toBe(true)
-    expect(asked).toBe(0)
   })
 })

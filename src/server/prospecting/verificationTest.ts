@@ -1,13 +1,11 @@
-// "Test verification" in Settings → Prospecting: does the active verifier
-// work? For Reacher, directly or through each configured proxy; for
-// NeverBounce, through its API (2 credits per run).
+// "Test verification" in Settings → Prospecting: does Reacher work, directly
+// or through each configured proxy?
 //
 // Each route is checked against Gmail and Microsoft 365 (the strictest common
 // provider) using a random address that can't exist, so no real mailbox is
 // ever probed. A definite answer (invalid) means the check worked.
 
 import crypto from 'crypto'
-import { checkEmailNeverBounce, getNeverBounceCredits } from './neverbounce'
 import { checkEmail, type CheckResult } from './reacher'
 import { getActiveVerifier, getProxyConfigs } from './settings'
 
@@ -19,26 +17,13 @@ const MAX_ROUTES = 5
 
 export interface VerificationTestResult {
   configured: boolean
-  provider: 'reacher' | 'neverbounce' | null
+  provider: 'reacher' | null
   results: Array<{ via: string; provider: string; ok: boolean; ms: number; detail?: string }>
-  /** NeverBounce credits left after the test. */
-  credits?: number | null
 }
 
 export async function testVerification(): Promise<VerificationTestResult> {
   const active = getActiveVerifier()
   if (!active) return { configured: false, provider: null, results: [] }
-
-  if (active.provider === 'neverbounce') {
-    const results = await runProbes('NeverBounce', (address) => checkEmailNeverBounce(address, active.apiKey))
-    let credits: number | null = null
-    try {
-      credits = await getNeverBounceCredits(active.apiKey)
-    } catch {
-      // The checks above already report any key problem.
-    }
-    return { configured: true, provider: 'neverbounce', results, credits }
-  }
 
   const { proxies } = getProxyConfigs()
   const routes = proxies.length ? proxies.slice(0, MAX_ROUTES) : [null]

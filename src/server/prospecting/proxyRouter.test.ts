@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ProxyRouter, parseProxyConfig, providerFromMx } from './proxyRouter'
 import { classifySmtpOutcome } from './reacher'
 
@@ -44,13 +44,18 @@ describe('ProxyRouter', () => {
     expect(c.now() - start).toBeGreaterThanOrEqual(60_000)
   })
 
-  it('applies stricter per-provider limits across all proxies', async () => {
+  it('applies stricter per-provider limits per IP, so each proxy adds capacity', async () => {
     const c = clock()
-    const r = new ProxyRouter(proxies, { ...c, perProviderPerMinute: { microsoft: 1, google: 10, other: 60 }, maxWaitMs: 5_000 })
-    await r.acquire('microsoft')
-    await expect(r.acquire('microsoft')).rejects.toThrow(/rate limit/)
+    const one = new ProxyRouter([proxies[0]], { ...c, perProviderPerMinute: { microsoft: 1, google: 10, other: 20 }, maxWaitMs: 5_000 })
+    await one.acquire('microsoft')
+    await expect(one.acquire('microsoft')).rejects.toThrow(/per-minute limit/)
     // Other providers are unaffected.
-    await expect(r.acquire('other')).resolves.toBeTruthy()
+    await expect(one.acquire('other')).resolves.toBeTruthy()
+
+    const two = new ProxyRouter(proxies, { ...c, perProviderPerMinute: { microsoft: 1, google: 10, other: 20 }, maxWaitMs: 5_000 })
+    const labels = [(await two.acquire('microsoft')).proxy?.label, (await two.acquire('microsoft')).proxy?.label]
+    expect(labels.sort()).toEqual(['a', 'b'])
+    await expect(two.acquire('microsoft')).rejects.toThrow(/per-minute limit/)
   })
 
   it('benches a proxy after repeated blocks, and skips it', async () => {
@@ -85,7 +90,7 @@ describe('ProxyRouter', () => {
   it('throws when every proxy is benched', async () => {
     const r = new ProxyRouter([proxies[0]], { ...clock(), benchAfter: 1 })
     ;(await r.acquire('other')).report('timeout')
-    await expect(r.acquire('other')).rejects.toThrow(/benched/)
+    await expect(r.acquire('other')).rejects.toMatchObject({ code: 'benched' })
   })
 
   it('counts a lease report only once', async () => {
@@ -94,6 +99,96 @@ describe('ProxyRouter', () => {
     lease.report('ok')
     lease.report('ok')
     expect(r.health()[0].ok).toBe(1)
+  })
+})
+
+describe('ProxyRouter: per-company limits', () => {
+  it('lets one person\'s guesses through at once, then paces checks to that company', async () => {
+    const c = clock()
+    const r = new ProxyRouter(proxies, { ...c, perDomainBurst: 6, domainWindowMs: 180_000, maxWaitMs: 600_000 })
+    const start = c.now()
+    for (let i = 0; i < 6; i++) await r.acquire('other', 'acme.com')
+    expect(c.now()).toBe(start)
+    await r.acquire('other', 'acme.com')
+    expect(c.now() - start).toBeGreaterThanOrEqual(180_000)
+    // Another company isn't held up.
+    const before = c.now()
+    await r.acquire('other', 'globex.com')
+    expect(c.now()).toBe(before)
+  })
+
+  it('gives a watching user a clear message instead of waiting minutes', async () => {
+    const r = new ProxyRouter(proxies, { ...clock(), perDomainBurst: 1, maxWaitMs: 5_000 })
+    await r.acquire('other', 'acme.com')
+    await expect(r.acquire('other', 'acme.com')).rejects.toThrow(/acme\.com has been checked a lot/)
+  })
+
+  it('stops checking a company for the day after too many rejected guesses', async () => {
+    const c = clock()
+    const r = new ProxyRouter(proxies, { ...c, rejectionsPerDomainPerDay: 3, perDomainBurst: 100 })
+    for (let i = 0; i < 3; i++) (await r.acquire('other', 'acme.com')).report('ok', true)
+    await expect(r.acquire('other', 'acme.com')).rejects.toMatchObject({ code: 'domain_rejections' })
+    await expect(r.acquire('other', 'globex.com')).resolves.toBeTruthy()
+    c.advance(24 * 60 * 60_000 + 1)
+    await expect(r.acquire('other', 'acme.com')).resolves.toBeTruthy()
+  })
+
+  it('does not count checks that hit real mailboxes toward that cap', async () => {
+    const r = new ProxyRouter([proxies[0]], { ...clock(), rejectionsPerDomainPerDay: 2, perDomainBurst: 100, perProxyPerMinute: 100, perProviderPerMinute: { other: 100 } as any })
+    for (let i = 0; i < 10; i++) (await r.acquire('other', 'acme.com')).report('ok', false)
+    await expect(r.acquire('other', 'acme.com')).resolves.toBeTruthy()
+  })
+})
+
+describe('ProxyRouter: daily cap and pausing', () => {
+  it('stops using an IP for the day at its cap, and says so when all are used up', async () => {
+    const r = new ProxyRouter(proxies, { ...clock(), dailyCapPerIp: () => 2 })
+    const labels = []
+    for (let i = 0; i < 4; i++) labels.push((await r.acquire('other')).proxy?.label)
+    expect(labels.sort()).toEqual(['a', 'a', 'b', 'b'])
+    await expect(r.acquire('other')).rejects.toMatchObject({ code: 'daily_cap', message: expect.stringMatching(/2 checks per IP/) })
+    expect(r.health().map((h) => [h.checksToday, h.dailyCap])).toEqual([[2, 2], [2, 2]])
+  })
+
+  it('skips a paused (blocklisted) IP, and pauses verification when every IP is', async () => {
+    let pausedHosts = new Set(['a.example'])
+    const r = new ProxyRouter(proxies, { ...clock(), pausedReason: (p) => (p && pausedHosts.has(p.host) ? `${p.label} is on Spamhaus` : null) })
+    const labels = new Set<string | undefined>()
+    for (let i = 0; i < 4; i++) labels.add((await r.acquire('other')).proxy?.label)
+    expect(labels).toEqual(new Set(['b']))
+    expect(r.health().find((h) => h.label === 'a')?.paused).toMatch(/Spamhaus/)
+
+    pausedHosts = new Set(['a.example', 'b.example'])
+    await expect(r.acquire('other')).rejects.toMatchObject({ code: 'paused', message: expect.stringMatching(/Verification is paused: a is on Spamhaus/) })
+    // Cleared by the next health check: back in use.
+    pausedHosts = new Set()
+    await expect(r.acquire('other')).resolves.toBeTruthy()
+  })
+
+  it('pauses direct checks too when this server\'s own IP is listed', async () => {
+    const r = new ProxyRouter([], { ...clock(), pausedReason: (p) => (p === null ? 'this server is listed' : null) })
+    await expect(r.acquire('other')).rejects.toMatchObject({ code: 'paused' })
+  })
+
+  it('rests an IP whose recent checks are mostly blocked, even if not in a row, and says so', async () => {
+    const c = clock()
+    const onPause = vi.fn()
+    const r = new ProxyRouter([proxies[0]], {
+      ...c,
+      benchAfter: 99,
+      blockRateWindow: 10,
+      blockRateMinChecks: 10,
+      blockRatePause: 0.3,
+      blockRatePauseMs: 60 * 60_000,
+      onPause,
+      perProxyPerMinute: 100,
+    })
+    // blocked, ok, ok, blocked, ok, ok, blocked … : never 2 in a row, but 40% blocked.
+    for (let i = 0; i < 10; i++) (await r.acquire('other')).report(i % 3 === 0 ? 'blocked' : 'ok')
+    expect(onPause).toHaveBeenCalledWith('a', expect.stringMatching(/40% of its last checks were blocked/))
+    expect(r.health()[0].benchedUntil).not.toBeNull()
+    c.advance(60 * 60_000 + 1)
+    expect(r.health()[0].benchedUntil).toBeNull()
   })
 })
 

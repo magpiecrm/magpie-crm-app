@@ -19,8 +19,9 @@ prompts.
     interfaces in `types.ts`; it maps responses down to the few allowed fields
     (name, title, seniority, company, domain, country, profile URL) and nothing
     else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via the
-    verifier chosen in settings: `reacher.ts` (through `proxyRouter.ts`) or
-    `neverbounce.ts`. `reveal.ts` finds one
+    self-hosted Reacher (`reacher.ts`), through `proxyRouter.ts`, which holds
+    the per-IP and per-company rate limits and pauses listed IPs.
+    `reveal.ts` finds one
     email without saving (logged to the disclosure log like a save). `save.ts`
     is the only place contacts get created from search results; `suppression.ts` holds the
     HMAC-hashed opt-out list. Search results are never persisted, and only

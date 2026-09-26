@@ -261,15 +261,24 @@ interface DbSchema {
 
 export interface ProspectingSettingsRecord {
   secrets?: string
-  /** Which service verifies emails. Absent means "pick from what's configured". */
-  verification_provider?: 'reacher' | 'neverbounce' | 'none'
-  /** With NeverBounce, retry "couldn't be checked" results through Reacher. */
-  reacher_fallback?: boolean
+  /**
+   * Whether emails are verified (Reacher) or not. Absent means "Reacher when
+   * it's set up". `neverbounce` may linger from before it was removed; it's
+   * treated as absent.
+   */
+  verification_provider?: 'reacher' | 'none' | 'neverbounce'
   /** Only hand over emails the mail server confirmed. Absent means true. */
   verified_only?: boolean
   reacher_url?: string
   reacher_from_email?: string
   reacher_hello_name?: string
+  /** Checks per verifying IP per day. Absent means the default (1,500). */
+  verification_daily_cap?: number
+  /**
+   * Keep verifying even though this FROM domain is blocklisted (for testing
+   * until a replacement is ready). Only applies to this exact domain.
+   */
+  listed_domain_override?: string | null
   updated_at: string
 }
 

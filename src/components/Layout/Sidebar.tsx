@@ -151,31 +151,10 @@ export function Sidebar({
               <span className="text-[10px] text-muted-foreground">3 / search</span>
             </div>
           )}
-          {/* Optional chaining: a status fetched before this field existed
-              (e.g. across a hot reload) mustn't crash the sidebar. */}
-          {status?.neverbounce?.configured && (
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="font-mono text-[10px] text-accent mb-1 font-medium uppercase tracking-[0.08em]">
-                NeverBounce Credits{!status.neverbounce.inUse && <span className="font-normal normal-case text-muted-foreground"> (not in use)</span>}
-              </p>
-              {status.neverbounce.credits === null ? (
-                <p className="text-xs text-muted-foreground">Unavailable</p>
-              ) : (
-                <div className="flex justify-between items-baseline">
-                  <span className="text-xl font-display font-semibold tabular-nums text-foreground">{status.neverbounce.credits.toLocaleString()}</span>
-                  <span className="text-[10px] text-muted-foreground">1 / check</span>
-                </div>
-              )}
-            </div>
-          )}
           {status && (
             <p className="text-[10px] text-muted-foreground mt-2">
               Email verification:{' '}
-              {status.verification.provider === 'reacher'
-                ? 'Reacher'
-                : status.verification.provider === 'neverbounce'
-                  ? 'NeverBounce'
-                  : 'off (best guess only)'}
+              {status.verification.provider === 'reacher' ? 'Reacher' : 'off (best guess only)'}
             </p>
           )}
           {(status?.senderHealth?.level === 'critical' || status?.senderHealth?.level === 'warning') && (

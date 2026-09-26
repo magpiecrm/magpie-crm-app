@@ -69,11 +69,6 @@ export const env = {
   anthropic: {
     apiKey: () => readEnv('ANTHROPIC_API_KEY'),
   },
-  // NeverBounce: hosted email verification, the alternative to Reacher. The
-  // key is normally saved in Settings → Prospecting; this is the fallback.
-  neverbounce: {
-    apiKey: () => readEnv('NEVERBOUNCE_API_KEY'),
-  },
   // Reacher (reacherhq/check-if-email-exists) runs as its own service. Optional:
   // without it, email finding falls back to an unverified best-guess candidate.
   // URL, secret, FROM and HELO can also be set in Settings → Prospecting.

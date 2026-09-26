@@ -145,26 +145,18 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { getSocialFetchBalance } = await import('../prospecting/socialfetch')
-    const { getNeverBounceCredits } = await import('../prospecting/neverbounce')
-    const { getActiveVerifier, getNeverBounceKey, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey } = await import(
-      '../prospecting/settings'
-    )
+    const { getActiveVerifier, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey } = await import('../prospecting/settings')
     const { getProxyRouter } = await import('../prospecting/runtime')
 
     const configured = isSocialFetchConfigured()
-    const nbKey = getNeverBounceKey()
-    // Both balance calls are free. A failure shows as "Unavailable"; the
-    // settings page's tests give the reason.
-    const [balance, nbCredits] = await Promise.all([
-      configured ? getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : Promise.resolve(null),
-      nbKey ? getNeverBounceCredits(nbKey).catch(() => null) : Promise.resolve(null),
-    ])
+    // The balance call is free. A failure shows as "Unavailable"; the
+    // settings page's test gives the reason.
+    const balance = configured ? await getSocialFetchBalance(requireSocialFetchKey()).catch(() => null) : null
     const verifier = getActiveVerifier()
     const { db } = await import('../db')
     const health = db.getSenderHealth()
     return {
       socialfetch: { configured, balance },
-      neverbounce: { configured: Boolean(nbKey), credits: nbCredits, inUse: verifier?.provider === 'neverbounce' },
       verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly() },
       reacher: {
         configured: verifier?.provider === 'reacher',
@@ -172,7 +164,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       },
       // Only while Reacher is verifying: an old report shouldn't warn after switching away.
       senderHealth:
-        health && (verifier?.provider === 'reacher' || (verifier?.provider === 'neverbounce' && verifier.fallback))
+        health && verifier?.provider === 'reacher'
           ? {
               level: health.level,
               checkedAt: health.checked_at,
@@ -217,11 +209,11 @@ const settingsInput = z.object({
     )
     .max(50)
     .optional(),
-  verificationProvider: z.enum(['reacher', 'neverbounce', 'none']).optional(),
-  neverbounceApiKey: z.string().trim().max(200).optional(),
-  reacherFallback: z.boolean().optional(),
+  verificationProvider: z.enum(['reacher', 'none']).optional(),
   verifiedOnly: z.boolean().optional(),
-  clear: z.array(z.enum(['socialfetchApiKey', 'reacherSecret', 'neverbounceApiKey'])).optional(),
+  verificationDailyCap: z.number().int().min(50).max(100_000).optional(),
+  listedDomainOverride: z.string().trim().max(253).nullable().optional(),
+  clear: z.array(z.enum(['socialfetchApiKey', 'reacherSecret'])).optional(),
 })
 
 export const saveProspectingSettingsFn = createServerFn({ method: 'POST' })

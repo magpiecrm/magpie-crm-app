@@ -116,46 +116,35 @@ describe('verification provider', () => {
     expect(settings.getActiveVerifier()).toBeNull()
   })
 
-  it('picks whatever is configured when nothing was chosen, Reacher first', () => {
-    settings.saveProspectingSettings({ neverbounceApiKey: 'secret_nb_key_1234567890' })
-    expect(settings.getActiveVerifier()).toEqual({ provider: 'neverbounce', apiKey: 'secret_nb_key_1234567890', fallback: null })
+  it('is Reacher once it is set up, unless switched off', () => {
     settings.saveProspectingSettings({ reacherUrl: 'http://reacher:8080' })
+    expect(settings.getActiveVerifier()).toMatchObject({ provider: 'reacher', reacher: { url: 'http://reacher:8080' } })
+    settings.saveProspectingSettings({ verificationProvider: 'none' })
+    expect(settings.getActiveVerifier()).toBeNull()
+    settings.saveProspectingSettings({ verificationProvider: 'reacher' })
     expect(settings.getActiveVerifier()?.provider).toBe('reacher')
   })
 
-  it('honours an explicit choice, and never silently falls back to the other service', () => {
-    settings.saveProspectingSettings({ reacherUrl: 'http://reacher:8080', verificationProvider: 'neverbounce' })
-    expect(settings.getActiveVerifier()).toBeNull()
-    settings.saveProspectingSettings({ neverbounceApiKey: 'secret_nb_key_1234567890' })
-    expect(settings.getActiveVerifier()?.provider).toBe('neverbounce')
-    settings.saveProspectingSettings({ verificationProvider: 'none' })
-    expect(settings.getActiveVerifier()).toBeNull()
-  })
-
-  it('adds Reacher as a fallback for NeverBounce only when asked and configured', () => {
-    settings.saveProspectingSettings({ verificationProvider: 'neverbounce', neverbounceApiKey: 'secret_nb_key_1234567890' })
-    expect(settings.getActiveVerifier()).toMatchObject({ provider: 'neverbounce', fallback: null })
-    settings.saveProspectingSettings({ reacherFallback: true })
-    expect(settings.getActiveVerifier()).toMatchObject({ fallback: null })
-    settings.saveProspectingSettings({ reacherUrl: 'http://reacher:8080' })
-    expect(settings.getActiveVerifier()).toMatchObject({ provider: 'neverbounce', fallback: { url: 'http://reacher:8080' } })
-    expect(settings.getMaskedProspectingSettings().verification.reacherFallback).toBe(true)
-  })
-
-  it('stores the NeverBounce key encrypted, masks it, and can remove it', () => {
-    settings.saveProspectingSettings({ neverbounceApiKey: 'secret_nb_key_abcd9876' })
-    expect(JSON.stringify(stored)).not.toContain('secret_nb_key_abcd9876')
-    const masked = settings.getMaskedProspectingSettings()
-    expect(masked.neverbounce).toEqual({ isSet: true, hint: '…9876', source: 'db' })
-    expect(JSON.stringify(masked)).not.toContain('secret_nb_key_abcd9876')
-    settings.saveProspectingSettings({ clear: ['neverbounceApiKey'] })
-    expect(settings.getMaskedProspectingSettings().neverbounce.isSet).toBe(false)
-  })
-
-  it('falls back to NEVERBOUNCE_API_KEY and rejects obviously wrong keys', () => {
+  // NeverBounce was removed; settings saved before that must not break or linger.
+  it('treats a leftover NeverBounce choice as automatic, and ignores its old key', async () => {
+    const { encryptToken, decryptToken } = await import('../crypto')
+    const { env } = await import('../env')
     process.env.NEVERBOUNCE_API_KEY = 'secret_from_env_12345678'
-    expect(settings.getActiveVerifier()).toEqual({ provider: 'neverbounce', apiKey: 'secret_from_env_12345678', fallback: null })
-    expect(() => settings.saveProspectingSettings({ neverbounceApiKey: 'short' })).toThrow(/NeverBounce/)
+    stored = {
+      secrets: encryptToken({ neverbounceApiKey: 'secret_old_nb_key' }, env.credentialsSecret()),
+      verification_provider: 'neverbounce',
+      updated_at: '2026-01-01T00:00:00Z',
+    }
+    expect(settings.getActiveVerifier()).toBeNull()
+    expect(settings.getMaskedProspectingSettings().verification.chosen).toBeNull()
+
+    settings.saveProspectingSettings({ reacherUrl: 'http://reacher:8080' })
+    expect(settings.getActiveVerifier()?.provider).toBe('reacher')
+    // The next save drops the old key (here the only secret, so nothing is left) and the old choice.
+    expect(stored!.secrets).toBeUndefined()
+    settings.saveProspectingSettings({ socialfetchApiKey: 'sfk_live_key_0001' })
+    expect(decryptToken(stored!.secrets!, env.credentialsSecret())).toEqual({ socialfetchApiKey: 'sfk_live_key_0001' })
+    expect(stored!.verification_provider).toBeUndefined()
   })
 })
 

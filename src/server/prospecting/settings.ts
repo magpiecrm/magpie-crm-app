@@ -14,7 +14,6 @@ import { parseProxyConfig, type ProxyConfig } from './proxyRouter'
 interface Secrets {
   socialfetchApiKey?: string
   reacherSecret?: string
-  neverbounceApiKey?: string
   /** SOCKS5 proxies, stored in the encrypted blob because they hold passwords. */
   proxies?: ProxyConfig[]
 }
@@ -65,44 +64,37 @@ export function getProxyConfigs(): { proxies: ProxyConfig[]; source: Source } {
 
 const proxyKey = (p: Pick<ProxyConfig, 'host' | 'port' | 'username'>) => `${p.host}:${p.port}:${p.username ?? ''}`
 
-type VerificationProvider = 'reacher' | 'neverbounce' | 'none'
+type VerificationProvider = 'reacher' | 'none'
 
-function neverbounceKey(): { value?: string; source: Source } {
-  const stored = clean(readSecrets().secrets.neverbounceApiKey)
-  if (stored) return { value: stored, source: 'db' }
-  const fromEnv = clean(env.neverbounce.apiKey())
-  return fromEnv ? { value: fromEnv, source: 'env' } : { source: null }
-}
-
-/** The NeverBounce key in use (saved, else env), whether or not NeverBounce is the active verifier. */
-export function getNeverBounceKey(): string | null {
-  return neverbounceKey().value ?? null
-}
-
-export type ActiveVerifier =
-  | { provider: 'reacher'; reacher: ReacherConfig }
-  /** `fallback`: Reacher, when the user asked for NeverBounce's unknowns to be retried there. */
-  | { provider: 'neverbounce'; apiKey: string; fallback: ReacherConfig | null }
-  | null
+export type ActiveVerifier = { provider: 'reacher'; reacher: ReacherConfig } | null
 
 /**
- * The verifier emails are actually checked with. An explicit choice in
- * Settings wins; otherwise whichever is configured, Reacher first. A choice
- * whose settings are missing means no verification rather than silently
- * falling back to the other service.
+ * The verifier emails are checked with: Reacher, when it's set up and not
+ * switched off in Settings. (A leftover choice of NeverBounce, which was
+ * removed, counts as "automatic".)
  */
 export function getActiveVerifier(): ActiveVerifier {
-  const stored = db.getProspectingSettings()
-  const chosen = stored?.verification_provider
+  if (db.getProspectingSettings()?.verification_provider === 'none') return null
   const reacher = getReacherConfig()
-  const nbKey = neverbounceKey().value
-  const fallback = stored?.reacher_fallback ? reacher : null
-  if (chosen === 'none') return null
-  if (chosen === 'reacher') return reacher ? { provider: 'reacher', reacher } : null
-  if (chosen === 'neverbounce') return nbKey ? { provider: 'neverbounce', apiKey: nbKey, fallback } : null
-  if (reacher) return { provider: 'reacher', reacher }
-  if (nbKey) return { provider: 'neverbounce', apiKey: nbKey, fallback }
-  return null
+  return reacher ? { provider: 'reacher', reacher } : null
+}
+
+const DEFAULT_DAILY_CAP = 1_500
+
+/** Checks per verifying IP per day (Settings → Prospecting). */
+export function getVerificationDailyCap(): number {
+  return db.getProspectingSettings()?.verification_daily_cap ?? DEFAULT_DAILY_CAP
+}
+
+/** The blocklisted FROM domain the user chose to keep verifying with, if any. */
+export function getListedDomainOverride(): string | null {
+  return db.getProspectingSettings()?.listed_domain_override ?? null
+}
+
+/** The FROM address's domain, without decrypting anything (it isn't secret). */
+export function getReacherFromDomain(): string | null {
+  const from = clean(db.getProspectingSettings()?.reacher_from_email) ?? clean(env.reacher.fromEmail())
+  return from?.split('@')[1]?.toLowerCase() ?? null
 }
 
 /**
@@ -138,11 +130,12 @@ export interface SaveProspectingInput {
    */
   proxies?: ProxyConfig[]
   verificationProvider?: VerificationProvider
-  neverbounceApiKey?: string
-  reacherFallback?: boolean
   verifiedOnly?: boolean
+  verificationDailyCap?: number
+  /** A blocklisted FROM domain to keep verifying with anyway; null stops that. */
+  listedDomainOverride?: string | null
   /** Secret fields to remove. Blank secret inputs otherwise mean "keep". */
-  clear?: Array<'socialfetchApiKey' | 'reacherSecret' | 'neverbounceApiKey'>
+  clear?: Array<'socialfetchApiKey' | 'reacherSecret'>
 }
 
 export function saveProspectingSettings(input: SaveProspectingInput) {
@@ -181,14 +174,10 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
     next.proxies = cleaned
   }
 
-  const newNbKey = clean(input.neverbounceApiKey)
-  if (newNbKey && (/\s/.test(newNbKey) || newNbKey.length < 16)) {
-    throw new Error('That doesn’t look like a NeverBounce API key.')
-  }
-
   for (const field of input.clear ?? []) delete next[field]
+  // NeverBounce was removed; don't carry its old key forward.
+  delete (next as Secrets & { neverbounceApiKey?: string }).neverbounceApiKey
   if (newKey) next.socialfetchApiKey = newKey
-  if (newNbKey) next.neverbounceApiKey = newNbKey
   if (clean(input.reacherSecret)) next.reacherSecret = clean(input.reacherSecret)
 
   const reacherUrl = clean(input.reacherUrl)
@@ -198,9 +187,10 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
 
   db.saveProspectingSettings({
     secrets: Object.keys(next).length ? encryptToken(next, env.credentialsSecret()) : undefined,
-    verification_provider: input.verificationProvider ?? current?.verification_provider,
-    reacher_fallback: input.reacherFallback ?? current?.reacher_fallback,
+    verification_provider: input.verificationProvider ?? (current?.verification_provider === 'none' ? 'none' : current?.verification_provider === 'reacher' ? 'reacher' : undefined),
     verified_only: input.verifiedOnly ?? current?.verified_only,
+    verification_daily_cap: input.verificationDailyCap ?? current?.verification_daily_cap,
+    listed_domain_override: input.listedDomainOverride === undefined ? current?.listed_domain_override : input.listedDomainOverride,
     reacher_url: input.reacherUrl === undefined ? current?.reacher_url : reacherUrl,
     reacher_from_email: input.reacherFromEmail === undefined ? current?.reacher_from_email : fromEmail,
     reacher_hello_name: input.reacherHelloName === undefined ? current?.reacher_hello_name : helloName,
@@ -211,7 +201,6 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
 /** What the settings form shows. Secrets are never sent back, only a hint. */
 export function getMaskedProspectingSettings() {
   const key = socialfetchKey()
-  const nb = neverbounceKey()
   const active = getActiveVerifier()
   const reacher = getReacherConfig()
   const stored = db.getProspectingSettings()
@@ -237,17 +226,13 @@ export function getMaskedProspectingSettings() {
         list: proxies.map((p) => ({ label: p.label ?? '', host: p.host, port: p.port, username: p.username ?? '', passwordSet: Boolean(p.password) })),
       }
     })(),
-    neverbounce: {
-      isSet: Boolean(nb.value),
-      hint: nb.value ? `…${nb.value.slice(-4)}` : null,
-      source: nb.source,
-    },
     verification: {
       /** What the user picked; null means automatic. */
-      chosen: (db.getProspectingSettings()?.verification_provider ?? null) as VerificationProvider | null,
+      chosen: (stored?.verification_provider === 'reacher' || stored?.verification_provider === 'none' ? stored.verification_provider : null) as VerificationProvider | null,
       active: active?.provider ?? null,
-      reacherFallback: Boolean(db.getProspectingSettings()?.reacher_fallback),
       verifiedOnly: isVerifiedOnly(),
+      dailyCap: getVerificationDailyCap(),
+      listedDomainOverride: getListedDomainOverride(),
     },
     credsUnreadable: readSecrets().unreadable,
     usingDefaultEncryptionSecret: env.usingDefaultCredentialsSecret(),

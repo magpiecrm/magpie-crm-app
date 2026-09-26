@@ -10,8 +10,7 @@
 //      pattern. Only the pattern is stored, never the name or address.
 //
 // Without a verifier configured, steps 2-4 are skipped and the top candidate
-// is returned as `unverified`. With NeverBounce, step 2 is skipped: it flags
-// catch-all domains in its answer to the first real candidate.
+// is returned as `unverified`.
 
 import crypto from 'crypto'
 import type { EmailDomainRecord } from '../db'
@@ -36,7 +35,7 @@ const MAX_CHECKS_PER_PERSON = 6
 /**
  * "Unknown" answers in a row, with nothing definite yet, before giving up on
  * a person: the mail server itself can't be checked, so more guesses would
- * only spend credits (NeverBounce) or probes (Reacher) for the same answer.
+ * only spend more probes for the same answer.
  */
 const MAX_UNKNOWN_STREAK = 2
 
@@ -87,15 +86,11 @@ export interface FinderDeps {
   updateDomain(domain: string, patch: Partial<Omit<EmailDomainRecord, 'domain'>>): EmailDomainRecord
   /** MX hostnames; `[]` when the domain has none. Throws on lookup failure. */
   resolveMx(domain: string): Promise<string[]>
-  /** Null when no verifier (Reacher or NeverBounce) is configured. */
+  /** Null when verification (Reacher) isn't set up. */
   verifier: {
-    acquire(provider: MailProvider): Promise<Lease>
+    /** A slot to check an address at `domain`, within the per-IP and per-company limits. */
+    acquire(provider: MailProvider, domain: string): Promise<Lease>
     check(email: string, lease: Lease, provider: MailProvider): Promise<CheckResult>
-    /**
-     * The service reports catch-all domains itself (NeverBounce), so the
-     * random-address probe would only cost an extra check.
-     */
-    detectsCatchAll?: boolean
   } | null
   now(): number
   /** Another domain that might be the real mail domain, for a suggestion. */
@@ -155,14 +150,13 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
 
     if (
       deps.verifier &&
-      !deps.verifier.detectsCatchAll &&
       rec.accepts_mail !== false &&
       isStale(rec.catch_all_checked_at, DOMAIN_REFRESH_MS, now)
     ) {
       const probe = `${crypto.randomBytes(9).toString('hex')}@${domain}`
-      const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other')
+      const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other', domain)
       const result = await deps.verifier.check(probe, lease, rec.mx_provider ?? 'other')
-      lease.report(result.outcome)
+      lease.report(result.outcome, result.reachability === 'invalid')
       const catchAll =
         result.isCatchAll ?? (result.reachability === 'safe' || result.reachability === 'risky' ? true : result.reachability === 'invalid' ? false : null)
       if (catchAll !== null) {
@@ -277,9 +271,9 @@ export async function findEmail(
   }
 
   for (const candidate of candidates) {
-    const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other')
+    const lease = await deps.verifier.acquire(rec.mx_provider ?? 'other', domain)
     const result = await deps.verifier.check(candidate.email, lease, rec.mx_provider ?? 'other')
-    lease.report(result.outcome)
+    lease.report(result.outcome, result.reachability === 'invalid')
     const verdict = result.isCatchAll ? 'catch-all' : result.reachability
     tally[verdict] = (tally[verdict] ?? 0) + 1
     tried++

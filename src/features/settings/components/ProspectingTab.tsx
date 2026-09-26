@@ -41,10 +41,9 @@ export function ProspectingTab() {
 
   // Secrets start blank: a blank secret field means "keep what's saved".
   const [apiKey, setApiKey] = useState('')
-  const [provider, setProvider] = useState<'reacher' | 'neverbounce' | 'none'>('none')
-  const [nbKey, setNbKey] = useState('')
-  const [reacherFallback, setReacherFallback] = useState(false)
+  const [provider, setProvider] = useState<'reacher' | 'none'>('none')
   const [verifiedOnly, setVerifiedOnly] = useState(true)
+  const [dailyCap, setDailyCap] = useState('')
   const [reacherUrl, setReacherUrl] = useState('')
   const [reacherSecret, setReacherSecret] = useState('')
   const [fromEmail, setFromEmail] = useState('')
@@ -80,9 +79,8 @@ export function ProspectingTab() {
     setReacherUrl(s.reacher.url)
     setFromEmail(s.reacher.fromEmail)
     setHelloName(s.reacher.helloName)
-    setNbKey('')
-    setReacherFallback(s.verification.reacherFallback)
     setVerifiedOnly(s.verification.verifiedOnly)
+    setDailyCap(String(s.verification.dailyCap))
     // Nothing chosen yet: show whatever is actually in use.
     setProvider(s.verification.chosen ?? s.verification.active ?? 'none')
     setProxies(toRows(s))
@@ -98,7 +96,7 @@ export function ProspectingTab() {
 
   const refreshSidebar = () => queryClient.invalidateQueries({ queryKey: queryKeys.prospects.status() })
 
-  const save = async (extra: { clear?: Array<'socialfetchApiKey' | 'reacherSecret' | 'neverbounceApiKey'> } = {}) => {
+  const save = async (extra: { clear?: Array<'socialfetchApiKey' | 'reacherSecret'> } = {}) => {
     setIsSaving(true)
     setError('')
     setSuccess('')
@@ -111,9 +109,8 @@ export function ProspectingTab() {
           reacherFromEmail: fromEmail,
           reacherHelloName: helloName,
           verificationProvider: provider,
-          neverbounceApiKey: nbKey || undefined,
-          reacherFallback,
           verifiedOnly,
+          verificationDailyCap: dailyCap && Number(dailyCap) > 0 ? Number(dailyCap) : undefined,
           proxies: proxiesDirty
             ? proxies
                 .filter((p) => p.host.trim())
@@ -302,12 +299,11 @@ export function ProspectingTab() {
           How found emails are checked before they're shown or saved. Without verification, every email is an unverified
           best guess.
         </p>
-        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-3 gap-2 max-w-3xl">
+        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-2xl">
           {(
             [
               ['none', 'Off', 'Best guesses only'],
               ['reacher', 'Reacher', 'Self-hosted, free. Checks come from your server or proxies.'],
-              ['neverbounce', 'NeverBounce', 'Hosted, about $0.008 per check. Their IPs, not yours.'],
             ] as const
           ).map(([value, label, hint]) => (
             <label
@@ -348,66 +344,9 @@ export function ProspectingTab() {
         </label>
 
         {settings?.verification.active && settings.verification.active !== provider && (
-          <p className="text-xs text-accent">Currently using {settings.verification.active === 'reacher' ? 'Reacher' : 'NeverBounce'}. Save to switch.</p>
+          <p className="text-xs text-accent">Currently using Reacher. Save to switch.</p>
         )}
 
-        {provider === 'neverbounce' && (
-          <div className="flex flex-col gap-1.5 max-w-xl mt-1">
-            <label htmlFor="neverbounce-key" className="text-xs font-semibold text-foreground">
-              NeverBounce API key
-            </label>
-            <SecretInput
-              id="neverbounce-key"
-              value={nbKey}
-              onChange={setNbKey}
-              placeholder={settings?.neverbounce.isSet ? `Saved (${settings.neverbounce.hint}). Enter a new key to replace it` : 'secret_...'}
-            />
-            <span className="text-xs text-muted-foreground leading-relaxed">
-              {settings?.neverbounce.source === 'env'
-                ? 'Currently using NEVERBOUNCE_API_KEY from the environment. A key saved here takes priority. '
-                : settings?.neverbounce.source === 'db'
-                  ? 'Saved here and stored encrypted. '
-                  : ''}
-              One credit per check; a company's first person can take up to 6, later people 1. NeverBounce (owned by
-              ZoomInfo) receives the addresses being checked: accept its{' '}
-              <a
-                href="https://storage.googleapis.com/cws-neverbounce-assets.zoominfo.com/Never_Bounce_C2_P_SC_Cs_w_UK_Addendum_03_2026_1_fea3cada8c/Never_Bounce_C2_P_SC_Cs_w_UK_Addendum_03_2026_1_fea3cada8c.pdf"
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent hover:underline"
-              >
-                data processing agreement
-              </a>{' '}
-              and list it as a sub-processor in your privacy notice.
-            </span>
-            <label className="flex items-start gap-2 mt-2 text-xs text-foreground cursor-pointer max-w-xl">
-              <input
-                type="checkbox"
-                className="mt-0.5 rounded border-border text-accent focus:ring-accent"
-                checked={reacherFallback}
-                onChange={(e) => setReacherFallback(e.target.checked)}
-              />
-              <span>
-                <span className="font-semibold">Retry "couldn't be checked" with Reacher</span>
-                <span className="block text-[11px] text-muted-foreground leading-snug">
-                  When NeverBounce can't reach a company's mail server, ask your Reacher server instead. Free, but those
-                  checks come from Reacher's IP (or its proxies).
-                  {!settings?.reacher.url && ' Needs a Reacher URL: pick Reacher above, fill it in, save, then switch back.'}
-                </span>
-              </span>
-            </label>
-            {settings?.neverbounce.source === 'db' && !nbKey && (
-              <button
-                type="button"
-                onClick={() => save({ clear: ['neverbounceApiKey'] })}
-                disabled={isSaving}
-                className="self-start mt-1 py-1.5 px-2 text-xs font-semibold text-destructive hover:bg-destructive/10 rounded-md-s inline-flex items-center gap-1.5"
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Remove saved key
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       {provider === 'reacher' && (
@@ -530,6 +469,22 @@ export function ProspectingTab() {
             </button>
           </div>
 
+          <div className="flex flex-col gap-1.5 max-w-xs">
+            <label htmlFor="daily-cap" className="text-xs font-semibold text-foreground">Daily checks per IP</label>
+            <input
+              id="daily-cap"
+              inputMode="numeric"
+              value={dailyCap}
+              onChange={(e) => setDailyCap(e.target.value.replace(/\D/g, ''))}
+              className={INPUT_CLASS}
+            />
+            <span className="text-[11px] text-muted-foreground leading-snug">
+              Each verifying IP stops for the day after this many checks; add another proxy for more. Checks to one
+              company are also paced (a few at once, then about 2 a minute) and stop for the day after 20 rejected
+              guesses, which is what address harvesting looks like.
+            </span>
+          </div>
+
           {proxyHealth.length > 0 && (
             <div className="max-w-3xl border border-border rounded-md-s overflow-hidden">
               <table className="w-full text-xs">
@@ -541,6 +496,7 @@ export function ProspectingTab() {
                     <th className="text-right px-3 py-2 font-semibold">Blocked</th>
                     <th className="text-right px-3 py-2 font-semibold">Timeouts</th>
                     <th className="text-right px-3 py-2 font-semibold" title="Company mail servers that refused a connection from this proxy">Unreachable</th>
+                    <th className="text-right px-3 py-2 font-semibold">Today</th>
                     <th className="text-left px-3 py-2 font-semibold">Status</th>
                   </tr>
                 </thead>
@@ -553,9 +509,16 @@ export function ProspectingTab() {
                       <td className="px-3 py-2 text-right tabular-nums">{h.blocked}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.timeouts}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{h.unreachable ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                        {h.checksToday ?? 0} / {h.dailyCap ?? '—'}
+                      </td>
                       <td className="px-3 py-2">
-                        {h.benchedUntil ? (
-                          <span className="text-destructive">Benched until {new Date(h.benchedUntil).toLocaleTimeString()}</span>
+                        {h.paused ? (
+                          <span className="text-destructive" title={h.paused}>Paused: blocklisted</span>
+                        ) : h.benchedUntil ? (
+                          <span className="text-destructive">Resting until {new Date(h.benchedUntil).toLocaleTimeString()}</span>
+                        ) : h.checksToday >= h.dailyCap ? (
+                          <span className="text-amber-600 dark:text-amber-400">Daily limit reached</span>
                         ) : (
                           <span className="text-emerald-600 dark:text-emerald-400">Active</span>
                         )}
@@ -572,8 +535,15 @@ export function ProspectingTab() {
       )}
 
       {/* Shown for the saved setup: the check runs against what's saved, not the form. */}
-      {(settings?.verification.active === 'reacher' ||
-        (settings?.verification.active === 'neverbounce' && settings.verification.reacherFallback)) && <SenderHealthPanel />}
+      {settings?.verification.active === 'reacher' && (
+        <SenderHealthPanel
+          listedDomainOverride={settings?.verification.listedDomainOverride ?? null}
+          onOverrideChange={async (domain) => {
+            apply(await saveProspectingSettingsFn({ data: { listedDomainOverride: domain } }))
+            refreshSidebar()
+          }}
+        />
+      )}
 
       {/* Test */}
       <div className="flex flex-col gap-3">
@@ -581,8 +551,8 @@ export function ProspectingTab() {
           Test verification
         </h4>
         <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-          Checks a made-up address at Gmail and at Microsoft 365 with the saved verifier (through Reacher: directly or
-          via each proxy; through NeverBounce: 2 credits). No real mailbox is contacted. Save your changes first.
+          Checks a made-up address at Gmail and at Microsoft 365 through Reacher, directly or via each proxy. No real
+          mailbox is contacted. Save your changes first.
         </p>
         <div>
           <button
@@ -603,11 +573,6 @@ export function ProspectingTab() {
         )}
         {verification?.configured && (
           <div className="max-w-3xl border border-border rounded-md-s divide-y divide-border">
-            {verification.provider === 'neverbounce' && verification.credits != null && (
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                NeverBounce credits left: <span className="font-semibold text-foreground">{verification.credits.toLocaleString()}</span>
-              </div>
-            )}
             {verification.results.map((r, i) => (
               <div key={i} className="px-3 py-2 flex items-start gap-2 text-xs">
                 {r.ok ? (

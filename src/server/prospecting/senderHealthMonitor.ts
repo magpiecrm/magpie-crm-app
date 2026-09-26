@@ -8,7 +8,8 @@ import { promises as dns } from 'dns'
 import { db } from '../db'
 import { notify } from '../notify'
 import { checkSenderHealth, newCriticalIssues, type HealthDeps, type HealthTarget, type SenderHealthReport } from './senderHealth'
-import { getActiveVerifier, getProxyConfigs, type ReacherConfig } from './settings'
+import { getActiveVerifier, getListedDomainOverride, getProxyConfigs, getReacherFromDomain, type ReacherConfig } from './settings'
+import type { ProxyConfig } from './proxyRouter'
 
 const INTERVAL_MS = 6 * 60 * 60_000
 /** Let the app finish starting before the first run. */
@@ -52,10 +53,7 @@ function isLocalHost(hostname: string): boolean {
 
 /** The Reacher setup in use, or null when Reacher isn't verifying anything. */
 function reacherInUse(): ReacherConfig | null {
-  const active = getActiveVerifier()
-  if (active?.provider === 'reacher') return active.reacher
-  if (active?.provider === 'neverbounce') return active.fallback
-  return null
+  return getActiveVerifier()?.reacher ?? null
 }
 
 function targetsFor(reacher: ReacherConfig): HealthTarget[] {
@@ -68,6 +66,34 @@ function targetsFor(reacher: ReacherConfig): HealthTarget[] {
     // Invalid URL: fall through to this machine.
   }
   return hostname && !isLocalHost(hostname) ? [{ label: 'Reacher server', host: hostname }] : [{ label: 'This server', host: null }]
+}
+
+/**
+ * Why checks through `proxy` (null: this server's own IP) must stop, from the
+ * latest health report, or null to carry on. The proxy router asks before
+ * every check, so a pause starts and ends with the health checks.
+ *
+ * - The FROM domain is on a domain blocklist: every check names it, so all
+ *   verification pauses, unless the user chose to keep testing with it.
+ * - The IP is on a spam blocklist. Spamhaus's policy list (home/dynamic IPs)
+ *   doesn't count: it says what kind of IP it is, not that it did harm.
+ */
+export function verificationPauseReason(proxy: ProxyConfig | null): string | null {
+  const report = db.getSenderHealth()
+  if (!report) return null
+
+  const domain = report.domain
+  // A report about a domain we no longer use is stale, not a reason to stop.
+  if (domain && domain.domain === getReacherFromDomain() && domain.listedOn.length > 0 && getListedDomainOverride() !== domain.domain) {
+    return `the FROM domain ${domain.domain} is on ${domain.listedOn.join(', ')}. Switch to a clean domain, or choose "Keep verifying anyway" in Settings → Prospecting while testing.`
+  }
+
+  const ip = report.ips.find((i) => i.host === (proxy?.host ?? 'this server'))
+  const listed = ip?.issues.some((i) => i.level === 'critical' && (i.code === 'spamhaus' || i.code.startsWith('listed-')))
+  if (ip && listed) {
+    return `${ip.label} (${ip.ip}) is on ${ip.listedOn.join(', ')}. It's used again once a health check finds it clean.`
+  }
+  return null
 }
 
 let running: Promise<SenderHealthReport | null> | null = null

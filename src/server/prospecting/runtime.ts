@@ -5,12 +5,10 @@
 import { promises as dns } from 'dns'
 import type { FinderDeps } from './emailFinder'
 import { ProxyRouter } from './proxyRouter'
-import { checkEmailNeverBounce } from './neverbounce'
 import { suggestMailDomain } from './mailDomainHint'
-import { checkEmail, type ReacherCheckConfig } from './reacher'
-import type { MailProvider } from './proxyRouter'
-import { withFallback } from './verifiers'
-import { getActiveVerifier, getProxyConfigs, requireSocialFetchKey } from './settings'
+import { checkEmail } from './reacher'
+import { getActiveVerifier, getProxyConfigs, getVerificationDailyCap, requireSocialFetchKey } from './settings'
+import { verificationPauseReason } from './senderHealthMonitor'
 import { createSocialFetchSource } from './socialfetch'
 import { withProfileCache } from './profileCache'
 import type { CompanySource, PeopleSource } from './types'
@@ -35,7 +33,15 @@ export function getProxyRouter(): ProxyRouter {
   const { proxies } = getProxyConfigs()
   const key = JSON.stringify(proxies.map((p) => [p.host, p.port, p.username, p.password]))
   if (!router || key !== routerKey) {
-    router = new ProxyRouter(proxies)
+    router = new ProxyRouter(proxies, {
+      dailyCapPerIp: getVerificationDailyCap,
+      pausedReason: verificationPauseReason,
+      onPause: (label, reason) => {
+        import('../notify')
+          .then(({ notify }) => notify('verifier_alert', `Email verification: ${label} — ${reason}`))
+          .catch((err) => console.error('[ProxyRouter] notify failed:', err))
+      },
+    })
     routerKey = key
   }
   return router
@@ -64,15 +70,12 @@ async function resolveSoaContact(domain: string): Promise<string | null> {
   }
 }
 
-/** One Reacher check through the proxy router (rate limits, health, benching). */
-async function reacherCheck(email: string, provider: MailProvider, config: ReacherCheckConfig) {
-  const lease = await getProxyRouter().acquire(provider)
-  const result = await checkEmail(email, lease.proxy, config)
-  lease.report(result.outcome)
-  return result
-}
-
-export async function getFinderDeps(): Promise<FinderDeps> {
+/**
+ * `background`: a save job, which can wait out a company's pacing (minutes);
+ * a Reveal, where someone is watching, gives up sooner with a clear message.
+ */
+export async function getFinderDeps(opts: { background?: boolean } = {}): Promise<FinderDeps> {
+  const maxWaitMs = opts.background ? 10 * 60_000 : 45_000
   const { db } = await import('../db')
   // Read once per save, so a settings change mid-save doesn't split a job.
   const active = getActiveVerifier()
@@ -83,25 +86,10 @@ export async function getFinderDeps(): Promise<FinderDeps> {
     verifier:
       active?.provider === 'reacher'
         ? {
-            acquire: (provider) => getProxyRouter().acquire(provider),
+            acquire: (provider, domain) => getProxyRouter().acquire(provider, domain, { maxWaitMs }),
             check: (email, lease) => checkEmail(email, lease.proxy, active.reacher),
           }
-        : active?.provider === 'neverbounce'
-          ? (() => {
-              const neverbounce = (email: string) => checkEmailNeverBounce(email, active.apiKey)
-              const fallback = active.fallback
-              const check = fallback
-                ? withFallback(neverbounce, (email, provider) => reacherCheck(email, provider, fallback))
-                : neverbounce
-              return {
-                // NeverBounce connects to mail servers itself; only the
-                // Reacher fallback goes through the proxy router.
-                acquire: async () => ({ proxy: null, report: () => {} }),
-                check: (email: string, _lease: unknown, provider: MailProvider) => check(email, provider),
-                detectsCatchAll: true,
-              }
-            })()
-          : null,
+        : null,
     now: () => Date.now(),
     suggestMailDomain: (domain) => suggestMailDomain(domain, { resolveSoaContact, resolveMx }),
   }

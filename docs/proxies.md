@@ -1,4 +1,4 @@
-# Email verification: Reacher, proxies or NeverBounce
+# Email verification: Reacher and proxies
 
 "Reveal email" and "Save to list" find a work email by generating likely
 addresses (`jane.smith@`, `jsmith@`, …) and asking the company's mail server,
@@ -23,22 +23,6 @@ route got a definite answer.
 
 Without a verifier the app still works, but every email is an unverified
 best guess.
-
-### Or skip all of this: NeverBounce
-
-In **Settings → Prospecting → Email verification** you can pick
-**NeverBounce** instead of Reacher. Checks then run from NeverBounce's
-infrastructure, so none of the IP-reputation work below applies to you. It
-costs one NeverBounce credit per check (about $0.008 pay-as-you-go): a
-company's first person can take up to 6 checks while its address pattern is
-learned, later people at that company take 1. NeverBounce reports catch-all
-domains itself, so the extra catch-all probe is skipped. **Test
-verification** uses 2 credits and shows your remaining balance.
-
-NeverBounce (owned by ZoomInfo) receives every address you check. Before
-using it with real data, accept its data processing agreement (it includes
-the UK addendum for US transfers) and list it as a sub-processor in your
-privacy notice.
 
 ## 2. Do you need proxies?
 
@@ -108,15 +92,40 @@ name is sent for all of them; give each proxy a PTR on the same domain.
 
 ## 5. Keeping IPs healthy
 
-- The app limits checks per proxy (20/min) and per mail provider across all
-  proxies (Gmail 10/min, Microsoft 6/min, others 60/min), and tries at most 6
-  addresses per person.
-- A proxy that gets blocked, times out or rejects its login 3 times in a row
-  is **benched for 15 minutes**. The health table in Settings shows OK /
-  greylisted / blocked / timeout counts per proxy since the app started.
+Mail servers answer checks from IPs they trust, so the app keeps every IP's
+checks gentle and stops using one that gets listed.
+
+**Rate limits** (in `proxyRouter.ts`; adding a proxy adds capacity):
+
+- Per IP: 20 checks a minute; Microsoft 6 and Google 10 a minute (they
+  throttle hardest); and a daily ceiling, 1,500 by default, set under
+  **Daily checks per IP** in Settings → Prospecting.
+- Per company, across all IPs: a burst of 6 (one person's guesses), then
+  about 2 a minute. Saves wait for a slot; a Reveal gives up after 45 seconds
+  with a message.
+- Per company per day: 20 **rejected** guesses, then that company waits until
+  tomorrow, since lots of rejections is what address harvesting looks like.
+  Checks that hit a real mailbox (a known format) don't count.
+- At most 6 guesses per person, stopping after 2 "couldn't check" answers.
+
+**Pausing and resting:**
+
+- An IP on a spam blocklist (Spamhaus, Barracuda, SpamCop, …) stops being used
+  until a health check finds it clean. Spamhaus's policy list of home/dynamic
+  IPs doesn't count.
+- A blocklisted FROM domain pauses all verification (every check names it),
+  unless you tick **Keep verifying anyway** for that domain while testing.
+- An IP whose last checks are mostly blocked (30%+ of the last 50) rests for
+  an hour and you get a notification; 3 blocks or timeouts in a row rest it
+  for 15 minutes; 6 unreachable servers in a row (its port 25 may be blocked)
+  do too.
+- The health panel checks each IP and the FROM domain every 6 hours and on
+  "Check now"; the proxy table shows today's checks and each IP's status.
+
+Counts are kept in memory, so a restart resets them.
+
 - Greylisting (a `4xx` "try later") is normal; saves retry those people
   after 5 minutes.
 - Catch-all domains accept every address, so nothing can be verified there.
-  They're detected once per domain and cached for 90 days, and those
-  addresses are saved as "Catch-all".
+  They're detected once per domain and cached for 90 days.
 - Never send email from verification IPs.

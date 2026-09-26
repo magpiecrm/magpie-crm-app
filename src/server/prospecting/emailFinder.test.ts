@@ -124,14 +124,6 @@ describe('findEmail', () => {
     expect(checked.filter((e) => e.split('@')[0].length === 18)).toHaveLength(1)
   })
 
-  it('skips the catch-all probe for a verifier that reports catch-alls itself', async () => {
-    const { deps, checked, domains } = setup({ mailbox: { 'jane.smith@acme.com': 'safe' } })
-    deps.verifier!.detectsCatchAll = true
-    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('verified')
-    expect(checked).toEqual(['jane.smith@acme.com'])
-    expect(domains.get('acme.com')!.catch_all_checked_at).toBeNull()
-  })
-
   it('falls back from a website subdomain that takes no mail to its parent domain', async () => {
     const { deps, candidateChecks } = setup({
       mxByDomain: { 'acme.com': ['aspmx.l.google.com'] },
