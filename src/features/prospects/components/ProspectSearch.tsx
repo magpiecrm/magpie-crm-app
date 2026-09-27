@@ -31,6 +31,8 @@ import {
 } from '../../../server/functions'
 import {
   HEADCOUNT_BUCKETS,
+  PAGE_SIZES,
+  pageSizeFor,
   SENIORITY_LEVELS,
   type CompanyResult,
   type HeadcountBucket,
@@ -78,16 +80,19 @@ interface PeopleForm {
   count: number
 }
 
-const PAGE_SIZES = [1, 5, 10, 25] as const
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], count: 5 }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], count: PAGE_SIZES[0] }
 const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
-/** Upper bound on one page: 3 credits per search (one per title) plus 3 per result's profile. */
+/**
+ * Upper bound on one page, per title: 3 credits a search request (up to 50
+ * results each) plus 3 per result's profile.
+ */
 function creditsPerPage(form: Pick<PeopleForm, 'titles' | 'count'>) {
-  const searches = Math.max(1, Math.min(form.titles.length, 5))
-  return searches * 3 + searches * form.count * 3
+  const titles = Math.max(1, Math.min(form.titles.length, 5))
+  const count = pageSizeFor(form.count)
+  return titles * (Math.ceil(count / 50) * 3 + count * 3)
 }
 
 interface StoredState {
@@ -140,7 +145,8 @@ export function ProspectSearch() {
     if (stored) {
       if (stored.mode) setMode(stored.mode)
       if (stored.companyForm) setCompanyForm({ ...EMPTY_COMPANY_FORM, ...stored.companyForm })
-      if (stored.peopleForm) setPeopleForm({ ...EMPTY_PEOPLE_FORM, ...stored.peopleForm })
+      // Page sizes go up in 25s; one saved from before is rounded up.
+      if (stored.peopleForm) setPeopleForm({ ...EMPTY_PEOPLE_FORM, ...stored.peopleForm, count: pageSizeFor(stored.peopleForm.count) })
       // Bring back results only while they're still cached (navigating within
       // the app). After a full reload that would mean re-running a paid search
       // unasked, so only the filters come back.
@@ -643,7 +649,7 @@ export function ProspectSearch() {
   const filtersFooter = (
     <div className="p-4 border-t border-border bg-card/50 flex flex-col gap-2">
       {formError && <p className="text-[11px] text-destructive font-medium">{formError}</p>}
-      {mode === 'people' && !hosted && (
+      {mode === 'people' && (
         <div className="flex items-center justify-between gap-2">
           <label htmlFor="people-page-size" className="text-[11px] font-semibold text-foreground">
             Results per page

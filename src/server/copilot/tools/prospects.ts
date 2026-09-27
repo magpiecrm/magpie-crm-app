@@ -125,7 +125,7 @@ export const prospectTools = [
   defineTool({
     name: 'searchPeople',
     description:
-      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, current titles and companies only — emails are found when the user saves people to a list in Prospect Search. Every result\'s profile is looked up for their real job and employer, so this costs 3 credits per search plus 3 per result: keep count small and search once with well-chosen titles.',
+      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, current titles and companies only — emails are found when the user saves people to a list in Prospect Search. Every result\'s profile is looked up for their real job and employer, so each result uses about one prospect credit: search once with well-chosen titles.',
     input: {
       companyRef: z.string().optional().describe('`ref` from searchCompanies.'),
       companyName: z.string().optional().describe('Required with companyRef.'),
@@ -137,8 +137,8 @@ export const prospectTools = [
       companySizes: z
         .array(z.enum(HEADCOUNT_BUCKETS))
         .optional()
-        .describe('Company sizes by headcount. People are searched at a batch of matching companies at a time.'),
-      count: z.number().int().min(1).max(10).optional().describe('Results per page. Defaults to 5; each result costs 3 credits.'),
+        .describe("Company sizes by headcount. Each person's employer is looked up and people at other sizes are left out."),
+      count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('Results per page per title: 25, 50, 75 or 100. Defaults to 25; each result uses about one prospect credit.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
     target: 'server',
@@ -148,7 +148,7 @@ export const prospectTools = [
       const { searchPeople } = await import('../../prospecting/search')
       const page = await searchPeople({
         ...rest,
-        count: count ?? 5,
+        count: count ?? 25,
         titles: titles === undefined ? undefined : Array.isArray(titles) ? titles : [titles],
         company: companyRef ? { ref: companyRef, name: companyName ?? companyRef } : null,
       })

@@ -90,6 +90,17 @@ export interface PersonResult {
   emailStatus?: EmailStatus
 }
 
+/**
+ * People search results per page (per job title), in 25s. Full pages share
+ * each 3-credit search among the most people; SocialFetch returns up to 50 a
+ * request, so 75 and 100 take two.
+ */
+export const PAGE_SIZES = [25, 50, 75, 100] as const
+
+/** The nearest page size at or above `count`. */
+export const pageSizeFor = (count?: number | null) =>
+  PAGE_SIZES.find((n) => n >= (count ?? PAGE_SIZES[0])) ?? PAGE_SIZES[PAGE_SIZES.length - 1]
+
 export interface CompanyRef {
   ref: string
   name: string
@@ -116,7 +127,10 @@ export interface PeopleFilters {
    * and people at other sizes are left out.
    */
   companySizes?: HeadcountBucket[]
-  /** Results per page (1-50). Each page costs the same whatever its size. */
+  /**
+   * Results per page. Asked of search.ts: per job title, in PAGE_SIZES. Asked
+   * of a source: per request (1-50), each costing the same whatever its size.
+   */
   count?: number
   cursor?: string
 }
@@ -178,4 +192,4 @@ export const LOOKUP_OUTCOMES = [
 ] as const
 export type LookupOutcome = (typeof LOOKUP_OUTCOMES)[number]
 
-export type NoticeStatus ='pending' | 'delivered_first_email' | 'delivered_fallback'
+export type NoticeStatus = 'pending' | 'delivered_first_email' | 'delivered_fallback'

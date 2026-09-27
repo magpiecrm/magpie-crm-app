@@ -68,7 +68,8 @@ const peopleSearchInput = z.object({
   keyword: z.string().trim().max(200).optional(),
   industries: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   companySizes: z.array(z.enum(HEADCOUNT_BUCKETS)).max(HEADCOUNT_BUCKETS.length).optional(),
-  count: z.number().int().min(1).max(50).optional(),
+  // The page offers 25, 50, 75 or 100 (PAGE_SIZES).
+  count: z.number().int().min(1).max(100).optional(),
   cursor: z.string().max(20_000).optional(),
 })
 
