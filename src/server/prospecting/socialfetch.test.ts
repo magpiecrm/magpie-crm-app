@@ -145,7 +145,7 @@ describe('searchCompanies', () => {
     expect(page.items[1].domain).toBeNull()
     expect(page.nextCursor).toBe('c2')
     expect(page.reportedTotal).toBe(812)
-    expect(page.warnings[0]).toMatch(/2 of 4 companies/)
+    expect(page.details![0]).toMatch(/2 of 4 companies/)
   })
 })
 
@@ -230,7 +230,7 @@ describe('searchPeople', () => {
     const f = fakeFetch([envelope({ people: hits, page: { hasMore: false } })])
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], country: 'Germany' })
     expect(f.calls[0].searchParams.get('geoEntityId')).toBe('101282230')
-    expect(page.warnings.some((w) => /aren't in Germany/.test(w))).toBe(true)
+    expect(page.details!.some((w) => /aren't in Germany/.test(w))).toBe(true)
   })
 
   it('falls back to filtering each page for countries without a geo id', async () => {
@@ -246,7 +246,7 @@ describe('searchPeople', () => {
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], country: 'Portugal' })
     expect(f.calls[0].searchParams.has('geoEntityId')).toBe(false)
     expect(page.items.map((p) => p.firstName)).toEqual(['A'])
-    expect(page.warnings.some((w) => /isn't in the supported country list/.test(w))).toBe(true)
+    expect(page.details!.some((w) => /isn't in the supported country list/.test(w))).toBe(true)
   })
 
   it('pages by offset when SocialFetch gives no cursor', async () => {
@@ -309,7 +309,7 @@ describe('searchPeople', () => {
       // Employer unknown: kept, but not assumed to be Acme (resolved on save).
       ['Un', null],
     ])
-    expect(page.warnings).toContain("1 person returned by the search doesn't currently work at Acme and was hidden.")
+    expect(page.details).toContain("1 person returned by the search doesn't currently work at Acme and was hidden.")
   })
 
   it('runs one request per title and dedupes people across them', async () => {
@@ -346,7 +346,7 @@ describe('searchPeople', () => {
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { seniorities: ['head'] })
     // The junior analyst is hidden; both Heads of Marketing stay.
     expect(page.items.map((p) => p.profileUrl)).toEqual(['https://www.linkedin.com/in/jane-smith-123', 'https://www.linkedin.com/in/f'])
-    expect(page.warnings).toContain("1 person didn't match your seniority or country filters and is hidden.")
+    expect(page.details).toContain("1 person didn't match your seniority or country filters and is hidden.")
   })
 })
 

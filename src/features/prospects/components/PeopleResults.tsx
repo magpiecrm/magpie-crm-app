@@ -168,12 +168,14 @@ function EmailCell({
   // A definite answer (no address, no domain, unavailable) won't change on a
   // retry; only a failed request gets a "Try again".
   if (state && state.status !== 'error') {
+    // Hosted: a failed verification is just "unable to verify", with no domain to try instead.
+    const unableBrief = brief && (state.status === 'not_found' || state.status === 'unconfirmed')
     return (
       <div className="flex flex-col items-start gap-1">
         <span className="text-[11px] text-muted-foreground leading-snug block max-w-[14rem]">
-          {brief && (state.status === 'not_found' || state.status === 'unconfirmed') ? UNABLE : state.message}
+          {unableBrief ? UNABLE : state.message}
         </span>
-        {state.canFixDomain && (
+        {state.canFixDomain && !unableBrief && (
           <FixDomain person={person} suggestion={'suggestedDomain' in state ? state.suggestedDomain : undefined} onFixDomain={onFixDomain} />
         )}
       </div>

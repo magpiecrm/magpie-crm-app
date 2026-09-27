@@ -1,6 +1,7 @@
 // Entry points shared by the server functions and the copilot's tools, so both
 // get the same caching, suppression and save behaviour.
 
+import { env } from '../env'
 import { refineFromProfile } from './refine'
 import type { CompanyFilters, CompanyResult, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
 import { isKnownCatchAll, surnameHidden } from './emailFinder'
@@ -36,7 +37,17 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
       slug: slugFromCompanyUrl(c.linkedinUrl),
     })),
   )
-  return page
+  return forThisCopy(page)
+}
+
+/**
+ * The notes a copy shows: its warnings, then the details of how the page was
+ * put together, except in a copy whose data is run by its host, where how
+ * searches are run and paid for is the host's business.
+ */
+function forThisCopy<T extends { warnings: string[]; details?: string[] }>(page: T): T {
+  const { details = [], ...rest } = page
+  return { ...rest, warnings: env.prospectingManaged() ? page.warnings : [...page.warnings, ...details] } as T
 }
 
 /** Company with a known domain where possible; fetches the company page once if needed. */
@@ -282,6 +293,7 @@ export async function searchPeople(
   const refined: string[] = []
   const seen = new Set<string>()
   const warnings: string[] = []
+  const details: string[] = []
   const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0 }
   // Catch-all people are hidden while verified-only is on, so they don't count.
   const usable = () => items.filter((p) => !(verifiedOnly && p.catchAll)).length
@@ -303,6 +315,7 @@ export async function searchPeople(
     if (searches === 1) {
       reportedTotal = page.reportedTotal
       warnings.push(...page.warnings)
+      details.push(...(page.details ?? []))
     }
     nextCursor = page.nextCursor
     const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
@@ -327,22 +340,22 @@ export async function searchPeople(
   const { recordUsage } = await import('../usage')
   recordUsage({ searches, prospects: usable() })
 
-  if (lookupError) warnings.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
+  if (lookupError) details.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
   if (tally.noSurname > 0) {
-    warnings.push(
+    details.push(
       `${plural(tally.noSurname, 'person was', 'people were')} left out because LinkedIn hides ${tally.noSurname === 1 ? 'their surname' : 'their surnames'} (e.g. "Andy C."), so no email can be found.`,
     )
   }
-  if (tally.failed > 0) warnings.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
-  if (tally.noJob > 0) warnings.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
+  if (tally.failed > 0) details.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
+  if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
   if (tally.alreadySaved > 0) {
-    warnings.push(`${plural(tally.alreadySaved, 'person is', 'people are')} already in your contacts, so their details come from there and no profile lookup was paid for.`)
+    details.push(`${plural(tally.alreadySaved, 'person is', 'people are')} already in your contacts, so their details come from there and no profile lookup was paid for.`)
   }
   if (company && tally.wrongCompany > 0) {
-    warnings.push(`${plural(tally.wrongCompany, "person doesn't", "people don't")} currently work at ${company.name} and ${tally.wrongCompany === 1 ? 'was' : 'were'} left out.`)
+    details.push(`${plural(tally.wrongCompany, "person doesn't", "people don't")} currently work at ${company.name} and ${tally.wrongCompany === 1 ? 'was' : 'were'} left out.`)
   }
   if (searches > 1) {
-    warnings.push(`Some results were left out, so ${plural(searches - 1, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
+    details.push(`Some results were left out, so ${plural(searches - 1, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
     warnings.push(`Your plan has ${plural(left, 'prospect', 'prospects')} left this month, so this page shows at most that many. Upgrade to get more.`)
@@ -351,7 +364,7 @@ export async function searchPeople(
     warnings.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
   }
 
-  return { items, nextCursor, reportedTotal, warnings, refined }
+  return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined }
 }
 
 export async function startSave(listId: number, people: PersonResult[]) {

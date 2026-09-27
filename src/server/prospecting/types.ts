@@ -120,6 +120,12 @@ export interface Page<T> {
   reportedTotal: number | null
   /** Non-fatal problems the user should see alongside the results. */
   warnings: string[]
+  /**
+   * How the page was put together: results left out and why, extra searches
+   * run to fill it. Shown after the warnings, except in a copy whose data is
+   * run by its host, where they're the host's business.
+   */
+  details?: string[]
 }
 
 export interface CompanySource {

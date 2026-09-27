@@ -468,9 +468,10 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       })
 
       const warnings: string[] = []
+      const details: string[] = []
       const dropped = mapped.length - filtered.length
       if (dropped > 0) {
-        warnings.push(
+        details.push(
           `${dropped} of ${mapped.length} companies on this page didn't match your industry, size or country filters and ${dropped === 1 ? 'is' : 'are'} hidden.`,
         )
       }
@@ -479,6 +480,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         nextCursor: res.data?.page?.hasMore ? str(res.data?.page?.nextCursor) : null,
         reportedTotal: num(res.data?.reportedTotal),
         warnings,
+        details,
       }
     },
 
@@ -511,6 +513,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
     async searchPeople(company: CompanyRef | null, filters: PeopleFilters): Promise<Page<PersonResult>> {
       const titles = [...new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean))]
       const warnings: string[] = []
+      const details: string[] = []
       if (titles.length > MAX_TITLES) {
         warnings.push(`Only the first ${MAX_TITLES} job titles were searched.`)
       }
@@ -521,7 +524,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const wantedCountry = canonicalCountry(filters.country)
       const geoEntityId = geoIdForCountry(filters.country)
       if (filters.country?.trim() && !geoEntityId && !filters.cursor) {
-        warnings.push(
+        details.push(
           `"${filters.country.trim()}" isn't in the supported country list, so it's filtered after each page comes back and pages may be thin.`,
         )
       }
@@ -620,12 +623,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // Never drop records silently: a shape change would otherwise look like
       // "no results".
       if (unreadable > 0) {
-        warnings.push(
+        details.push(
           `${people_(unreadable)} returned by the search ${unreadable === 1 ? 'was' : 'were'} missing a name or profile link and ${unreadable === 1 ? 'was' : 'were'} skipped.`,
         )
       }
       if (wrongCompany > 0) {
-        warnings.push(
+        details.push(
           `${people_(wrongCompany)} returned by the search ${wrongCompany === 1 ? "doesn't" : "don't"} currently work at ${company?.name} and ${wrongCompany === 1 ? 'was' : 'were'} hidden.` +
             (wrongCompany > people.length ? ' The company filter may not be applied as expected.' : ''),
         )
@@ -639,7 +642,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           return c !== null && c !== wantedCountry
         }).length
         if (people.length >= 5 && elsewhere > people.length / 2) {
-          warnings.push(`Most results aren't in ${wantedCountry}. The location filter for it may be wrong; please report this.`)
+          details.push(`Most results aren't in ${wantedCountry}. The location filter for it may be wrong; please report this.`)
         }
         // City-only labels ("Exeter") get the searched country.
         for (const p of people) if (!canonicalCountry(p.country)) p.country = wantedCountry
@@ -652,10 +655,10 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       )
       const hidden = people.length - filtered.length
       if (hidden > 0) {
-        warnings.push(`${people_(hidden)} didn't match your seniority or country filters and ${hidden === 1 ? 'is' : 'are'} hidden.`)
+        details.push(`${people_(hidden)} didn't match your seniority or country filters and ${hidden === 1 ? 'is' : 'are'} hidden.`)
       }
 
-      return { items: filtered, nextCursor: encodeCursor(nextCursors), reportedTotal, warnings }
+      return { items: filtered, nextCursor: encodeCursor(nextCursors), reportedTotal, warnings, details }
     },
 
     async getPerson(profileRef: string): Promise<PersonResult | null> {

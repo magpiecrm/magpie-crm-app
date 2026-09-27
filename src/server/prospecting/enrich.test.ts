@@ -281,3 +281,18 @@ describe('searchPeople fills the page', () => {
     expect(searchPeopleMock).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('searchPeople in a workspace run by its host', () => {
+  it('keeps only the notes the user can act on, not how the page was put together', async () => {
+    process.env.PROSPECTING_MANAGED = 'on'
+    try {
+      searchPage = { ...pageOf(hit('dan'), hit('ana')), warnings: ['Only the first 5 job titles were searched.'], details: ['1 person was hidden.'] }
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(res.warnings).toEqual(['Only the first 5 job titles were searched.'])
+    } finally {
+      delete process.env.PROSPECTING_MANAGED
+    }
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', '1 person was hidden.', '1 profile has no current job listed; showing the headline instead.'])
+  })
+})
