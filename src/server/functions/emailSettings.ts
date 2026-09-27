@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 // Reads and writes the active sending provider. Secret fields are never
 // echoed back, only a boolean saying whether they are set.
@@ -15,10 +16,13 @@ export const getEmailSettingsFn = createServerFn({ method: 'GET' })
     const { getMaskedSettings } = await import('../emailSettings')
     const { PROVIDER_DESCRIPTORS } = await import('../providers/descriptors')
 
+    const { env } = await import('../env')
     return {
       success: true as const,
       providers: PROVIDER_DESCRIPTORS,
       settings: getMaskedSettings(),
+      /** The host runs sending through Amazon SES: show sending domains instead. */
+      managed: env.sendingManaged(),
     }
   })
 
@@ -37,6 +41,10 @@ export const saveEmailSettingsFn = createServerFn({ method: 'POST' })
       return { success: false as const, error: 'Unauthorized' }
     }
 
+    const { env } = await import('../env')
+    if (env.sendingManaged()) {
+      return { success: false as const, error: "Sending is run by your hosting provider, so it can't be changed here." }
+    }
     const { isProviderId, getDescriptor } = await import('../providers/descriptors')
     if (!isProviderId(data.provider)) {
       return { success: false as const, error: `Unknown provider: ${data.provider}` }
@@ -107,4 +115,62 @@ export const sendProviderTestEmailFn = createServerFn({ method: 'POST' })
       // here — most setup failures are "domain not verified" style messages.
       return { success: false as const, error: err?.message || String(err) }
     }
+  })
+
+// Sending domains, when the host runs sending (SENDING_MANAGED; see sendingDomains.ts).
+
+const DAY_MS = 24 * 60 * 60_000
+
+/** Each domain with its DNS records; checks again any not ready yet, and any not checked for a day. */
+export const getSendingDomainsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  await requireAuth()
+  const { checkSendingDomain, dnsRecords, getSendingDomains, isReady } = await import('../sendingDomains')
+  const now = Date.now()
+  const domains = await Promise.all(
+    getSendingDomains().map(async (d) => {
+      const stale = !isReady(d) || !d.checkedAt || now - Date.parse(d.checkedAt) > DAY_MS
+      return stale ? checkSendingDomain(d.domain).catch(() => d) : d
+    }),
+  )
+  return domains.map((d) => ({ ...d, ready: isReady(d), records: dnsRecords(d) }))
+})
+
+export const addSendingDomainFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { domain: string }) => z.object({ domain: z.string().max(260) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { env } = await import('../env')
+    if (!env.sendingManaged()) return { success: false as const, error: 'Sending domains are only used when your host runs sending.' }
+    const { addSendingDomain } = await import('../sendingDomains')
+    try {
+      const d = await addSendingDomain(data.domain)
+      return { success: true as const, domain: d.domain }
+    } catch (err: any) {
+      return { success: false as const, error: err?.message || 'Could not add that domain' }
+    }
+  })
+
+export const checkSendingDomainFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { domain: string }) => z.object({ domain: z.string().max(260) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { checkSendingDomain, isReady } = await import('../sendingDomains')
+    try {
+      return { success: true as const, ready: isReady(await checkSendingDomain(data.domain)) }
+    } catch (err: any) {
+      return { success: false as const, error: err?.message || 'Could not check that domain' }
+    }
+  })
+
+export const removeSendingDomainFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { domain: string }) => z.object({ domain: z.string().max(260) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { removeSendingDomain } = await import('../sendingDomains')
+    removeSendingDomain(data.domain)
+    return { success: true as const }
   })

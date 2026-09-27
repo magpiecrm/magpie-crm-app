@@ -38,6 +38,11 @@ SES_SECRET_ACCESS_KEY=...#   in Settings → Sending (also SES_REGION, default
                          #   us-east-1, and SES_CONFIGURATION_SET)
 EMAIL_PROVIDER=...       # optional — provider id to use when none is saved
                          #   (e.g. ses); otherwise inferred from the vars above
+SENDING_MANAGED=on       # optional — the host sends through its SES_* account:
+                         #   Settings → Sending shows only sending domains, which
+                         #   users verify with DNS records, and mail only goes
+                         #   out from them. The SES keys need ses:SendEmail,
+                         #   ses:CreateEmailIdentity and ses:GetEmailIdentity
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
 SOCIALFETCH_BALANCE=hidden # optional — don't show the credit balance (someone
                          #   else pays); the sidebar shows this month's prospects

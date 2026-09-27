@@ -7,6 +7,7 @@ import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
 import { formatCustomValue } from '../features/contacts/contactFields'
 import { AllowanceError, requireAllowance } from './allowance'
+import { requireSendingDomain } from './sendingDomains'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -774,6 +775,7 @@ export async function getSenders() {
 }
 
 export async function createSender(name: string, email: string) {
+  requireSendingDomain(email)
   const existing = db.query('SELECT id FROM senders WHERE LOWER(email) = ?').get(email.toLowerCase()) as any
   if (existing) {
     throw new Error('A sender with this email already exists')
@@ -784,6 +786,7 @@ export async function createSender(name: string, email: string) {
 }
 
 export async function updateSender(id: number, name: string, email: string) {
+  requireSendingDomain(email)
   const existing = db.data.senders.find(s => s.id === id)
   if (!existing) {
     throw new Error('Sender not found')

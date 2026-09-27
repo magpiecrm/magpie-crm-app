@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
+import { getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
 import type { SettingsSection } from './sections'
 
 export type StatusLevel = 'ok' | 'warning' | 'error' | 'info'
@@ -27,6 +27,9 @@ export function useSettingsStatus(): {
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
   const sending = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
   const senders = useQuery({ queryKey: queryKeys.email.senders(), queryFn: () => getSendersFn() })
+  // When the host runs sending, its status is about your sending domains.
+  const sendingManaged = Boolean(sending.data?.success && sending.data.managed)
+  const domains = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: sendingManaged })
   const team = useQuery({ queryKey: queryKeys.settings.team(), queryFn: () => getUsersFn() })
 
   const statuses: Partial<Record<SettingsSection, SectionStatus>> = {}
@@ -57,7 +60,15 @@ export function useSettingsStatus(): {
   }
 
   const s = sending.data
-  if (s?.success) {
+  if (sendingManaged && domains.data) {
+    const ready = domains.data.filter((d) => d.ready).map((d) => d.domain)
+    statuses.sending =
+      domains.data.length === 0
+        ? { level: 'error', text: 'Add the domain you send from to start sending.', action: 'Add' }
+        : ready.length === 0
+          ? { level: 'warning', text: `Waiting for the DNS records on ${domains.data.map((d) => d.domain).join(', ')}.`, action: 'Check' }
+          : { level: 'ok', text: `Ready to send from ${ready.join(', ')}.` }
+  } else if (s?.success && !sendingManaged) {
     const label = s.providers.find((d: { id: string; label: string }) => d.id === s.settings.provider)?.label ?? s.settings.provider
     statuses.sending = s.settings.credsUnreadable
       ? { level: 'error', text: `The saved ${label} credentials can't be read. Enter them again.`, action: 'Fix' }

@@ -89,6 +89,15 @@ function inferProviderFromEnv(): ProviderId {
 export function getActiveProviderConfig(): ActiveProviderConfig {
   const stored = db.getEmailSettings()
 
+  // The host sends through its own Amazon SES account; nothing saved here applies.
+  if (env.sendingManaged()) {
+    const creds = envCredentials('ses')
+    if (!creds.region) creds.region = 'us-east-1'
+    const missingFields = (getDescriptor('ses')?.fields ?? []).filter((f) => f.required && !creds[f.key]).map((f) => f.label)
+    const defaultSender = stored?.defaultSender || soleSenderRow()
+    return { providerId: 'ses', creds, defaultSender, missingFields, credsUnreadable: false, source: 'env' }
+  }
+
   const storedId = stored?.provider
   const providerId: ProviderId =
     storedId && isProviderId(storedId) ? storedId : inferProviderFromEnv()
@@ -141,6 +150,7 @@ export interface SaveProviderSettingsInput {
 }
 
 export function saveProviderSettings(input: SaveProviderSettingsInput): void {
+  if (env.sendingManaged()) throw new Error('Sending is run by your hosting provider, so it can\'t be changed here.')
   const stored = db.getEmailSettings()
   const descriptor = getDescriptor(input.provider)
   if (!descriptor) throw new Error(`Unknown provider: ${input.provider}`)

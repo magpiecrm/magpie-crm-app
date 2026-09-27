@@ -11,6 +11,7 @@ import { getProvider } from './providers'
 import type { OutboundMessage } from './providers/types'
 import { recordUsage } from './usage'
 import { requireAllowance } from './allowance'
+import { requireSendingDomain } from './sendingDomains'
 
 export { resetSmtpTransport } from './providers'
 
@@ -109,6 +110,7 @@ export async function sendMail(options: SendMailOptions) {
     }
 
     requireAllowance('emailsSent', message.to.length)
+    requireSendingDomain(message.from)
     const sent = await getProvider(config.providerId).send(message, config.creds)
     recordUsage({ emailsSent: message.to.length })
     return sent

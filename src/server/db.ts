@@ -12,6 +12,7 @@ import type { MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
 import type { UsageCounter } from './usage'
 import type { Allowance } from './allowance'
+import type { SendingDomain } from './sendingDomains'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -272,6 +273,8 @@ interface DbSchema {
   usage?: Record<string, Partial<Record<UsageCounter, number>>>
   /** This billing period's allowances, when a host sets them (see allowance.ts). */
   allowance?: Allowance | null
+  /** Domains mail is sent from when the host runs sending (see sendingDomains.ts). */
+  sending_domains?: SendingDomain[]
 }
 
 export interface ProspectingSettingsRecord {
@@ -1291,6 +1294,15 @@ class JsonDb {
 
   getUsage(): Record<string, Partial<Record<UsageCounter, number>>> {
     return this.data.usage ?? {}
+  }
+
+  getSendingDomains(): SendingDomain[] {
+    return this.data.sending_domains ?? []
+  }
+
+  saveSendingDomains(domains: SendingDomain[]) {
+    this.data.sending_domains = domains
+    this.save()
   }
 
   getAllowance(): Allowance | null {

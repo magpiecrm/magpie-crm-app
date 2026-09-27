@@ -44,6 +44,7 @@ vi.mock('./env', () => ({
       configurationSet: () => envState.SES_CONFIGURATION_SET,
     },
     emailProvider: () => envState.EMAIL_PROVIDER,
+    sendingManaged: () => envState.SENDING_MANAGED === 'on',
     credentialsSecret: () => 'test-secret',
     usingDefaultCredentialsSecret: () => false,
     trackingSecret: () => 'test-secret',
@@ -84,6 +85,22 @@ describe('SES from the environment', () => {
   it('ignores an unknown EMAIL_PROVIDER', () => {
     envState.EMAIL_PROVIDER = 'carrier-pigeon'
     expect(getActiveProviderConfig().providerId).toBe('smtp')
+  })
+})
+
+describe('SENDING_MANAGED', () => {
+  it("sends through the host's SES whatever was saved, and refuses changes", () => {
+    envState.SMTP_HOST = 'smtp.example.test'
+    saveProviderSettings({ provider: 'smtp', credentials: { host: 'mine.example.test', port: '587' } })
+    envState.SENDING_MANAGED = 'on'
+    envState.SES_ACCESS_KEY_ID = 'AKIAHOST'
+    envState.SES_SECRET_ACCESS_KEY = 'host-secret'
+    envState.SES_REGION = 'eu-west-2'
+    const config = getActiveProviderConfig()
+    expect(config.providerId).toBe('ses')
+    expect(config.creds).toMatchObject({ accessKeyId: 'AKIAHOST', region: 'eu-west-2' })
+    expect(config.creds.host).toBeUndefined()
+    expect(() => saveProviderSettings({ provider: 'smtp', credentials: { host: 'x' } })).toThrow(/hosting provider/)
   })
 })
 

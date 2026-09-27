@@ -133,6 +133,13 @@ export const env = {
     secretAccessKey: () => readEnv('SES_SECRET_ACCESS_KEY'),
     configurationSet: () => readEnv('SES_CONFIGURATION_SET'),
   },
+  /**
+   * SENDING_MANAGED=on: the host sends everyone's email through its Amazon
+   * SES account (the SES_* settings). Settings → Sending shows only sending
+   * domains, which users verify with DNS records (see sendingDomains.ts), and
+   * mail only goes out from those domains.
+   */
+  sendingManaged: () => ['on', 'true', '1', 'yes'].includes(readEnv('SENDING_MANAGED')?.toLowerCase() ?? ''),
   // Which sending provider to use when none is saved in Settings → Sending
   // (a provider id such as "ses"). Unset: inferred from the env vars present.
   emailProvider: () => readEnv('EMAIL_PROVIDER'),

@@ -8,6 +8,7 @@ import {
 // Descriptors only — importing the provider registry here would pull nodemailer
 // and node:crypto into the client bundle.
 import type { ProviderDescriptor, ProviderField } from '../../../server/providers/types'
+import { ManagedSending } from './ManagedSending'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -23,6 +24,8 @@ export function EmailSendingTab() {
   const [source, setSource] = useState<'db' | 'env'>('env')
   const [credsUnreadable, setCredsUnreadable] = useState(false)
   const [usingDefaultSecret, setUsingDefaultSecret] = useState(false)
+  // The host runs sending through Amazon SES: this page is just sending domains.
+  const [managed, setManaged] = useState(false)
 
   const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -42,6 +45,7 @@ export function EmailSendingTab() {
         setError(res.error || 'Failed to load settings')
         return
       }
+      setManaged(res.managed)
       setProviders(res.providers as ProviderDescriptor[])
       setFields(res.settings.fields)
       setProvider(res.settings.provider)
@@ -190,6 +194,8 @@ export function EmailSendingTab() {
       </div>
     )
   }
+
+  if (managed) return <ManagedSending />
 
   return (
     <form onSubmit={handleSave} className="flex flex-col gap-6">
