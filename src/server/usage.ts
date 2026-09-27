@@ -18,6 +18,11 @@ const USAGE_COUNTERS = [
   'searches',
   /** People shown in prospect search results. */
   'prospects',
+  /**
+   * What searches cost, in prospect credits (allowance.ts; to the hundredth):
+   * this is what a plan's prospect allowance counts.
+   */
+  'prospectCredits',
   /** Email lookups run, by Reveal or when saving prospects. */
   'emailLookups',
   /** Addresses handed over: revealed, or saved as a new contact. */
@@ -76,7 +81,7 @@ export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {
   }
   pending.set(month, row)
   // Straight away, so the next search or send already sees what's left.
-  countAgainstAllowance({ prospects: deltas.prospects, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent })
+  countAgainstAllowance({ prospects: deltas.prospectCredits, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent })
   // unref: a pending count must not keep the process (or a test run) alive.
   g.__usageTimer ??= setTimeout(flush, FLUSH_MS).unref?.() ?? null
 }

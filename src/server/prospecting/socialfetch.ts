@@ -21,6 +21,7 @@
 // A person's employer is taken from their headline for display, and resolved
 // properly from their profile only when they're saved.
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { env } from '../env'
 import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
@@ -59,6 +60,18 @@ class SocialFetchError extends Error {
 
 type Fetch = typeof fetch
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Credits SocialFetch charged inside `fn` (and whatever it awaits), for work
+ * that's paid for by what it actually cost: a plan's prospect credits
+ * (search.ts). Concurrent searches each get their own count.
+ */
+const meter = new AsyncLocalStorage<{ credits: number }>()
+export async function meterCredits<T>(fn: (spent: () => number) => Promise<T>): Promise<{ result: T; credits: number }> {
+  const store = { credits: 0 }
+  const result = await meter.run(store, () => fn(() => store.credits))
+  return { result, credits: store.credits }
+}
 
 interface Envelope<T> {
   data: T
@@ -102,6 +115,9 @@ async function request<T>(
 
     if (res.ok) {
       const body = (await res.json()) as Envelope<T>
+      const charged = body.meta?.creditsCharged
+      const store = meter.getStore()
+      if (store && typeof charged === 'number' && charged > 0) store.credits += charged
       console.log(
         `[SocialFetch] ${path} 200 req=${body.meta?.requestId ?? '?'} credits=${body.meta?.creditsCharged ?? '?'}`,
       )

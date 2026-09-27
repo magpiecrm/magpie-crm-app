@@ -12,7 +12,8 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
     periodEnd: a.periodEnd,
     upgradeUrl: a.upgradeUrl,
     sendingPaused: Boolean(a.sendingPaused),
-    items: ALLOWANCE_KINDS.flatMap((kind) => (a.limits[kind] === undefined ? [] : [{ kind, used: a.used[kind], limit: a.limits[kind]! }])),
+    // Prospect credits are counted to the hundredth; shown whole.
+    items: ALLOWANCE_KINDS.flatMap((kind) => (a.limits[kind] === undefined ? [] : [{ kind, used: Math.round(a.used[kind]), limit: a.limits[kind]! }])),
   }
   return { month, ...usageForMonth(month), allowance }
 })

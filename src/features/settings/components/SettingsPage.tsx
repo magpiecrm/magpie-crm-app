@@ -5,6 +5,7 @@ import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
 import { useSettingsStatus, type StatusLevel } from '../useSettingsStatus'
 import { SettingsOverview } from './SettingsOverview'
 import { ProspectingTab } from './ProspectingTab'
+import { ProspectSearchTab } from './ProspectSearchTab'
 import { EmailSendingTab } from './EmailSendingTab'
 import { SendersTab } from './SendersTab'
 import { CopilotTab } from './CopilotTab'
@@ -136,6 +137,7 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
               Prospect data and email verification are provided with your plan, so there's nothing to set up here.
             </p>
           )}
+          {active === 'search' && <ProspectSearchTab />}
           {active === 'source' && !hiddenPage && <ProspectingTab key="source" section="source" />}
           {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}

@@ -294,6 +294,12 @@ export interface ProspectingSettingsRecord {
   verification_provider?: 'reacher' | 'none' | 'neverbounce'
   /** Only hand over emails the mail server confirmed. Absent means true. */
   verified_only?: boolean
+  /**
+   * With verified-only on, show people at companies that accept every
+   * address in search results, marked unverifiable (and counted as
+   * prospects), instead of hiding them. Absent means true.
+   */
+  show_unverifiable?: boolean
   reacher_url?: string
   reacher_from_email?: string
   reacher_hello_name?: string

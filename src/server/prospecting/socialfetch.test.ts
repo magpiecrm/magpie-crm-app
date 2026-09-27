@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, sameCompanyName, titleFromHeadline } from './socialfetch'
+import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, meterCredits, sameCompanyName, titleFromHeadline } from './socialfetch'
 
 // No network: every test drives the connector through a fake fetch that
 // records requests and replays canned SocialFetch envelopes.
@@ -523,3 +523,24 @@ describe('searchPeople by industry, and company search filters', () => {
     expect(page.items.map((c) => c.ref)).toEqual(['9'])
   })
 })
+
+describe('meterCredits', () => {
+  const emptySearch = (credits: number) => envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } }, credits)
+
+  it('adds up what SocialFetch charged inside it, and keeps concurrent searches apart', async () => {
+    const src = createSocialFetchSource(fakeFetch([emptySearch(3), emptySearch(3), emptySearch(6)]).impl, () => 'sfk_test')
+    const [a, b] = await Promise.all([
+      meterCredits(async () => {
+        await src.searchPeople(null, { titles: ['CFO'] })
+        await src.searchPeople(null, { titles: ['CFO'] })
+      }),
+      meterCredits(() => src.searchPeople(null, { titles: ['CTO'] })),
+    ])
+    expect(a.credits + b.credits).toBe(12)
+    expect([a.credits, b.credits].sort()).toEqual([3, 9].sort())
+    // Outside a meter nothing is counted, and nothing breaks.
+    const lone = createSocialFetchSource(fakeFetch([emptySearch(3)]).impl, () => 'sfk_test')
+    await lone.searchPeople(null, { titles: ['CEO'] })
+  })
+})
+

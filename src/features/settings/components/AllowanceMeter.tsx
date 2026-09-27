@@ -3,7 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 
-const LABEL = { prospects: 'Prospects', reveals: 'Email reveals', emailsSent: 'Emails sent' } as const
+const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsSent: 'Emails sent' } as const
 
 /**
  * This period's allowances as bars, with an Upgrade button, when whoever

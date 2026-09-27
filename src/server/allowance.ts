@@ -15,6 +15,19 @@
 import { db } from './db'
 
 export const ALLOWANCE_KINDS = ['prospects', 'reveals', 'emailsSent'] as const
+
+/**
+ * The `prospects` allowance is in prospect credits: what one person found
+ * costs at a full search page, a 25th of the 3-credit search plus their
+ * 3-credit profile lookup. A search uses what it actually cost, so a plan of
+ * 1,000 is about 1,000 people; filters that leave people out, and top-up
+ * searches, use more per person shown. (MagpieCRM Cloud's price per prospect
+ * is set from the same sum; magpiecrm site: src/config.ts.)
+ */
+const SOCIALFETCH_CREDITS_PER_PROSPECT = 3 / 25 + 3
+
+/** Prospect credits for what a search spent at SocialFetch, to the hundredth. */
+export const prospectCredits = (socialfetchCredits: number) => Math.round((socialfetchCredits / SOCIALFETCH_CREDITS_PER_PROSPECT) * 100) / 100
 export type AllowanceKind = (typeof ALLOWANCE_KINDS)[number]
 
 export interface Allowance {
@@ -30,12 +43,12 @@ export interface Allowance {
 }
 
 const WHAT: Record<AllowanceKind, [one: string, many: string]> = {
-  prospects: ['prospect', 'prospects'],
+  prospects: ['prospect credit', 'prospect credits'],
   reveals: ['email reveal', 'email reveals'],
   emailsSent: ['email', 'emails'],
 }
 
-const fmt = (n: number) => n.toLocaleString('en-GB')
+const fmt = (n: number) => Math.floor(n).toLocaleString('en-GB')
 const noun = (kind: AllowanceKind, n: number) => WHAT[kind][n === 1 ? 0 : 1]
 
 /** Used when an action would go over its allowance; the message is for the user. */

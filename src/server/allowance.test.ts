@@ -35,7 +35,7 @@ describe('allowances', () => {
 
   it('counts usage against each allowance separately', () => {
     setAllowance({ ...period, prospects: 100, reveals: 10 })
-    recordUsage({ searches: 1, prospects: 25, emailLookups: 3, emailsFound: 2, emailsSent: 500 })
+    recordUsage({ searches: 1, prospects: 25, prospectCredits: 25, emailLookups: 3, emailsFound: 2, emailsSent: 500 })
     expect(remaining('prospects')).toBe(75)
     expect(remaining('reveals')).toBe(8)
     // No limit set for emails.
@@ -46,7 +46,7 @@ describe('allowances', () => {
 
   it('keeps what was used on an upgrade, and starts again in a new period', () => {
     setAllowance({ ...period, prospects: 100 })
-    recordUsage({ prospects: 90 })
+    recordUsage({ prospectCredits: 90 })
     setAllowance({ ...period, prospects: 300 })
     expect(remaining('prospects')).toBe(210)
     setAllowance({ ...period, periodStart: '2026-11-15T00:00:00Z', prospects: 300 })
@@ -112,7 +112,7 @@ describe('/api/usage/allowance', () => {
     const put = await call('PUT', 'tok_123', { ...period, prospects: 500, reveals: 1500, emailsSent: 10000 })
     expect(put.status).toBe(200)
     expect((await put.json()).allowance).toMatchObject({ limits: { prospects: 500, reveals: 1500, emailsSent: 10000 }, used: { prospects: 0 } })
-    recordUsage({ prospects: 7 })
+    recordUsage({ prospectCredits: 7 })
     expect((await (await call('GET', 'tok_123')).json()).allowance.used.prospects).toBe(7)
     expect((await call('DELETE', 'tok_123')).status).toBe(200)
     expect(remaining('prospects')).toBe(Infinity)

@@ -4,6 +4,7 @@
  */
 export const SETTINGS_SECTIONS = [
   { id: 'overview', group: null, label: 'Overview', intro: "This month's usage, what's set up, and what needs your attention." },
+  { id: 'search', group: 'Prospecting', label: 'Prospect search', intro: 'What prospect search shows you.' },
   { id: 'source', group: 'Prospecting', label: 'Data source', intro: 'The SocialFetch account that prospect search uses to find companies and people.' },
   { id: 'verification', group: 'Prospecting', label: 'Email verification', intro: 'How found email addresses are checked before they are shown or saved, and the health of the servers that check them.' },
   { id: 'sending', group: 'Email', label: 'Sending', intro: 'The service your campaigns are sent through, and the default address they come from.' },

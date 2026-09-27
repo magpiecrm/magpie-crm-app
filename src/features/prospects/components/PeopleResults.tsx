@@ -120,6 +120,7 @@ function FixDomain({
 
 /** What a hosted copy says when an address couldn't be verified, whatever the mail server's reason. */
 const UNABLE = 'Unable to verify email.'
+const UNVERIFIABLE_WHY = 'Their company accepts every address, so no email there can be verified.'
 
 /** Reveal button, then the email and its verification status. */
 function EmailCell({
@@ -208,13 +209,10 @@ function EmailCell({
   // emails are handed over. (With verified-only off, Reveal still gives the
   // best guess, marked as catch-all.)
   if (catchAll && verifiedOnly) {
-    if (brief) return <span className="text-[11px] text-muted-foreground leading-snug">{UNABLE}</span>
     return (
-      <div className="flex flex-col items-start gap-1">
-        <EmailStatusBadge status="catch_all_likely" />
-        <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">
-          Their company accepts every address, so no email can be verified.
-        </span>
+      <div className="flex flex-col items-start gap-1" title={UNVERIFIABLE_WHY}>
+        <Badge variant="default">Unverifiable</Badge>
+        {!brief && <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">{UNVERIFIABLE_WHY}</span>}
       </div>
     )
   }

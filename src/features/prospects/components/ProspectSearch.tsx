@@ -360,6 +360,8 @@ export function ProspectSearch() {
   // Run by the host: credits are the host's business, and verification outcomes stay short.
   const hosted = Boolean(status?.managed)
   const verifiedOnly = status?.verification?.verifiedOnly ?? true
+  // Settings → Prospect search: listed and marked Unverifiable, or hidden.
+  const showUnverifiable = status?.verification?.showUnverifiable ?? true
   const [showCatchAll, setShowCatchAll] = useState(false)
   useEffect(() => setShowCatchAll(false), [peopleSearch])
   // A reveal can discover a catch-all company: mark everyone there now, and
@@ -374,7 +376,7 @@ export function ProspectSearch() {
   const isCatchAll = (p: PersonResult) =>
     Boolean(p.catchAll) || catchAllCompanies.has(p.companyRef ?? '') || catchAllCompanies.has(p.companyDomain ?? '')
   const catchAllCount = allPeople.filter((p) => p.catchAll).length
-  const hidingCatchAll = verifiedOnly && !showCatchAll && catchAllCount > 0
+  const hidingCatchAll = verifiedOnly && !showUnverifiable && !showCatchAll && catchAllCount > 0
   const peopleItems = hidingCatchAll ? allPeople.filter((p) => !p.catchAll) : allPeople
   // Titles checked against profiles, by the search itself or the button.
   // Results whose title and company came from their profile (✓ in the table).
@@ -641,7 +643,7 @@ export function ProspectSearch() {
   const filtersFooter = (
     <div className="p-4 border-t border-border bg-card/50 flex flex-col gap-2">
       {formError && <p className="text-[11px] text-destructive font-medium">{formError}</p>}
-      {mode === 'people' && (
+      {mode === 'people' && !hosted && (
         <div className="flex items-center justify-between gap-2">
           <label htmlFor="people-page-size" className="text-[11px] font-semibold text-foreground">
             Results per page
@@ -778,7 +780,7 @@ export function ProspectSearch() {
           </div>
         </div>
 
-        {mode === 'people' && verifiedOnly && catchAllCount > 0 && (
+        {mode === 'people' && verifiedOnly && !showUnverifiable && catchAllCount > 0 && (
           <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
               {hidingCatchAll

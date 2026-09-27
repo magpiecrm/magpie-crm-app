@@ -28,6 +28,7 @@ const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
 vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }) }))
 let suppressedHashes = new Set<string>()
 let allowance: any = null
+let prospectingSettings: { show_unverifiable?: boolean } | null = null
 let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
   db: {
@@ -38,7 +39,7 @@ vi.mock('../db', () => ({
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     getDisclosures: () => disclosures,
     upsertProspectCompanies: () => {},
-    getProspectingSettings: () => null,
+    getProspectingSettings: () => prospectingSettings,
     data: { get contacts() { return contacts } },
   },
 }))
@@ -60,24 +61,25 @@ beforeEach(() => {
   allowance = null
   suppressedHashes = new Set()
   emailDomains = {}
+  prospectingSettings = null
   disclosures = []
   contacts = []
 })
 
 describe('searchPeople with a plan allowance', () => {
-  it('shows and pays for no more people than the plan has left', async () => {
-    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 99 } }
-    searchPage = pageOf(hit('ana'), hit('ben'))
+  it('asks for no more people than the plan has prospect credits for', async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 98.6 } }
+    searchPage = pageOf(hit('ana'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
     expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 1 })
-    expect(res.warnings).toContain('Your plan has 1 prospect left this month, so this page shows at most that many. Upgrade to get more.')
+    expect(res.warnings).toContain('Your plan has 1 prospect credit left this month, so this page asks for at most about that many people. Upgrade to get more.')
   })
 
   it('stops before searching when none are left', async () => {
     allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 100 } }
     const calls = searchPeopleMock.mock.calls.length
-    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow(/used all 100 prospects/)
+    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow(/used all 100 prospect credits/)
     expect(searchPeopleMock.mock.calls.length).toBe(calls)
   })
 })
@@ -155,6 +157,31 @@ describe('searchPeople catch-all marking', () => {
       ['Barclays', true],
       ['Acme', false],
     ])
+  })
+
+  it('in a hosted copy, also marks companies another copy there found out about', async () => {
+    emailDomains = {}
+    Object.assign(process.env, { PROSPECTING_MANAGED: 'on', REACHER_URL: 'https://services.magpie.test', REACHER_SECRET: 'vt_mc_acme' })
+    const asked: any[] = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const { companies } = JSON.parse(String(init.body))
+      asked.push(...companies)
+      return Response.json({ companies: companies.map((c: any) => ({ ...c, catchAll: c.ref === '7' })) })
+    }) as unknown as typeof fetch
+    try {
+      searchPage = pageOf(hit('ana'), hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(res.items.map((p) => [p.company, p.catchAll ?? false])).toEqual([
+        ['Barclays', false],
+        ['Acme', true],
+      ])
+      // Company refs and domains only, nothing about the people.
+      expect(asked).toEqual([{ ref: '42', domain: 'barclays.com' }, { ref: '7', domain: 'acme.com' }])
+    } finally {
+      globalThis.fetch = realFetch
+      for (const k of ['PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET']) delete process.env[k]
+    }
   })
 
   it("doesn't trust a catch-all result older than 180 days", async () => {
@@ -266,7 +293,8 @@ describe('searchPeople fills the page', () => {
     searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
   })
 
-  it('does not count people at known catch-all companies while verified-only is on', async () => {
+  it('with unverifiable people hidden, does not count them and fills the page from the next search', async () => {
+    prospectingSettings = { show_unverifiable: false }
     searchPeopleMock.mockClear()
     emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
     searchPeopleMock
@@ -279,6 +307,15 @@ describe('searchPeople fills the page', () => {
       ['ben', false],
     ])
     expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('by default lists unverifiable people, marked, and counts them like everyone else', async () => {
+    searchPeopleMock.mockClear()
+    emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
+    searchPeopleMock.mockImplementationOnce(async () => withCursor(pageOf(hit('ana')), 'c1'))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    expect(res.items.map((p) => [p.firstName, p.catchAll ?? false])).toEqual([['ana', true]])
+    expect(searchPeopleMock).toHaveBeenCalledTimes(1)
   })
 
   it('does not top up when the first page is already full', async () => {

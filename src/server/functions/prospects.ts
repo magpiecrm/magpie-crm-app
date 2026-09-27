@@ -148,7 +148,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { getSocialFetchBalance } = await import('../prospecting/socialfetch')
-    const { getActiveVerifier, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey } = await import('../prospecting/settings')
+    const { getActiveVerifier, isSocialFetchConfigured, isVerifiedOnly, requireSocialFetchKey, showsUnverifiable } = await import('../prospecting/settings')
     const { getProxyRouter } = await import('../prospecting/runtime')
 
     const { db } = await import('../db')
@@ -166,7 +166,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       /** PROSPECTING_MANAGED: the host runs search and verification; hide their setup. */
       managed: env.prospectingManaged(),
       socialfetch: { configured, balance, balanceHidden, prospectsThisMonth },
-      verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly() },
+      verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly(), showUnverifiable: showsUnverifiable() },
       reacher: {
         configured: verifier?.provider === 'reacher',
         // The host's IPs aren't a managed copy's business.
@@ -201,6 +201,19 @@ async function refuseIfManaged() {
     throw new Error('Prospect data and email verification are provided with your plan, so there is nothing to set up here.')
   }
 }
+
+// --- Settings → Prospect search ------------------------------------------------
+// What search shows: a preference, so hosted copies can change it too.
+
+export const saveSearchPreferencesFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { showUnverifiable: boolean }) => z.object({ showUnverifiable: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { saveSearchPreferences } = await import('../prospecting/settings')
+    saveSearchPreferences(data)
+    return { ok: true }
+  })
 
 export const getProspectingSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {

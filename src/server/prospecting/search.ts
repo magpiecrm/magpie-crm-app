@@ -5,14 +5,20 @@ import { env } from '../env'
 import { refineFromProfile } from './refine'
 import type { CompanyFilters, CompanyResult, CompanySource, HeadcountBucket, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
 import { isKnownCatchAll, surnameHidden } from './emailFinder'
-import { inHeadcountBuckets, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { sharedCatchAll } from './sharedCatchAll'
+import { inHeadcountBuckets, meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
 export async function searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
-  const page = await getSource().searchCompanies(filters)
+  const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
+  // Browsing companies is searching too: it uses prospect credits for what it costs.
+  if (remaining('prospects') < 1) requireAllowance('prospects')
+  const { result: page, credits } = await meterCredits(() => getSource().searchCompanies(filters))
+  const { recordUsage } = await import('../usage')
+  recordUsage({ prospectCredits: prospectCredits(credits) })
 
   // A domain the user entered by hand beats the provider's (often missing) one.
   for (const company of page.items) {
@@ -25,6 +31,10 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   for (const company of page.items) {
     if (company.domain && isKnownCatchAll(company.domain, (d) => db.getEmailDomain(d), now)) company.catchAll = true
   }
+  // In a hosted copy, also those any other copy there has found out about.
+  const unmarked = page.items.filter((c) => !c.catchAll)
+  const shared = await sharedCatchAll(unmarked.map((c) => ({ ref: c.ref, domain: c.domain })))
+  unmarked.forEach((c, i) => shared[i] && (c.catchAll = true))
 
   // Companies and domains are non-personal, so they're cached globally.
   db.upsertProspectCompanies(
@@ -57,7 +67,10 @@ export async function resolveCompany(ref: string): Promise<{ ref: string; domain
   const { resolveCompanyDomain } = await import('./companies')
   const name = db.getProspectCompany(ref)?.name ?? ref
   const domain = await resolveCompanyDomain(ref, name, getSource(), db)
-  return { ref, domain, catchAll: companyIsCatchAll(domain, db) }
+  // Known here, or (in a hosted copy) by any other copy there: the page asks
+  // before spending a search on a company where nothing can be verified.
+  const catchAll = companyIsCatchAll(domain, db) || (await sharedCatchAll([{ ref, domain }]))[0]
+  return { ref, domain, catchAll }
 }
 
 /** Whether a company's mail domain is already known to accept every address (cache only). */
@@ -288,6 +301,11 @@ async function processBatch(
   for (const p of items) {
     if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = true
   }
+  // In a hosted copy, also companies any other copy there has found out
+  // about (sharedCatchAll.ts): company refs and domains only.
+  const unmarked = items.filter((p) => !p.catchAll)
+  const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
+  unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
 
   return { items, refined, lookupError }
 }
@@ -309,20 +327,25 @@ export async function searchPeople(
 ): Promise<Page<PersonResult> & { refined: string[] }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
-  const { isVerifiedOnly } = await import('./settings')
-  const { remaining, requireAllowance } = await import('../allowance')
+  const { isVerifiedOnly, showsUnverifiable } = await import('./settings')
+  const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
   const { company, ...filters } = input
   const source = getSource()
-  const verifiedOnly = isVerifiedOnly()
-  // A plan's prospect allowance: none left stops here, before anything is paid for.
+  // People whose email can't be verified (their company accepts every
+  // address) are hidden, unless the user chose to see them marked as such.
+  const hidesCatchAll = isVerifiedOnly() && !showsUnverifiable()
+  // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
-  if (left === 0) requireAllowance('prospects')
+  if (left < 1) requireAllowance('prospects')
 
-  // Results per page apply to each job title, as the search itself does.
+  // Results per page apply to each job title, as the search itself does. A
+  // hosted copy always searches full pages: the search's cost is then shared
+  // by the most people, which is what a prospect credit is priced on.
   const titles = new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   const slots = Math.min(MAX_TITLES_SEARCHED, Math.max(1, titles))
-  const perSlot = filters.count ?? DEFAULT_PAGE_SIZE
-  const target = Math.min(perSlot * slots, left)
+  const perSlot = env.prospectingManaged() ? DEFAULT_PAGE_SIZE : (filters.count ?? DEFAULT_PAGE_SIZE)
+  // About one credit per person on a full page, so a page asks for no more than are left.
+  const target = Math.min(perSlot * slots, Math.floor(left))
 
   const items: PersonResult[] = []
   const refined: string[] = []
@@ -330,50 +353,50 @@ export async function searchPeople(
   const warnings: string[] = []
   const details: string[] = []
   const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0 }
-  // Catch-all people are hidden while verified-only is on, so they don't count.
-  const usable = () => items.filter((p) => !(verifiedOnly && p.catchAll)).length
+  // Hidden catch-all people don't fill the page or count as prospects.
+  const usable = () => items.filter((p) => !(hidesCatchAll && p.catchAll)).length
 
   let cursor = filters.cursor
   let nextCursor: string | null = null
   let reportedTotal: number | null = null
   let searches = 0
   let lookupError: string | undefined
-  for (;;) {
-    const need = target - usable()
-    const page = await source.searchPeople(company ?? null, {
-      ...filters,
-      cursor,
-      count: searches === 0 ? Math.min(perSlot, Math.ceil(target / slots)) : Math.max(1, Math.ceil(need / slots)),
-    })
-    searches++
-    // The first search's notes describe the whole query; later top-ups would repeat them.
-    if (searches === 1) {
-      reportedTotal = page.reportedTotal
-      warnings.push(...page.warnings)
-      details.push(...(page.details ?? []))
+  const { credits } = await meterCredits(async (spent) => {
+    for (;;) {
+      const need = target - usable()
+      const page = await source.searchPeople(company ?? null, {
+        ...filters,
+        cursor,
+        count: searches === 0 ? Math.min(perSlot, Math.ceil(target / slots)) : Math.max(1, Math.ceil(need / slots)),
+      })
+      searches++
+      // The first search's notes describe the whole query; later top-ups would repeat them.
+      if (searches === 1) {
+        reportedTotal = page.reportedTotal
+        warnings.push(...page.warnings)
+        details.push(...(page.details ?? []))
+      }
+      nextCursor = page.nextCursor
+      const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
+      fresh.forEach((p) => seen.add(p.profileUrl))
+
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes)
+      items.push(...batch.items)
+      refined.push(...batch.refined)
+      if (batch.lookupError) {
+        lookupError = batch.lookupError
+        break
+      }
+      if (usable() >= target || !nextCursor || searches > MAX_TOP_UPS) break
+      // No top-up search once what's been spent uses up the credits left.
+      if (prospectCredits(spent()) >= left) break
+      cursor = nextCursor
     }
-    nextCursor = page.nextCursor
-    const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
-    fresh.forEach((p) => seen.add(p.profileUrl))
+  })
 
-    const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes)
-    items.push(...batch.items)
-    refined.push(...batch.refined)
-    if (batch.lookupError) {
-      lookupError = batch.lookupError
-      break
-    }
-    if (usable() >= target || !nextCursor || searches > MAX_TOP_UPS) break
-    cursor = nextCursor
-  }
-
-  // Never more than the allowance has left, even if a search returned extra.
-  for (let i = items.length - 1; i >= 0 && usable() > left; i--) {
-    if (!(verifiedOnly && items[i].catchAll)) items.splice(i, 1)
-  }
-
+  // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
-  recordUsage({ searches, prospects: usable() })
+  recordUsage({ searches, prospects: usable(), prospectCredits: prospectCredits(credits) })
 
   if (lookupError) details.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
   if (tally.noSurname > 0) {
@@ -396,7 +419,7 @@ export async function searchPeople(
     details.push(`Some results were left out, so ${plural(searches - 1, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
-    warnings.push(`Your plan has ${plural(left, 'prospect', 'prospects')} left this month, so this page shows at most that many. Upgrade to get more.`)
+    warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
   }
   if (!lookupError && usable() < target && nextCursor) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
