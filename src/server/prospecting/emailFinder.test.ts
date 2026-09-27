@@ -35,7 +35,7 @@ function setup(opts: {
     return {
       reachability: verdict,
       isCatchAll: null,
-      outcome: message?.startsWith('4') ? ('greylisted' as const) : ('ok' as const),
+      outcome: message?.startsWith('4') ? ('greylisted' as const) : message?.includes('spamhaus') ? ('sender_rejected' as const) : ('ok' as const),
     }
   })
   const deps: FinderDeps = {
@@ -71,7 +71,7 @@ describe('findEmail', () => {
   it('stops at the first safe candidate and learns only the pattern', async () => {
     const { deps, domains, candidateChecks } = setup({ mailbox: { 'jsmith@acme.com': 'safe' } })
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result).toEqual({ email: 'jsmith@acme.com', status: 'verified', greylisted: false })
+    expect(result).toEqual({ email: 'jsmith@acme.com', status: 'verified', outcome: 'verified', greylisted: false })
     expect(candidateChecks()).toEqual(['jane.smith@acme.com', 'jsmith@acme.com'])
 
     const rec = domains.get('acme.com')!
@@ -111,7 +111,7 @@ describe('findEmail', () => {
   it('returns the best guess as catch_all_likely without checking candidates', async () => {
     const { deps, candidateChecks, domains } = setup({ probe: 'safe' })
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'catch_all_likely', greylisted: false })
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'catch_all_likely', outcome: 'catchAll', greylisted: false })
     expect(result.detail).toMatch(/acme\.com accepts every address/)
     expect(candidateChecks()).toEqual([])
     expect(domains.get('acme.com')!.catch_all).toBe(true)
@@ -158,7 +158,7 @@ describe('findEmail', () => {
   it('does not guess when LinkedIn hides the surname', async () => {
     const { deps, checked } = setup({})
     const result = await findEmail({ firstName: 'Andy', lastName: 'C.' }, 'acme.com', deps)
-    expect(result).toMatchObject({ email: null, status: 'not_found', detail: expect.stringMatching(/surname is hidden/) })
+    expect(result).toMatchObject({ email: null, status: 'not_found', outcome: 'hiddenSurname', detail: expect.stringMatching(/surname is hidden/) })
     expect(checked).toEqual([])
   })
 
@@ -167,13 +167,21 @@ describe('findEmail', () => {
     const { deps, candidateChecks } = setup({ mailbox: unknown })
     const result = await findEmail(jane, 'acme.com', deps)
     expect(candidateChecks()).toEqual(['jane.smith@acme.com', 'jsmith@acme.com'])
-    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'unverified', detail: expect.stringMatching(/stopped after 2 tries/) })
+    expect(result).toMatchObject({ email: 'jane.smith@acme.com', status: 'unverified', outcome: 'noAnswer', detail: expect.stringMatching(/stopped after 2 tries/) })
+  })
+
+  it('says when our sender domain is what gets checks refused', async () => {
+    const { deps } = setup({
+      mailbox: { 'jane.smith@acme.com': 'unknown', 'jsmith@acme.com': 'unknown' },
+      smtpMessage: { 'jane.smith@acme.com': '554 listed at spamhaus dbl', 'jsmith@acme.com': '554 listed at spamhaus dbl' },
+    })
+    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({ status: 'unverified', outcome: 'blocked' })
   })
 
   it('reports not_found for a domain with no MX, without any checks', async () => {
     const { deps, checked } = setup({ mx: [] })
     expect(await findEmail(jane, 'acme.com', deps)).toEqual({
-      email: null, status: 'not_found', greylisted: false, detail: "acme.com doesn't receive email, so there's nothing to check.", domainProblem: true,
+      email: null, status: 'not_found', outcome: 'noMail', greylisted: false, detail: "acme.com doesn't receive email, so there's nothing to check.", domainProblem: true,
     })
     expect(checked).toEqual([])
   })
@@ -186,19 +194,19 @@ describe('findEmail', () => {
   it('returns an unverified best guess without Reacher', async () => {
     const { deps } = setup({ verifier: false })
     expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
-      email: 'jane.smith@acme.com', status: 'unverified', greylisted: false, detail: expect.stringMatching(/verification is off/),
+      email: 'jane.smith@acme.com', status: 'unverified', outcome: 'unchecked', greylisted: false, detail: expect.stringMatching(/verification is off/),
     })
   })
 
   it('falls back to the first risky candidate', async () => {
     const { deps } = setup({ mailbox: { 'jane@acme.com': 'risky' } })
-    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({ email: 'jane@acme.com', status: 'risky', greylisted: false })
+    expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({ email: 'jane@acme.com', status: 'risky', outcome: 'risky', greylisted: false })
   })
 
   it('reports not_found when every candidate is rejected', async () => {
     const { deps, candidateChecks } = setup({})
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result.status).toBe('not_found')
+    expect(result).toMatchObject({ status: 'not_found', outcome: 'rejected' })
     expect(result.detail).toBe("acme.com's mail server rejected all 6 likely address formats.")
     expect(candidateChecks().length).toBeLessThanOrEqual(6)
   })
@@ -209,7 +217,7 @@ describe('findEmail', () => {
       smtpMessage: { 'jane.smith@acme.com': '451 greylisted' },
     })
     expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
-      email: 'jane.smith@acme.com', status: 'unverified', greylisted: true, detail: expect.stringMatching(/try again later/),
+      email: 'jane.smith@acme.com', status: 'unverified', outcome: 'greylisted', greylisted: true, detail: expect.stringMatching(/try again later/),
     })
   })
 })
@@ -282,7 +290,7 @@ describe('findEmail retries through another IP when a company refuses one', () =
   it('stops without spending more checks once every IP has refused', async () => {
     const { deps, used } = await refusing(['a'])
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result.status).toBe('unverified')
+    expect(result).toMatchObject({ status: 'unverified', outcome: 'refused' })
     expect(result.detail).toMatch(/refuses connections from every verification IP/)
     expect(result.detail).not.toMatch(/stopped after/)
     // Only the catch-all probe was sent; no guess was checked.

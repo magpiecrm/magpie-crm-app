@@ -7,6 +7,11 @@
 
 import { countAgainstAllowance } from './allowance'
 import { db } from './db'
+import { LOOKUP_OUTCOMES, type LookupOutcome } from './prospecting/types'
+
+/** The counter for one lookup outcome: `verified` → `lookupVerified`. */
+const lookupCounter = <O extends LookupOutcome>(outcome: O) =>
+  `lookup${outcome[0].toUpperCase()}${outcome.slice(1)}` as `lookup${Capitalize<O>}`
 
 const USAGE_COUNTERS = [
   /** SocialFetch people-search pages run (3 credits each). */
@@ -21,6 +26,13 @@ const USAGE_COUNTERS = [
   'contactsSaved',
   /** Emails accepted by the sending provider (campaigns, tests and one-offs). */
   'emailsSent',
+  /**
+   * How each finished email lookup ended (by Reveal or when saving), one
+   * counter per outcome: `lookupVerified`, and the reasons no address was
+   * confirmed (`lookupCatchAll`, `lookupRejected`, …). Their total is every
+   * lookup, so verified ÷ total is the hit rate.
+   */
+  ...LOOKUP_OUTCOMES.map(lookupCounter),
 ] as const
 
 export type UsageCounter = (typeof USAGE_COUNTERS)[number]
@@ -49,6 +61,11 @@ function flush() {
 // The production server (serve.ts) calls this on shutdown, so counts still
 // waiting to be written aren't lost.
 g.__usageFlush = flush
+
+/** Counts how one email lookup ended. */
+export function recordLookup(outcome: LookupOutcome, now = new Date()) {
+  recordUsage({ [lookupCounter(outcome)]: 1 }, now)
+}
 
 /** Adds to this month's counts. */
 export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {

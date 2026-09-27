@@ -18,7 +18,8 @@ import { firstLastLikelihood } from './formatStats'
 import { generateCandidates, type Candidate } from './patterns'
 import { providerFromMx, refusedIp, VerificationLimitError, type Lease, type MailProvider } from './proxyRouter'
 import type { CheckResult } from './reacher'
-import type { EmailStatus } from './types'
+import type { EmailStatus, LookupOutcome } from './types'
+import { recordLookup } from '../usage'
 
 const DAY = 86_400_000
 /** A learned address format is re-checked after this long. */
@@ -109,6 +110,8 @@ export interface FinderDeps {
 export interface FindResult {
   email: string | null
   status: EmailStatus
+  /** How the lookup ended, for the hit rate and its failure reasons (usage.ts). */
+  outcome: LookupOutcome
   /** At least one check was greylisted; worth retrying later for a better answer. */
   greylisted: boolean
   /** Why the answer isn't a verified address, in words the user can act on. */
@@ -225,6 +228,20 @@ function learnPattern(domain: string, pattern: string, deps: FinderDeps) {
   }
 }
 
+/**
+ * findEmail, counting a lookup stopped by a verification limit (daily cap,
+ * pause, per-minute) as `limit` before the error goes on to the user. Other
+ * outcomes are counted by the caller, once the result is final.
+ */
+export async function findEmailCounted(...args: Parameters<typeof findEmail>): Promise<FindResult> {
+  try {
+    return await findEmail(...args)
+  } catch (err) {
+    if (err instanceof VerificationLimitError) recordLookup('limit')
+    throw err
+  }
+}
+
 export async function findEmail(
   person: { firstName: string; lastName: string },
   rawDomain: string,
@@ -235,6 +252,7 @@ export async function findEmail(
     return {
       email: null,
       status: 'not_found',
+      outcome: 'hiddenSurname',
       greylisted: false,
       detail: `Their surname is hidden on LinkedIn (shown as "${person.lastName.trim()}"), so their address can't be worked out.`,
     }
@@ -249,6 +267,7 @@ export async function findEmail(
       return {
         email: null,
         status: 'not_found',
+        outcome: 'noMail',
         greylisted: false,
         detail: suggestion
           ? `${domain} doesn't receive email, but its DNS is run from ${suggestion}, which does.`
@@ -266,7 +285,7 @@ export async function findEmail(
     max: MAX_CHECKS_PER_PERSON,
   })
   if (candidates.length === 0) {
-    return { email: null, status: 'not_found', greylisted: false, detail: "Their name can't be turned into an email address." }
+    return { email: null, status: 'not_found', outcome: 'badName', greylisted: false, detail: "Their name can't be turned into an email address." }
   }
 
   // How much to trust an unconfirmed best guess, in words.
@@ -279,6 +298,7 @@ export async function findEmail(
   const catchAll: FindResult = {
     email: candidates[0].email,
     status: 'catch_all_likely',
+    outcome: 'catchAll',
     greylisted: false,
     reason: catchAllReason,
     detail: `${catchAllReason} ${likelihood}`,
@@ -288,6 +308,7 @@ export async function findEmail(
     return {
       email: candidates[0].email,
       status: 'unverified',
+      outcome: 'unchecked',
       greylisted: false,
       reason: 'Email verification is off, so no address could be confirmed.',
       detail: `Not checked: email verification is off. ${likelihood}`,
@@ -298,6 +319,10 @@ export async function findEmail(
   let greylisted = false
   let anyDefinite = false
   let lastProblem: string | undefined
+  // Why nothing definite came back, if it doesn't: their server turned our
+  // IPs away, or something blocks our IP or sender domain.
+  let refusedUs = false
+  let blockedUs = false
   let tried = 0
   let unknownStreak = 0
   // Per-domain verdict counts for the log: company data only, no addresses.
@@ -312,8 +337,11 @@ export async function findEmail(
     const { result, exhausted } = await verify(deps.verifier, candidate.email, domain, rec.mx_provider ?? 'other')
     if (!result) {
       lastProblem = REFUSED_EVERYWHERE
+      refusedUs = true
       break
     }
+    if (result.outcome === 'unreachable') refusedUs = true
+    if (result.outcome === 'blocked' || result.outcome === 'sender_rejected') blockedUs = true
     const verdict = result.isCatchAll ? 'catch-all' : result.reachability
     tally[verdict] = (tally[verdict] ?? 0) + 1
     tried++
@@ -327,7 +355,7 @@ export async function findEmail(
 
     if (result.reachability === 'safe') {
       learnPattern(domain, candidate.pattern, deps)
-      return done({ email: candidate.email, status: 'verified', greylisted: false })
+      return done({ email: candidate.email, status: 'verified', outcome: 'verified', greylisted: false })
     }
     if (result.reachability === 'risky') {
       anyDefinite = true
@@ -343,6 +371,7 @@ export async function findEmail(
 
     if (exhausted && result.reachability === 'unknown') {
       lastProblem = REFUSED_EVERYWHERE
+      refusedUs = true
       break
     }
     if (result.reachability === 'unknown' && result.outcome !== 'greylisted' && !anyDefinite) {
@@ -356,6 +385,7 @@ export async function findEmail(
     return done({
       email: firstRisky,
       status: 'risky',
+      outcome: 'risky',
       greylisted,
       reason: `${domain}'s mail server only gave a risky answer, so no address could be confirmed.`,
       detail: 'The mail server accepted this address but flagged it as risky.',
@@ -369,6 +399,7 @@ export async function findEmail(
     return done({
       email: candidates[0].email,
       status: 'unverified',
+      outcome: greylisted ? 'greylisted' : blockedUs ? 'blocked' : refusedUs ? 'refused' : 'noAnswer',
       greylisted,
       reason,
       detail: greylisted
@@ -376,5 +407,5 @@ export async function findEmail(
         : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}${tried ? `, so we stopped after ${tried} ${tried === 1 ? 'try' : 'tries'}` : ''}. ${likelihood}`,
     })
   }
-  return done({ email: null, status: 'not_found', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })
+  return done({ email: null, status: 'not_found', outcome: 'rejected', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })
 }

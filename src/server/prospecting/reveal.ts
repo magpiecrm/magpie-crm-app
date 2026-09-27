@@ -9,10 +9,10 @@
 // then saved.
 
 import { domainForPerson } from './companies'
-import { findEmail, type FinderDeps } from './emailFinder'
+import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PersonResult } from './types'
-import { recordUsage } from '../usage'
+import { recordLookup, recordUsage } from '../usage'
 import { requireAllowance } from '../allowance'
 
 export type RevealResult =
@@ -49,6 +49,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
 
   const domain = await domainForPerson(person, deps.source, deps.db)
   if (!domain) {
+    recordLookup('noDomain')
     return {
       status: 'no_domain',
       message: person.companyRef ? "Their company's website isn't known." : "We don't know where they work.",
@@ -58,8 +59,9 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return unavailable
 
   const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
-  const found = await findEmail(person, domain, deps.finder, { headcount })
+  const found = await findEmailCounted(person, domain, deps.finder, { headcount })
   recordUsage({ emailLookups: 1 })
+  recordLookup(found.outcome)
   if (!found.email) {
     return {
       status: 'not_found',

@@ -14,9 +14,13 @@ const fakeDb = {
   upsertProspectCompanies: (entries: any[]) => state.companies.push(...entries),
 }
 vi.mock('../db', () => ({ db: fakeDb }))
+// How each lookup ended, as counted for the hit rate.
+const lookups: string[] = []
+vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome) }))
 
 const { revealEmail } = await import('./reveal')
 const { hashesFor } = await import('./suppression')
+const { VerificationLimitError } = await import('./proxyRouter')
 
 const source: CompanySource = {
   searchCompanies: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }),
@@ -48,6 +52,7 @@ beforeEach(() => {
   state.suppression = []
   state.disclosure = []
   state.companies = []
+  lookups.length = 0
   check.mockClear()
   vi.mocked(source.getCompany).mockClear()
 })
@@ -135,5 +140,14 @@ describe('revealEmail', () => {
   it('reports not_found when every candidate is rejected', async () => {
     const res = await revealEmail({ ...jane, firstName: 'Zed', lastName: 'Nobody' }, { source, finder, db: fakeDb as any })
     expect(res.status).toBe('not_found')
+  })
+
+  it('counts how each lookup ended, for the hit rate', async () => {
+    await revealEmail(jane, { source, finder, db: fakeDb as any })
+    await revealEmail({ ...jane, companyRef: null }, { source, finder, db: fakeDb as any })
+    await revealEmail({ ...jane, firstName: 'Zed', lastName: 'Nobody' }, { source, finder, db: fakeDb as any })
+    const limited = { ...finder, verifier: { ...finder.verifier!, acquire: async () => { throw new VerificationLimitError("Today's verification limit is used up.", 'daily_cap') } } }
+    await expect(revealEmail(jane, { source, finder: limited, db: fakeDb as any })).rejects.toThrow(/limit is used up/)
+    expect(lookups).toEqual(['verified', 'noDomain', 'rejected', 'limit'])
   })
 })

@@ -156,4 +156,26 @@ export type EmailStatus =
   | 'unverified' // Reacher not configured, or every check came back `unknown`
   | 'not_found' // every candidate was rejected, or the domain takes no mail
 
-export type NoticeStatus = 'pending' | 'delivered_first_email' | 'delivered_fallback'
+/**
+ * How one email lookup ended: `verified`, or why no address was confirmed.
+ * Counted per month (usage.ts) for the hit rate and its failure reasons.
+ */
+export const LOOKUP_OUTCOMES = [
+  'verified',
+  'catchAll', // the company's mail server accepts every address
+  'rejected', // every likely format was rejected
+  'risky', // only risky answers
+  'greylisted', // the mail server asked us to try again later
+  'noAnswer', // the mail server couldn't be checked (timeouts, unknown answers)
+  'refused', // the mail server refuses connections from the verification IPs
+  'blocked', // the verification IP or sender domain is blocked or blocklisted
+  'noMail', // the company's domain doesn't receive email
+  'noDomain', // the company's website, or where they work, isn't known
+  'hiddenSurname', // LinkedIn hides their surname
+  'badName', // their name can't be turned into an address
+  'limit', // a verification limit (daily cap, pause, per-minute) stopped the checks
+  'unchecked', // email verification is off
+] as const
+export type LookupOutcome = (typeof LOOKUP_OUTCOMES)[number]
+
+export type NoticeStatus ='pending' | 'delivered_first_email' | 'delivered_fallback'

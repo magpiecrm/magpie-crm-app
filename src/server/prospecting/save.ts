@@ -9,10 +9,10 @@
 import { refineFromProfile } from './refine'
 import crypto from 'crypto'
 import { domainForPerson } from './companies'
-import { findEmail, type FinderDeps } from './emailFinder'
+import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import type { CompanySource, EmailStatus, PeopleSource, PersonResult } from './types'
-import { recordUsage } from '../usage'
+import type { CompanySource, EmailStatus, LookupOutcome, PeopleSource, PersonResult } from './types'
+import { recordLookup, recordUsage } from '../usage'
 import { remaining } from '../allowance'
 
 const SYNC_LIMIT = 10
@@ -131,7 +131,7 @@ async function processPerson(
   }
   const suppressed = deps.db.getSuppressionHashes()
 
-  let found: { email: string | null; status: EmailStatus; greylisted: boolean; detail?: string; reason?: string }
+  let found: { email: string | null; status: EmailStatus; greylisted: boolean; detail?: string; reason?: string; outcome?: LookupOutcome }
   if (person.email) {
     found = { email: person.email.toLowerCase().trim(), status: person.emailStatus ?? 'unverified', greylisted: false }
   } else {
@@ -142,6 +142,7 @@ async function processPerson(
     const domain = await resolveDomain(person, deps)
     if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
     if (!domain) {
+      recordLookup('noDomain')
       return {
         ...base,
         status: 'no_domain',
@@ -151,10 +152,12 @@ async function processPerson(
       }
     }
     const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
-    found = await findEmail(person, domain, deps.finder, { headcount })
+    found = await findEmailCounted(person, domain, deps.finder, { headcount })
     recordUsage({ emailLookups: 1 })
   }
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
+  // Counted once it's final: a greylisted first try is retried at the end.
+  if (found.outcome) recordLookup(found.outcome)
   if (found.email && (deps.verifiedOnly ?? true) && found.status !== 'verified') {
     return { ...base, status: 'unconfirmed', message: found.reason ?? found.detail }
   }

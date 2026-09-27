@@ -54,6 +54,9 @@ const fakeDb = {
 }
 
 vi.mock('../db', () => ({ db: fakeDb }))
+// How each lookup ended, as counted for the hit rate.
+const lookups: string[] = []
+vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome) }))
 vi.mock('../emailService', () => ({
   deleteContacts: async (emails: string[]) => {
     state.contacts = state.contacts.filter((c) => !emails.includes(c.email))
@@ -131,6 +134,7 @@ beforeEach(() => {
   state.companies = []
   state.suppression = []
   state.disclosure = []
+  lookups.length = 0
   vi.mocked(source.getCompany).mockClear()
   vi.mocked(source.getPerson).mockClear()
 })
@@ -328,6 +332,8 @@ describe('saveProspects', () => {
     expect(sleep).toHaveBeenCalledTimes(1)
     expect(job.outcomes[0]).toMatchObject({ status: 'saved', emailStatus: 'verified' })
     expect(job.processed).toBe(1)
+    // Counted once, when final: the greylisted first pass isn't a lookup outcome.
+    expect(lookups).toEqual(['verified'])
   })
 
   it('returns a running job for large saves and finishes in the background', async () => {

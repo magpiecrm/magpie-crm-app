@@ -9,7 +9,8 @@ const dbFile = join(scratchDir, 'local_db.json')
 process.env.DATABASE_PATH = dbFile
 
 const { Route } = await import('./usage')
-const { recordUsage, getUsage, usageForMonth } = await import('../../server/usage')
+const { recordLookup, recordUsage, getUsage, usageForMonth } = await import('../../server/usage')
+const { LOOKUP_OUTCOMES } = await import('../../server/prospecting/types')
 const handlers = (Route as any).options.server.handlers
 
 const originalToken = process.env.USAGE_API_TOKEN
@@ -30,16 +31,21 @@ describe('usage counts', () => {
     recordUsage({ searches: 2, prospects: 9 }, new Date('2026-08-31T23:00:00Z'))
     recordUsage({ prospects: 1, emailLookups: 3, emailsFound: 1 }, new Date('2026-09-01T09:00:00Z'))
     recordUsage({ emailsSent: 250 }, new Date('2026-09-15T09:00:00Z'))
-    expect(getUsage()).toEqual([
-      { month: '2026-08', searches: 2, prospects: 9, emailLookups: 0, emailsFound: 0, contactsSaved: 0, emailsSent: 0 },
-      { month: '2026-09', searches: 0, prospects: 1, emailLookups: 3, emailsFound: 1, contactsSaved: 0, emailsSent: 250 },
-    ])
+    recordLookup('verified', new Date('2026-09-15T09:00:00Z'))
+    recordLookup('catchAll', new Date('2026-09-15T09:00:00Z'))
+    recordLookup('catchAll', new Date('2026-09-15T09:00:00Z'))
+    const [aug, sep] = getUsage()
+    expect(aug).toMatchObject({ month: '2026-08', searches: 2, prospects: 9, emailLookups: 0, emailsFound: 0, contactsSaved: 0, emailsSent: 0, lookupVerified: 0 })
+    expect(sep).toMatchObject({ month: '2026-09', searches: 0, prospects: 1, emailLookups: 3, emailsFound: 1, contactsSaved: 0, emailsSent: 250 })
+    // One counter per lookup outcome, every one filled in.
+    expect(sep).toMatchObject({ lookupVerified: 1, lookupCatchAll: 2, lookupRejected: 0, lookupNoDomain: 0, lookupLimit: 0 })
+    expect(Object.keys(sep)).toHaveLength(1 + 6 + LOOKUP_OUTCOMES.length)
     expect(usageForMonth('2025-01')).toMatchObject({ prospects: 0, emailsSent: 0 })
   })
 
   it('stores counts only', () => {
     const stored = JSON.parse(readFileSync(dbFile, 'utf8')).usage
-    expect(stored['2026-09']).toEqual({ prospects: 1, emailLookups: 3, emailsFound: 1, emailsSent: 250 })
+    expect(stored['2026-09']).toEqual({ prospects: 1, emailLookups: 3, emailsFound: 1, emailsSent: 250, lookupVerified: 1, lookupCatchAll: 2 })
   })
 })
 
