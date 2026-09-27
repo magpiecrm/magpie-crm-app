@@ -79,7 +79,9 @@ DATABASE_PATH=...        # optional — defaults to ./local_db.json
 USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
                          # counts, e.g. for a hosting provider's billing) and
                          # /api/usage/allowance (monthly limits a host sells
-                         # up front; see src/server/allowance.ts)
+                         # up front; see src/server/allowance.ts) and
+                         # /api/usage/suppressions (opt-outs a host passes
+                         # between its copies)
 PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
                          # verification: hides those settings (implies
                          # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off)
@@ -178,6 +180,9 @@ contacts, and that is the only point where emails are looked up.
   email, LinkedIn URL, or name + company website. Identifiers are stored only as
   HMAC hashes (`SUPPRESSION_SECRET`), matching saved contacts are deleted, and
   suppressed people are filtered out of search results and blocked at save.
+  A host running several copies can give them one `SUPPRESSION_SECRET` and pass
+  opt-outs between them through `/api/usage/suppressions`, so an opt-out from
+  one copy applies to all of them.
 - **Disclosure log**: every prospected contact saved gets a hashed log entry
   (sources, timestamp, notice status). New contacts start with
   `notice_status = pending`; nothing yet delivers the notice.

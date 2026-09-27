@@ -13,6 +13,7 @@ import type { SenderHealthReport } from './prospecting/senderHealth'
 import type { UsageCounter } from './usage'
 import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
+import type { SuppressionKind } from './prospecting/suppressionHash'
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -240,7 +241,8 @@ interface DbSchema {
   suppression?: Array<{
     hash: string
     kind: SuppressionKind
-    reason: 'opt_out' | 'erasure' | 'manual'
+    /** 'shared': passed on by the host from another copy (/api/usage/suppressions). */
+    reason: 'opt_out' | 'erasure' | 'manual' | 'shared'
     created_at: string
   }>
   /**
@@ -300,7 +302,7 @@ export interface ProspectingSettingsRecord {
   updated_at: string
 }
 
-export type SuppressionKind = 'email' | 'profile' | 'name_domain'
+export type { SuppressionKind }
 
 export interface EmailDomainRecord {
   domain: string
@@ -481,7 +483,12 @@ class JsonDb {
     return new Set(this.data.suppression!.map((s) => s.hash))
   }
 
-  addSuppression(entries: Array<{ hash: string; kind: SuppressionKind }>, reason: 'opt_out' | 'erasure' | 'manual') {
+  /** This copy's own opt-outs (not ones the host passed on) recorded after `since`. */
+  suppressionsSince(since: string | null) {
+    return this.data.suppression!.filter((s) => s.reason !== 'shared' && (!since || s.created_at > since))
+  }
+
+  addSuppression(entries: Array<{ hash: string; kind: SuppressionKind }>, reason: 'opt_out' | 'erasure' | 'manual' | 'shared') {
     const existing = this.getSuppressionHashes()
     const now = new Date().toISOString()
     let added = 0
