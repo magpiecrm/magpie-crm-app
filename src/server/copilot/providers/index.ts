@@ -22,4 +22,3 @@ export function listProviders() {
   }))
 }
 
-export type { CopilotEvent } from './types'

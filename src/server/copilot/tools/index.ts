@@ -37,10 +37,6 @@ export function getTool(name: string): CopilotTool<any> | undefined {
   return byName.get(name)
 }
 
-export function toolNames(): string[] {
-  return COPILOT_TOOLS.map(t => t.name)
-}
-
 // Fail loudly at import time rather than shipping a registry with a duplicate
 // that silently shadows another tool.
 if (byName.size !== COPILOT_TOOLS.length) {

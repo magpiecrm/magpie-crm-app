@@ -221,7 +221,7 @@ export function SidebarPanel({
           </div>
         </div>
       ) : (
-        // STYLE TAB matching Brevo's structure
+        // Style tab
         <GlobalStyleEditor 
           globalStyle={globalStyle}
           setGlobalStyle={setGlobalStyle}

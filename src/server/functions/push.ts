@@ -1,5 +1,4 @@
 import { createServerFn } from '@tanstack/react-start'
-import { APP_NAME } from '../../brand'
 
 /** Shape the browser's `PushSubscription.toJSON()` gives us. */
 interface PushSubscriptionInput {
@@ -42,21 +41,5 @@ export const unsubscribePushFn = createServerFn({ method: 'POST' })
     await requireAuth()
 
     db.removePushSubscription(data.endpoint)
-    return { success: true }
-  })
-
-/** Sends a notification to every registered device, to prove the wiring works. */
-export const sendTestPushFn = createServerFn({ method: 'POST' })
-  .handler(async () => {
-    const { requireAuth } = await import('../auth.server')
-    const { sendPushToAll } = await import('../push')
-    await requireAuth()
-
-    await sendPushToAll({
-      title: APP_NAME,
-      body: 'Test notification — push is working.',
-      url: '/',
-      tag: 'test',
-    })
     return { success: true }
   })

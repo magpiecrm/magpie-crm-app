@@ -216,8 +216,5 @@ export const spacerRow = (height: number): string =>
 export const blockTable = (cellStyle: string, inner: string, extraClass = ''): string =>
   `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%" class="${extraClass}" style="width: 100%; border-collapse: collapse;"><tbody><tr><td style="${cellStyle}">${inner}</td></tr></tbody></table>`
 
-/** Alignment for a block that has been narrowed below the full body width. */
-export const alignAttr = (block: EmailBlock): 'left' | 'center' | 'right' => block.align || 'left'
-
 export const resolveLinkColor = (block: EmailBlock, globalStyle: GlobalStyle): string =>
   block.style?.linkColor ?? globalStyle.linkColor ?? '#2563eb'

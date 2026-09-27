@@ -41,9 +41,7 @@ key), with the app's actions as tools.
     from `DATABASE_PATH`) holding contacts/lists/campaigns/personas/auth. In
     production this file lives on a mounted volume.
   - `emailService.ts` / `nodemailer.ts` — campaign send pipeline: reads from
-    `db.ts`, sends over SMTP. This replaced a prior Brevo integration; some
-    comments/UI copy still reference Brevo's data shapes for parity and can be
-    cleaned up opportunistically.
+    `db.ts` and sends through the configured provider (`providers/`).
   - `functions/` — `createServerFn` endpoints split by domain (`prospects`,
     `contacts`, `lists`, `campaigns`, `copilot`, and others). They are
     re-exported from `functions/index.ts`. Add new endpoints to the matching

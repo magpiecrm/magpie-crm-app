@@ -10,7 +10,7 @@ export type DragPayload<T extends string = EmailBlock['type']> =
   | { kind: 'move'; index: number; pageId?: string }
   | { kind: 'new'; blockType: T }
 
-export type DropAlign = 'left' | 'center' | 'right'
+type DropAlign = 'left' | 'center' | 'right'
 
 export interface BlockDropTarget {
   /** Index to insert at. Equals `blocks.length` when dropped past the last block. */

@@ -26,5 +26,3 @@ local_db.json
 /uploads/
 
 
-# Left behind by older versions, whose copilot ran the Claude Code CLI
-.copilot-claude/

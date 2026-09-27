@@ -8,7 +8,7 @@ import type { ZodRawShape, infer as ZodInfer, ZodObject } from 'zod'
  * browser — the open email-builder design, the unsaved persona form — so
  * their effect is queued and streamed back for the client to apply.
  */
-export type ToolTarget = 'server' | 'client'
+type ToolTarget = 'server' | 'client'
 
 /** Client-owned state the browser syncs into the session so tools can read it. */
 export interface CopilotClientState {

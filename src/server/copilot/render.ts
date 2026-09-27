@@ -40,7 +40,7 @@ function findChromium(): string | null {
 
 let cachedPath: string | null | undefined
 
-export function chromiumPath(): string | null {
+function chromiumPath(): string | null {
   if (cachedPath === undefined) cachedPath = findChromium()
   return cachedPath
 }

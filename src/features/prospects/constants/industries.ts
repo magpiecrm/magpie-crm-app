@@ -1,6 +1,7 @@
-// LinkedIn's industry taxonomy, which is what Generect's `company_industries`
-// filter matches against. Values outside this list do NOT error — the API
-// returns 200 with zero results — so keep these strings exact.
+// LinkedIn's industry taxonomy, which is how companies' industries come back
+// from prospect search. Used by the industry filter, personas and the
+// copilot's searchIndustries tool; keep the strings exact, since they're
+// compared with what search returns.
 export const INDUSTRIES = [
   "Accounting",
   "Advertising Services",

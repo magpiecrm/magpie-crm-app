@@ -552,7 +552,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
       {selectedBlock.type === 'dynamic' && (
         <div className="space-y-3">
           <div className="space-y-2">
-            <label className="block text-xs text-muted-foreground font-semibold">Brevo Contact Attribute</label>
+            <label className="block text-xs text-muted-foreground font-semibold">Contact field</label>
             <select
               value={selectedBlock.content}
               onChange={(e) => updateBlockContent(selectedBlock.id, { content: e.target.value })}

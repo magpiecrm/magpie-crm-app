@@ -10,7 +10,7 @@ import { ExportMenu } from '../../../components/ui/ExportMenu'
 import type { ExportColumn } from '../../../utils/export'
 
 /**
- * Brevo reports totals in `globalStats`, but older campaigns only carry a
+ * Campaign totals are in `globalStats`, but older campaigns only carry a
  * per-list `campaignStats` array — fall back to summing that when the globals
  * are empty.
  */
@@ -75,8 +75,8 @@ function formatDate(dateStr?: string) {
 }
 
 /**
- * Brevo reports the same numbers in two shapes depending on the campaign, so
- * fold both into one row of stats. Shared by the desktop table and the mobile
+ * Campaign stats come in those two shapes, so fold both into one row of
+ * stats. Shared by the desktop table and the mobile
  * card list.
  */
 function deriveCampaignStats(campaign: any) {

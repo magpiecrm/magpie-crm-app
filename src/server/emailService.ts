@@ -286,7 +286,7 @@ export async function getCampaigns() {
     ORDER BY c.id DESC
   `).all() as any[]
 
-  // Convert SQLite fields to match Brevo API shape
+  // Campaign rows with their stats, in the shape the campaign pages read.
   const formatted = await Promise.all(campaigns.map(async c => {
     const stats = await getCampaignStats(c.id)
     return {

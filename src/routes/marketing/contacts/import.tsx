@@ -440,7 +440,7 @@ function ImportContactsPage() {
             </div>
           </div>
 
-          {/* Sub-panels matching Brevo UI */}
+          {/* Other ways to add contacts */}
           <div className="pt-6 border-t border-border/80">
             <h4 className="text-sm font-bold text-foreground mb-4">Additional ways to grow your contact list</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

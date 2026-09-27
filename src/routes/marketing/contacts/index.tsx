@@ -500,7 +500,7 @@ function ContactsPage() {
         </div>
       </div>
 
-      {/* Tabs list (Brevo styling) */}
+      {/* Tabs */}
       <div className="border-b border-border mb-6">
         <div className="flex gap-6 -mb-px">
           <button className="pb-3 text-sm font-semibold border-b-2 border-accent text-accent">

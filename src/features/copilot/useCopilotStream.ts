@@ -29,7 +29,7 @@ export interface PendingPermission {
   reason: string
 }
 
-export interface ClientAction {
+interface ClientAction {
   action: string
   args: any
 }
@@ -72,7 +72,7 @@ interface UseCopilotStreamOptions {
 /**
  * Drives one copilot conversation over SSE.
  *
- * The server keeps the CLI process alive for the session, so the transcript is
+ * The server keeps the conversation for the session, so the transcript is
  * not re-sent — `sessionId` is the only continuity the client needs.
  */
 export function useCopilotStream({ getClientState, onClientAction, greeting }: UseCopilotStreamOptions) {

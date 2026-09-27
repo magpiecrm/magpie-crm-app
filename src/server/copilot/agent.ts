@@ -37,7 +37,7 @@ interface ToolResult {
 }
 
 /** What one model call produced. */
-export type StepResult =
+type StepResult =
   | {
       ok: true
       /** Everything to add to the conversation, exactly as the API returned it. */
@@ -49,7 +49,7 @@ export type StepResult =
     }
   | { ok: false; message: string; fatal?: boolean }
 
-export interface CallOptions {
+interface CallOptions {
   apiKey: string
   model: string
   effort?: string

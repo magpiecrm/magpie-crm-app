@@ -1,11 +1,5 @@
-// Generect validates locations against LinkedIn's canonical vocabulary and
-// returns HTTP 400 ("This location is not listed") for anything outside it.
-// Bare region names like "California", "Texas" or "London" are REJECTED —
-// sub-country values must be fully qualified as "Region, Country".
-//
-// Verified against the live API. Loose metro names ("San Francisco Bay Area",
-// "Greater Boston", "Greater Seattle Area") are rejected and deliberately
-// omitted; "New York City Metropolitan Area" is the one that validates.
+// Locations for personas, in LinkedIn's own wording: countries, then regions
+// written as "Region, Country" (a bare "California" or "London" is ambiguous).
 export const LOCATIONS = [
   // --- Countries ---
   "United States",

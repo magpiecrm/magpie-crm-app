@@ -52,15 +52,6 @@ export const deleteSenderFn = createServerFn({ method: 'POST' })
     return emailService.deleteSender(data.id)
   })
 
-export const analyticsFn = createServerFn({ method: 'GET' })
-  .inputValidator((d: { id: number }) => d)
-  .handler(async ({ data }) => {
-    const { requireAuth } = await import('../auth.server')
-    const emailService = await import('../emailService')
-    await requireAuth()
-    return emailService.getCampaignStats(data.id)
-  })
-
 export const createCampaignFn = createServerFn({ method: 'POST' })
   .inputValidator((d: {
     name: string;

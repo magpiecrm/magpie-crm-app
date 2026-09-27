@@ -44,7 +44,7 @@ function describeField(name: string, schema: z.ZodTypeAny): string {
 }
 
 /** The tool reference, generated from the registry so it can never drift. */
-export function renderToolReference(): string {
+function renderToolReference(): string {
   const lines: string[] = ['## Tools', '']
   for (const tool of COPILOT_TOOLS) {
     const tags = [
@@ -71,7 +71,7 @@ export function renderToolReference(): string {
 }
 
 /** The block-model reference, generated from `BLOCK_TYPES`. */
-export function renderBlockReference(): string {
+function renderBlockReference(): string {
   const lines: string[] = [
     '## Email block model',
     '',
@@ -94,7 +94,7 @@ export function renderBlockReference(): string {
 }
 
 /** The survey model reference, generated from `SURVEY_BLOCK_TYPES` / `SURVEY_THEME_KEYS`. */
-export function renderSurveyReference(): string {
+function renderSurveyReference(): string {
   const lines: string[] = [
     '## Survey model',
     '',
@@ -122,7 +122,7 @@ export function renderSurveyReference(): string {
 }
 
 /** A short note about what the user is currently looking at. */
-export function renderContext(state: CopilotClientState): string {
+function renderContext(state: CopilotClientState): string {
   const lines: string[] = ['## Current context', '']
   lines.push(`- Route: ${state.route ?? 'unknown'}`)
   if (state.campaign) {
@@ -155,7 +155,7 @@ export function renderContext(state: CopilotClientState): string {
  * The brand kit, summarised inline so every design starts on-brand without the
  * model having to ask or call a tool first.
  */
-export function renderBrand(brand?: Record<string, any> | null): string {
+function renderBrand(brand?: Record<string, any> | null): string {
   if (!brand) {
     return '## Brand\n\nNo brand kit is saved. If the user cares how their email looks, offer to capture their colours, font and tone with `setBrandKit` — but never invent brand values.'
   }

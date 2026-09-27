@@ -24,7 +24,7 @@ export interface ActiveProviderConfig {
   source: 'db' | 'env'
 }
 
-/** Credentials implied by the legacy env vars, per provider. */
+/** Credentials from the environment (SMTP_*, SES_*, CLOUDFLARE_*), per provider. */
 function envCredentials(providerId: ProviderId): ProviderCredentials {
   if (providerId === 'cloudflare') {
     return stripEmpty({

@@ -222,7 +222,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 pb-12 animate-in fade-in duration-200">
       
-      {/* Header Block resembling Brevo page header */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 pb-5 border-b border-border">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           <Button variant="ghost" size="icon" onClick={onClose} className="border border-border">

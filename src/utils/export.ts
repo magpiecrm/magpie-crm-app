@@ -31,7 +31,7 @@ function escapeCsvCell(cell: string): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
 
-export function buildCsv<T>(rows: T[], columns: ExportColumn<T>[]): string {
+function buildCsv<T>(rows: T[], columns: ExportColumn<T>[]): string {
   const lines = [columns.map(c => escapeCsvCell(c.header)).join(',')]
   for (const row of rows) {
     lines.push(columns.map(c => escapeCsvCell(toCell(c.value(row)))).join(','))

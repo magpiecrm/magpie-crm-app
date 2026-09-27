@@ -1,7 +1,7 @@
 import type { CopilotEvent } from './providers/types'
 
 /** A tool call waiting on the user before it may run. */
-export interface PermissionRequest {
+interface PermissionRequest {
   type: 'permission_request'
   id: string
   tool: string

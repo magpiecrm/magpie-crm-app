@@ -1,9 +1,9 @@
 import type { EmailBlock, GlobalStyle } from './types'
 
 /** Sub-arrays of a block that the UI edits row by row. */
-export type BlockCollection = 'items' | 'links' | 'socials' | 'summaryRows'
+type BlockCollection = 'items' | 'links' | 'socials' | 'summaryRows'
 
-export function newItemId(prefix = 'i'): string {
+function newItemId(prefix = 'i'): string {
   return `${prefix}_` + Math.random().toString(36).slice(2, 11)
 }
 

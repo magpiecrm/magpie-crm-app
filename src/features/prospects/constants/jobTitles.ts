@@ -1,11 +1,7 @@
 // Autocomplete suggestions for the Job Title filter.
 //
-// Unlike locations and industries, Generect does NOT validate `job_titles` —
-// any string is accepted and simply matches whatever it matches. So this list
-// is a convenience shortcut to well-populated titles, not a closed vocabulary:
-// users can still type anything. Generect appears to normalise common
-// abbreviations ("CEO" and "Chief Executive Officer" return identical counts),
-// so the short forms are listed first as the more idiomatic choice.
+// A shortcut to common titles, not a closed list: any title can be typed.
+// Short forms ("CEO") come first, as the more usual way to write them.
 export const JOB_TITLES = [
   // C-suite
   "CEO",

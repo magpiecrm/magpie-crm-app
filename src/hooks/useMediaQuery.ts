@@ -9,7 +9,7 @@ import { useSyncExternalStore } from 'react'
  * panel is a sheet or a rail). Anything purely cosmetic should stay in Tailwind
  * `sm:`/`md:`/`lg:` prefixes so it works before hydration.
  */
-export function useMediaQuery(query: string): boolean {
+function useMediaQuery(query: string): boolean {
   const subscribe = (onChange: () => void) => {
     if (typeof window === 'undefined') return () => {}
     const mql = window.matchMedia(query)

@@ -1,4 +1,4 @@
-// Common seniority levels; mapped to the Generect by_icp personas tuple.
+// Seniority levels for personas.
 export const SENIORITIES = [
   'Owner',
   'Founder',
