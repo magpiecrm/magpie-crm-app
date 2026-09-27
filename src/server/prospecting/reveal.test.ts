@@ -5,11 +5,13 @@ import type { CompanySource, PersonResult } from './types'
 // Reveal against an in-memory db, a fake company source and a fake Reacher.
 
 let allowance: any = null
-const state = { suppression: [] as Array<{ hash: string }>, disclosure: [] as any[], companies: [] as any[] }
+const state = { suppression: [] as Array<{ hash: string }>, disclosure: [] as any[], companies: [] as any[], unverifiable: [] as any[] }
 const fakeDb = {
   getAllowance: () => allowance,
   getSuppressionHashes: () => new Set(state.suppression.map((s) => s.hash)),
   addDisclosure: (e: any) => state.disclosure.push(e),
+  getUnverifiable: () => state.unverifiable,
+  setUnverifiable: (entries: any[]) => (state.unverifiable = entries),
   getProspectCompany: (ref: string) => state.companies.find((c) => c.ref === ref) ?? null,
   upsertProspectCompanies: (entries: any[]) => state.companies.push(...entries),
 }
@@ -51,6 +53,7 @@ beforeEach(() => {
   allowance = null
   state.suppression = []
   state.disclosure = []
+  state.unverifiable = []
   state.companies = []
   lookups.length = 0
   check.mockClear()
@@ -122,9 +125,12 @@ describe('revealEmail', () => {
       getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
     }
     const res = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any })
-    expect(res).toEqual({ status: 'unconfirmed', message: 'acme.com accepts every address, so none can be confirmed.', catchAll: true })
+    expect(res).toEqual({ status: 'unconfirmed', message: 'acme.com accepts every address, so none can be confirmed.', catchAll: true, unverifiable: true })
     expect(JSON.stringify(res)).not.toContain('jane.smith@')
     expect(state.disclosure).toEqual([])
+    // Remembered as a hash of the profile only, so later searches can leave her out.
+    expect(state.unverifiable).toEqual([{ hash: hashesFor({ profileUrl: jane.profileUrl })[0].hash, outcome: 'catchAll', created_at: expect.any(String) }])
+    expect(JSON.stringify(state.unverifiable)).not.toMatch(/jane|linkedin/i)
     expect(check).not.toHaveBeenCalled()
   })
 
@@ -149,5 +155,13 @@ describe('revealEmail', () => {
     const limited = { ...finder, verifier: { ...finder.verifier!, acquire: async () => { throw new VerificationLimitError("Today's verification limit is used up.", 'daily_cap') } } }
     await expect(revealEmail(jane, { source, finder: limited, db: fakeDb as any })).rejects.toThrow(/limit is used up/)
     expect(lookups).toEqual(['verified', 'noDomain', 'rejected', 'limit'])
+  })
+
+  it("doesn't remember people a retry might verify", async () => {
+    const silent: FinderDeps = { ...finder, verifier: { ...finder.verifier!, check: async () => ({ reachability: 'unknown' as const, isCatchAll: null, outcome: 'timeout' as const }) } }
+    const res = await revealEmail(jane, { source, finder: silent, db: fakeDb as any })
+    expect(res.status).toBe('unconfirmed')
+    expect(res.status !== 'found' && res.unverifiable).toBeFalsy()
+    expect(state.unverifiable).toEqual([])
   })
 })

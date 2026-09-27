@@ -28,7 +28,8 @@ const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
 vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }) }))
 let suppressedHashes = new Set<string>()
 let allowance: any = null
-let prospectingSettings: { show_unverifiable?: boolean } | null = null
+let prospectingSettings: { hide_unverifiable?: boolean } | null = null
+let unverifiable: Array<{ hash: string; outcome: string; created_at: string }> = []
 let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
   db: {
@@ -40,6 +41,7 @@ vi.mock('../db', () => ({
     getDisclosures: () => disclosures,
     upsertProspectCompanies: () => {},
     getProspectingSettings: () => prospectingSettings,
+    getUnverifiable: () => unverifiable,
     data: { get contacts() { return contacts } },
   },
 }))
@@ -62,6 +64,7 @@ beforeEach(() => {
   suppressedHashes = new Set()
   emailDomains = {}
   prospectingSettings = null
+  unverifiable = []
   disclosures = []
   contacts = []
 })
@@ -192,6 +195,37 @@ describe('searchPeople catch-all marking', () => {
   })
 })
 
+describe('searchPeople and people who couldn\'t be verified', () => {
+  it('leaves out people an earlier lookup couldn\'t verify, before paying for their profile', async () => {
+    unverifiable = [{ hash: profileHash('https://www.linkedin.com/in/ana')!, outcome: 'rejected', created_at: new Date().toISOString() }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(getPerson).not.toHaveBeenCalledWith('https://www.linkedin.com/in/ana')
+  })
+
+  it('forgets them after 90 days, and looks them up while hiding is turned off', async () => {
+    unverifiable = [{ hash: profileHash('https://www.linkedin.com/in/ana')!, outcome: 'rejected', created_at: new Date(Date.now() - 91 * 86_400_000).toISOString() }]
+    searchPage = pageOf(hit('ana'))
+    expect((await searchPeople({ titles: ['Business Analyst'] })).items.map((p) => p.firstName)).toEqual(['ana'])
+    unverifiable[0].created_at = new Date().toISOString()
+    prospectingSettings = { hide_unverifiable: false }
+    expect((await searchPeople({ titles: ['Business Analyst'] })).items.map((p) => p.firstName)).toEqual(['ana'])
+  })
+
+  it('marks people at a company whose domain is known to take no email', async () => {
+    const now = new Date().toISOString()
+    emailDomains = { 'barclays.com': { catch_all: null, catch_all_checked_at: null, accepts_mail: false, mx_checked_at: now } as any }
+    prospectingSettings = { hide_unverifiable: false }
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.company, p.noMail ?? false])).toEqual([
+      ['Barclays', true],
+      ['Acme', false],
+    ])
+  })
+})
+
 describe('searchPeople and people seen before', () => {
   it('fills an already-saved person from their contact and pays for no profile lookup', async () => {
     contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays', email_status: 'verified' }]
@@ -293,8 +327,7 @@ describe('searchPeople fills the page', () => {
     searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
   })
 
-  it('with unverifiable people hidden, does not count them and fills the page from the next search', async () => {
-    prospectingSettings = { show_unverifiable: false }
+  it('by default hides unverifiable people and fills the page from the next search', async () => {
     searchPeopleMock.mockClear()
     emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
     searchPeopleMock
@@ -309,7 +342,8 @@ describe('searchPeople fills the page', () => {
     expect(searchPeopleMock).toHaveBeenCalledTimes(2)
   })
 
-  it('by default lists unverifiable people, marked, and counts them like everyone else', async () => {
+  it('with hiding turned off, lists unverifiable people, marked, like everyone else', async () => {
+    prospectingSettings = { hide_unverifiable: false }
     searchPeopleMock.mockClear()
     emailDomains = { 'barclays.com': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
     searchPeopleMock.mockImplementationOnce(async () => withCursor(pageOf(hit('ana')), 'c1'))

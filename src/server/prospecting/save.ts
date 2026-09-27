@@ -14,6 +14,7 @@ import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, LookupOutcome, PeopleSource, PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { remaining } from '../allowance'
+import { rememberIfUnverifiable } from './unverifiable'
 
 const SYNC_LIMIT = 10
 const SYNC_TIMEOUT_MS = 45_000
@@ -158,6 +159,11 @@ async function processPerson(
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
   // Counted once it's final: a greylisted first try is retried at the end.
   if (found.outcome) recordLookup(found.outcome)
+  // Nothing handed over, for a reason no retry changes: remembered, so later
+  // searches can leave them out (unverifiable.ts).
+  if (found.outcome && (!found.email || ((deps.verifiedOnly ?? true) && found.status !== 'verified'))) {
+    rememberIfUnverifiable(person.profileUrl, found.outcome, deps.db)
+  }
   if (found.email && (deps.verifiedOnly ?? true) && found.status !== 'verified') {
     return { ...base, status: 'unconfirmed', message: found.reason ?? found.detail }
   }

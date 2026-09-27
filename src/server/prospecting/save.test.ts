@@ -12,6 +12,7 @@ type Contact = {
 }
 
 const state = {
+  unverifiable: [] as any[],
   contacts: [] as Contact[],
   list_contacts: [] as Array<{ list_id: number; contact_email: string }>,
   companies: [] as Array<{ ref: string; name: string; domain: string | null; domain_source: string; page_checked?: boolean }>,
@@ -22,6 +23,8 @@ const state = {
 let allowance: any = null
 const fakeDb = {
   getAllowance: () => allowance,
+  getUnverifiable: () => state.unverifiable,
+  setUnverifiable: (entries: any[]) => (state.unverifiable = entries),
   get data() {
     return { contacts: state.contacts, lists: [{ id: 1, name: 'Leads' }] }
   },
@@ -134,6 +137,7 @@ beforeEach(() => {
   state.companies = []
   state.suppression = []
   state.disclosure = []
+  state.unverifiable = []
   lookups.length = 0
   vi.mocked(source.getCompany).mockClear()
   vi.mocked(source.getPerson).mockClear()
@@ -237,6 +241,14 @@ describe('saveProspects', () => {
     expect(job.outcomes[0].email).toBeUndefined()
     expect(state.contacts).toEqual([])
     expect(state.disclosure).toEqual([])
+  })
+
+  it('remembers someone whose every likely address was rejected, but not someone the server never answered for', async () => {
+    await saveProspects(1, [person('Jane', 'Smith', { companyDomain: 'acme.com' })], { source, finder: finder({}), db: fakeDb as any })
+    expect(state.unverifiable).toEqual([expect.objectContaining({ outcome: 'rejected' })])
+    state.unverifiable = []
+    await saveProspects(1, [person('Jane', 'Smith', { companyDomain: 'acme.com' })], { source, finder: finder(allUnknown), db: fakeDb as any })
+    expect(state.unverifiable).toEqual([])
   })
 
   it('refuses a revealed email that was not verified', async () => {

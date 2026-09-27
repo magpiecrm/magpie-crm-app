@@ -257,6 +257,12 @@ interface DbSchema {
    */
   disclosure_log?: DisclosureEntry[]
   /**
+   * People whose email lookup ended in a way no retry changes, kept 90 days
+   * so search can leave them out (prospecting/unverifiable.ts). Keyed HMAC
+   * hash of the profile URL only.
+   */
+  unverifiable?: Array<{ hash: string; outcome: string; created_at: string }>
+  /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
    * SocialFetch API key and Reacher secret; the rest isn't sensitive.
@@ -295,11 +301,12 @@ export interface ProspectingSettingsRecord {
   /** Only hand over emails the mail server confirmed. Absent means true. */
   verified_only?: boolean
   /**
-   * With verified-only on, show people at companies that accept every
-   * address in search results, marked unverifiable (and counted as
-   * prospects), instead of hiding them. Absent means true.
+   * With verified-only on, leave people whose email can't be verified out of
+   * search results: at companies known to accept every address or take no
+   * email, or remembered from a failed lookup (prospecting/unverifiable.ts).
+   * Absent means true. False shows them, marked Unverifiable.
    */
-  show_unverifiable?: boolean
+  hide_unverifiable?: boolean
   reacher_url?: string
   reacher_from_email?: string
   reacher_hello_name?: string
@@ -380,6 +387,7 @@ class JsonDb {
     if (!loaded.email_domains) loaded.email_domains = []
     if (!loaded.suppression) loaded.suppression = []
     if (!loaded.disclosure_log) loaded.disclosure_log = []
+    if (!loaded.unverifiable) loaded.unverifiable = []
     if (!loaded.surveys) loaded.surveys = []
     if (!loaded.survey_responses) loaded.survey_responses = []
     if (!loaded.email_templates) loaded.email_templates = []
@@ -410,6 +418,7 @@ class JsonDb {
       email_domains: [],
       suppression: [],
       disclosure_log: [],
+      unverifiable: [],
       surveys: [],
       survey_responses: [],
       email_templates: [],
@@ -511,6 +520,15 @@ class JsonDb {
     }
     if (added > 0) this.save()
     return added
+  }
+
+  getUnverifiable(): Array<{ hash: string; outcome: string; created_at: string }> {
+    return this.data.unverifiable ?? []
+  }
+
+  setUnverifiable(entries: Array<{ hash: string; outcome: string; created_at: string }>) {
+    this.data.unverifiable = entries
+    this.save()
   }
 
   addDisclosure(entry: Omit<DisclosureEntry, 'id' | 'created_at'>) {

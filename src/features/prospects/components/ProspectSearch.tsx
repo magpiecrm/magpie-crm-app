@@ -366,10 +366,11 @@ export function ProspectSearch() {
   // Run by the host: credits are the host's business, and verification outcomes stay short.
   const hosted = Boolean(status?.managed)
   const verifiedOnly = status?.verification?.verifiedOnly ?? true
-  // Settings → Prospect search: listed and marked Unverifiable, or hidden.
-  const showUnverifiable = status?.verification?.showUnverifiable ?? true
-  const [showCatchAll, setShowCatchAll] = useState(false)
-  useEffect(() => setShowCatchAll(false), [peopleSearch])
+  // Settings → Prospect search: people whose email can't be verified are
+  // hidden (the default), or listed and marked Unverifiable.
+  const hideUnverifiable = verifiedOnly && (status?.verification?.hideUnverifiable ?? true)
+  const [showHidden, setShowHidden] = useState(false)
+  useEffect(() => setShowHidden(false), [peopleSearch])
   // A reveal can discover a catch-all company: mark everyone there now, and
   // later searches hide them (the finder cached it).
   const catchAllCompanies = new Set(
@@ -381,9 +382,15 @@ export function ProspectSearch() {
   )
   const isCatchAll = (p: PersonResult) =>
     Boolean(p.catchAll) || catchAllCompanies.has(p.companyRef ?? '') || catchAllCompanies.has(p.companyDomain ?? '')
-  const catchAllCount = allPeople.filter((p) => p.catchAll).length
-  const hidingCatchAll = verifiedOnly && !showUnverifiable && !showCatchAll && catchAllCount > 0
-  const peopleItems = hidingCatchAll ? allPeople.filter((p) => !p.catchAll) : allPeople
+  // Can't be verified: at a company known to accept every address or take no
+  // email, or a reveal here that ended in a way no retry changes.
+  const cantVerify = (p: PersonResult) => {
+    const r = reveals.get(p.profileUrl)
+    return Boolean(p.catchAll || p.noMail || (r && r.status !== 'found' && r.unverifiable))
+  }
+  const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
+  const hiding = hiddenCount > 0 && !showHidden
+  const peopleItems = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople
   // Titles checked against profiles, by the search itself or the button.
   // Results whose title and company came from their profile (✓ in the table).
   const refined = new Set(people.data?.pages.flatMap((p) => p.refined ?? []) ?? [])
@@ -786,15 +793,15 @@ export function ProspectSearch() {
           </div>
         </div>
 
-        {mode === 'people' && verifiedOnly && !showUnverifiable && catchAllCount > 0 && (
+        {mode === 'people' && hiddenCount > 0 && (
           <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
-              {hidingCatchAll
-                ? `${catchAllCount} ${catchAllCount === 1 ? 'person works at a company' : 'people work at companies'} that accept every address, so no email there can be verified. Hidden for now.`
-                : `Showing ${catchAllCount} ${catchAllCount === 1 ? 'person' : 'people'} at companies that accept every address; their emails can't be verified.`}
+              {hiding
+                ? `${hiddenCount} ${hiddenCount === 1 ? 'person is' : 'people are'} hidden because their email can't be verified.`
+                : `Showing ${hiddenCount} ${hiddenCount === 1 ? 'person' : 'people'} whose email can't be verified.`}
             </span>
-            <button type="button" onClick={() => setShowCatchAll((v) => !v)} className="font-semibold text-accent hover:underline">
-              {hidingCatchAll ? 'Show them' : 'Hide them'}
+            <button type="button" onClick={() => setShowHidden((v) => !v)} className="font-semibold text-accent hover:underline">
+              {hiding ? 'Show them' : 'Hide them'}
             </button>
           </div>
         )}
@@ -837,8 +844,8 @@ export function ProspectSearch() {
             </div>
           ) : shownCount === 0 ? (
             renderEmpty(
-              mode === 'people' && hidingCatchAll
-                ? 'Everyone found so far works at a company that accepts every address. Show them, or load more to keep looking.'
+              mode === 'people' && hiding
+                ? "Everyone found so far is someone whose email can't be verified. Show them, or load more to keep looking."
                 : active.hasNextPage
                   ? 'Nothing on this page matched your filters. Load more to keep looking.'
                   : 'No results. Try a broader keyword or fewer filters.',

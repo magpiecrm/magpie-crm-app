@@ -9,11 +9,11 @@ export function ProspectSearchTab() {
   const queryClient = useQueryClient()
   const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const save = useMutation({
-    mutationFn: (showUnverifiable: boolean) => saveSearchPreferencesFn({ data: { showUnverifiable } }),
+    mutationFn: (hideUnverifiable: boolean) => saveSearchPreferencesFn({ data: { hideUnverifiable } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.prospects.status() }),
   })
   const verifiedOnly = status?.verification.verifiedOnly ?? true
-  const showUnverifiable = save.isPending ? save.variables : (status?.verification.showUnverifiable ?? true)
+  const hideUnverifiable = save.isPending ? save.variables : (status?.verification.hideUnverifiable ?? true)
 
   return (
     <div className="flex flex-col gap-6">
@@ -22,8 +22,12 @@ export function ProspectSearchTab() {
         description={
           <>
             <p>
-              Some companies' mail servers accept every address, real or not, so no email there can be confirmed. You
-              still see who they are, with their current title and company.
+              Some people can't get a verified email: their company's mail server accepts every address, real or not,
+              or doesn't take email, or a lookup already found nothing that works.
+            </p>
+            <p>
+              People whose lookup failed for a reason a retry won't change are remembered for 90 days, as a scrambled
+              code of their profile address, so later searches leave them out before paying to look them up again.
             </p>
             {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these people are always shown.</p>}
           </>
@@ -33,15 +37,15 @@ export function ProspectSearchTab() {
           <input
             type="checkbox"
             className="mt-0.5 rounded border-border text-accent focus:ring-accent"
-            checked={showUnverifiable}
+            checked={hideUnverifiable}
             disabled={!status || !verifiedOnly || save.isPending}
             onChange={(e) => save.mutate(e.target.checked)}
           />
           <span>
-            <span className="font-semibold">Show them in search results, marked Unverifiable</span>
+            <span className="font-semibold">Hide people whose email can't be verified (recommended)</span>
             <span className="block text-[11px] text-muted-foreground leading-snug max-w-xl">
-              On: they're listed with Unverifiable where the email would be. Off: they're left out, and search keeps
-              looking to fill the page, which uses more prospect credits.
+              On: they're left out of results, and search keeps looking to fill the page. Off: they're listed, marked
+              Unverifiable where the email would be.
             </span>
           </span>
         </label>

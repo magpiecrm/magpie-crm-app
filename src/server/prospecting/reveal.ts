@@ -14,6 +14,7 @@ import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import type { CompanySource, EmailStatus, PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { requireAllowance } from '../allowance'
+import { rememberIfUnverifiable } from './unverifiable'
 
 export type RevealResult =
   | { status: 'found'; email: string; emailStatus: EmailStatus; domain: string; greylisted: boolean; note?: string }
@@ -27,6 +28,8 @@ export type RevealResult =
       suggestedDomain?: string
       /** Their company accepts every address, so nobody there can be verified. */
       catchAll?: boolean
+      /** No retry would verify them, so they're remembered and later searches can leave them out. */
+      unverifiable?: boolean
     }
 
 export interface RevealDeps {
@@ -68,6 +71,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
       message: found.detail ?? 'No deliverable address found.',
       canFixDomain: Boolean(found.domainProblem && person.companyRef),
       suggestedDomain: person.companyRef ? found.suggestedDomain : undefined,
+      unverifiable: rememberIfUnverifiable(person.profileUrl, found.outcome, deps.db) || undefined,
     }
   }
   if (isSuppressed(hashesFor({ email: found.email }), suppressed)) return unavailable
@@ -79,6 +83,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
       status: 'unconfirmed',
       message: found.reason ?? found.detail ?? 'No address could be confirmed.',
       catchAll: found.status === 'catch_all_likely' || undefined,
+      unverifiable: rememberIfUnverifiable(person.profileUrl, found.outcome, deps.db) || undefined,
     }
   }
 

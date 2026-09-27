@@ -86,6 +86,22 @@ export function isKnownCatchAll(domain: string, getDomain: FinderDeps['getDomain
   }
 }
 
+/**
+ * Whether `domain` is already known (from a fresh MX lookup) to take no
+ * email, and no parent domain `findEmail` would fall back to is known to.
+ * Cache only, like `isKnownCatchAll`; an unchecked domain is never assumed.
+ */
+export function isKnownNoMail(domain: string, getDomain: FinderDeps['getDomain'], now: number): boolean {
+  const labels = domain.toLowerCase().trim().split('.')
+  for (;;) {
+    const rec = getDomain(labels.join('.'))
+    if (!rec || rec.accepts_mail !== false || isStale(rec.mx_checked_at, MX_REFRESH_MS, now)) return false
+    if (labels.length <= 2) return true
+    labels.shift()
+    if (PUBLIC_SUFFIX_RE.test(labels.join('.'))) return true
+  }
+}
+
 /** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
 export function surnameHidden(lastName: string): boolean {
   return /^\p{L}\.?$/u.test(lastName.trim())

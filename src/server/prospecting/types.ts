@@ -80,6 +80,8 @@ export interface PersonResult {
    * there can be verified. Company data (from the domain cache), not personal.
    */
   catchAll?: boolean
+  /** Their company's domain is already known to take no email. Company data, not personal. */
+  noMail?: boolean
   /**
    * Already a contact (`saved`: details and email come from the contact, and
    * the profile isn't looked up again) or revealed before (`revealed`).

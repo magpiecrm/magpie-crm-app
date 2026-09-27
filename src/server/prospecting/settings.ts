@@ -102,17 +102,18 @@ export function isVerifiedOnly(): boolean {
 }
 
 /**
- * Whether search shows people whose email can't be verified (their company
- * accepts every address), marked as such, rather than hiding them. Only
+ * Whether search leaves out people whose email can't be verified (at a
+ * company known to accept every address or take no email, or remembered from
+ * a failed lookup) rather than showing them marked Unverifiable. Only
  * matters while verified-only is on. A search preference, so hosted copies
- * can change it too.
+ * can change it too. On unless turned off.
  */
-export function showsUnverifiable(): boolean {
-  return db.getProspectingSettings()?.show_unverifiable !== false
+export function hidesUnverifiable(): boolean {
+  return db.getProspectingSettings()?.hide_unverifiable !== false
 }
 
-export function saveSearchPreferences(input: { showUnverifiable: boolean }) {
-  db.saveProspectingSettings({ ...db.getProspectingSettings(), show_unverifiable: input.showUnverifiable, updated_at: new Date().toISOString() })
+export function saveSearchPreferences(input: { hideUnverifiable: boolean }) {
+  db.saveProspectingSettings({ ...db.getProspectingSettings(), hide_unverifiable: input.hideUnverifiable, updated_at: new Date().toISOString() })
 }
 
 /** Null when no Reacher URL is set, i.e. verification is off. */
@@ -199,7 +200,7 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
     secrets: Object.keys(next).length ? encryptToken(next, env.credentialsSecret()) : undefined,
     verification_provider: input.verificationProvider ?? (current?.verification_provider === 'none' ? 'none' : current?.verification_provider === 'reacher' ? 'reacher' : undefined),
     verified_only: input.verifiedOnly ?? current?.verified_only,
-    show_unverifiable: current?.show_unverifiable,
+    hide_unverifiable: current?.hide_unverifiable,
     verification_daily_cap: input.verificationDailyCap ?? current?.verification_daily_cap,
     listed_domain_override: input.listedDomainOverride === undefined ? current?.listed_domain_override : input.listedDomainOverride,
     reacher_url: input.reacherUrl === undefined ? current?.reacher_url : reacherUrl,

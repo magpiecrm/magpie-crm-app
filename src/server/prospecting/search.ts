@@ -4,7 +4,8 @@
 import { env } from '../env'
 import { refineFromProfile } from './refine'
 import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type HeadcountBucket, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
-import { isKnownCatchAll, surnameHidden } from './emailFinder'
+import { isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
+import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
 import { inHeadcountBuckets, meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -187,6 +188,8 @@ interface Tally {
   noJob: number
   wrongCompany: number
   wrongSize: number
+  /** Left out before their profile lookup: remembered from a lookup that couldn't verify them. */
+  remembered: number
 }
 
 type Source = PeopleSource & Partial<Pick<CompanySource, 'getCompany'>>
@@ -221,6 +224,7 @@ async function processBatch(
   db: Db,
   tally: Tally,
   sizes?: HeadcountBucket[],
+  hideUnverifiable = false,
 ): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string }> {
   let items = people
   for (const person of items) {
@@ -234,6 +238,18 @@ async function processBatch(
     items = items.filter(
       (p) => !isSuppressed(hashesFor({ profileUrl: p.profileUrl, firstName: p.firstName, lastName: p.lastName, domain: p.companyDomain }), suppressed),
     )
+  }
+
+  // Someone an earlier lookup here couldn't verify, for a reason a retry
+  // won't change (unverifiable.ts), is left out before their profile is paid
+  // for again, while unverifiable people are hidden.
+  if (hideUnverifiable) {
+    const remembered = unverifiableHashes(db)
+    if (remembered.size > 0) {
+      const keep = items.filter((p) => !remembered.has(profileHash(p.profileUrl) ?? ''))
+      tally.remembered += items.length - keep.length
+      items = keep
+    }
   }
 
   // A surname shown only as an initial ("Andy C.") means no address can be
@@ -301,6 +317,7 @@ async function processBatch(
   const now = Date.now()
   for (const p of items) {
     if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = true
+    else if (p.companyDomain && isKnownNoMail(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.noMail = true
   }
   // In a hosted copy, also companies any other copy there has found out
   // about (sharedCatchAll.ts): company refs and domains only.
@@ -328,13 +345,14 @@ export async function searchPeople(
 ): Promise<Page<PersonResult> & { refined: string[] }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
-  const { isVerifiedOnly, showsUnverifiable } = await import('./settings')
+  const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
   const { company, ...filters } = input
   const source = getSource()
-  // People whose email can't be verified (their company accepts every
-  // address) are hidden, unless the user chose to see them marked as such.
-  const hidesCatchAll = isVerifiedOnly() && !showsUnverifiable()
+  // People whose email can't be verified are hidden, unless the user chose
+  // to see them marked as such (Settings → Prospect search).
+  const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
+  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail)
   // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
@@ -355,9 +373,9 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0 }
-  // Hidden catch-all people don't fill the page or count as prospects.
-  const usable = () => items.filter((p) => !(hidesCatchAll && p.catchAll)).length
+  const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0, remembered: 0 }
+  // Hidden people don't fill the page.
+  const usable = () => items.filter((p) => !hidden(p)).length
 
   let cursor = filters.cursor
   let nextCursor: string | null = null
@@ -383,7 +401,7 @@ export async function searchPeople(
       const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
       fresh.forEach((p) => seen.add(p.profileUrl))
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes, hideUnverifiable)
       items.push(...batch.items)
       refined.push(...batch.refined)
       if (batch.lookupError) {
@@ -409,6 +427,9 @@ export async function searchPeople(
   }
   if (tally.failed > 0) details.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
   if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
+  if (tally.remembered > 0) {
+    details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
+  }
   if (tally.alreadySaved > 0) {
     details.push(`${plural(tally.alreadySaved, 'person is', 'people are')} already in your contacts, so their details come from there and no profile lookup was paid for.`)
   }
