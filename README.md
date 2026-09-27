@@ -40,11 +40,16 @@ SES_MESSAGE_TAGS=...     # optional — "name=value,…" tags on every email SES
                          #   sends, returned on its bounce/complaint events
 EMAIL_PROVIDER=...       # optional — provider id to use when none is saved
                          #   (e.g. ses); otherwise inferred from the vars above
-SENDING_MANAGED=on       # optional — the host sends through its SES_* account:
+SENDING_MANAGED=on       # optional — the host sends through its own mail server
+                         #   (EMAIL_PROVIDER=smtp with this copy's SMTP_* login):
                          #   Settings → Sending shows only sending domains, which
                          #   users verify with DNS records, and mail only goes
-                         #   out from them. The SES keys need ses:SendEmail,
-                         #   ses:CreateEmailIdentity and ses:GetEmailIdentity
+                         #   out from them
+MANAGED_SENDING_URL=...  # with SENDING_MANAGED — the host's API that keeps the
+                         #   sending domains and their DKIM keys (PUT/DELETE
+                         #   /v1/mta/domains/<domain>, SMTP login as Basic auth).
+                         #   Its bounce and complaint events arrive at
+                         #   /api/webhooks/email/smtp as {"events":[{email,type}]}
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
 SOCIALFETCH_BALANCE=hidden # optional — don't show the credit balance (someone
                          #   else pays); the sidebar shows this month's prospects

@@ -1,7 +1,8 @@
 import nodemailer from 'nodemailer'
+import { env } from '../env'
 import { getDescriptor } from './descriptors'
 import { campaignHeaders, providerError } from './types'
-import type { EmailProvider, OutboundMessage, ProviderCredentials } from './types'
+import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
 
 // The transport is cached, but keyed on the credentials it was built from, so
 // editing SMTP settings in the UI rebuilds it. The previous module-level
@@ -13,6 +14,11 @@ function getTransporter(creds: ProviderCredentials): nodemailer.Transporter {
   const key = `${creds.host}:${port}:${creds.user}:${creds.pass}`
 
   if (!cached || cached.key !== key) {
+    cached?.transporter.close()
+    // The host's own mail server (SENDING_MANAGED): keep a few connections
+    // open between messages rather than a new login for each, and never send
+    // the login or the mail unencrypted.
+    const managed = env.sendingManaged()
     cached = {
       key,
       transporter: nodemailer.createTransport({
@@ -20,6 +26,7 @@ function getTransporter(creds: ProviderCredentials): nodemailer.Transporter {
         port,
         secure: port === 465, // true for 465, false for 587 or 25
         auth: { user: creds.user, pass: creds.pass },
+        ...(managed ? { pool: true, maxConnections: 3, maxMessages: 500, requireTLS: port !== 465 } : {}),
       }),
     }
   }
@@ -28,11 +35,28 @@ function getTransporter(creds: ProviderCredentials): nodemailer.Transporter {
 
 /** Drops the cached transport, so the next send rebuilds it. */
 export function resetSmtpTransport(): void {
+  cached?.transporter.close()
   cached = null
+}
+
+const EVENT_TYPES = new Set(['hard', 'soft', 'complaint'])
+
+/**
+ * An SMTP server doesn't report bounces itself; this reads the events the
+ * host's mail server forwards (SENDING_MANAGED):
+ *   { "events": [{ "email", "type": "hard" | "soft" | "complaint", "reason"? }] }
+ */
+function parseHostEvents(body: unknown): NormalizedBounce[] {
+  const events = (body as any)?.events
+  if (!Array.isArray(events)) return []
+  return events
+    .filter((e) => typeof e?.email === 'string' && e.email.includes('@') && EVENT_TYPES.has(e.type))
+    .map((e) => ({ email: e.email, type: e.type, ...(typeof e.reason === 'string' ? { reason: e.reason } : {}) }))
 }
 
 export const smtpProvider: EmailProvider = {
   descriptor: getDescriptor('smtp')!,
+  parseWebhook: parseHostEvents,
 
   async send(msg: OutboundMessage, creds: ProviderCredentials) {
     const mailOptions: any = {

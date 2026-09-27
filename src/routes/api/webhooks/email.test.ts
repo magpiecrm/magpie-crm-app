@@ -22,14 +22,14 @@ afterAll(() => {
   rmSync(scratchDir, { recursive: true, force: true })
 })
 
-const post = (body: unknown, secret = 'hook-secret') =>
+const post = (body: unknown, secret = 'hook-secret', provider = 'ses') =>
   handlers.POST({
-    request: new Request('http://acme.test/api/webhooks/email/ses', {
+    request: new Request(`http://acme.test/api/webhooks/email/${provider}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }),
-    params: { provider: 'ses' },
+    params: { provider },
   }) as Promise<Response>
 
 const status = (email: string) => db.data.contacts.find((c) => c.email === email)?.status
@@ -66,5 +66,24 @@ describe('SES events', () => {
     const real = 'https://sns.eu-west-2.amazonaws.com/?Action=ConfirmSubscription&TopicArn=arn:aws:sns:eu-west-2:1:t&Token=abc'
     expect((await post({ Type: 'SubscriptionConfirmation', SubscribeURL: real })).status).toBe(200)
     expect(fetch).toHaveBeenCalledWith(real)
+  })
+})
+
+describe("events from the host's mail server", () => {
+  it('marks hard bounces and complaints, and skips anything malformed', async () => {
+    process.env.WEBHOOK_SECRET = 'hook-secret'
+    for (const email of ['gone@h.test', 'angry@h.test', 'safe@h.test']) db.upsertContact(email, {}, { create: true })
+    const events = [
+      { email: 'gone@h.test', type: 'hard', reason: '550 5.1.1 no such user' },
+      { email: 'angry@h.test', type: 'complaint' },
+      { email: 'not-an-address', type: 'hard' },
+      { email: 'safe@h.test', type: 'delete-everything' },
+    ]
+    const res = await post({ events }, 'hook-secret', 'smtp')
+    expect(await res.json()).toMatchObject({ success: true, processed: 2 })
+    expect(status('gone@h.test')).toBe('bounced')
+    expect(status('angry@h.test')).toBe('unsubscribed')
+    expect(status('safe@h.test')).toBe('subscribed')
+    expect((await post({ events }, 'wrong', 'smtp')).status).toBe(401)
   })
 })

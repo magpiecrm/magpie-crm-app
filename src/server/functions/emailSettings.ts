@@ -130,7 +130,7 @@ const DAY_MS = 24 * 60 * 60_000
 export const getSendingDomainsFn = createServerFn({ method: 'GET' }).handler(async () => {
   const { requireAuth } = await import('../auth.server')
   await requireAuth()
-  const { checkSendingDomain, dnsRecords, getSendingDomains, isReady } = await import('../sendingDomains')
+  const { checkSendingDomain, getSendingDomains, isReady } = await import('../sendingDomains')
   const now = Date.now()
   const domains = await Promise.all(
     getSendingDomains().map(async (d) => {
@@ -138,7 +138,7 @@ export const getSendingDomainsFn = createServerFn({ method: 'GET' }).handler(asy
       return stale ? checkSendingDomain(d.domain).catch(() => d) : d
     }),
   )
-  return domains.map((d) => ({ ...d, ready: isReady(d), records: dnsRecords(d) }))
+  return domains
 })
 
 export const addSendingDomainFn = createServerFn({ method: 'POST' })
@@ -176,6 +176,6 @@ export const removeSendingDomainFn = createServerFn({ method: 'POST' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { removeSendingDomain } = await import('../sendingDomains')
-    removeSendingDomain(data.domain)
+    await removeSendingDomain(data.domain)
     return { success: true as const }
   })

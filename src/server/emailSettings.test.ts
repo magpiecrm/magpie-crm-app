@@ -90,8 +90,22 @@ describe('SES from the environment', () => {
 })
 
 describe('SENDING_MANAGED', () => {
-  it("sends through the host's SES whatever was saved, and refuses changes", () => {
-    envState.SMTP_HOST = 'smtp.example.test'
+  it("sends through the host's mail server with this copy's login, whatever was saved, and refuses changes", () => {
+    saveProviderSettings({ provider: 'resend', credentials: { apiKey: 're_mine' } })
+    envState.SENDING_MANAGED = 'on'
+    envState.EMAIL_PROVIDER = 'smtp'
+    envState.SMTP_HOST = 'mta.host.test'
+    envState.SMTP_PORT = '587'
+    envState.SMTP_USER = 'acme'
+    envState.SMTP_PASS = 'host-made-password'
+    const config = getActiveProviderConfig()
+    expect(config.providerId).toBe('smtp')
+    expect(config.creds).toEqual({ host: 'mta.host.test', port: '587', user: 'acme', pass: 'host-made-password' })
+    expect(config.missingFields).toEqual([])
+    expect(() => saveProviderSettings({ provider: 'smtp', credentials: { host: 'x' } })).toThrow(/hosting provider/)
+  })
+
+  it("still sends through the host's SES until the host moves the copy over", () => {
     saveProviderSettings({ provider: 'smtp', credentials: { host: 'mine.example.test', port: '587' } })
     envState.SENDING_MANAGED = 'on'
     envState.SES_ACCESS_KEY_ID = 'AKIAHOST'
@@ -101,7 +115,6 @@ describe('SENDING_MANAGED', () => {
     expect(config.providerId).toBe('ses')
     expect(config.creds).toMatchObject({ accessKeyId: 'AKIAHOST', region: 'eu-west-2' })
     expect(config.creds.host).toBeUndefined()
-    expect(() => saveProviderSettings({ provider: 'smtp', credentials: { host: 'x' } })).toThrow(/hosting provider/)
   })
 })
 

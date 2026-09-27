@@ -136,12 +136,19 @@ export const env = {
     messageTags: () => readEnv('SES_MESSAGE_TAGS'),
   },
   /**
-   * SENDING_MANAGED=on: the host sends everyone's email through its Amazon
-   * SES account (the SES_* settings). Settings → Sending shows only sending
-   * domains, which users verify with DNS records (see sendingDomains.ts), and
-   * mail only goes out from those domains.
+   * SENDING_MANAGED=on: the host sends everyone's email through its own mail
+   * server (EMAIL_PROVIDER and its settings, normally SMTP with a login per
+   * copy). Settings → Sending shows only sending domains, which users verify
+   * with DNS records (see sendingDomains.ts), and mail only goes out from
+   * those domains.
    */
   sendingManaged: () => ['on', 'true', '1', 'yes'].includes(readEnv('SENDING_MANAGED')?.toLowerCase() ?? ''),
+  /**
+   * Where the host keeps this copy's sending domains and their DKIM keys
+   * (e.g. https://cloud.magpiecrm.com), reached with the SMTP login. Only
+   * used when SENDING_MANAGED is on.
+   */
+  managedSendingUrl: () => readEnv('MANAGED_SENDING_URL')?.replace(/\/+$/, ''),
   // Which sending provider to use when none is saved in Settings → Sending
   // (a provider id such as "ses"). Unset: inferred from the env vars present.
   emailProvider: () => readEnv('EMAIL_PROVIDER'),

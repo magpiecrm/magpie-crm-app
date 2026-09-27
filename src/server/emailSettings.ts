@@ -90,13 +90,18 @@ function inferProviderFromEnv(): ProviderId {
 export function getActiveProviderConfig(): ActiveProviderConfig {
   const stored = db.getEmailSettings()
 
-  // The host sends through its own Amazon SES account; nothing saved here applies.
+  // The host runs sending (normally its own mail server over SMTP, with a
+  // login for this copy); only its settings apply, never anything saved here.
   if (env.sendingManaged()) {
-    const creds = envCredentials('ses')
-    if (!creds.region) creds.region = 'us-east-1'
-    const missingFields = (getDescriptor('ses')?.fields ?? []).filter((f) => f.required && !creds[f.key]).map((f) => f.label)
+    const providerId = inferProviderFromEnv()
+    const descriptor = getDescriptor(providerId)
+    const creds = envCredentials(providerId)
+    for (const field of descriptor?.fields ?? []) {
+      if (!creds[field.key] && field.defaultValue) creds[field.key] = field.defaultValue
+    }
+    const missingFields = (descriptor?.fields ?? []).filter((f) => f.required && !creds[f.key]).map((f) => f.label)
     const defaultSender = stored?.defaultSender || soleSenderRow()
-    return { providerId: 'ses', creds, defaultSender, missingFields, credsUnreadable: false, source: 'env' }
+    return { providerId, creds, defaultSender, missingFields, credsUnreadable: false, source: 'env' }
   }
 
   const storedId = stored?.provider

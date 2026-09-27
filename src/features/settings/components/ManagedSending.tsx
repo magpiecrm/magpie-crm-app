@@ -72,11 +72,7 @@ function DomainCard({ d, onChanged }: { d: Domain; onChanged: () => void }) {
       </div>
       {!d.ready && (
         <p className="px-4 -mt-1 pb-3 text-xs text-muted-foreground">
-          {!d.sesVerified && !d.ownershipVerified
-            ? 'Add the records below at your domain provider. It usually takes a few minutes, sometimes up to a day.'
-            : !d.sesVerified
-              ? 'Ownership confirmed. Waiting for the three CNAME records to show up.'
-              : 'The CNAME records are in place. Waiting for the TXT record that shows this workspace owns the domain.'}
+          {d.waitingFor ?? 'Add the records below at your domain provider. It usually takes a few minutes, sometimes up to a day.'}
           {check.data && !check.data.success && <span className="text-destructive"> {check.data.error}</span>}
         </p>
       )}
@@ -104,7 +100,7 @@ function DomainCard({ d, onChanged }: { d: Domain; onChanged: () => void }) {
           </ul>
           <p className="px-4 py-3 text-xs text-muted-foreground border-t border-border/60">
             Some DNS providers add your domain to the name for you: if yours does, enter only the part before{' '}
-            <code className="font-mono">.{d.domain}</code>. On Cloudflare, set the CNAMEs to <em>DNS only</em>.
+            <code className="font-mono">.{d.domain}</code>. Already have a DMARC record? Keep yours.
           </p>
         </div>
       )}
@@ -113,10 +109,9 @@ function DomainCard({ d, onChanged }: { d: Domain; onChanged: () => void }) {
 }
 
 /**
- * Settings → Sending when the host runs sending through Amazon SES
- * (SENDING_MANAGED): no provider or credentials, just the domains you send
- * from and the DNS records that verify them. The copy doesn't name the
- * provider: that's the host's business.
+ * Settings → Sending when the host runs sending (SENDING_MANAGED): no
+ * provider or credentials, just the domains you send from and the DNS
+ * records that verify them.
  */
 export function ManagedSending() {
   const queryClient = useQueryClient()
