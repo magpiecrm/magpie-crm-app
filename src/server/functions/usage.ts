@@ -11,6 +11,7 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
   const allowance = a && {
     periodEnd: a.periodEnd,
     upgradeUrl: a.upgradeUrl,
+    sendingPaused: Boolean(a.sendingPaused),
     items: ALLOWANCE_KINDS.flatMap((kind) => (a.limits[kind] === undefined ? [] : [{ kind, used: a.used[kind], limit: a.limits[kind]! }])),
   }
   return { month, ...usageForMonth(month), allowance }

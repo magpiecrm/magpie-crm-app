@@ -25,6 +25,8 @@ export interface Allowance {
   used: Record<AllowanceKind, number>
   /** Where the Upgrade button goes. */
   upgradeUrl: string | null
+  /** The host has paused this copy's sending (e.g. too many spam complaints); everything else works. */
+  sendingPaused?: boolean
 }
 
 const WHAT: Record<AllowanceKind, [one: string, many: string]> = {
@@ -54,7 +56,8 @@ export function getAllowance(): Allowance | null {
 
 /** Sets (or, with null, removes) the allowance for this billing period. */
 export function setAllowance(
-  input: { periodStart: string; periodEnd?: string | null; upgradeUrl?: string | null } & Partial<Record<AllowanceKind, number | null>>,
+  input: { periodStart: string; periodEnd?: string | null; upgradeUrl?: string | null; sendingPaused?: boolean } &
+    Partial<Record<AllowanceKind, number | null>>,
 ): Allowance | null {
   const current = db.getAllowance()
   const limits: Allowance['limits'] = {}
@@ -69,6 +72,7 @@ export function setAllowance(
     limits,
     used: samePeriod ? current!.used : { prospects: 0, reveals: 0, emailsSent: 0 },
     upgradeUrl: input.upgradeUrl ?? null,
+    ...(input.sendingPaused ? { sendingPaused: true } : {}),
   }
   db.setAllowance(next)
   return next
@@ -81,6 +85,7 @@ export function clearAllowance() {
 /** How many more of `kind` may be used this period; Infinity when there's no limit. */
 export function remaining(kind: AllowanceKind): number {
   const a = db.getAllowance()
+  if (kind === 'emailsSent' && a?.sendingPaused) return 0
   const limit = a?.limits[kind]
   if (!a || limit === undefined) return Infinity
   return Math.max(0, limit - a.used[kind])
@@ -95,6 +100,9 @@ export function requireAllowance(kind: AllowanceKind, n = 1, action?: string) {
   const left = remaining(kind)
   if (n <= left) return
   const a = db.getAllowance()!
+  if (kind === 'emailsSent' && a.sendingPaused) {
+    throw new AllowanceError(kind, 'Sending is paused on this workspace by your hosting provider. Contact them to find out why.', null)
+  }
   const limit = a.limits[kind]!
   const message =
     left === 0 || !action

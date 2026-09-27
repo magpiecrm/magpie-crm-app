@@ -48,6 +48,7 @@ function envCredentials(providerId: ProviderId): ProviderCredentials {
       accessKeyId: env.ses.accessKeyId(),
       secretAccessKey: env.ses.secretAccessKey(),
       configurationSet: env.ses.configurationSet(),
+      messageTags: env.ses.messageTags(),
     })
   }
   // The other providers are only configured in Settings → Sending.

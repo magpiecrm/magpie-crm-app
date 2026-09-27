@@ -71,6 +71,15 @@ describe('allowances', () => {
     expect(() => requireAllowance('emailsSent', 1)).toThrow("You've used all 1,000 emails in your plan this month. Upgrade to get more.")
   })
 
+  it("pauses sending when the host says so, whatever's left, and leaves the rest alone", () => {
+    setAllowance({ ...period, prospects: 100, emailsSent: 10000, sendingPaused: true })
+    expect(remaining('emailsSent')).toBe(0)
+    expect(remaining('prospects')).toBe(100)
+    expect(() => requireAllowance('emailsSent', 1, 'Sending this campaign')).toThrow('Sending is paused on this workspace by your hosting provider')
+    setAllowance({ ...period, prospects: 100, emailsSent: 10000 })
+    expect(remaining('emailsSent')).toBe(10000)
+  })
+
   it('is saved with the usage counts', async () => {
     setAllowance({ ...period, reveals: 50 })
     recordUsage({ emailsFound: 4 })

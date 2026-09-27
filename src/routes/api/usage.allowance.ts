@@ -7,7 +7,7 @@ import { z } from 'zod'
  *
  *   GET    /api/usage/allowance   the allowance and what's been used
  *   PUT    /api/usage/allowance   set it: { periodStart, periodEnd?, prospects?,
- *                                 reveals?, emailsSent?, upgradeUrl? }
+ *                                 reveals?, emailsSent?, upgradeUrl?, sendingPaused? }
  *   DELETE /api/usage/allowance   no limits
  *   Authorization: Bearer <USAGE_API_TOKEN>
  *
@@ -25,6 +25,7 @@ const allowanceInput = z.object({
   reveals: amount,
   emailsSent: amount,
   upgradeUrl: z.string().url().startsWith('https://').nullable().optional(),
+  sendingPaused: z.boolean().optional(),
 })
 
 async function guard(request: Request): Promise<Response | null> {

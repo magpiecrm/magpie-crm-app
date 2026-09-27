@@ -69,7 +69,8 @@ interface ProviderSendResult {
 /** A bounce event normalized out of a provider's webhook payload. */
 export interface NormalizedBounce {
   email: string
-  type: 'hard' | 'soft'
+  /** 'complaint': the recipient marked the email as spam (SES reports these). */
+  type: 'hard' | 'soft' | 'complaint'
   campaignId?: number
   reason?: string
 }

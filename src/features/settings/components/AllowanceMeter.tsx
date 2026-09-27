@@ -28,6 +28,11 @@ export function AllowanceMeter({ compact = false }: { compact?: boolean }) {
           {resets && <span className="text-xs text-muted-foreground">Resets {resets}</span>}
         </div>
       )}
+      {allowance.sendingPaused && (
+        <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold text-destructive`}>
+          Sending is paused by your hosting provider.
+        </p>
+      )}
       {allowance.items.map(({ kind, used, limit }) => {
         const share = limit > 0 ? Math.min(1, used / limit) : 1
         const out = used >= limit

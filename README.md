@@ -36,6 +36,8 @@ SMTP_SENDER=...          # optional — added to Settings → Sender addresses o
 SES_ACCESS_KEY_ID=...    # optional — send through Amazon SES without saving it
 SES_SECRET_ACCESS_KEY=...#   in Settings → Sending (also SES_REGION, default
                          #   us-east-1, and SES_CONFIGURATION_SET)
+SES_MESSAGE_TAGS=...     # optional — "name=value,…" tags on every email SES
+                         #   sends, returned on its bounce/complaint events
 EMAIL_PROVIDER=...       # optional — provider id to use when none is saved
                          #   (e.g. ses); otherwise inferred from the vars above
 SENDING_MANAGED=on       # optional — the host sends through its SES_* account:
@@ -108,6 +110,13 @@ notifications and forwards them to this app. Deploy it with two variables set
 in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 `https://your-app.example.com/api/webhooks/bounce`) and `WEBHOOK_SECRET`
 (matching the app's).
+
+Sending providers post bounces to `/api/webhooks/email/<provider>` (with
+`?s=<WEBHOOK_SECRET>`). For Amazon SES: a configuration set
+(`SES_CONFIGURATION_SET`) publishing Bounce and Complaint events to an SNS
+topic with an HTTPS subscription to `/api/webhooks/email/ses?s=…`; the app
+confirms the subscription itself. A hard bounce marks the contact bounced; a
+spam complaint unsubscribes them.
 
 ### Copilot and AI apps (MCP)
 

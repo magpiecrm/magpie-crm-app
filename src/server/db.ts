@@ -1653,6 +1653,14 @@ class JsonDb {
   }
 
 
+  /** A spam complaint: unsubscribed straight away, like the unsubscribe link, so they're never emailed again. */
+  markComplained(email: string) {
+    const normalizedEmail = email.toLowerCase().trim()
+    const contact = this.data.contacts.find(c => c.email === normalizedEmail)
+    if (contact) contact.status = 'unsubscribed'
+    this.markRecipientUnsubscribed(normalizedEmail)
+  }
+
   markRecipientUnsubscribed(email: string, campaignId?: string | number) {
     const normalizedEmail = email.toLowerCase().trim()
 

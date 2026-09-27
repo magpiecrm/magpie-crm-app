@@ -42,6 +42,7 @@ vi.mock('./env', () => ({
       accessKeyId: () => envState.SES_ACCESS_KEY_ID,
       secretAccessKey: () => envState.SES_SECRET_ACCESS_KEY,
       configurationSet: () => envState.SES_CONFIGURATION_SET,
+      messageTags: () => envState.SES_MESSAGE_TAGS,
     },
     emailProvider: () => envState.EMAIL_PROVIDER,
     sendingManaged: () => envState.SENDING_MANAGED === 'on',

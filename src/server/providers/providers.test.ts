@@ -6,6 +6,7 @@ import { mailgunProvider } from './mailgun'
 import { postmarkProvider } from './postmark'
 import { resendProvider } from './resend'
 import { sendgridProvider } from './sendgrid'
+import { isSnsUrl, parseMessageTags, sesProvider } from './ses'
 import type { OutboundMessage } from './types'
 
 const msg: OutboundMessage = {
@@ -227,5 +228,33 @@ describe('webhook normalizers', () => {
     expect(out).toEqual([
       { email: 'a@b.com', type: 'hard', reason: 'mailbox unavailable' },
     ])
+  })
+})
+
+describe('Amazon SES', () => {
+  it('tags each email with SES_MESSAGE_TAGS, skipping anything SES would refuse', async () => {
+    const fetch = mockFetch({ ok: true, jsonValue: { MessageId: 'm1' } })
+    await sesProvider.send(msg, { region: 'eu-west-2', accessKeyId: 'AKIA', secretAccessKey: 's', configurationSet: 'magpie', messageTags: 'workspace=acme, bad tag=x' })
+    const body = JSON.parse(fetch.mock.calls[0][1].body)
+    expect(body.ConfigurationSetName).toBe('magpie')
+    expect(body.EmailTags).toEqual([{ Name: 'workspace', Value: 'acme' }])
+    expect(parseMessageTags(undefined)).toEqual([])
+  })
+
+  it('reads bounces and spam complaints from SES events, directly or inside an SNS envelope', () => {
+    const bounce = { eventType: 'Bounce', bounce: { bounceType: 'Permanent', bouncedRecipients: [{ emailAddress: 'gone@b.com', diagnosticCode: '550 no such user' }] } }
+    const complaint = { eventType: 'Complaint', complaint: { complaintFeedbackType: 'abuse', complainedRecipients: [{ emailAddress: 'angry@b.com' }] } }
+    expect(sesProvider.parseWebhook!(bounce)).toEqual([{ email: 'gone@b.com', type: 'hard', reason: '550 no such user' }])
+    expect(sesProvider.parseWebhook!({ Type: 'Notification', Message: JSON.stringify(complaint) })).toEqual([
+      { email: 'angry@b.com', type: 'complaint', reason: 'abuse' },
+    ])
+    expect(sesProvider.parseWebhook!({ eventType: 'Delivery' })).toEqual([])
+  })
+
+  it('only trusts subscription confirmation links on Amazon SNS', () => {
+    expect(isSnsUrl('https://sns.eu-west-2.amazonaws.com/?Action=ConfirmSubscription&Token=x')).toBe(true)
+    for (const bad of ['http://sns.eu-west-2.amazonaws.com/', 'https://sns.eu-west-2.amazonaws.com.evil.test/', 'https://169.254.169.254/latest', 'not a url']) {
+      expect(isSnsUrl(bad)).toBe(false)
+    }
   })
 })

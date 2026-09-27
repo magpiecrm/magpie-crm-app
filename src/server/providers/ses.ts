@@ -5,6 +5,25 @@ import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredenti
 
 const SES_PATH = '/v2/email/outbound-emails'
 
+/** https://sns.<region>.amazonaws.com/… : where AWS's subscription confirmations live. */
+export function isSnsUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' && /^sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+/** "workspace=acme,team=sales" → SES EmailTags; SES allows letters, numbers, _ - . @ in both. */
+export function parseMessageTags(raw: string | undefined): Array<{ Name: string; Value: string }> {
+  return (raw ?? '')
+    .split(',')
+    .map((pair) => pair.split('=').map((s) => s.trim()))
+    .filter(([name, value]) => name && value && /^[\w.@-]{1,256}$/.test(name) && /^[\w.@-]{1,256}$/.test(value))
+    .map(([Name, Value]) => ({ Name, Value }))
+}
+
 export const sesProvider: EmailProvider = {
   descriptor: getDescriptor('ses')!,
 
@@ -28,6 +47,10 @@ export const sesProvider: EmailProvider = {
     }
     // Required for SES to publish bounce/complaint events to SNS.
     if (creds.configurationSet) payload.ConfigurationSetName = creds.configurationSet
+    // SES_MESSAGE_TAGS ("workspace=acme"): comes back on every event, e.g. so a
+    // host can tell which of its copies a bounce belongs to.
+    const tags = parseMessageTags(creds.messageTags)
+    if (tags.length) payload.EmailTags = tags
 
     const body = JSON.stringify(payload)
     const signed = signRequest({
@@ -72,9 +95,15 @@ export const sesProvider: EmailProvider = {
       }
     }
 
-    if (notification?.notificationType !== 'Bounce' && notification?.eventType !== 'Bounce') {
-      return []
+    const kind = notification?.eventType ?? notification?.notificationType
+    if (kind === 'Complaint') {
+      // Someone marked the email as spam: never email them again.
+      const complained: any[] = notification.complaint?.complainedRecipients || []
+      return complained
+        .filter((r) => r?.emailAddress)
+        .map((r) => ({ email: r.emailAddress, type: 'complaint' as const, reason: notification.complaint?.complaintFeedbackType }))
     }
+    if (kind !== 'Bounce') return []
 
     const bounce = notification.bounce
     const recipients: any[] = bounce?.bouncedRecipients || []

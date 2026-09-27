@@ -3,6 +3,7 @@ import { db } from '../../../server/db'
 import { env } from '../../../server/env'
 import { PROVIDERS } from '../../../server/providers'
 import { isProviderId } from '../../../server/providers/descriptors'
+import { isSnsUrl } from '../../../server/providers/ses'
 
 // Per-provider bounce webhooks. Cloudflare is the odd one out — its bounces are
 // polled from the GraphQL analytics dataset in bouncePoller.ts — but every
@@ -75,6 +76,10 @@ export const Route = createFileRoute('/api/webhooks/email/$provider')({
           // that must be fetched or the topic never activates.
           const subscribeUrl = (body as any)?.SubscribeURL
           if (subscribeUrl && (body as any)?.Type === 'SubscriptionConfirmation') {
+            // Only ever AWS's own confirmation link, never one a sender made up.
+            if (!isSnsUrl(subscribeUrl)) {
+              return Response.json({ error: 'Not an Amazon SNS confirmation link' }, { status: 400 })
+            }
             await fetch(subscribeUrl)
             console.log(`[WEBHOOK] Confirmed ${providerId} SNS subscription`)
             return Response.json({ success: true, confirmed: true })
@@ -83,9 +88,13 @@ export const Route = createFileRoute('/api/webhooks/email/$provider')({
           const bounces = parseWebhook(body)
           for (const bounce of bounces) {
             console.log(
-              `[WEBHOOK] ${providerId} ${bounce.type} bounce for ${bounce.email}` +
+              `[WEBHOOK] ${providerId} ${bounce.type === 'complaint' ? 'spam complaint' : `${bounce.type} bounce`}` +
                 (bounce.reason ? ` (${bounce.reason})` : ''),
             )
+            if (bounce.type === 'complaint') {
+              db.markComplained(bounce.email)
+              continue
+            }
             // Deliberately no campaignId: updateRecipientBounceStatus already
             // falls back to the most recent `sent` row, which saves threading
             // X-Campaign-ID back out of eight different payload shapes.

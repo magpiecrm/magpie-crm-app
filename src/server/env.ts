@@ -132,6 +132,8 @@ export const env = {
     accessKeyId: () => readEnv('SES_ACCESS_KEY_ID'),
     secretAccessKey: () => readEnv('SES_SECRET_ACCESS_KEY'),
     configurationSet: () => readEnv('SES_CONFIGURATION_SET'),
+    /** "name=value,…" tags on every email SES sends, returned on its events. */
+    messageTags: () => readEnv('SES_MESSAGE_TAGS'),
   },
   /**
    * SENDING_MANAGED=on: the host sends everyone's email through its Amazon

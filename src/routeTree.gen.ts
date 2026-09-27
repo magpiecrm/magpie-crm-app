@@ -41,6 +41,7 @@ import { Route as MarketingCampaignsIdRouteImport } from './routes/marketing/cam
 import { Route as CollectionPersonasNewRouteImport } from './routes/collection/personas/new'
 import { Route as CollectionPersonasPersonaIdRouteImport } from './routes/collection/personas/$personaId'
 import { Route as ApiWebhooksBounceRouteImport } from './routes/api/webhooks/bounce'
+import { Route as ApiUsageDomainsRouteImport } from './routes/api/usage.domains'
 import { Route as ApiUsageAllowanceRouteImport } from './routes/api/usage.allowance'
 import { Route as ApiUploadsFilenameRouteImport } from './routes/api/uploads/$filename'
 import { Route as ApiTrackOpenRouteImport } from './routes/api/track/open'
@@ -217,6 +218,11 @@ const ApiWebhooksBounceRoute = ApiWebhooksBounceRouteImport.update({
   path: '/api/webhooks/bounce',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUsageDomainsRoute = ApiUsageDomainsRouteImport.update({
+  id: '/domains',
+  path: '/domains',
+  getParentRoute: () => ApiUsageRoute,
+} as any)
 const ApiUsageAllowanceRoute = ApiUsageAllowanceRouteImport.update({
   id: '/allowance',
   path: '/allowance',
@@ -311,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
+  '/api/usage/domains': typeof ApiUsageDomainsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -354,6 +361,7 @@ export interface FileRoutesByTo {
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
+  '/api/usage/domains': typeof ApiUsageDomainsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -402,6 +410,7 @@ export interface FileRoutesById {
   '/api/track/open': typeof ApiTrackOpenRoute
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
+  '/api/usage/domains': typeof ApiUsageDomainsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
@@ -451,6 +460,7 @@ export interface FileRouteTypes {
     | '/api/track/open'
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
+    | '/api/usage/domains'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -494,6 +504,7 @@ export interface FileRouteTypes {
     | '/api/track/open'
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
+    | '/api/usage/domains'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -541,6 +552,7 @@ export interface FileRouteTypes {
     | '/api/track/open'
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
+    | '/api/usage/domains'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
@@ -829,6 +841,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksBounceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/usage/domains': {
+      id: '/api/usage/domains'
+      path: '/domains'
+      fullPath: '/api/usage/domains'
+      preLoaderRoute: typeof ApiUsageDomainsRouteImport
+      parentRoute: typeof ApiUsageRoute
+    }
     '/api/usage/allowance': {
       id: '/api/usage/allowance'
       path: '/allowance'
@@ -925,10 +944,12 @@ declare module '@tanstack/react-router' {
 
 interface ApiUsageRouteChildren {
   ApiUsageAllowanceRoute: typeof ApiUsageAllowanceRoute
+  ApiUsageDomainsRoute: typeof ApiUsageDomainsRoute
 }
 
 const ApiUsageRouteChildren: ApiUsageRouteChildren = {
   ApiUsageAllowanceRoute: ApiUsageAllowanceRoute,
+  ApiUsageDomainsRoute: ApiUsageDomainsRoute,
 }
 
 const ApiUsageRouteWithChildren = ApiUsageRoute._addFileChildren(
