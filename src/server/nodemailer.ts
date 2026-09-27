@@ -6,9 +6,10 @@
 // Settings. See src/server/providers/ for the implementations.
 
 import { db } from './db'
+import { env } from './env'
 import { getActiveProviderConfig } from './emailSettings'
 import { getProvider } from './providers'
-import type { OutboundMessage } from './providers/types'
+import { ProviderSendError, type OutboundMessage } from './providers/types'
 import { recordUsage } from './usage'
 import { requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
@@ -129,10 +130,18 @@ export async function sendMail(options: SendMailOptions) {
         RETRYABLE_CODES.includes(err?.code) ||
         /fetch failed|network/i.test(err?.message || '') ||
         err?.retryable === true
-      if (!isNetworkError) throw err
+      if (!isNetworkError) throw withoutProviderName(err)
       console.warn(`[EMAIL] Transient send failure to ${toEmails.join(', ')} (attempt ${attempt}/3): ${err.code || err.message}`)
       await new Promise((r) => setTimeout(r, attempt * 2000))
     }
   }
-  throw lastError
+  throw withoutProviderName(lastError)
+}
+
+/** When the host runs sending, errors don't name its provider: that's the host's business. */
+function withoutProviderName(err: unknown): unknown {
+  if (err instanceof ProviderSendError && env.sendingManaged()) {
+    err.message = `Email sending failed for ${err.recipient}: ${err.detail}`
+  }
+  return err
 }

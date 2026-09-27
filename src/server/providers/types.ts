@@ -103,6 +103,8 @@ export function campaignHeaders(msg: OutboundMessage): Record<string, string> {
  */
 export class ProviderSendError extends Error {
   readonly provider: ProviderId
+  readonly recipient: string
+  readonly detail: string
   readonly status?: number
   readonly retryable: boolean
 
@@ -110,6 +112,8 @@ export class ProviderSendError extends Error {
     super(`${provider} email sending failed for ${recipient}: ${detail}`)
     this.name = 'ProviderSendError'
     this.provider = provider
+    this.recipient = recipient
+    this.detail = detail
     this.status = status
     this.retryable = status === 429 || (status !== undefined && status >= 500)
   }

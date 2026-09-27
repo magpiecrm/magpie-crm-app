@@ -94,16 +94,21 @@ export const sendProviderTestEmailFn = createServerFn({ method: 'POST' })
     const { getActiveProviderConfig } = await import('../emailSettings')
     const { getDescriptor } = await import('../providers/descriptors')
 
+    const { env } = await import('../env')
+
     const config = getActiveProviderConfig()
-    const label = getDescriptor(config.providerId)?.label ?? config.providerId
+    // When the host runs sending, which provider it uses is the host's business.
+    const label = env.sendingManaged() ? 'Sending' : (getDescriptor(config.providerId)?.label ?? config.providerId)
 
     try {
       const result = await sendMail({
         to: data.to,
-        subject: `[TEST] Sending via ${label}`,
+        subject: env.sendingManaged() ? '[TEST] Sending works' : `[TEST] Sending via ${label}`,
         html:
           `<p>This is a test message from MagpieCRM.</p>` +
-          `<p>If you are reading it, <strong>${label}</strong> is configured correctly.</p>`,
+          (env.sendingManaged()
+            ? `<p>If you are reading it, sending is set up correctly.</p>`
+            : `<p>If you are reading it, <strong>${label}</strong> is configured correctly.</p>`),
       })
       return {
         success: true as const,

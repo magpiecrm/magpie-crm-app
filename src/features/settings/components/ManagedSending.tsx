@@ -75,8 +75,8 @@ function DomainCard({ d, onChanged }: { d: Domain; onChanged: () => void }) {
           {!d.sesVerified && !d.ownershipVerified
             ? 'Add the records below at your domain provider. It usually takes a few minutes, sometimes up to a day.'
             : !d.sesVerified
-              ? 'Ownership confirmed. Waiting for Amazon SES to see the three CNAME records.'
-              : 'Amazon SES has verified it. Waiting for the TXT record that shows this workspace owns the domain.'}
+              ? 'Ownership confirmed. Waiting for the three CNAME records to show up.'
+              : 'The CNAME records are in place. Waiting for the TXT record that shows this workspace owns the domain.'}
           {check.data && !check.data.success && <span className="text-destructive"> {check.data.error}</span>}
         </p>
       )}
@@ -115,7 +115,8 @@ function DomainCard({ d, onChanged }: { d: Domain; onChanged: () => void }) {
 /**
  * Settings → Sending when the host runs sending through Amazon SES
  * (SENDING_MANAGED): no provider or credentials, just the domains you send
- * from and the DNS records that verify them.
+ * from and the DNS records that verify them. The copy doesn't name the
+ * provider: that's the host's business.
  */
 export function ManagedSending() {
   const queryClient = useQueryClient()
@@ -141,8 +142,8 @@ export function ManagedSending() {
       <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
         <Send className="w-4 h-4 shrink-0 mt-0.5" />
         <span>
-          Your email goes out through Amazon SES, run by your hosting provider. There's nothing to connect: add the
-          domain you send from, put its DNS records in place, and you're ready.
+          Sending is set up for you. There's nothing to connect: add the domain you send from, put its DNS records in
+          place, and you're ready.
         </span>
       </div>
 

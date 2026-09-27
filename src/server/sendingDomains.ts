@@ -60,7 +60,7 @@ export function normalizeDomain(input: string): string | null {
 function sesConfig() {
   const accessKeyId = env.ses.accessKeyId()
   const secretAccessKey = env.ses.secretAccessKey()
-  if (!accessKeyId || !secretAccessKey) throw new Error('Sending isn\'t set up on this server yet (no Amazon SES credentials).')
+  if (!accessKeyId || !secretAccessKey) throw new Error('Sending isn\'t set up on this server yet.')
   return { region: env.ses.region() || 'us-east-1', accessKeyId, secretAccessKey }
 }
 
@@ -105,7 +105,7 @@ export function dnsRecords(d: SendingDomain): DnsRecord[] {
         type: 'CNAME',
         name: `${t}._domainkey.${d.domain}`,
         value: `${t}.dkim.amazonses.com`,
-        purpose: 'Signs your email (DKIM) and verifies the domain with Amazon SES',
+        purpose: 'Signs your email (DKIM) and verifies the domain for sending',
       }),
     ),
     {
@@ -128,7 +128,7 @@ async function lookUp(d: SendingDomain, deps: SendingDomainDeps): Promise<Sendin
   const ses = deps.ses ?? sesApi
   const resolveTxt = deps.resolveTxt ?? dns.resolveTxt
   const { status, json } = await ses('GET', `/v2/email/identities/${d.domain}`)
-  if (status !== 200) throw new Error(json?.message ?? `Amazon SES answered ${status}`)
+  if (status !== 200) throw new Error(json?.message ?? `The sending service answered ${status}`)
   const txt = await resolveTxt(`${OWNERSHIP_LABEL}.${d.domain}`).catch(() => [] as string[][])
   return {
     ...d,
@@ -160,7 +160,7 @@ export async function addSendingDomain(input: string, deps: SendingDomainDeps = 
   // Already in the host's SES account (added before, or by another copy): the
   // ownership record still has to be added for this copy.
   if (created.status !== 200 && created.status !== 409) {
-    throw new Error(created.json?.message ?? `Amazon SES answered ${created.status}`)
+    throw new Error(created.json?.message ?? `The sending service answered ${created.status}`)
   }
   const fresh: SendingDomain = {
     domain,
