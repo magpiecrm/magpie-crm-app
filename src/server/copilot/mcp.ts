@@ -3,6 +3,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { applyBuilderAction } from '../../features/email-builder/applyAction'
 import { SURVEY_ACTION_PREFIX, applySurveyBuilderAction } from '../../features/survey-builder/applyAction'
 import { COPILOT_TOOLS } from './tools'
+import { STORED_DESIGN_TOOLS } from './storedDesigns'
+import { renderBlockReference, renderSurveyReference } from './prompt'
 import { emitEvent, getSession, pushDesignSnapshot, pushSurveyDesignSnapshot } from './state'
 import { needsApproval } from './permissions'
 import type { CopilotSessionState } from './state'
@@ -184,20 +186,32 @@ function registerTools(
 
 /**
  * Tools an outside AI app (Claude, ChatGPT, Cursor, …) can use: everything that
- * works on the server's data. Tools that edit a design open in the browser
- * only make sense inside the app's own copilot, so they're left out.
+ * works on the server's data, and the builder tools run against a saved design
+ * (storedDesigns.ts) rather than one open in the browser — the same names and
+ * arguments, plus which campaign, template or survey to work on.
  */
-export const PUBLIC_TOOLS = COPILOT_TOOLS.filter((t) => t.target === 'server' && !t.browserOnly)
+export const PUBLIC_TOOLS = [...COPILOT_TOOLS.filter((t) => t.target === 'server' && !t.browserOnly), ...STORED_DESIGN_TOOLS]
+
+const PUBLIC_INSTRUCTIONS = (app: string) => `Tools for ${app}, a B2B prospecting and email marketing app.
+
+Read before you write: call getLists, getCampaigns, getSavedTemplates or getSurveys for real IDs, and getBlocks or getSurveyDesign for real block ids, rather than guessing.
+
+Build emails from blocks, never hand-written HTML. The builder tools (getBlocks, applyTemplate, addBlock, updateBlock, deleteBlock, moveBlock, setGlobalStyle, replaceBlocks, addItem/updateItem/deleteItem/moveItem, applyBrandToDesign, compileEmail, previewEmail) take a campaignId or a savedTemplateId and save each change to it straight away, as a design the user can open and edit in the app's builder. To make an email: createCampaign (or createSavedTemplate with source "blank") without htmlContent, then listTemplates and applyTemplate to start from a layout, then adapt it block by block, then previewEmail to look at it. Sent campaigns can't be changed: duplicateCampaign first. Surveys work the same way with a surveyId (getSurveyDesign, addSurveyBlock, updateSurveyBlock, setSurveyPageLogic, setSurveyTheme, previewSurvey…).
+
+Every marketing email needs an {{ unsubscribe }} link (the footer block has one), images need alt text, and image URLs come from searchImages, never invented.
+
+searchPeople and searchCompanies use the account's prospect credits on every call, so only search when the user asked for it.
+
+${renderBlockReference()}
+
+${renderSurveyReference()}`
 
 /** The public MCP server behind `/api/mcp`, for one authenticated MCP key. */
 export function buildPublicMcpServer(): McpServer {
   const server = new McpServer(
     { name: APP_NAME, version: '1.0.0' },
     {
-      instructions:
-        `Tools for ${APP_NAME}, a B2B prospecting and email marketing app. Read before you write: call getLists, getCampaigns or getSavedTemplates to get real IDs rather than guessing. ` +
-        'searchPeople and searchCompanies spend the account owner\'s SocialFetch credits on every call, so only search when the user asked for it and keep result counts small. ' +
-        'Designing emails visually happens in the app\'s own builder; here you can work with saved templates, campaigns, lists, contacts, surveys and personas.',
+      instructions: PUBLIC_INSTRUCTIONS(APP_NAME),
     },
   )
   const ctx: ToolContext = {
@@ -208,7 +222,7 @@ export function buildPublicMcpServer(): McpServer {
     },
   }
   registerTools(server, PUBLIC_TOOLS, ctx, null, (tool) =>
-    tool.costsCredits ? `${tool.description} Spends SocialFetch credits on every call.` : tool.description,
+    tool.costsCredits ? `${tool.description} Uses prospect credits on every call.` : tool.description,
   )
   return server
 }

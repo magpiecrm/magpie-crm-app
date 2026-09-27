@@ -136,8 +136,9 @@ export function McpTab() {
         description={
           <p>
             Let Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP: search prospects, manage lists,
-            contacts, campaigns, templates, surveys and personas. Each app gets its own key, which you can revoke at any
-            time. Apps ask you before running anything that changes data.
+            contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
+            same builder tools as the copilot. Each app gets its own key, which you can revoke at any time. Apps ask you
+            before running anything that changes data.
           </p>
         }
       >

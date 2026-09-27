@@ -70,8 +70,8 @@ function renderToolReference(): string {
   return lines.join('\n')
 }
 
-/** The block-model reference, generated from `BLOCK_TYPES`. */
-function renderBlockReference(): string {
+/** The block-model reference, generated from `BLOCK_TYPES`. Also given to outside AI apps (mcp.ts). */
+export function renderBlockReference(): string {
   const lines: string[] = [
     '## Email block model',
     '',
@@ -93,8 +93,8 @@ function renderBlockReference(): string {
   return lines.join('\n')
 }
 
-/** The survey model reference, generated from `SURVEY_BLOCK_TYPES` / `SURVEY_THEME_KEYS`. */
-function renderSurveyReference(): string {
+/** The survey model reference, generated from `SURVEY_BLOCK_TYPES` / `SURVEY_THEME_KEYS`. Also given to outside AI apps. */
+export function renderSurveyReference(): string {
   const lines: string[] = [
     '## Survey model',
     '',
