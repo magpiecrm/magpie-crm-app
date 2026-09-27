@@ -7,8 +7,10 @@ import type { Page, PersonResult } from './types'
 const profiles: Record<string, Partial<PersonResult>> = {
   ana: { title: 'Lead Business Analyst', seniority: 'senior', company: 'Barclays', companyRef: '42' },
   ben: { title: 'Business Analyst', seniority: null, company: 'Acme', companyRef: '7' },
+  // A current job at a company without a company page.
+  cat: { title: 'Senior Business Analyst', seniority: 'senior', company: 'Cat Consulting', companyRef: null },
   // Profile with no current position.
-  cat: { title: 'Business Analyst', company: '', companyRef: null },
+  dan: { title: '', company: '', companyRef: null },
 }
 const getPerson = vi.fn(async (url: string): Promise<PersonResult | null> => {
   const handle = url.split('/in/')[1]
@@ -94,11 +96,21 @@ describe('searchPeople profile lookups', () => {
     expect(res.items.every((p) => p.profileChecked)).toBe(true)
   })
 
-  it('keeps looking up the rest when the first person simply has no company page', async () => {
-    searchPage = pageOf(hit('cat'), hit('ana'), hit('ben'))
+  it("uses the profile's title and employer even when the company has no company page", async () => {
+    searchPage = pageOf(hit('cat', 'Analyst | Consultant | Speaker'), hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.refined).toEqual(['https://www.linkedin.com/in/cat', 'https://www.linkedin.com/in/ana'])
+    const cat = res.items[0]
+    expect([cat.title, cat.seniority, cat.company, cat.companyRef, cat.profileChecked]).toEqual(['Senior Business Analyst', 'senior', 'Cat Consulting', null, true])
+    expect(res.warnings).toEqual([])
+  })
+
+  it('keeps looking up the rest when the first person has no current job listed', async () => {
+    searchPage = pageOf(hit('dan'), hit('ana'), hit('ben'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(getPerson).toHaveBeenCalledTimes(3)
     expect(res.refined).toEqual(['https://www.linkedin.com/in/ana', 'https://www.linkedin.com/in/ben'])
+    expect(res.items[0].title).toBe('Business Analyst') // the headline's, as nothing better is known
     expect(res.warnings).toEqual(['1 profile has no current job listed; showing the headline instead.'])
   })
 

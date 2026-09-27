@@ -252,7 +252,7 @@ export function ProspectSearch() {
     setFormError(null)
     if (mode === 'companies') {
       if (!companyForm.keyword.trim()) {
-        setFormError('Enter a keyword. SocialFetch needs one to search companies.')
+        setFormError('Enter a keyword to search companies.')
         return
       }
       setCompanySearch({ ...companyForm })

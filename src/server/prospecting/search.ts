@@ -1,6 +1,7 @@
 // Entry points shared by the server functions and the copilot's tools, so both
 // get the same caching, suppression and save behaviour.
 
+import { refineFromProfile } from './refine'
 import type { CompanyFilters, CompanyResult, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
 import { isKnownCatchAll, surnameHidden } from './emailFinder'
 import { sameCompanyName, slugFromCompanyUrl } from './socialfetch'
@@ -74,19 +75,14 @@ async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Pr
     // already paid for; not marked checked, so saving can try again.
     return { person, refined: false, error: String(err?.message ?? err) }
   }
-  if (!profile?.companyRef) return { person: { ...person, profileChecked: true }, refined: false }
+  const refined = refineFromProfile(person, profile)
+  if (!refined) return { person: { ...person, profileChecked: true }, refined: false }
   return {
     refined: true,
     person: {
-      ...person,
+      ...refined,
       profileChecked: true,
-      title: profile.title || person.title,
-      seniority: profile.seniority ?? person.seniority,
-      company: profile.company || person.company,
-      companyRef: profile.companyRef,
-      companySlug: profile.companySlug ?? null,
-      companyDomain: db.getProspectCompany(profile.companyRef)?.domain ?? null,
-      country: person.country ?? profile.country,
+      companyDomain: refined.companyRef ? (db.getProspectCompany(refined.companyRef)?.domain ?? null) : person.companyDomain,
     },
   }
 }

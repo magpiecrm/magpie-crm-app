@@ -309,7 +309,7 @@ describe('searchPeople', () => {
       // Employer unknown: kept, but not assumed to be Acme (resolved on save).
       ['Un', null],
     ])
-    expect(page.warnings).toContain("1 person returned by SocialFetch doesn't currently work at Acme and was hidden.")
+    expect(page.warnings).toContain("1 person returned by the search doesn't currently work at Acme and was hidden.")
   })
 
   it('runs one request per title and dedupes people across them', async () => {
@@ -431,5 +431,29 @@ describe('errors and retries', () => {
     const f = fakeFetch([new Response('{"error":{"message":"insufficient credits"}}', { status: 402 })])
     await expect(createSocialFetchSource(f.impl).getCompany('5', 'beta-inc')).rejects.toMatchObject({ code: 'credits_exhausted' })
     expect(f.calls).toHaveLength(1)
+  })
+})
+
+describe('errors in a workspace whose data is run by its host', () => {
+  it("never names the provider or points at settings the user can't see", async () => {
+    process.env.PROSPECTING_MANAGED = 'on'
+    try {
+      const messages: string[] = []
+      // (429/500/502/503 are retried first; their final wording is the same path.)
+      for (const status of [401, 402, 400, 504]) {
+        const fetchImpl = (async () => new Response(JSON.stringify({ error: { message: 'nope' } }), { status })) as unknown as typeof fetch
+        const src = createSocialFetchSource(fetchImpl, () => 'sfk_test')
+        messages.push(await src.getPerson('https://www.linkedin.com/in/x').then(() => '', (e: Error) => e.message))
+      }
+      expect(messages).toEqual([
+        "Search isn't available for this workspace right now. Contact support if it continues.",
+        'This workspace has used its search allowance for this billing period.',
+        "The search couldn't run: nope",
+        'Search failed (error 504). Try again shortly.',
+      ])
+      expect(messages.join(' ')).not.toMatch(/SocialFetch|Settings|Top up/)
+    } finally {
+      delete process.env.PROSPECTING_MANAGED
+    }
   })
 })

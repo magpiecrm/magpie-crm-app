@@ -81,14 +81,20 @@ const person = (first: string, last: string, over: Partial<PersonResult> = {}): 
 const source: CompanySource & PeopleSource = {
   searchCompanies: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }),
   searchPeople: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }),
-  // Profile lookups: only /in/kim-park has a listed employer (company ref 1).
+  // Profile lookups: /in/kim-park has a listed employer (company ref 1);
+  // /in/jo-bloggs works somewhere without a company page.
   getPerson: vi.fn(async (ref: string) =>
     ref.endsWith('/in/kim-park')
       ? {
           profileUrl: ref, firstName: 'Kim', lastName: 'Park', title: 'Head of Data', seniority: 'head' as const,
           company: 'Acme', companyRef: '1', companyDomain: null, country: 'United Kingdom', source: 'socialfetch' as const,
         }
-      : null,
+      : ref.endsWith('/in/jo-bloggs')
+        ? {
+            profileUrl: ref, firstName: 'Jo', lastName: 'Bloggs', title: 'Founder', seniority: 'owner' as const,
+            company: 'Bloggs Ltd', companyRef: null, companyDomain: null, country: 'United Kingdom', source: 'socialfetch' as const,
+          }
+        : null,
   ),
   getCompany: vi.fn(async (ref: string) =>
     ref === '1'
@@ -247,6 +253,13 @@ describe('saveProspects', () => {
     const job = await saveProspects(1, [checked], { source, finder: finder({}), db: fakeDb as any })
     expect(source.getPerson).not.toHaveBeenCalled()
     expect(job.outcomes[0].status).toBe('no_domain')
+  })
+
+  it("keeps the profile's title and employer when the employer has no company page", async () => {
+    const jo = person('Jo', 'Bloggs', { company: '', companyRef: null, title: 'Building things | Speaker' })
+    const job = await saveProspects(1, [jo], { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getPerson).toHaveBeenCalledWith(jo.profileUrl)
+    expect(job.outcomes[0]).toMatchObject({ status: 'no_domain', company: 'Bloggs Ltd' })
   })
 
   it('keeps looking up profiles when one person just has no company page', async () => {

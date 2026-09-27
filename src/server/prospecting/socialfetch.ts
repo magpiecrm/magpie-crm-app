@@ -122,7 +122,7 @@ async function request<T>(
     throw classify(res.status, message)
   }
   if (lastError instanceof SocialFetchError) throw lastError
-  throw new SocialFetchError('SocialFetch did not respond. Try again shortly.', 0, 'unavailable')
+  throw new SocialFetchError(env.prospectingManaged() ? 'Search did not respond. Try again shortly.' : 'SocialFetch did not respond. Try again shortly.', 0, 'unavailable')
 }
 
 function backoff(attempt: number) {
@@ -139,6 +139,15 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 function classify(status: number, message: string): SocialFetchError {
+  // Run by the host (PROSPECTING_MANAGED): its data source isn't named, and
+  // there's no key or balance here for the user to fix.
+  if (env.prospectingManaged()) {
+    if (status === 401 || status === 403) return new SocialFetchError("Search isn't available for this workspace right now. Contact support if it continues.", status, 'unauthorized')
+    if (status === 402) return new SocialFetchError('This workspace has used its search allowance for this billing period.', status, 'credits_exhausted')
+    if (status === 400 || status === 422) return new SocialFetchError(`The search couldn't run: ${message}`, status, 'bad_request')
+    if (status === 429 || status === 503) return new SocialFetchError('Search is busy. Try again in a moment.', status, 'unavailable')
+    return new SocialFetchError(`Search failed (error ${status}). Try again shortly.`, status, 'upstream')
+  }
   if (status === 401 || status === 403) {
     return new SocialFetchError('SocialFetch rejected the API key. Check it in Settings → Data source.', status, 'unauthorized')
   }
@@ -612,12 +621,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // "no results".
       if (unreadable > 0) {
         warnings.push(
-          `${people_(unreadable)} returned by SocialFetch ${unreadable === 1 ? 'was' : 'were'} missing a name or profile link and ${unreadable === 1 ? 'was' : 'were'} skipped.`,
+          `${people_(unreadable)} returned by the search ${unreadable === 1 ? 'was' : 'were'} missing a name or profile link and ${unreadable === 1 ? 'was' : 'were'} skipped.`,
         )
       }
       if (wrongCompany > 0) {
         warnings.push(
-          `${people_(wrongCompany)} returned by SocialFetch ${wrongCompany === 1 ? "doesn't" : "don't"} currently work at ${company?.name} and ${wrongCompany === 1 ? 'was' : 'were'} hidden.` +
+          `${people_(wrongCompany)} returned by the search ${wrongCompany === 1 ? "doesn't" : "don't"} currently work at ${company?.name} and ${wrongCompany === 1 ? 'was' : 'were'} hidden.` +
             (wrongCompany > people.length ? ' The company filter may not be applied as expected.' : ''),
         )
       }
@@ -653,9 +662,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const res = await get<any>('/v2/linkedin/profiles', { handle: profileRef })
       if (res.data?.lookupStatus !== 'found') return null
       const person = mapPerson(res.data?.profile)
-      // Unconfirmed shape: log field names (never values) if no current job
-      // came through, so a mismatch can be fixed rather than guessed at.
-      if (!person?.companyRef) console.warn(`[SocialFetch] profile without a current position; fields: ${describeShape(res.data?.profile)}`)
+      // Log field names (never values) if no current job came through at
+      // all, so a change in the response can be fixed rather than guessed at.
+      // (A current job without a company page is normal.)
+      if (person && !person.companyRef && !person.company && !res.data?.profile?.currentPositions?.length) {
+        console.warn(`[SocialFetch] profile without a current position; fields: ${describeShape(res.data?.profile)}`)
+      }
       return person
     },
   }

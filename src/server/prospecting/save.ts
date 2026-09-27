@@ -6,6 +6,7 @@
 // they're progress reporting, not durable state, and a restart simply loses
 // in-flight progress (contacts already saved stay saved).
 
+import { refineFromProfile } from './refine'
 import crypto from 'crypto'
 import { domainForPerson } from './companies'
 import { findEmail, type FinderDeps } from './emailFinder'
@@ -94,16 +95,7 @@ async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGa
   }
   const lookup = deps.source.getPerson(person.profileUrl)
   gate.first ??= lookup.then(() => true).catch(() => false)
-  const profile = await lookup
-  if (!profile?.companyRef) return person
-  return {
-    ...person,
-    title: profile.title || person.title,
-    seniority: profile.seniority ?? person.seniority,
-    company: profile.company || person.company,
-    companyRef: profile.companyRef,
-    companySlug: profile.companySlug ?? null,
-  }
+  return refineFromProfile(person, await lookup) ?? person
 }
 
 interface LookupGate {
