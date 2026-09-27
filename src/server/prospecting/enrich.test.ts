@@ -320,9 +320,9 @@ describe('searchPeople fills the page', () => {
 
   it('runs a page over 50 as more than one request, without calling them top-ups', async () => {
     searchPeopleMock.mockClear()
-    searchPeopleMock.mockImplementation(async (_company: unknown, f: any) =>
-      withCursor(pageOf(...Array.from({ length: f.count }, (_, i) => ({ ...hit('ben'), profileUrl: `https://www.linkedin.com/in/ben-${f.cursor ?? 'a'}-${i}` }))), 'next'),
-    )
+    const fullPage = async (_company: unknown, f: { count: number; cursor?: string }) =>
+      withCursor(pageOf(...Array.from({ length: f.count }, (_, i) => ({ ...hit('ben'), profileUrl: `https://www.linkedin.com/in/ben-${f.cursor ?? 'a'}-${i}` }))), 'next')
+    searchPeopleMock.mockImplementation(fullPage as unknown as () => Promise<Page<PersonResult>>)
     const res = await searchPeople({ titles: ['Business Analyst'], count: 75 })
     expect(searchPeopleMock.mock.calls.map((c: any[]) => c[1].count)).toEqual([50, 25])
     expect(res.items).toHaveLength(75)
