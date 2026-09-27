@@ -175,7 +175,7 @@ function EmailCell({
         <span className="text-[11px] text-muted-foreground leading-snug block max-w-[14rem]">
           {unableBrief ? UNABLE : state.message}
         </span>
-        {state.canFixDomain && !unableBrief && (
+        {state.canFixDomain && !brief && (
           <FixDomain person={person} suggestion={'suggestedDomain' in state ? state.suggestedDomain : undefined} onFixDomain={onFixDomain} />
         )}
       </div>

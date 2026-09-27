@@ -108,6 +108,14 @@ export interface PeopleFilters {
   seniorities?: Seniority[]
   country?: string
   keyword?: string
+  /** Industry names from INDUSTRIES; filtered by the search itself. */
+  industries?: string[]
+  /**
+   * Company sizes. The people search can't filter by size, so each person's
+   * employer is looked up (1 credit per company, then cached for everyone)
+   * and people at other sizes are left out.
+   */
+  companySizes?: HeadcountBucket[]
   /** Results per page (1-50). Each page costs the same whatever its size. */
   count?: number
   cursor?: string

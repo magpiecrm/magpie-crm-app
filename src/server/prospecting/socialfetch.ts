@@ -23,6 +23,7 @@
 
 import { env } from '../env'
 import { canonicalCountry, geoIdForCountry } from './geo'
+import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
 import type {
   CompanyFilters,
@@ -291,9 +292,13 @@ export function mapPerson(p: any): PersonResult | null {
   const current = positions.find((x) => x?.isCurrent !== false) ?? null
 
   // Search hits carry only a headline; the part before "at …" / "| …" is
-  // the best title we have. Profiles carry the real current position.
+  // the best title we have. Profiles carry the real current position, but
+  // `currentPositions` often names only the employer: the title is on the
+  // same job in the full position list.
   const headline = str(p?.headline)
-  const title = str(current?.title) ?? titleFromHeadline(headline) ?? ''
+  const history: any[] = [...(Array.isArray(p?.positions) ? p.positions : []), ...(Array.isArray(p?.fullPositions) ? p.fullPositions : [])]
+  const sameJob = current ? history.find((x) => str(x?.title) && sameEmployer(x, current)) : null
+  const title = str(current?.title) ?? str(sameJob?.title) ?? titleFromHeadline(headline) ?? ''
   return {
     profileUrl,
     firstName,
@@ -303,14 +308,25 @@ export function mapPerson(p: any): PersonResult | null {
     company: str(current?.organizationName) ?? str(current?.organization?.name) ?? companyFromHeadline(headline) ?? '',
     // Numeric id when present; otherwise the company page's slug, which the
     // organizations endpoint also accepts.
-    companyRef: idOf(current?.organizationId) ?? idOf(current?.organization?.id) ?? companySlug(current) ?? null,
+    companyRef: idOf(current?.organizationId) ?? idOf(current?.organization?.id) ?? companySlug(current) ?? idOf(sameJob?.organizationId) ?? companySlug(sameJob) ?? null,
     // The page name too, for the 1-credit company lookup (the id costs 6).
-    companySlug: companySlug(current),
+    // The current-job entry often has only the id; the same job in the full
+    // list has the page.
+    companySlug: companySlug(current) ?? companySlug(sameJob),
     companyDomain: null,
     // Only the country survives; the city-level label is dropped here.
     country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),
     source: SOURCE,
   }
+}
+
+/** Two position records for the same employer: by id, page or name. */
+function sameEmployer(a: any, b: any): boolean {
+  const id = (x: any) => idOf(x?.organizationId) ?? idOf(x?.organization?.id)
+  if (id(a) && id(b)) return id(a) === id(b)
+  if (companySlug(a) && companySlug(b)) return companySlug(a) === companySlug(b)
+  const name = (x: any) => (str(x?.organizationName) ?? str(x?.organization?.name) ?? '').toLowerCase()
+  return name(a) !== '' && name(a) === name(b)
 }
 
 /** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
@@ -371,7 +387,7 @@ const BUCKET_BOUNDS: Record<HeadcountBucket, [number, number]> = {
   '10001+': [10001, Number.POSITIVE_INFINITY],
 }
 
-function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
+export function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
   if (buckets.length === 0) return true
   if (headcount === null) return false
   return buckets.some((b) => headcount >= BUCKET_BOUNDS[b][0] && headcount <= BUCKET_BOUNDS[b][1])
@@ -438,10 +454,17 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
     request<T>(path, params, fetchImpl, getApiKey())
   return {
     async searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
+      // Industry, size and country are filtered by SocialFetch itself where it
+      // can; each page is still checked after it comes back.
+      const industry = filters.industry?.trim() ? industryCodes([filters.industry.trim()]) : []
+      const geoEntityId = geoIdForCountry(filters.country)
       const res = await get<any>('/v2/linkedin/organizations/search', {
         keyword: filters.keyword,
         count: PAGE_SIZE,
         cursor: filters.cursor,
+        industry: industry.length ? industry.join(',') : undefined,
+        headcountRange: filters.headcount?.length ? filters.headcount.join(',') : undefined,
+        geoEntityId: geoEntityId ?? undefined,
       })
       const raw: any[] = Array.isArray(res.data?.organizations) ? res.data.organizations : []
       const mapped = raw.map(mapOrganization).filter((c): c is CompanyResult => c !== null)
@@ -450,11 +473,13 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         console.warn(`[SocialFetch] ${raw.length - mapped.length}/${raw.length} organizations unreadable; fields: ${describeShape(bad)}`)
       }
 
+      // What SocialFetch filtered isn't re-checked: search results often have
+      // no headcount or country, and sub-industries have their own names.
       const filtered = mapped.filter(
         (c) =>
-          (!filters.industry?.trim() || norm(c.industry).includes(norm(filters.industry))) &&
-          inHeadcountBuckets(c.headcount, filters.headcount ?? []) &&
-          matchesCountry(c.country, filters.country),
+          (industry.length > 0 || !filters.industry?.trim() || norm(c.industry).includes(norm(filters.industry))) &&
+          (filters.headcount?.length ? true : inHeadcountBuckets(c.headcount, [])) &&
+          (geoEntityId ? true : matchesCountry(c.country, filters.country)),
       )
 
       // Dedupe by domain (falling back to ref) — subsidiaries and regional
@@ -533,6 +558,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const prior = decodeCursor(filters.cursor)
       // On a follow-up page only titles with a cursor left are re-queried.
       const active = prior ? slots.filter((t) => prior[t]) : slots
+      const industry = industryCodes(filters.industries)
+      // A chosen company with a LinkedIn id is searched by it; otherwise its
+      // name goes in the keyword.
+      const companyId = company && /^\d+$/.test(company.ref) ? company.ref : null
+
 
       const settled = await Promise.allSettled(
         active.map((title) => {
@@ -542,12 +572,13 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const cursor = start !== undefined ? undefined : sized ? sized[2] : position
           // A cursor only works with the page size it was made with.
           const count = sized ? Number(sized[1]) : pageSize
-          // Everything goes in `keyword`: the `title` parameter returns no
-          // results, and `currentCompany`'s format is undocumented.
-          const keyword = [title, filters.keyword?.trim(), company?.name].filter(Boolean).join(' ')
+          // Titles go in `keyword`: the `title` parameter returns no results.
+          const keyword = [title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
           return get<any>('/v2/linkedin/people/search', {
             keyword: keyword || undefined,
             geoEntityId: geoEntityId ?? undefined,
+            industry: industry.length ? industry.join(',') : undefined,
+            currentCompany: companyId ?? undefined,
             count,
             start,
             cursor,

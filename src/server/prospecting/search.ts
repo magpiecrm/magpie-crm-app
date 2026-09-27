@@ -3,9 +3,9 @@
 
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import type { CompanyFilters, CompanyResult, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
+import type { CompanyFilters, CompanyResult, CompanySource, HeadcountBucket, Page, PeopleFilters, PeopleSource, PersonResult } from './types'
 import { isKnownCatchAll, surnameHidden } from './emailFinder'
-import { sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { inHeadcountBuckets, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -172,6 +172,25 @@ interface Tally {
   failedError?: string
   noJob: number
   wrongCompany: number
+  wrongSize: number
+}
+
+type Source = PeopleSource & Partial<Pick<CompanySource, 'getCompany'>>
+
+/**
+ * A person's employer's headcount: from the company cache, else its company
+ * page when the page name is known (1 credit, then cached for everyone; the
+ * 6-9 credit lookup by id isn't worth it for a filter). Null if unknown.
+ */
+async function companyHeadcount(p: PersonResult, source: Source, db: Db): Promise<number | null> {
+  if (!p.companyRef) return null
+  const cached = db.getProspectCompany(p.companyRef)
+  if (cached?.headcount != null) return cached.headcount
+  const slug = p.companySlug ?? cached?.slug
+  if (cached?.page_checked || !slug || !source.getCompany) return null
+  const { resolveCompanyDomain } = await import('./companies')
+  await resolveCompanyDomain(p.companyRef, p.company, { getCompany: source.getCompany }, db, slug).catch(() => null)
+  return db.getProspectCompany(p.companyRef)?.headcount ?? null
 }
 
 /**
@@ -184,9 +203,10 @@ interface Tally {
 async function processBatch(
   people: PersonResult[],
   company: { ref: string; name: string } | null,
-  source: PeopleSource,
+  source: Source,
   db: Db,
   tally: Tally,
+  sizes?: HeadcountBucket[],
 ): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string }> {
   let items = people
   for (const person of items) {
@@ -245,6 +265,21 @@ async function processBatch(
     items = atCompany
   }
 
+  // With a company-size filter, each employer's size: from the company cache,
+  // else its company page (1 credit, then cached). People at other sizes, or
+  // whose employer's size can't be found, are left out.
+  if (sizes?.length) {
+    const refs = [...new Map(items.filter((p) => p.companyRef).map((p) => [p.companyRef!, p])).values()]
+    const sizes_ = await mapLimit(refs, ENRICH_CONCURRENCY, async (p) => [p.companyRef!, await companyHeadcount(p, source, db)] as const)
+    const sizeOf = new Map<string, number | null>(sizes_)
+    const fits = items.filter((p) => {
+      const size = p.companyRef ? sizeOf.get(p.companyRef) ?? null : null
+      return size !== null && inHeadcountBuckets(size, sizes)
+    })
+    tally.wrongSize += items.length - fits.length
+    items = fits
+  }
+
   // Mark people at companies already known to accept every address. The
   // page decides whether to hide them (it does while verified-only is on).
   // Only the cache is read: finding out about a new company would take an
@@ -294,7 +329,7 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0 }
+  const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0 }
   // Catch-all people are hidden while verified-only is on, so they don't count.
   const usable = () => items.filter((p) => !(verifiedOnly && p.catchAll)).length
 
@@ -321,7 +356,7 @@ export async function searchPeople(
     const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
     fresh.forEach((p) => seen.add(p.profileUrl))
 
-    const batch = await processBatch(fresh, company ?? null, source, db, tally)
+    const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes)
     items.push(...batch.items)
     refined.push(...batch.refined)
     if (batch.lookupError) {
@@ -353,6 +388,9 @@ export async function searchPeople(
   }
   if (company && tally.wrongCompany > 0) {
     details.push(`${plural(tally.wrongCompany, "person doesn't", "people don't")} currently work at ${company.name} and ${tally.wrongCompany === 1 ? 'was' : 'were'} left out.`)
+  }
+  if (tally.wrongSize > 0) {
+    details.push(`${plural(tally.wrongSize, "person's employer isn't", "people's employers aren't")} one of the chosen sizes, or couldn't be sized, and ${tally.wrongSize === 1 ? 'was' : 'were'} left out.`)
   }
   if (searches > 1) {
     details.push(`Some results were left out, so ${plural(searches - 1, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)

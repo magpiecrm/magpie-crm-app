@@ -133,6 +133,11 @@ export const prospectTools = [
       seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
       country: z.string().optional(),
       keyword: z.string().optional(),
+      industries: z.array(z.string()).optional().describe('Industry names, exactly as searchIndustries returns them.'),
+      companySizes: z
+        .array(z.enum(HEADCOUNT_BUCKETS))
+        .optional()
+        .describe('Company sizes by headcount. People are searched at a batch of matching companies at a time.'),
       count: z.number().int().min(1).max(10).optional().describe('Results per page. Defaults to 5; each result costs 3 credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },

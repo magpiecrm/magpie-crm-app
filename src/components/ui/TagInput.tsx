@@ -7,9 +7,11 @@ interface TagInputProps {
   onChange: (tags: string[]) => void
   placeholder: string
   suggestions?: string[]
+  /** At most this many; picking another replaces the last (1 makes it a single choice). */
+  max?: number
 }
 
-export function TagInput({ tags, onChange, placeholder, suggestions = [] }: TagInputProps) {
+export function TagInput({ tags, onChange, placeholder, suggestions = [], max }: TagInputProps) {
   const [inputVal, setInputVal] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0)
@@ -23,7 +25,7 @@ export function TagInput({ tags, onChange, placeholder, suggestions = [] }: TagI
   const addTag = (val: string) => {
     const trimmed = val.trim()
     if (trimmed && !tags.includes(trimmed)) {
-      onChange([...tags, trimmed])
+      onChange(max && tags.length >= max ? [...tags.slice(0, max - 1), trimmed] : [...tags, trimmed])
     }
     setInputVal('')
     setActiveSuggestionIndex(0)
@@ -92,7 +94,7 @@ export function TagInput({ tags, onChange, placeholder, suggestions = [] }: TagI
           <input
             type="text"
             className="flex-1 min-w-[60px] text-xs bg-transparent border-0 outline-none p-0 focus:ring-0 text-foreground"
-            placeholder={tags.length === 0 ? placeholder : 'Add...'}
+            placeholder={tags.length === 0 ? placeholder : max && tags.length >= max ? 'Change…' : 'Add...'}
             value={inputVal}
             onChange={(e) => {
               setInputVal(e.target.value)

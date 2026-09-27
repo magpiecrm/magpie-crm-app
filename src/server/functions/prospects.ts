@@ -66,6 +66,8 @@ const peopleSearchInput = z.object({
   seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
   country: z.string().trim().max(100).optional(),
   keyword: z.string().trim().max(200).optional(),
+  industries: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+  companySizes: z.array(z.enum(HEADCOUNT_BUCKETS)).max(HEADCOUNT_BUCKETS.length).optional(),
   count: z.number().int().min(1).max(50).optional(),
   cursor: z.string().max(20_000).optional(),
 })

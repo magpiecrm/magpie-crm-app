@@ -134,18 +134,21 @@ describe('searchCompanies', () => {
     { liveOrganizationId: '4', name: 'No Site', industry: 'Software Development', staffCountRange: '51-200', headquarter: { country: 'United Kingdom' } },
   ]
 
-  it('sends the key and keyword, dedupes by domain and post-filters', async () => {
+  it('sends the key, keyword and filters, dedupes by domain, and checks an industry it could not send', async () => {
     const f = fakeFetch([envelope({ lookupStatus: 'found', organizations: orgs, page: { hasMore: true, nextCursor: 'c2' }, reportedTotal: 812 })])
     const page = await createSocialFetchSource(f.impl).searchCompanies({ keyword: 'acme', industry: 'software', headcount: ['51-200'], country: 'united kingdom' })
 
     expect(f.calls[0].pathname).toBe('/v2/linkedin/organizations/search')
     expect(f.calls[0].searchParams.get('keyword')).toBe('acme')
+    expect(f.calls[0].searchParams.get('headcountRange')).toBe('51-200')
+    // "software" isn't one of LinkedIn's industry names, so it's checked on each result instead.
+    expect(f.calls[0].searchParams.has('industry')).toBe(false)
     expect(f.headers[0]['x-api-key']).toBe('sfk_test')
     expect(page.items.map((c) => c.name)).toEqual(['Acme', 'No Site'])
     expect(page.items[1].domain).toBeNull()
     expect(page.nextCursor).toBe('c2')
     expect(page.reportedTotal).toBe(812)
-    expect(page.details![0]).toMatch(/2 of 4 companies/)
+    expect(page.details![0]).toMatch(/1 of 4 companies/)
   })
 })
 
@@ -291,7 +294,7 @@ describe('searchPeople', () => {
     expect(f.calls[1].searchParams.get('count')).toBe('5')
   })
 
-  it('with a chosen company, adds it to the keyword and only ties people to it when their headline names it', async () => {
+  it('with a chosen company, searches by its id and only ties people to it when their headline names it', async () => {
     const f = fakeFetch([
       envelope({
         people: [
@@ -303,7 +306,8 @@ describe('searchPeople', () => {
       }),
     ])
     const page = await createSocialFetchSource(f.impl).searchPeople({ ref: '1234', name: 'Acme' }, { titles: ['Business Analyst'] })
-    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst Acme')
+    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst')
+    expect(f.calls[0].searchParams.get('currentCompany')).toBe('1234')
     expect(page.items.map((p) => [p.firstName, p.companyRef])).toEqual([
       ['In', '1234'],
       // Employer unknown: kept, but not assumed to be Acme (resolved on save).
@@ -455,5 +459,67 @@ describe('errors in a workspace whose data is run by its host', () => {
     } finally {
       delete process.env.PROSPECTING_MANAGED
     }
+  })
+})
+
+describe('mapPerson with a current job that only names the employer', () => {
+  it('takes the title from the same job in the full position list, not the headline', () => {
+    const person = mapPerson({
+      handle: 'nd',
+      firstName: 'Nelson',
+      lastName: 'D',
+      headline: 'I help developers get hired, from first job to senior engineer',
+      currentPositions: [{ title: null, organizationName: 'Amigoscode', isCurrent: null }],
+      positions: [
+        { title: 'Founder', organizationName: 'Amigoscode', isCurrent: null },
+        { title: 'Lead Trainer', organizationName: 'Bright Network', isCurrent: null },
+      ],
+    })!
+    expect([person.title, person.company, person.seniority]).toEqual(['Founder', 'Amigoscode', 'founder'])
+  })
+
+  it("takes the company's page name from the same job when the current one only has its id", () => {
+    const person = mapPerson({
+      handle: 'x', firstName: 'A', lastName: 'B', headline: 'Head of Marketing',
+      currentPositions: [{ title: 'Head of Marketing', organization: { id: '630969' }, organizationName: 'Motion Software' }],
+      positions: [{ title: 'Head of Marketing', organizationId: '630969', organizationHandle: 'motion-software', organizationName: 'Motion Software' }],
+    })!
+    expect([person.companyRef, person.companySlug]).toEqual(['630969', 'motion-software'])
+  })
+
+  it('never takes a title from a different employer', () => {
+    const person = mapPerson({
+      handle: 'x', firstName: 'A', lastName: 'B', headline: 'Consultant | Speaker',
+      currentPositions: [{ title: null, organizationName: 'Acme' }],
+      positions: [{ title: 'Design Manager', organizationName: 'BAM Construct UK' }],
+    })!
+    expect(person.title).toBe('Consultant')
+  })
+})
+
+describe('searchPeople by industry, and company search filters', () => {
+  const orgs = (ids: string[], page: Record<string, unknown>) =>
+    envelope({ lookupStatus: 'found', organizations: ids.map((id) => ({ liveOrganizationId: id, name: `Co ${id}` })), page })
+
+  it("sends the industries as LinkedIn's codes", async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
+    await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Marketing Manager'], industries: ['Software Development', 'Financial Services', 'Not an industry'] })
+    expect(f.calls[0].searchParams.get('industry')).toBe('4,43')
+  })
+
+  it('searches a chosen company by its LinkedIn id rather than its name', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
+    await createSocialFetchSource(f.impl).searchPeople({ ref: '630969', name: 'Motion Software' }, { titles: ['Marketing'] })
+    expect(f.calls[0].searchParams.get('currentCompany')).toBe('630969')
+    expect(f.calls[0].searchParams.get('keyword')).toBe('Marketing')
+  })
+
+  it('uses filters on company search itself instead of hiding results afterwards', async () => {
+    const f = fakeFetch([orgs(['9'], { hasMore: false })])
+    const page = await createSocialFetchSource(f.impl).searchCompanies({ keyword: 'software', industry: 'Software Development', headcount: ['11-50'], country: 'United Kingdom' })
+    expect([f.calls[0].searchParams.get('industry'), f.calls[0].searchParams.get('headcountRange')]).toEqual(['4', '11-50'])
+    expect(f.calls[0].searchParams.get('geoEntityId')).toBeTruthy()
+    // The result has no headcount or country: it's kept, since SocialFetch filtered it.
+    expect(page.items.map((c) => c.ref)).toEqual(['9'])
   })
 })

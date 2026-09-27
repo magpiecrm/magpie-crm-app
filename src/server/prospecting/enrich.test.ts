@@ -33,7 +33,7 @@ vi.mock('../db', () => ({
   db: {
     getAllowance: () => allowance,
     getProspectCompany: (ref: string) =>
-      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com' } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com' } : null,
+      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 } : null,
     getSuppressionHashes: () => suppressedHashes,
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     getDisclosures: () => disclosures,
@@ -294,5 +294,15 @@ describe('searchPeople in a workspace run by its host', () => {
     }
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', '1 person was hidden.', '1 profile has no current job listed; showing the headline instead.'])
+  })
+})
+
+describe('searchPeople by company size', () => {
+  it("keeps people whose employer is one of the sizes, from the company cache, and leaves out the rest", async () => {
+    searchPage = pageOf(hit('ana'), hit('ben'), hit('cat'))
+    const res = await searchPeople({ titles: ['Business Analyst'], companySizes: ['11-50'] })
+    // Ben's Acme has 30 staff; Barclays is far bigger; Cat's employer has no company page to size.
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(res.warnings).toContain("2 people's employers aren't one of the chosen sizes, or couldn't be sized, and were left out.")
   })
 })

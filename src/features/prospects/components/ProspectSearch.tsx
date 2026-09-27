@@ -72,6 +72,8 @@ interface PeopleForm {
   seniorities: Seniority[]
   country: string
   keyword: string
+  industries: string[]
+  companySizes: HeadcountBucket[]
   /** Results per page. Each result's profile is looked up, so this drives cost. */
   count: number
 }
@@ -79,7 +81,8 @@ interface PeopleForm {
 const PAGE_SIZES = [1, 5, 10, 25] as const
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', count: 5 }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], count: 5 }
+const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
 /** Upper bound on one page: 3 credits per search (one per title) plus 3 per result's profile. */
 function creditsPerPage(form: Pick<PeopleForm, 'titles' | 'count'>) {
@@ -189,6 +192,8 @@ export function ProspectSearch() {
           seniorities: peopleSearch!.seniorities,
           country: peopleSearch!.country || undefined,
           keyword: peopleSearch!.keyword || undefined,
+          industries: peopleSearch!.industries?.length ? peopleSearch!.industries : undefined,
+          companySizes: peopleSearch!.company || !peopleSearch!.companySizes?.length ? undefined : peopleSearch!.companySizes,
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
@@ -408,7 +413,9 @@ export function ProspectSearch() {
       ? [companyForm.keyword, companyForm.industry, companyForm.country].filter(Boolean).length + (companyForm.headcount.length ? 1 : 0)
       : [peopleForm.company, peopleForm.country, peopleForm.keyword].filter(Boolean).length +
         (peopleForm.titles.length ? 1 : 0) +
-        (peopleForm.seniorities.length ? 1 : 0)
+        (peopleForm.seniorities.length ? 1 : 0) +
+        (peopleForm.industries.length ? 1 : 0) +
+        (peopleForm.companySizes.length ? 1 : 0)
 
   const companyFilters = (
     <div className="flex flex-col gap-3 py-2">
@@ -424,16 +431,14 @@ export function ProspectSearch() {
       </div>
 
       <FilterAccordion label="Industry" icon={<Factory className="w-4 h-4" />} isOpen={!!expanded.industry} onToggle={() => toggleSection('industry')} badgeCount={companyForm.industry ? 1 : 0}>
-        <input
-          className={inputClass}
-          list="prospect-industries"
-          value={companyForm.industry}
+        <TagInput
+          label="Industry"
+          max={1}
+          tags={companyForm.industry ? [companyForm.industry] : []}
           placeholder="e.g. Software Development"
-          onChange={(e) => setCompanyForm({ ...companyForm, industry: e.target.value })}
+          suggestions={INDUSTRIES}
+          onChange={(t) => setCompanyForm({ ...companyForm, industry: t[0] ?? '' })}
         />
-        <datalist id="prospect-industries">
-          {INDUSTRIES.map((i) => <option key={i} value={i} />)}
-        </datalist>
       </FilterAccordion>
 
       <FilterAccordion label="Company size" icon={<Users2 className="w-4 h-4" />} isOpen={!!expanded.size} onToggle={() => toggleSection('size')} badgeCount={companyForm.headcount.length}>
@@ -458,12 +463,19 @@ export function ProspectSearch() {
       </FilterAccordion>
 
       <FilterAccordion label="HQ country" icon={<Globe className="w-4 h-4" />} isOpen={!!expanded.hq} onToggle={() => toggleSection('hq')} badgeCount={companyForm.country ? 1 : 0}>
-        <input className={inputClass} value={companyForm.country} placeholder="e.g. United Kingdom" onChange={(e) => setCompanyForm({ ...companyForm, country: e.target.value })} />
+        <TagInput
+          label="HQ country"
+          max={1}
+          tags={companyForm.country ? [companyForm.country] : []}
+          placeholder="e.g. United Kingdom"
+          suggestions={SUPPORTED_COUNTRIES}
+          onChange={(t) => setCompanyForm({ ...companyForm, country: t[0] ?? '' })}
+        />
       </FilterAccordion>
 
       <p className="text-[10px] text-muted-foreground leading-snug px-1">
-        Industry, size and country filter each page of results after it comes back, so a narrow filter can
-        leave a page short. Use Load more.
+        Industry, size and country from the lists narrow the search itself. A country not on the list is
+        checked after each page comes back, so pages can be short: use Load more.
       </p>
     </div>
   )
@@ -536,19 +548,59 @@ export function ProspectSearch() {
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Worked out from each person's title.</p>
       </FilterAccordion>
 
-      <FilterAccordion label="Country" icon={<Globe className="w-4 h-4" />} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} badgeCount={peopleForm.country ? 1 : 0}>
-        <input
-          className={inputClass}
-          list="prospect-countries"
-          value={peopleForm.country}
-          placeholder="e.g. United Kingdom"
-          onChange={(e) => setPeopleForm({ ...peopleForm, country: e.target.value })}
+      <FilterAccordion label="Industry" icon={<Factory className="w-4 h-4" />} isOpen={!!expanded.peopleIndustry} onToggle={() => toggleSection('peopleIndustry')} badgeCount={peopleForm.industries.length}>
+        <TagInput
+          label="Industries"
+          tags={peopleForm.industries}
+          placeholder="e.g. Software Development"
+          suggestions={INDUSTRIES}
+          onChange={(industries) => setPeopleForm({ ...peopleForm, industries: industries.filter((i) => KNOWN_INDUSTRIES.has(i)) })}
         />
-        <datalist id="prospect-countries">
-          {SUPPORTED_COUNTRIES.map((c) => <option key={c} value={c} />)}
-        </datalist>
+        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Pick from the list. The industry of the company they work at.</p>
+      </FilterAccordion>
+
+      <FilterAccordion label="Company size" icon={<Users2 className="w-4 h-4" />} isOpen={!!expanded.peopleSize} onToggle={() => toggleSection('peopleSize')} badgeCount={peopleForm.companySizes.length}>
+        <div className="grid grid-cols-2 gap-1">
+          {HEADCOUNT_BUCKETS.map((b) => (
+            <label key={b} className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-border text-accent focus:ring-accent"
+                checked={peopleForm.companySizes.includes(b)}
+                disabled={Boolean(peopleForm.company)}
+                onChange={(e) =>
+                  setPeopleForm({
+                    ...peopleForm,
+                    companySizes: e.target.checked ? [...peopleForm.companySizes, b] : peopleForm.companySizes.filter((x) => x !== b),
+                  })
+                }
+              />
+              {b}
+            </label>
+          ))}
+        </div>
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-          Countries in the list are filtered by SocialFetch. Others are filtered after each page, so pages can be thin.
+          {peopleForm.company
+            ? 'Not used while a company is chosen.'
+            : hosted
+              ? "By the employee count of the company they work at. People whose company size can't be found are left out."
+              : "Each person's employer is looked up for its size (1 credit per new company, then cached). People whose company size can't be found are left out."}
+        </p>
+      </FilterAccordion>
+
+      <FilterAccordion label="Country" icon={<Globe className="w-4 h-4" />} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} badgeCount={peopleForm.country ? 1 : 0}>
+        <TagInput
+          label="Country"
+          max={1}
+          tags={peopleForm.country ? [peopleForm.country] : []}
+          placeholder="e.g. United Kingdom"
+          suggestions={SUPPORTED_COUNTRIES}
+          onChange={(t) => setPeopleForm({ ...peopleForm, country: t[0] ?? '' })}
+        />
+        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+          {hosted
+            ? 'Pick a country from the list for the fullest results.'
+            : 'Countries in the list are filtered by SocialFetch. Others are filtered after each page, so pages can be thin.'}
         </p>
       </FilterAccordion>
 
@@ -673,7 +725,7 @@ export function ProspectSearch() {
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-foreground font-display leading-tight">Prospect Search</h1>
             <p className="hidden sm:block text-xs text-muted-foreground mt-0.5">
-              Find people by job title, seniority and country. Emails are looked up only when you save someone to a list.
+              Find people by job title, seniority, industry, company size and country. Emails are looked up only when you save someone to a list.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

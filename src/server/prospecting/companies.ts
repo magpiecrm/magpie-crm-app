@@ -16,7 +16,7 @@ const inflight = new Map<string, Promise<string | null>>()
 export async function resolveCompanyDomain(
   ref: string,
   fallbackName: string,
-  source: CompanySource,
+  source: Pick<CompanySource, 'getCompany'>,
   db: Db,
   slug?: string | null,
 ): Promise<string | null> {
