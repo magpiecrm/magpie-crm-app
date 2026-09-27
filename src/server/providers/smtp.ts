@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer'
 import { env } from '../env'
 import { getDescriptor } from './descriptors'
+import { htmlToText } from './plainText'
 import { campaignHeaders, providerError } from './types'
 import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
 
@@ -8,6 +9,20 @@ import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredenti
 // editing SMTP settings in the UI rebuilds it. The previous module-level
 // singleton silently kept using stale credentials until the process restarted.
 let cached: { key: string; transporter: nodemailer.Transporter } | null = null
+
+/**
+ * The name this copy introduces itself with (EHLO): its own address's
+ * hostname. Otherwise nodemailer uses the machine's, which inside Docker
+ * comes out as [127.0.0.1] in every email's Received header.
+ */
+function ehloName(): string | undefined {
+  try {
+    const url = env.publicUrl()
+    return url ? new URL(url).hostname : undefined
+  } catch {
+    return undefined
+  }
+}
 
 function getTransporter(creds: ProviderCredentials): nodemailer.Transporter {
   const port = parseInt(creds.port, 10) || 465
@@ -26,6 +41,7 @@ function getTransporter(creds: ProviderCredentials): nodemailer.Transporter {
         port,
         secure: port === 465, // true for 465, false for 587 or 25
         auth: { user: creds.user, pass: creds.pass },
+        ...(ehloName() ? { name: ehloName() } : {}),
         ...(managed ? { pool: true, maxConnections: 3, maxMessages: 500, requireTLS: port !== 465 } : {}),
       }),
     }
@@ -64,6 +80,7 @@ export const smtpProvider: EmailProvider = {
       to: msg.to.join(', '),
       subject: msg.subject,
       html: msg.html,
+      text: htmlToText(msg.html),
     }
     const headers = campaignHeaders(msg)
     if (Object.keys(headers).length) mailOptions.headers = headers
