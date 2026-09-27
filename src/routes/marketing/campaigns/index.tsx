@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { campaignsFn, sendCampaignFn, deleteCampaignFn, duplicateCampaignFn } from '../../../server/functions'
 import { CampaignWizard } from '../../../features/campaigns/components/CampaignWizard'
 import { Pagination } from '../../../components/ui/Pagination'
+import { sentMessage } from '../../../features/campaigns/sendResult'
 
 export const Route = createFileRoute('/marketing/campaigns/')({
   // `?template=<id>` opens the wizard on a new campaign seeded from that saved template.
@@ -24,12 +25,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
       // Report the real recipient count rather than a blanket success message.
-      const n = res?.sentCount
-      alert(
-        typeof n === 'number'
-          ? `Campaign sent to ${n} recipient${n === 1 ? '' : 's'}.`
-          : 'Campaign sent successfully!'
-      )
+      alert(sentMessage(res))
     },
     onError: (err: any) => {
       alert(err?.message || 'Failed to send campaign')

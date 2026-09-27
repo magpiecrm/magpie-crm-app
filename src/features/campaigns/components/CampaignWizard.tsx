@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { Save, Layout, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCircle, ChevronRight, Search, Clock } from 'lucide-react'
-import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn } from '../../../server/functions'
+import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn } from '../../../server/functions'
 import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
 import { ScheduleDrawer } from './ScheduleDrawer'
@@ -61,6 +61,10 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const [tempName, setTempName] = useState('')
   const [activeInputForVariable, setActiveInputForVariable] = useState<'subject' | 'preview' | null>(null)
   const [variableSearchQuery, setVariableSearchQuery] = useState('')
+
+  // When the host runs sending, every campaign carries an unsubscribe link.
+  const { data: sendingSettings } = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
+  const unsubscribeLocked = Boolean(sendingSettings?.success && sendingSettings.managed)
 
   const { data: listsData } = useQuery({
     queryKey: queryKeys.email.lists(),
@@ -726,18 +730,26 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
             <div className="flex items-center justify-between p-4 bg-muted/15 border border-border rounded-xl mb-4">
               <div>
                 <h4 className="font-semibold text-foreground text-sm">Include Unsubscribe Link</h4>
-                <p className="text-xs text-muted-foreground">Add a personalized link at the bottom of the email for recipients to unsubscribe.</p>
+                <p className="text-xs text-muted-foreground">
+                  {unsubscribeLocked
+                    ? 'Always on: every campaign has an unsubscribe link, and mail apps show their own Unsubscribe button.'
+                    : 'Add a personalized link at the bottom of the email for recipients to unsubscribe.'}
+                </p>
               </div>
               <button
                 type="button"
+                role="switch"
+                aria-checked={unsubscribeLocked || formData.unsubscribeEnabled}
+                aria-label="Include unsubscribe link"
+                disabled={unsubscribeLocked}
                 onClick={() => setFormData({ ...formData, unsubscribeEnabled: !formData.unsubscribeEnabled })}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  formData.unsubscribeEnabled ? 'bg-accent' : 'bg-muted'
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed disabled:opacity-70 ${
+                  unsubscribeLocked || formData.unsubscribeEnabled ? 'bg-accent' : 'bg-muted'
                 }`}
               >
                 <span
                   className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    formData.unsubscribeEnabled ? 'translate-x-5' : 'translate-x-0'
+                    unsubscribeLocked || formData.unsubscribeEnabled ? 'translate-x-5' : 'translate-x-0'
                   }`}
                 />
               </button>

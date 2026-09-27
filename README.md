@@ -120,6 +120,11 @@ topic with an HTTPS subscription to `/api/webhooks/email/ses?s=…`; the app
 confirms the subscription itself. A hard bounce marks the contact bounced; a
 spam complaint unsubscribes them.
 
+Campaign emails carry an unsubscribe link (added at the bottom unless the
+design includes `{{unsubscribe}}`) and one-click `List-Unsubscribe` headers,
+which Gmail and Yahoo require of bulk senders. It can be switched off per
+campaign, except when the host runs sending (`SENDING_MANAGED=on`).
+
 ### Copilot and AI apps (MCP)
 
 The copilot runs on Claude or OpenAI models, with **your own API key** for
@@ -180,6 +185,9 @@ contacts, and that is the only point where emails are looked up.
   email, LinkedIn URL, or name + company website. Identifiers are stored only as
   HMAC hashes (`SUPPRESSION_SECRET`), matching saved contacts are deleted, and
   suppressed people are filtered out of search results and blocked at save.
+  New contacts added by hand (CSV import, paste, the copilot) who opted out are
+  skipped, and campaigns skip them too, unless they've since signed themselves
+  up through a form or `/api/subscribe`.
   A host running several copies can give them one `SUPPRESSION_SECRET` and pass
   opt-outs between them through `/api/usage/suppressions`, so an opt-out from
   one copy applies to all of them.

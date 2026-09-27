@@ -200,10 +200,14 @@ function ImportContactsPage() {
   // Mutation to add contacts to a list
   const importMutation = useMutation({
     mutationFn: (data: { listId: number; contacts: any[] }) => addContactsFn({ data }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
-      alert('Contacts imported successfully!')
+      alert(
+        res?.skipped
+          ? `Imported ${res.added} contact${res.added === 1 ? '' : 's'}. ${res.skipped} ${res.skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.`
+          : 'Contacts imported successfully!',
+      )
       navigate({ to: '/marketing/contacts' })
     },
     onError: (err: any) => {

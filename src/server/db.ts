@@ -64,6 +64,11 @@ interface DbSchema {
     email_status?: EmailStatus
     /** Whether this person has been told we hold their details. Prospected contacts start `pending`. */
     notice_status?: NoticeStatus
+    /**
+     * When they last signed themselves up (a form, /api/subscribe, a survey).
+     * Consent given after an opt-out from prospecting lets campaigns reach them.
+     */
+    signed_up_at?: string
   }>
   list_contacts: Array<{ list_id: number; contact_email: string }>
   senders: Array<{ id: number; name: string; email: string }>
@@ -1553,6 +1558,14 @@ class JsonDb {
     for (const c of this.data.contacts) {
       if (c.custom && key in c.custom) delete c.custom[key]
     }
+    this.save()
+  }
+
+  /** Records that someone signed themselves up (see `signed_up_at`). */
+  markSignedUp(email: string) {
+    const contact = this.data.contacts.find((c) => c.email === email.toLowerCase().trim())
+    if (!contact) return
+    contact.signed_up_at = new Date().toISOString()
     this.save()
   }
 

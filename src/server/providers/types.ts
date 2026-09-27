@@ -60,6 +60,8 @@ export interface OutboundMessage {
   subject: string
   html: string
   campaignId?: number
+  /** This recipient's unsubscribe link, for the List-Unsubscribe headers. */
+  unsubscribeUrl?: string
 }
 
 interface ProviderSendResult {
@@ -88,9 +90,18 @@ export interface EmailProvider {
   parseWebhook?(body: unknown): NormalizedBounce[]
 }
 
-/** The `X-Campaign-ID` header value, when the message belongs to a campaign. */
+/**
+ * Headers for campaign email: `X-Campaign-ID`, and one-click unsubscribe
+ * (RFC 8058) when there's an unsubscribe link, so mail clients show their own
+ * Unsubscribe button. Gmail and Yahoo require it of bulk senders.
+ */
 export function campaignHeaders(msg: OutboundMessage): Record<string, string> {
-  return msg.campaignId ? { 'X-Campaign-ID': String(msg.campaignId) } : {}
+  return {
+    ...(msg.campaignId ? { 'X-Campaign-ID': String(msg.campaignId) } : {}),
+    ...(msg.unsubscribeUrl
+      ? { 'List-Unsubscribe': `<${msg.unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
+      : {}),
+  }
 }
 
 /**

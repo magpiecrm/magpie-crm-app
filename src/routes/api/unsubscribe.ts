@@ -334,8 +334,13 @@ export const Route = createFileRoute('/api/unsubscribe')({
       },
       POST: async ({ request }: { request: Request }) => {
         try {
-          const body = await request.json()
-          const token = body.token
+          // One-click unsubscribe from a mail client (RFC 8058): a form post of
+          // "List-Unsubscribe=One-Click" to the link itself, token in `t`.
+          // Otherwise the confirmation page's JSON { token }.
+          const oneClick = (request.headers.get('content-type') ?? '').includes('application/x-www-form-urlencoded')
+          const token = oneClick
+            ? new URL(request.url).searchParams.get('t')
+            : (await request.json().catch(() => ({})))?.token
           if (!token) {
             return new Response(
               JSON.stringify({ error: 'Token is required' }),

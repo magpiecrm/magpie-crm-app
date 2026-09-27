@@ -8,6 +8,8 @@ import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
 import { formatCustomValue } from '../features/contacts/contactFields'
 import { AllowanceError, requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
+import { env } from './env'
+import { optedOutAt, signedUpSince } from './prospecting/suppression'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -147,7 +149,19 @@ export async function deleteList(listId: number) {
   db.run('DELETE FROM lists WHERE id = ?', [listId])
 }
 
-export async function addContactsToList(listId: number, contacts: EmailContact[]) {
+/**
+ * Adds contacts to a list, creating the ones that don't exist yet. New people
+ * who opted out of being contacted through MagpieCRM (the suppression list)
+ * are skipped rather than added; returns how many.
+ */
+export async function addContactsToList(listId: number, contacts: EmailContact[]): Promise<{ added: number; skipped: number }> {
+  const known = new Set(db.data.contacts.map((c) => c.email))
+  const optedOut = optedOutAt(
+    db,
+    contacts
+      .map((c) => ({ email: c.email.toLowerCase().trim(), first_name: c.attributes?.FIRSTNAME, last_name: c.attributes?.LASTNAME }))
+      .filter((c) => !known.has(c.email)),
+  )
   const insertContactStmt = db.prepare(`
     INSERT OR REPLACE INTO contacts (email, first_name, last_name, job_title, company, status, created_at)
     VALUES (?, ?, ?, ?, ?, COALESCE((SELECT status FROM contacts WHERE email = ?), 'subscribed'), ?)
@@ -159,9 +173,12 @@ export async function addContactsToList(listId: number, contacts: EmailContact[]
   `)
 
   const now = new Date().toISOString()
+  let added = 0
   db.transaction(() => {
     for (const c of contacts) {
       const email = c.email.toLowerCase().trim()
+      if (optedOut.has(email)) continue
+      added++
       const fn = c.attributes?.FIRSTNAME || ''
       const ln = c.attributes?.LASTNAME || ''
       const jt = c.attributes?.JOB_TITLE || ''
@@ -171,6 +188,8 @@ export async function addContactsToList(listId: number, contacts: EmailContact[]
       linkContactStmt.run(listId, email)
     }
   })()
+  if (optedOut.size) console.log(`[Contacts] Skipped ${optedOut.size} who opted out of being contacted`)
+  return { added, skipped: optedOut.size }
 }
 
 /**
@@ -218,6 +237,9 @@ export async function createContact(payload: {
   const comp = payload.attributes?.COMPANY || ''
   const now = new Date().toISOString()
   const isNewContact = !db.data.contacts.some(c => c.email === email)
+  if (isNewContact && optedOutAt(db, [{ email, first_name: fn, last_name: ln }]).size) {
+    throw new Error(`${email} has opted out of being contacted through MagpieCRM, so they can't be added.`)
+  }
 
   db.transaction(() => {
     db.run(
@@ -452,14 +474,25 @@ export async function sendCampaign(id: number) {
   }
 
   // Get active subscribed contacts
-  const contacts = db.query(`
+  const subscribed = db.query(`
     SELECT c.email, c.first_name, c.last_name
     FROM contacts c
     JOIN list_contacts lc ON c.email = lc.contact_email
     WHERE lc.list_id = ? AND c.status = 'subscribed'
   `).all(listId) as any[]
 
-  if (contacts.length === 0) {
+  // People who opted out of being contacted through MagpieCRM aren't sent to,
+  // unless they've signed themselves up since.
+  const optedOut = optedOutAt(db, subscribed)
+  const contacts = subscribed.filter((c) => signedUpSince(optedOut.get(c.email), db.getContact(c.email)?.signed_up_at))
+  const skippedOptOuts = subscribed.length - contacts.length
+  if (subscribed.length > 0 && contacts.length === 0) {
+    throw new Error(
+      `Campaign not sent: all ${subscribed.length} subscribed contact${subscribed.length === 1 ? ' has' : 's have'} opted out of being contacted.`,
+    )
+  }
+
+  if (subscribed.length === 0) {
     // Previously this marked the campaign 'sent' and returned success, so a
     // campaign that reached nobody was indistinguishable from one that worked.
     // Refuse instead, and leave the campaign in its current status so it can be
@@ -504,6 +537,8 @@ export async function sendCampaign(id: number) {
   `)
 
   const appUrl = await getAppUrl()
+  // When the host runs sending, every campaign carries an unsubscribe link.
+  const unsubscribeEnabled = campaign.unsubscribeEnabled !== false || env.sendingManaged()
 
   // Survey blocks link to a survey; sending links to a draft or deleted one
   // would give every recipient a "not found" page.
@@ -568,17 +603,20 @@ export async function sendCampaign(id: number) {
     // Append unsubscribe link using encrypted token
     const unsubToken = encryptToken({ email, campaignId: id })
     const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(unsubToken)}`
-    if (campaign.unsubscribeEnabled) {
+    if (unsubscribeEnabled) {
       personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, unsubscribeUrl)
 
-      // Add basic email wrap support to also auto-add unsubscribe at absolute bottom if not already included
-      if (!personalizedHtml.includes(unsubscribeUrl) && !personalizedHtml.includes('unsubscribe')) {
-        personalizedHtml += `
+      // Unless the design already links to it, add the link at the very bottom.
+      if (!personalizedHtml.includes(unsubscribeUrl)) {
+        const footer = `
           <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #666;">
-            You received this email because you subscribed. 
-            <a href="${unsubscribeUrl}" style="color: #007bff; text-decoration: underline;">Unsubscribe</a>
+            Sent by ${escapeHtml(senderName || senderEmail || '')}. Don't want these emails?
+            <a href="${unsubscribeUrl}" style="color: #666; text-decoration: underline;">Unsubscribe</a>
           </div>
         `
+        personalizedHtml = /<\/body>/i.test(personalizedHtml)
+          ? personalizedHtml.replace(/<\/body>/i, (m: string) => `${footer}${m}`)
+          : personalizedHtml + footer
       }
     } else {
       personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, '#')
@@ -615,6 +653,8 @@ export async function sendCampaign(id: number) {
         subject: personalizedSubject,
         html: personalizedHtml,
         campaignId: id,
+        // One-click unsubscribe in the mail client (List-Unsubscribe), which Gmail and Yahoo require of bulk senders.
+        ...(unsubscribeEnabled ? { unsubscribeUrl } : {}),
       })
       logRecipientStmt.run(id, email)
     } catch (err) {
@@ -634,11 +674,12 @@ export async function sendCampaign(id: number) {
 
   notify(
     'campaign_sent',
-    `"${campaign.name}" finished sending to ${contacts.length} recipient${contacts.length === 1 ? '' : 's'}`,
+    `"${campaign.name}" finished sending to ${contacts.length} recipient${contacts.length === 1 ? '' : 's'}` +
+      (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : ''),
     { url: `/marketing/campaigns/${id}` },
   )
 
-  return { success: true, sentCount: contacts.length }
+  return { success: true, sentCount: contacts.length, skippedOptOuts }
 }
 
 export async function sendTestEmail(payload: {

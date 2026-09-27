@@ -21,6 +21,44 @@ export function isSuppressed(hashes: SuppressionHash[], suppressed: Set<string>)
   return hashes.some((h) => suppressed.has(h.hash))
 }
 
+type OptOutDb = {
+  data: { suppression?: Array<{ hash: string; created_at: string }> }
+  getDisclosures(): Array<{ contact_hash: string; profile_hash: string | null }>
+}
+
+/**
+ * When each of these people opted out (the earliest matching entry on the
+ * list), for the ones who have: by email, by name at their email's domain, or
+ * by a profile the disclosure log ties to their email. Keyed by email.
+ */
+export function optedOutAt(db: OptOutDb, people: Array<{ email: string; first_name?: string; last_name?: string }>): Map<string, string> {
+  const since = new Map<string, string>()
+  for (const s of db.data.suppression ?? []) {
+    const known = since.get(s.hash)
+    if (!known || s.created_at < known) since.set(s.hash, s.created_at)
+  }
+  const out = new Map<string, string>()
+  if (since.size === 0) return out
+  const profiles = new Map<string, string[]>()
+  for (const d of db.getDisclosures()) {
+    if (d.profile_hash) profiles.set(d.contact_hash, [...(profiles.get(d.contact_hash) ?? []), d.profile_hash])
+  }
+  for (const p of people) {
+    const email = p.email.toLowerCase().trim()
+    const eh = emailHash(email)
+    const domain = email.split('@')[1]
+    const nd = domain ? nameDomainHash(p.first_name ?? '', p.last_name ?? '', domain) : null
+    const times = [eh, nd, ...(profiles.get(eh) ?? [])].flatMap((h) => (h && since.has(h) ? [since.get(h)!] : []))
+    if (times.length) out.set(email, times.sort()[0])
+  }
+  return out
+}
+
+/** Whether a campaign may still reach someone who opted out: only if they signed themselves up since. */
+export function signedUpSince(optedOut: string | undefined, signedUpAt: string | undefined): boolean {
+  return !optedOut || Boolean(signedUpAt && signedUpAt > optedOut)
+}
+
 /**
  * Handles an opt-out from the public page: adds the person's hashes to the
  * global list and deletes every saved contact that matches them (see

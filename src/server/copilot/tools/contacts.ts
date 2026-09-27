@@ -56,7 +56,7 @@ export const contactTools = [
   defineTool({
     name: 'addContacts',
     description:
-      'Add contacts to a list, creating any that do not exist yet. Existing contacts keep their subscription status.',
+      'Add contacts to a list, creating any that do not exist yet. Existing contacts keep their subscription status. People who opted out of being contacted are skipped, not added.',
     input: {
       list: listRef,
       contacts: z.array(contactInput).min(1),
@@ -66,8 +66,8 @@ export const contactTools = [
     handler: async ({ list, contacts }) => {
       const { addContactsToList } = await import('../../emailService')
       const listId = await resolveListId(list)
-      await addContactsToList(listId, contacts as any)
-      return { listId, added: contacts.length }
+      const { added, skipped } = await addContactsToList(listId, contacts as any)
+      return { listId, added, skippedOptedOut: skipped }
     },
   }),
 

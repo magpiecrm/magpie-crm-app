@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // success. These pin down the new behaviour, and — importantly — that the
 // refusal path never touches contact records.
 
-type Contact = { email: string; status: string; first_name?: string; last_name?: string }
+type Contact = { email: string; status: string; first_name?: string; last_name?: string; signed_up_at?: string }
 
 const state: {
   contacts: Contact[]
@@ -13,14 +13,18 @@ const state: {
   html: string
   surveys: Array<{ id: string; name: string; status: string }>
   allowance: any
-} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null }
+  suppression: Array<{ hash: string; kind: string; created_at: string }>
+  unsubscribeEnabled: boolean | undefined
+} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined }
 
 vi.mock('./db', () => ({
   db: {
     getAllowance: () => state.allowance,
     get data() {
-      return { contacts: state.contacts, list_contacts: state.list_contacts }
+      return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression }
     },
+    getContact: (email: string) => state.contacts.find((c) => c.email === email) ?? null,
+    getDisclosures: () => [],
     // Only the subscribed-contacts SELECT matters here; everything else is
     // recorded so the tests can assert no writes happened.
     query: (sql: string) => ({
@@ -40,6 +44,7 @@ vi.mock('./db', () => ({
             id: 1, name: 'Test', subject: 'Hi', htmlContent: state.html,
             status: 'draft', listId: 1, senderId: 1,
             senderName: 'Acme', senderEmail: 'hi@acme.com',
+            unsubscribeEnabled: state.unsubscribeEnabled,
           }
         }
         return null
@@ -47,6 +52,7 @@ vi.mock('./db', () => ({
     }),
     run: (sql: string, params: any[] = []) => { state.runs.push({ sql, params }) },
     prepare: () => ({ run: () => {} }),
+    transaction: (fn: () => void) => fn,
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
   },
 }))
@@ -56,6 +62,17 @@ vi.mock('./notify', () => ({ notify: vi.fn() }))
 vi.mock('./crypto', () => ({ encryptToken: () => 'tok' }))
 
 const emailService = await import('./emailService')
+const { hashesFor } = await import('./prospecting/suppression')
+
+/** Puts this person on the opt-out list, as of `at`. */
+function optOut(p: { email?: string; firstName?: string; lastName?: string; domain?: string }, at = '2026-09-01T00:00:00.000Z') {
+  for (const h of hashesFor(p)) state.suppression.push({ ...h, created_at: at })
+}
+
+function listOf(...contacts: Contact[]) {
+  state.contacts = contacts
+  state.list_contacts = contacts.map((c) => ({ list_id: 1, contact_email: c.email }))
+}
 
 beforeEach(() => {
   state.contacts = []
@@ -64,6 +81,9 @@ beforeEach(() => {
   state.html = '<p>Hi</p>'
   state.surveys = []
   state.allowance = null
+  state.suppression = []
+  state.unsubscribeEnabled = undefined
+  delete process.env.SENDING_MANAGED
   // Avoids the getRequest() fallback for the tracking base URL.
   process.env.PUBLIC_URL = 'https://example.test'
 })
@@ -149,7 +169,7 @@ describe('sendCampaign happy path still works', () => {
 
     const res = await emailService.sendCampaign(1)
 
-    expect(res).toEqual({ success: true, sentCount: 1 })
+    expect(res).toEqual({ success: true, sentCount: 1, skippedOptOuts: 0 })
     // The unsubscribed contact must be skipped, not merely un-emailed.
     expect(sendMail).toHaveBeenCalledTimes(1)
     expect((sendMail as any).mock.calls[0][0].to).toBe('yes@b.com')
@@ -184,5 +204,77 @@ describe('sendCampaign with a survey block', () => {
     expect(html).toContain('href="https://example.test/s/s1?t=tok"')
     expect(html).toContain('/api/track/click?t=') // the other link is still tracked
     expect(html).not.toContain('survey_link')
+  })
+})
+
+describe('sendCampaign and opt-outs', () => {
+  it("skips people who opted out of being contacted, unless they've signed up since", async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    listOf(
+      { email: 'jane@acme.test', status: 'subscribed', first_name: 'Jane', last_name: 'Smith' },
+      { email: 'bob@other.test', status: 'subscribed', first_name: 'Bob', last_name: 'Jones' },
+      { email: 'sam@acme.test', status: 'subscribed', signed_up_at: '2026-09-10T00:00:00.000Z' },
+      { email: 'ann@acme.test', status: 'subscribed', first_name: 'Ann', last_name: 'Lee' },
+    )
+    optOut({ email: 'jane@acme.test' })
+    optOut({ email: 'sam@acme.test' }) // then signed up on a form
+    optOut({ firstName: 'Ann', lastName: 'Lee', domain: 'acme.test' }) // by name at their company
+    const res = await emailService.sendCampaign(1)
+    expect(res).toMatchObject({ sentCount: 2, skippedOptOuts: 2 })
+    expect(vi.mocked(sendMail).mock.calls.map((c) => c[0].to)).toEqual(['bob@other.test', 'sam@acme.test'])
+  })
+
+  it('refuses when everyone subscribed has opted out', async () => {
+    listOf({ email: 'jane@acme.test', status: 'subscribed' })
+    optOut({ email: 'jane@acme.test' })
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/opted out of being contacted/)
+  })
+})
+
+describe('sendCampaign unsubscribe', () => {
+  const sendOne = async (html: string) => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    state.html = html
+    listOf({ email: 'bob@other.test', status: 'subscribed' })
+    await emailService.sendCampaign(1)
+    return vi.mocked(sendMail).mock.calls[0][0]
+  }
+
+  it('adds a footer naming the sender unless the design links to it, and one-click headers', async () => {
+    const msg = await sendOne('<html><body><p>Reply "unsubscribe" to stop</p></body></html>')
+    expect(msg.html).toContain("Sent by Acme. Don't want these emails?")
+    expect(msg.html).not.toContain('you subscribed')
+    expect(msg.html.indexOf('Unsubscribe</a>')).toBeLessThan(msg.html.indexOf('</body>'))
+    expect(msg.unsubscribeUrl).toBe('https://example.test/api/unsubscribe?t=tok')
+
+    const own = await sendOne('<p>Hi</p><a href="{{unsubscribe}}">Leave</a>')
+    expect(own.html).not.toContain('Sent by Acme')
+    expect(own.html).toContain('href="https://example.test/api/unsubscribe?t=tok"')
+  })
+
+  it('can be switched off for self-hosted sending, but not when the host runs sending', async () => {
+    state.unsubscribeEnabled = false
+    const off = await sendOne('<p>Hi</p>')
+    expect(off.html).not.toContain('Unsubscribe')
+    expect(off.unsubscribeUrl).toBeUndefined()
+
+    process.env.SENDING_MANAGED = 'on'
+    const managed = await sendOne('<p>Hi</p>')
+    expect(managed.html).toContain('Unsubscribe</a>')
+    expect(managed.unsubscribeUrl).toBeDefined()
+  })
+})
+
+describe('adding contacts by hand', () => {
+  it('skips new people who opted out, and says how many', async () => {
+    optOut({ email: 'jane@acme.test' })
+    const res = await emailService.addContactsToList(1, [
+      { email: 'Jane@Acme.test', attributes: { FIRSTNAME: 'Jane' } } as any,
+      { email: 'bob@other.test', attributes: {} } as any,
+    ])
+    expect(res).toEqual({ added: 1, skipped: 1 })
+    await expect(emailService.createContact({ email: 'jane@acme.test' })).rejects.toThrow(/opted out of being contacted/)
   })
 })

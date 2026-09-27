@@ -85,6 +85,8 @@ export const Route = createFileRoute('/api/subscribe')({
               [normalizedEmail]
             )
           })()
+          // They signed themselves up: consent that outlasts an earlier opt-out from prospecting.
+          db.markSignedUp(normalizedEmail)
 
           return new Response(
             JSON.stringify({ success: true }),

@@ -1,5 +1,5 @@
 import { getDescriptor } from './descriptors'
-import { providerError } from './types'
+import { campaignHeaders, providerError } from './types'
 import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
 
 function baseUrl(region: string): string {
@@ -21,10 +21,8 @@ export const mailgunProvider: EmailProvider = {
       'o:tracking-clicks': 'no',
       'o:tracking-opens': 'no',
     })
-    if (msg.campaignId) {
-      // Mailgun takes arbitrary headers with an `h:` prefix.
-      params.set('h:X-Campaign-ID', String(msg.campaignId))
-    }
+    // Mailgun takes arbitrary headers with an `h:` prefix.
+    for (const [name, value] of Object.entries(campaignHeaders(msg))) params.set(`h:${name}`, value)
 
     const auth = Buffer.from(`api:${creds.apiKey}`).toString('base64')
     const response = await fetch(`${baseUrl(creds.region)}/v3/${creds.domain}/messages`, {

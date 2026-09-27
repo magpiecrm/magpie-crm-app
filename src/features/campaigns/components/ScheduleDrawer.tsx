@@ -5,6 +5,7 @@ import { queryKeys } from '../../../queryKeys'
 import { X, HelpCircle, Sparkles, Crown, AlertCircle } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { sendCampaignFn, updateCampaignFn } from '../../../server/functions'
+import { sentMessage } from '../sendResult'
 
 interface ScheduleDrawerProps {
   isOpen: boolean
@@ -78,12 +79,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
     },
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
-      const n = res?.sentCount
-      alert(
-        typeof n === 'number'
-          ? `Campaign sent to ${n} recipient${n === 1 ? '' : 's'}.`
-          : 'Campaign sent successfully!'
-      )
+      alert(sentMessage(res))
       onClose()
       if (onSendSuccess) {
         onSendSuccess()

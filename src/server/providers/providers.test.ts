@@ -231,6 +231,30 @@ describe('webhook normalizers', () => {
   })
 })
 
+describe('one-click unsubscribe', () => {
+  const withLink = { ...msg, unsubscribeUrl: 'https://app.test/api/unsubscribe?t=abc' }
+  const expected = { 'List-Unsubscribe': '<https://app.test/api/unsubscribe?t=abc>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
+
+  it('sends List-Unsubscribe headers through SES and Mailgun when the email has an unsubscribe link', async () => {
+    const ses = mockFetch({ ok: true, jsonValue: { MessageId: 'm1' } })
+    await sesProvider.send(withLink, { region: 'eu-west-2', accessKeyId: 'AKIA', secretAccessKey: 's' })
+    const headers = JSON.parse(ses.mock.calls[0][1].body).Content.Simple.Headers
+    expect(headers).toEqual(expect.arrayContaining(Object.entries(expected).map(([Name, Value]) => ({ Name, Value }))))
+
+    const mg = mockFetch({ jsonValue: { id: 'mg-1' } })
+    await mailgunProvider.send(withLink, { apiKey: 'k', domain: 'd.com' })
+    const params = mg.mock.calls[0][1].body as URLSearchParams
+    expect(params.get('h:List-Unsubscribe')).toBe(expected['List-Unsubscribe'])
+    expect(params.get('h:List-Unsubscribe-Post')).toBe(expected['List-Unsubscribe-Post'])
+  })
+
+  it('leaves them off without one', async () => {
+    const ses = mockFetch({ ok: true, jsonValue: { MessageId: 'm1' } })
+    await sesProvider.send(msg, { region: 'eu-west-2', accessKeyId: 'AKIA', secretAccessKey: 's' })
+    expect(JSON.stringify(JSON.parse(ses.mock.calls[0][1].body))).not.toContain('List-Unsubscribe')
+  })
+})
+
 describe('Amazon SES', () => {
   it('tags each email with SES_MESSAGE_TAGS, skipping anything SES would refuse', async () => {
     const fetch = mockFetch({ ok: true, jsonValue: { MessageId: 'm1' } })

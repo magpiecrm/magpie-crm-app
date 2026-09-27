@@ -65,6 +65,8 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
                 [form.list_id, email]
               )
             })()
+            // They signed themselves up: consent that outlasts an earlier opt-out from prospecting.
+            db.markSignedUp(email)
           }
 
           db.addFormSubmission(params.formId, email, message)

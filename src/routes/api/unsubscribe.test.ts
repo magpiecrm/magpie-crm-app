@@ -63,3 +63,31 @@ describe('/api/unsubscribe back-to-site link', () => {
     expect(html).not.toContain('"</script>')
   })
 })
+
+describe('/api/unsubscribe one-click (RFC 8058)', () => {
+  it("unsubscribes from a mail client's form post, with the token in the link", async () => {
+    const { db } = await import('../../server/db')
+    db.data.contacts.push({ email: 'someone@a.test', first_name: '', last_name: '', job_title: '', company: '', status: 'subscribed', created_at: '' })
+    const token = encodeURIComponent(encryptToken({ email: 'someone@a.test' }))
+    const res = await handlers.POST({
+      request: new Request(`http://app.test/api/unsubscribe?t=${token}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'List-Unsubscribe=One-Click',
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(db.getContact('someone@a.test')?.status).toBe('unsubscribed')
+  })
+
+  it('refuses a one-click post without a valid token', async () => {
+    const res = await handlers.POST({
+      request: new Request('http://app.test/api/unsubscribe?t=nonsense', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'List-Unsubscribe=One-Click',
+      }),
+    })
+    expect(res.status).toBe(400)
+  })
+})
