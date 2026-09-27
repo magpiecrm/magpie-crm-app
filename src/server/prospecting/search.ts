@@ -399,7 +399,7 @@ export async function searchPeople(
     warnings.push(`Your plan has ${plural(left, 'prospect', 'prospects')} left this month, so this page shows at most that many. Upgrade to get more.`)
   }
   if (!lookupError && usable() < target && nextCursor) {
-    warnings.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
+    details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
   }
 
   return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined }

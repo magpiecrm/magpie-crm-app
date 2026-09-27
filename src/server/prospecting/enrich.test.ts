@@ -256,6 +256,13 @@ describe('searchPeople fills the page', () => {
     expect(res.items).toEqual([])
     expect(res.warnings).toContain('Found 0 of 1 after 4 searches. Load more to keep looking.')
     expect(res.warnings).toContain('4 people were left out because LinkedIn hides their surnames (e.g. "Andy C."), so no email can be found.')
+    // A hosted copy shows the results and Load more, without the tally.
+    process.env.PROSPECTING_MANAGED = 'on'
+    try {
+      expect((await searchPeople({ titles: ['Business Analyst'], count: 1 })).warnings.join(' ')).not.toContain('Found 0 of 1')
+    } finally {
+      delete process.env.PROSPECTING_MANAGED
+    }
     searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
   })
 
