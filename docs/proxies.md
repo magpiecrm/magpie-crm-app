@@ -73,6 +73,46 @@ verification**. Proxies saved there are stored encrypted; `REACHER_PROXIES`
 (a JSON array of `{host, port, username, password, label}`) is the env-var
 alternative.
 
+### Several IPs on one server
+
+Extra IPs on the same server are cheaper than a server per IP (OVH's
+Additional IPs, for example). Each IP gets its own proxy on its own port,
+connecting out from that IP, so each counts as a separate verification IP:
+
+1. Order the IPs and add them to the server's network interface as aliases
+   (OVH: "Configuring IP aliasing"). On Ubuntu that's a netplan file such as
+   `/etc/netplan/51-extra-ips.yaml`:
+
+   ```yaml
+   network:
+     version: 2
+     ethernets:
+       eth0:            # your interface: ip -4 addr
+         addresses:
+           - 203.0.113.10/32
+           - 203.0.113.11/32
+   ```
+
+   then `netplan apply`.
+2. Run the script with every IP, **the server's main IP first** so it keeps
+   port 1080:
+
+   ```bash
+   EXTERNAL_IPS="<main IP> 203.0.113.10 203.0.113.11" ALLOW_FROM=<public IP that runs Reacher> \
+     PROXY_USER=reacher PROXY_PASS='<long random password>' bash setup-dante.sh
+   ```
+
+   It prints one line per IP (host, port, outgoing IP) to add as separate
+   proxies. The script checks each IP is on an interface and never changes
+   the network configuration itself.
+3. Set each IP's reverse DNS (below). The app's health check looks at each
+   proxy's host address, which is the main IP for all of them here, so check
+   the extra IPs' blocklist status yourself (e.g. MXToolbox) for now.
+
+IPs on one server share its uptime and its provider's reputation: a mail
+server that refuses the whole hosting provider refuses all of them. A second
+server at another provider reaches more companies.
+
 ## 4. Reverse DNS and HELO
 
 Mail servers trust a connecting IP more when its reverse DNS looks like a
