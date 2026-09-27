@@ -4,6 +4,7 @@ import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, RefreshCw, Activi
 import { Badge } from '../../../components/ui/Badge'
 import { queryKeys } from '../../../queryKeys'
 import { checkSenderHealthFn, senderHealthFn } from '../../../server/functions'
+import { SettingsBlock } from './SettingsBlock'
 
 type Report = NonNullable<Awaited<ReturnType<typeof senderHealthFn>>>
 type Level = Report['level']
@@ -81,15 +82,16 @@ export function SenderHealthPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-        Verification IP &amp; domain health
-      </h4>
-      <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+    <SettingsBlock
+      title="Verification IP & domain health"
+      description={
+      <p>
         Mail servers only answer checks from IPs and sender domains they trust. This checks each verifying IP against the
         main blocklists (Spamhaus, Barracuda, SpamCop and two smaller ones), its reverse DNS, and the FROM domain's SPF.
         It runs every six hours; a new listing sends a notification so you know to swap the IP out.
       </p>
+      }
+    >
 
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -113,7 +115,7 @@ export function SenderHealthPanel({
       )}
 
       {report && (
-        <div className="max-w-3xl border border-border divide-y divide-border">
+        <div className="border border-border divide-y divide-border">
           {report.ips.map((ip) => (
             <div key={`${ip.label}-${ip.host}`} className="px-3 py-2.5 flex flex-col gap-1.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -192,6 +194,6 @@ export function SenderHealthPanel({
           )}
         </div>
       )}
-    </div>
+    </SettingsBlock>
   )
 }

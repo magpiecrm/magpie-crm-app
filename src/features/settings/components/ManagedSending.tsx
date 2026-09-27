@@ -11,6 +11,7 @@ import {
 } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import { SettingsBlock } from './SettingsBlock'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -142,8 +143,7 @@ export function ManagedSending() {
         </span>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Sending domains</h4>
+      <SettingsBlock title="Sending domains">
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
             <RefreshCw className="w-4 h-4 animate-spin text-accent" /> Checking your domains…
@@ -182,11 +182,10 @@ export function ManagedSending() {
           Then add the addresses you send as (like <code className="font-mono">hello@acme.com</code>) in Sender addresses.
           Addresses on a subdomain, like <code className="font-mono">news.acme.com</code>, work too.
         </p>
-      </div>
+      </SettingsBlock>
 
       {anyReady && (
-        <div className="flex flex-col gap-3">
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Send a test</h4>
+        <SettingsBlock title="Send a test">
           <form
             className="flex flex-col sm:flex-row gap-2"
             onSubmit={(e) => {
@@ -211,7 +210,7 @@ export function ManagedSending() {
               {test.data.success ? 'Sent. Check the inbox (and spam) for it.' : test.data.error}
             </p>
           )}
-        </div>
+        </SettingsBlock>
       )}
     </div>
   )

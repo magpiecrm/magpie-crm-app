@@ -11,7 +11,7 @@ const MAX_MATCHES = 8
  * up is a paid company search, so it only runs when the user presses Find,
  * never on each keystroke.
  */
-export function CompanyPicker({ onPick }: { onPick: (company: CompanyResult) => void }) {
+export function CompanyPicker({ onPick, hosted = false }: { onPick: (company: CompanyResult) => void; hosted?: boolean }) {
   const [name, setName] = useState('')
   const lookup = useMutation({
     mutationFn: (keyword: string) => searchCompaniesFn({ data: { keyword } }),
@@ -91,7 +91,9 @@ export function CompanyPicker({ onPick }: { onPick: (company: CompanyResult) => 
       )}
 
       {!lookup.data && (
-        <p className="text-[10px] text-muted-foreground leading-snug">Leave blank to search every company. Find costs 3 credits.</p>
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          {hosted ? 'Leave blank to search every company.' : 'Leave blank to search every company. Find costs 3 credits.'}
+        </p>
       )}
     </div>
   )

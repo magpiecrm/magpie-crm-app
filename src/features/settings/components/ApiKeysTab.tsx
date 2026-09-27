@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AlertCircle, Copy, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { createApiKeyFn, deleteApiKeyFn, getApiKeysFn } from '../../../server/functions'
+import { SettingsBlock } from './SettingsBlock'
 
 /** Settings → Signup forms and API: keys for POST /api/subscribe. */
 export function ApiKeysTab() {
@@ -75,8 +76,8 @@ export function ApiKeysTab() {
   return (
     <div className="flex flex-col gap-6">
       {/* Generate Key Form */}
-      <form onSubmit={handleCreateApiKey} className="flex flex-col gap-3 p-5 bg-muted/20 border border-border/80 rounded-md-s">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Generate New Key</h4>
+      <SettingsBlock title="Generate new key">
+      <form onSubmit={handleCreateApiKey} className="flex flex-col gap-3">
         <div className="flex flex-col md:flex-row gap-3 items-end">
           <div className="flex-1 flex flex-col gap-1.5 w-full">
             <label htmlFor="key-name-input" className="text-xs font-semibold text-foreground">Key Name (e.g. Marketing Site)</label>
@@ -144,10 +145,10 @@ export function ApiKeysTab() {
           </div>
         </div>
       )}
+      </SettingsBlock>
 
       {/* Active Keys List */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Active Keys</h4>
+      <SettingsBlock title="Active keys">
         {isLoadingKeys ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
             <RefreshCw className="w-5 h-5 animate-spin text-accent" />
@@ -220,12 +221,13 @@ export function ApiKeysTab() {
             </table>
           </div>
         )}
-      </div>
+      </SettingsBlock>
 
       {/* Code Integration Example */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Integration Code Snippet</h4>
-        <p className="text-xs text-muted-foreground">Submit a <code className="font-mono">POST</code> request to your deployment or localhost to subscribe new contacts:</p>
+      <SettingsBlock
+        title="Integration code snippet"
+        description={<p>Submit a <code className="font-mono">POST</code> request to your deployment or localhost to subscribe new contacts:</p>}
+      >
         <pre className="bg-background border border-border rounded-md-s p-4 overflow-x-auto text-[11px] text-muted-foreground font-mono leading-relaxed">
 {`curl -X POST http://localhost:3000/api/subscribe \\
 -H "Content-Type: application/json" \\
@@ -237,7 +239,7 @@ export function ApiKeysTab() {
   "company": "Company Inc"
 }'`}
         </pre>
-      </div>
+      </SettingsBlock>
     </div>
   )
 }

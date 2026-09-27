@@ -11,6 +11,7 @@ import {
   testVerificationFn,
 } from '../../../server/functions'
 import { SenderHealthPanel } from './SenderHealthPanel'
+import { SettingsBlock } from './SettingsBlock'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -220,11 +221,10 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
       {section === 'source' && (
         <>
       {/* SocialFetch */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          SocialFetch
-        </h4>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+      <SettingsBlock
+        title="SocialFetch"
+        description={
+        <p>
           SocialFetch supplies the company and people data behind Prospect Search. Each search page costs 3 credits.{' '}
           <a
             href="https://www.socialfetch.dev"
@@ -235,6 +235,8 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
             Get an API key <ExternalLink className="w-3 h-3" />
           </a>
         </p>
+        }
+      >
 
         <div className="flex flex-col gap-1.5 max-w-xl">
           <label htmlFor="socialfetch-key" className="text-xs font-semibold text-foreground">
@@ -295,7 +297,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
             <span>{testResult.message}</span>
           </div>
         )}
-      </div>
+      </SettingsBlock>
 
         </>
       )}
@@ -303,14 +305,11 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
       {section === 'verification' && (
         <>
       {/* Verification provider */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Verification service
-        </h4>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-          Without verification, every email is an unverified best guess.
-        </p>
-        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-2 gap-2 max-w-2xl">
+      <SettingsBlock
+        title="Verification service"
+        description={<p>Without verification, every email is an unverified best guess.</p>}
+      >
+        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {(
             [
               ['none', 'Off', 'Best guesses only'],
@@ -337,7 +336,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
             </label>
           ))}
         </div>
-        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer max-w-2xl">
+        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer">
           <input
             type="checkbox"
             className="mt-0.5 rounded border-border text-accent focus:ring-accent"
@@ -357,17 +356,15 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
         {settings?.verification.active && settings.verification.active !== provider && (
           <p className="text-xs text-accent">Currently using Reacher. Save to switch.</p>
         )}
-
-      </div>
+      </SettingsBlock>
 
       {provider === 'reacher' && (
         <>
         {/* Reacher */}
-        <div className="flex flex-col gap-3">
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-            Reacher (self-hosted)
-          </h4>
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+        <SettingsBlock
+          title="Reacher (self-hosted)"
+          description={
+          <p>
             Point this at a self-hosted{' '}
             <a
               href="https://github.com/reacherhq/check-if-email-exists"
@@ -379,7 +376,9 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
             </a>{' '}
             server (<code className="font-mono">bun run reacher:up</code>). Checks come from its IP, or the proxies below.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+          }
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Reacher URL</label>
               <input
@@ -427,24 +426,26 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
               <span className="text-xs text-muted-foreground">Should match the reverse DNS of the IP that verifies.</span>
             </div>
           </div>
-        </div>
+        </SettingsBlock>
 
         {/* Proxies */}
-        <div className="flex flex-col gap-3">
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-            Verification proxies (optional)
-          </h4>
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+        <SettingsBlock
+          stacked
+          title="Verification proxies (optional)"
+          description={
+          <p>
             SOCKS5 proxies on servers with outbound port 25 open. Checks rotate across them, with stricter limits for Gmail
             and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With none, Reacher connects
             directly from its own IP. Setup guide: <code className="font-mono">docs/proxies.md</code>.
           </p>
+          }
+        >
           {settings?.proxies.source === 'env' && !proxiesDirty && (
             <p className="text-xs text-accent">Loaded from REACHER_PROXIES. Editing and saving here stores them in Settings instead.</p>
           )}
 
           {proxies.length > 0 && (
-            <div className="flex flex-col gap-2 max-w-4xl">
+            <div className="flex flex-col gap-2">
               {proxies.map((p, i) => (
                 <div key={i} className="grid grid-cols-2 md:grid-cols-[1fr_1.4fr_0.6fr_1fr_1fr_auto] gap-2 items-center">
                   <input aria-label="Label" className={INPUT_CLASS} placeholder="Label (e.g. eu-1)" value={p.label} onChange={(e) => updateProxy(i, { label: e.target.value })} />
@@ -497,7 +498,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
           </div>
 
           {proxyHealth.length > 0 && (
-            <div className="max-w-3xl border border-border overflow-hidden">
+            <div className="border border-border overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-muted/40 text-muted-foreground">
                   <tr>
@@ -543,7 +544,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
               <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-t border-border">Counts since the app last started.</p>
             </div>
           )}
-        </div>
+        </SettingsBlock>
         </>
       )}
 
@@ -559,14 +560,15 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
       )}
 
       {/* Test */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Test verification
-        </h4>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+      <SettingsBlock
+        title="Test verification"
+        description={
+        <p>
           Checks a made-up address at Gmail and at Microsoft 365 through Reacher, directly or via each proxy. No real
           mailbox is contacted. Save your changes first.
         </p>
+        }
+      >
         <div>
           <button
             type="button"
@@ -585,7 +587,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
           </p>
         )}
         {verification?.configured && (
-          <div className="max-w-3xl border border-border divide-y divide-border">
+          <div className="border border-border divide-y divide-border">
             {verification.results.map((r, i) => (
               <div key={i} className="px-3 py-2 flex items-start gap-2 text-xs">
                 {r.ok ? (
@@ -602,7 +604,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
             ))}
           </div>
         )}
-      </div>
+      </SettingsBlock>
 
         </>
       )}

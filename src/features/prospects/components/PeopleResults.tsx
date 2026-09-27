@@ -36,6 +36,8 @@ interface Props {
   /** Their company accepts every address, so no email there can be verified. */
   isCatchAll: (person: PersonResult) => boolean
   verifiedOnly: boolean
+  /** Run by the host: verification outcomes are kept short, without the mail server's detail. */
+  brief?: boolean
 }
 
 /** "Use a different domain" for a company whose LinkedIn website is wrong. */
@@ -116,6 +118,9 @@ function FixDomain({
   )
 }
 
+/** What a hosted copy says when an address couldn't be verified, whatever the mail server's reason. */
+const UNABLE = 'Unable to verify email.'
+
 /** Reveal button, then the email and its verification status. */
 function EmailCell({
   person,
@@ -124,6 +129,7 @@ function EmailCell({
   onFixDomain,
   catchAll,
   verifiedOnly,
+  brief,
 }: {
   person: PersonResult
   state?: RevealState
@@ -131,6 +137,7 @@ function EmailCell({
   onFixDomain: Props['onFixDomain']
   catchAll: boolean
   verifiedOnly: boolean
+  brief: boolean
 }) {
   if (state?.status === 'loading') {
     return (
@@ -154,7 +161,7 @@ function EmailCell({
           </button>
         </span>
         <EmailStatusBadge status={state.emailStatus} />
-        {state.note && <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">{state.note}</span>}
+        {state.note && !brief && <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">{state.note}</span>}
       </div>
     )
   }
@@ -163,7 +170,9 @@ function EmailCell({
   if (state && state.status !== 'error') {
     return (
       <div className="flex flex-col items-start gap-1">
-        <span className="text-[11px] text-muted-foreground leading-snug block max-w-[14rem]">{state.message}</span>
+        <span className="text-[11px] text-muted-foreground leading-snug block max-w-[14rem]">
+          {brief && (state.status === 'not_found' || state.status === 'unconfirmed') ? UNABLE : state.message}
+        </span>
         {state.canFixDomain && (
           <FixDomain person={person} suggestion={'suggestedDomain' in state ? state.suggestedDomain : undefined} onFixDomain={onFixDomain} />
         )}
@@ -197,6 +206,7 @@ function EmailCell({
   // emails are handed over. (With verified-only off, Reveal still gives the
   // best guess, marked as catch-all.)
   if (catchAll && verifiedOnly) {
+    if (brief) return <span className="text-[11px] text-muted-foreground leading-snug">{UNABLE}</span>
     return (
       <div className="flex flex-col items-start gap-1">
         <EmailStatusBadge status="catch_all_likely" />
@@ -248,6 +258,7 @@ export function PeopleResults({
   onFixDomain,
   isCatchAll,
   verifiedOnly,
+  brief = false,
 }: Props) {
   const allSelected = people.length > 0 && people.every((p) => selected.has(p.profileUrl))
 
@@ -276,6 +287,7 @@ export function PeopleResults({
                   onReveal={onReveal}
                   onFixDomain={onFixDomain}
                   catchAll={isCatchAll(p)}
+                  brief={brief}
                   verifiedOnly={verifiedOnly}
                 /></div>
             </div>
@@ -338,6 +350,7 @@ export function PeopleResults({
                   onReveal={onReveal}
                   onFixDomain={onFixDomain}
                   catchAll={isCatchAll(p)}
+                  brief={brief}
                   verifiedOnly={verifiedOnly}
                 />
               </td>

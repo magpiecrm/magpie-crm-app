@@ -7,6 +7,7 @@ import {
   testAnthropicKeyFn,
   testOpenAIKeyFn,
 } from '../../../server/functions'
+import { SettingsBlock } from './SettingsBlock'
 
 type Masked = Awaited<ReturnType<typeof getCopilotSettingsFn>>
 type KeyField = 'anthropicApiKey' | 'openaiApiKey'
@@ -82,6 +83,17 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
   }
 
   return (
+    <SettingsBlock
+      title={spec.title}
+      description={
+        <p>
+          {spec.intro}{' '}
+          <a href={spec.link.href} target="_blank" rel="noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5">
+            {spec.link.label} <ExternalLink className="w-3 h-3" />
+          </a>
+        </p>
+      }
+    >
     <form
       onSubmit={(e) => {
         e.preventDefault()
@@ -89,15 +101,6 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
       }}
       className="flex flex-col gap-3"
     >
-      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-        {spec.title}
-      </h4>
-      <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
-        {spec.intro}{' '}
-        <a href={spec.link.href} target="_blank" rel="noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5">
-          {spec.link.label} <ExternalLink className="w-3 h-3" />
-        </a>
-      </p>
 
       <div className="flex flex-col gap-1.5 max-w-xl">
         <label htmlFor={spec.field} className="text-xs font-semibold text-foreground">
@@ -168,6 +171,7 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
         </div>
       )}
     </form>
+    </SettingsBlock>
   )
 }
 
@@ -204,17 +208,17 @@ export function CopilotTab() {
         <KeySection key={spec.field} spec={spec} settings={settings} onSaved={setSettings} />
       ))}
 
-      <div className="flex flex-col gap-2">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Why an API key
-        </h4>
-        <p className="text-[11px] text-muted-foreground leading-relaxed max-w-2xl">
+      <SettingsBlock
+        title="Why an API key"
+        description={
+        <p>
           Claude.ai and ChatGPT subscriptions are for one person's own use and can't be shared between an app's
           users, and Anthropic's terms don't allow apps to offer Claude.ai sign-in at all. An API key can be used by
           everyone in your team's copy of this app, billed to its owner. The chat's contents (including contact data
           the copilot reads) go to the provider you pick, so list it as a sub-processor in your privacy notice.
         </p>
-      </div>
+        }
+      />
     </div>
   )
 }

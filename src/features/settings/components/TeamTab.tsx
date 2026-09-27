@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle, Check, Mail, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { checkAuthFn, createUserFn, deleteUserFn, getUsersFn, signInOptionsFn } from '../../../server/functions'
 import { ChangePasswordForm } from './ChangePasswordForm'
+import { SettingsBlock } from './SettingsBlock'
 
 /** Settings → Team and login: who can sign in, and your own password. */
 export function TeamTab() {
@@ -112,8 +113,7 @@ export function TeamTab() {
       )}
 
       {/* Users List */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">Current Users</h4>
+      <SettingsBlock title="Current users">
         {isLoadingUsers ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
             <RefreshCw className="w-5 h-5 animate-spin text-accent" />
@@ -168,7 +168,7 @@ export function TeamTab() {
             })}
           </div>
         )}
-      </div>
+      </SettingsBlock>
 
       {!passwordLogin ? (
         <p className="text-sm text-muted-foreground p-4 bg-muted/20 border border-border/80 rounded-md-s">
@@ -179,8 +179,8 @@ export function TeamTab() {
       <ChangePasswordForm />
 
       {/* Add New User */}
-      <form onSubmit={handleAddUser} className="flex flex-col gap-3 p-5 bg-muted/20 border border-border/80 rounded-md-s">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Add New User</h4>
+      <SettingsBlock title="Add new user">
+      <form onSubmit={handleAddUser} className="flex flex-col gap-3">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-foreground">User Email Address</label>
@@ -219,6 +219,7 @@ export function TeamTab() {
           )}
         </button>
       </form>
+      </SettingsBlock>
       </>
       )}
     </div>

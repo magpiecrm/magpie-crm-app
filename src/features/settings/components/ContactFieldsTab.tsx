@@ -72,7 +72,7 @@ export function ContactFieldsTab() {
   })
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
       <div className="card border border-border rounded-md-m p-6 flex flex-col gap-4">
         <div>
           <h2 className="text-lg font-medium text-foreground">Add a contact field</h2>

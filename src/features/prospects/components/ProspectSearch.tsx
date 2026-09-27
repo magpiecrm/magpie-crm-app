@@ -352,6 +352,8 @@ export function ProspectSearch() {
   // email, so while verified-only is on they're hidden (with a count and a
   // way to show them). Shares the sidebar's status query.
   const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  // Run by the host: credits are the host's business, and verification outcomes stay short.
+  const hosted = Boolean(status?.managed)
   const verifiedOnly = status?.verification?.verifiedOnly ?? true
   const [showCatchAll, setShowCatchAll] = useState(false)
   useEffect(() => setShowCatchAll(false), [peopleSearch])
@@ -484,8 +486,8 @@ export function ProspectSearch() {
             <DomainCell company={peopleForm.company} onDomainSet={applyDomain} />
             {peopleForm.company.catchAll && verifiedOnly && (
               <p className="text-[10px] leading-snug text-amber-700 dark:text-amber-400">
-                {peopleForm.company.name} accepts every address, so emails there can't be verified. Searching still costs
-                credits.
+                {peopleForm.company.name} accepts every address, so emails there can't be verified.
+                {!hosted && ' Searching still costs credits.'}
               </p>
             )}
             {!peopleForm.company.domain && (
@@ -495,7 +497,7 @@ export function ProspectSearch() {
                 onClick={() => lookupDomain.mutate(peopleForm.company!.ref)}
                 className="block text-[10px] text-muted-foreground hover:text-foreground underline"
               >
-                {lookupDomain.isPending ? 'Looking up…' : 'Or look it up on the company page (1–9 credits)'}
+                {lookupDomain.isPending ? 'Looking up…' : hosted ? 'Or look it up on the company page' : 'Or look it up on the company page (1–9 credits)'}
               </button>
             )}
             {lookupDomain.isSuccess && !lookupDomain.data.domain && lookupDomain.data.ref === peopleForm.company.ref && (
@@ -503,13 +505,13 @@ export function ProspectSearch() {
             )}
           </div>
         ) : (
-          <CompanyPicker onPick={(c) => setPeopleForm({ ...peopleForm, company: { ref: c.ref, name: c.name, domain: c.domain, catchAll: c.catchAll } })} />
+          <CompanyPicker hosted={hosted} onPick={(c) => setPeopleForm({ ...peopleForm, company: { ref: c.ref, name: c.name, domain: c.domain, catchAll: c.catchAll } })} />
         )}
       </div>
 
       <FilterAccordion label="Job titles" icon={<Briefcase className="w-4 h-4" />} isOpen={!!expanded.titles} onToggle={() => toggleSection('titles')} badgeCount={peopleForm.titles.length}>
         <TagInput label="Job titles" tags={peopleForm.titles} placeholder="e.g. Head of Marketing" onChange={(titles) => setPeopleForm({ ...peopleForm, titles })} suggestions={JOB_TITLES} />
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Up to 5. Each title is a separate search (3 credits per page).</p>
+        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">{hosted ? 'Up to 5.' : 'Up to 5. Each title is a separate search (3 credits per page).'}</p>
       </FilterAccordion>
 
       <FilterAccordion label="Seniority" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} badgeCount={peopleForm.seniorities.length}>
@@ -602,7 +604,7 @@ export function ProspectSearch() {
           </select>
         </div>
       )}
-      {mode === 'people' && (
+      {mode === 'people' && !hosted && (
         <p className="text-[10px] text-muted-foreground leading-snug">
           About <span className="font-semibold text-foreground">{creditsPerPage(peopleForm)} credits</span> per page: 3 for the
           search plus 3 per result, since each profile is checked for their current job and company. If some results are
@@ -613,7 +615,7 @@ export function ProspectSearch() {
         <div role="alert" className="border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-300">
           <p>
             <span className="font-semibold">{peopleForm.company.name}</span> accepts every address, so no email you find there
-            can be verified. This search would still use up to {creditsPerPage(peopleForm)} credits.
+            can be verified.{!hosted && ` This search would still use up to ${creditsPerPage(peopleForm)} credits.`}
           </p>
           <div className="flex gap-3">
             <button
@@ -795,6 +797,7 @@ export function ProspectSearch() {
               onFixDomain={fixDomain}
               isCatchAll={isCatchAll}
               verifiedOnly={verifiedOnly}
+              brief={hosted}
             />
           )}
 

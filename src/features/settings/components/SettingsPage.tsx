@@ -66,7 +66,7 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
 
   return (
     <div className="p-4 lg:p-8 flex flex-col gap-6">
-      <h1 className="text-2xl font-display text-foreground">Settings</h1>
+      <h1 className="lg:hidden text-2xl font-display text-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
         {/* Narrow screens: one dropdown instead of a menu column. */}
@@ -91,7 +91,10 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
           </select>
         </label>
 
-        <nav aria-label="Settings" className="hidden lg:flex flex-col gap-4 w-52 shrink-0">
+        {/* Wide screens: the title and menu stay where they start while the page scrolls. */}
+        <aside className="hidden lg:flex flex-col gap-6 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
+        <h1 className="text-2xl font-display text-foreground">Settings</h1>
+        <nav aria-label="Settings" className="flex flex-col gap-4">
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
               {group.name && (
@@ -119,8 +122,9 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
             </div>
           ))}
         </nav>
+        </aside>
 
-        <section className="flex-1 min-w-0 flex flex-col gap-6">
+        <section className="flex-1 min-w-0 max-w-6xl flex flex-col gap-6">
           <header className="flex flex-col gap-1 border-b border-border pb-4">
             <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>
             <p className="text-sm text-muted-foreground max-w-2xl">{current.intro}</p>

@@ -9,6 +9,7 @@ import {
 // and node:crypto into the client bundle.
 import type { ProviderDescriptor, ProviderField } from '../../../server/providers/types'
 import { ManagedSending } from './ManagedSending'
+import { SettingsBlock } from './SettingsBlock'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -240,10 +241,7 @@ export function EmailSendingTab() {
       )}
 
       {/* Provider picker */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Sending Provider
-        </h4>
+      <SettingsBlock title="Sending provider">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-foreground">Default provider</label>
           <select
@@ -290,25 +288,19 @@ export function EmailSendingTab() {
             land in spam.
           </span>
         </div>
-      </div>
+      </SettingsBlock>
 
       {/* Credentials, rendered from the provider descriptor */}
       {descriptor && descriptor.fields.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-            {descriptor.label} Credentials
-          </h4>
+        <SettingsBlock title={`${descriptor.label} credentials`}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {descriptor.fields.map(renderField)}
           </div>
-        </div>
+        </SettingsBlock>
       )}
 
       {/* Sender identity */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Default Sender
-        </h4>
+      <SettingsBlock title="Default sender">
         <div className="flex flex-col gap-1.5">
           <input
             type="text"
@@ -322,7 +314,7 @@ export function EmailSendingTab() {
             on the Sender addresses page.
           </span>
         </div>
-      </div>
+      </SettingsBlock>
 
       {error && (
         <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive">
@@ -348,10 +340,7 @@ export function EmailSendingTab() {
       </div>
 
       {/* Test send — the fastest way to find out a domain is unverified */}
-      <div className="flex flex-col gap-3">
-        <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border/60 pb-1">
-          Send a test email
-        </h4>
+      <SettingsBlock title="Send a test email">
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <input
             type="email"
@@ -384,7 +373,7 @@ export function EmailSendingTab() {
             {testResult.message}
           </div>
         )}
-      </div>
+      </SettingsBlock>
 
       {/* Bounce webhook hint */}
       {descriptor && descriptor.id !== 'cloudflare' && descriptor.id !== 'smtp' && (

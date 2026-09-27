@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { AlertCircle, Check, KeyRound, RefreshCw } from 'lucide-react'
 import { changePasswordFn } from '../../../server/functions'
+import { SettingsBlock } from './SettingsBlock'
 
 const inputClass =
   'bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50'
@@ -39,8 +40,8 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-3 p-5 bg-muted/20 border border-border/80 rounded-md-s">
-      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Change Your Password</h4>
+    <SettingsBlock title="Change your password">
+    <form onSubmit={submit} className="flex flex-col gap-3">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="current-password" className="text-xs font-semibold text-foreground">Current password</label>
@@ -75,5 +76,6 @@ export function ChangePasswordForm() {
         <span>Change Password</span>
       </button>
     </form>
+    </SettingsBlock>
   )
 }
