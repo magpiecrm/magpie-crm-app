@@ -11,12 +11,17 @@
 //   4. A `safe` result on a non-catch-all domain teaches the domain its
 //      pattern. Only the pattern is stored, never the name or address.
 //
+// Without a learned pattern, addresses this copy already has at the company
+// (patternEvidence.ts) pick which format goes first, and say how likely an
+// unconfirmed guess is.
+//
 // Without a verifier configured, steps 2-4 are skipped and the top candidate
 // is returned as `unverified`.
 
 import crypto from 'crypto'
 import type { EmailDomainRecord } from '../db'
-import { firstLastLikelihood } from './formatStats'
+import { firstLastLikelihood, formatPrior } from './formatStats'
+import { weighFormats, type KnownAddress } from './patternEvidence'
 import { generateCandidates, type Candidate } from './patterns'
 import {
   familyFromMx,
@@ -55,6 +60,12 @@ const INCONCLUSIVE_RECHECK_MS = DAY
 const MX_REFRESH_MS = 30 * DAY
 /** A pattern at or above this confidence is tried first, on its own. */
 const TRUSTED_CONFIDENCE = 0.8
+/**
+ * A format backed by addresses already at the company goes first at or above
+ * this: one first.last (0.74) or flast (0.63) match does, a lone first-name
+ * address (a founder's, often) doesn't.
+ */
+const EVIDENCE_FIRST = 0.6
 /**
  * The verification server opens a fresh SMTP session per check, so the practical cap on RCPT
  * TO probes against one domain is checks per person, plus the per-provider
@@ -143,6 +154,8 @@ export interface FinderDeps {
   now(): number
   /** Another domain that might be the real mail domain, for a suggestion. */
   suggestMailDomain?(domain: string): Promise<string | null>
+  /** Addresses this copy already has at `domain`, as evidence of its format. */
+  knownAddresses?(domain: string): KnownAddress[]
 }
 
 export interface FindResult {
@@ -152,6 +165,11 @@ export interface FindResult {
   outcome: LookupOutcome
   /** At least one check was greylisted; worth retrying later for a better answer. */
   greylisted: boolean
+  /**
+   * For an unconfirmed guess (`catch_all_likely`, `unverified`): the chance,
+   * 0-1, that it's right, from what's known about the company's format.
+   */
+  confidence?: number
   /** Why the answer isn't a verified address, in words the user can act on. */
   detail?: string
   /**
@@ -384,20 +402,29 @@ export async function findEmail(
   }
 
   const known = trustedPattern(rec, deps.now())
+  const evidence = known ? null : weighFormats(deps.knownAddresses?.(domain) ?? [], opts.headcount)
   const candidates: Candidate[] = generateCandidates(person.firstName, person.lastName, domain, {
-    knownPattern: known,
+    knownPattern: known ?? (evidence && evidence.confidence >= EVIDENCE_FIRST ? evidence.pattern : null),
     max: MAX_CHECKS_PER_PERSON,
   })
   if (candidates.length === 0) {
     return { email: null, status: 'not_found', outcome: 'badName', greylisted: false, detail: "Their name can't be turned into an email address." }
   }
 
-  // How much to trust an unconfirmed best guess, in words.
-  const likelihood = known
+  // How much to trust an unconfirmed best guess, as a number and in words.
+  const top = candidates[0].pattern
+  const confidence = known && top === known
+    ? rec.pattern_confidence
+    : evidence && top === evidence.pattern
+      ? evidence.confidence
+      : formatPrior(top, opts.headcount)
+  const likelihood = known && top === known
     ? 'It matches the format already confirmed for others at this company.'
-    : candidates[0].pattern === '{first}.{last}'
-      ? firstLastLikelihood(opts.headcount)
-      : 'This is the most likely format.'
+    : evidence && top === evidence.pattern
+      ? `${evidence.agree} ${evidence.agree === 1 ? 'address you already have' : 'addresses you already have'} at ${domain} ${evidence.agree === 1 ? 'uses' : 'use'} this format.`
+      : top === '{first}.{last}'
+        ? firstLastLikelihood(opts.headcount)
+        : 'This is the most likely format.'
   const gateway = GATEWAY_NAMES[rec.mx_family ?? 'other']
   const catchAllReason = gateway
     ? `${domain}'s mail is filtered by ${gateway}, which accepts every address, so none can be confirmed.`
@@ -407,6 +434,7 @@ export async function findEmail(
     status: 'catch_all_likely',
     outcome: 'catchAll',
     greylisted: false,
+    confidence,
     reason: catchAllReason,
     detail: `${catchAllReason} ${likelihood}`,
   }
@@ -417,6 +445,7 @@ export async function findEmail(
       status: 'unverified',
       outcome: 'unchecked',
       greylisted: false,
+      confidence,
       reason: 'Email verification is off, so no address could be confirmed.',
       detail: `Not checked: email verification is off. ${likelihood}`,
     }
@@ -514,6 +543,7 @@ export async function findEmail(
       status: 'unverified',
       outcome: greylisted ? 'greylisted' : blockedUs ? 'blocked' : refusedUs ? 'refused' : 'noAnswer',
       greylisted,
+      confidence,
       reason,
       detail: greylisted
         ? `${domain}'s mail server asked us to try again later. ${likelihood}`

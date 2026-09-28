@@ -196,6 +196,38 @@ describe('findEmail', () => {
     expect(domains.get('acme.com')!.mx_family).toBe('mimecast')
   })
 
+  it('guesses the format addresses already at a catch-all company use, and says how sure it is', async () => {
+    const { deps } = setup({ probe: 'safe' })
+    deps.knownAddresses = () => [
+      { email: 'bjones@acme.com', firstName: 'Bob', lastName: 'Jones', kind: 'known' },
+      { email: 'alee@acme.com', firstName: 'Ann', lastName: 'Lee', kind: 'engaged' },
+    ]
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result).toMatchObject({ email: 'jsmith@acme.com', status: 'catch_all_likely' })
+    expect(result.confidence).toBeCloseTo((2 + 0.268) / 3, 3)
+    expect(result.detail).toMatch(/2 addresses you already have at acme\.com use this format\./)
+  })
+
+  it('gives a size-based confidence for a guess with nothing known about the company', async () => {
+    const { deps } = setup({ probe: 'safe' })
+    const result = await findEmail(jane, 'acme.com', deps, { headcount: 20000 })
+    expect(result.confidence).toBeCloseTo(0.742, 3)
+  })
+
+  it('checks the format already seen at a company first, saving checks', async () => {
+    const { deps, candidateChecks } = setup({ mailbox: { 'jsmith@acme.com': 'safe' } })
+    deps.knownAddresses = () => [{ email: 'bjones@acme.com', firstName: 'Bob', lastName: 'Jones', kind: 'known' }]
+    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('verified')
+    expect(candidateChecks()).toEqual(['jsmith@acme.com'])
+  })
+
+  it("doesn't reorder on a lone first-name address, often a founder's", async () => {
+    const { deps, candidateChecks } = setup({ mailbox: { 'jane.smith@acme.com': 'safe' } })
+    deps.knownAddresses = () => [{ email: 'bob@acme.com', firstName: 'Bob', lastName: 'Jones', kind: 'known' }]
+    await findEmail(jane, 'acme.com', deps)
+    expect(candidateChecks()[0]).toBe('jane.smith@acme.com')
+  })
+
   it('probes catch-all once per domain even for concurrent lookups', async () => {
     const { deps, checked } = setup({ mailbox: { 'jane.smith@acme.com': 'safe', 'bob.jones@acme.com': 'safe' } })
     await Promise.all([findEmail(jane, 'acme.com', deps), findEmail({ firstName: 'Bob', lastName: 'Jones' }, 'acme.com', deps)])

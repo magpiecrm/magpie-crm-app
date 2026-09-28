@@ -92,5 +92,6 @@ export async function getFinderDeps(opts: { background?: boolean } = {}): Promis
         : null,
     now: () => Date.now(),
     suggestMailDomain: (domain) => suggestMailDomain(domain, { resolveSoaContact, resolveMx }),
+    knownAddresses: (domain) => db.knownAddressesAt(domain),
   }
 }

@@ -11,6 +11,7 @@ import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/c
 import type { EmailStatus, NoticeStatus } from './prospecting/types'
 import type { MailFamily, MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
+import type { KnownAddress } from './prospecting/patternEvidence'
 import type { UsageCounter } from './usage'
 import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
@@ -550,6 +551,34 @@ class JsonDb {
     Object.assign(record, patch, { last_used_at: new Date().toISOString() })
     this.save()
     return record
+  }
+
+  /**
+   * Addresses already held at `domain`, as evidence of its format
+   * (patternEvidence.ts): contacts not from prospecting, or prospected and
+   * verified, are `known`; an unconfirmed prospected address counts once it
+   * was clicked (`engaged`) or hard-bounced (`bounced`), and not otherwise.
+   * Read at lookup time and never copied anywhere.
+   */
+  knownAddressesAt(domain: string): KnownAddress[] {
+    const suffix = `@${domain.toLowerCase()}`
+    const contacts = this.data.contacts.filter((c) => c.email.endsWith(suffix) && c.first_name && c.last_name)
+    if (contacts.length === 0) return []
+    const emails = new Set(contacts.map((c) => c.email))
+    const bounced = new Set<string>()
+    const clicked = new Set<string>()
+    for (const r of this.data.campaign_recipients) {
+      if (!emails.has(r.contact_email)) continue
+      if (r.status === 'bounced_hard') bounced.add(r.contact_email)
+      else if (r.clicked_at) clicked.add(r.contact_email)
+    }
+    return contacts.flatMap((c): KnownAddress[] => {
+      const address = { email: c.email, firstName: c.first_name, lastName: c.last_name }
+      const unconfirmed = !!c.source && c.email_status !== 'verified'
+      if (!unconfirmed) return [{ ...address, kind: 'known' }]
+      if (bounced.has(c.email)) return [{ ...address, kind: 'bounced' }]
+      return clicked.has(c.email) ? [{ ...address, kind: 'engaged' }] : []
+    })
   }
 
   // --- Prospecting: suppression and disclosure log (hashes only) ---

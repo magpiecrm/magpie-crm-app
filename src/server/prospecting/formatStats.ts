@@ -21,3 +21,32 @@ export function firstLastLikelihood(headcount: number | null | undefined): strin
   const [, share, label] = FIRST_LAST_BY_SIZE.find(([max]) => headcount <= max)!
   return `About ${Math.round(share)}% of people at companies of ${label} use this format.`
 }
+
+/**
+ * Share of work emails in each format, same study (patterns.ts ranks by it).
+ * Formats it doesn't list count as rare.
+ */
+const FORMAT_SHARE: Record<string, number> = {
+  '{first}.{last}': 47.7,
+  '{f}{last}': 26.8,
+  '{first}': 8.1,
+  '{first}{last}': 2.3,
+  '{first}_{last}': 2.3,
+  '{f}.{last}': 2.1,
+  '{last}': 1.2,
+  '{last}.{first}': 0.65,
+  '{first}.{l}': 0.13,
+  '{first}-{last}': 0.1,
+}
+const RARE_FORMAT_SHARE = 0.05
+
+/**
+ * How likely a format is before anything is known about the company, 0-1.
+ * first.last is scaled by company size, the others by the overall study.
+ */
+export function formatPrior(pattern: string, headcount?: number | null): number {
+  if (pattern === '{first}.{last}' && headcount && headcount >= 1) {
+    return FIRST_LAST_BY_SIZE.find(([max]) => headcount <= max)![1] / 100
+  }
+  return (FORMAT_SHARE[pattern] ?? RARE_FORMAT_SHARE) / 100
+}
