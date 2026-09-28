@@ -2,6 +2,7 @@ import { db } from './db'
 import { sendMail } from './nodemailer'
 import { pollBounces } from './bouncePoller'
 import { notify } from './notify'
+import { sendCampaign } from './emailService'
 
 // Use globalThis so the flag and interval survive Vite HMR module disposal.
 // Without this, every file save in dev kills the setInterval and emails stop sending.
@@ -16,7 +17,6 @@ export async function sendDueCampaigns(now = new Date()) {
   if (g.__campaignRunBusy) return
   g.__campaignRunBusy = true
   try {
-    const { sendCampaign } = await import('./emailService')
     for (const id of db.dueScheduledCampaigns(now)) {
       const name = db.data.campaigns.find((c) => c.id === id)?.name ?? `#${id}`
       try {
@@ -41,7 +41,6 @@ export async function sendDueCampaigns(now = new Date()) {
 
 /** Finishes campaigns the server stopped in the middle of sending; everyone they reached is skipped. */
 async function resumeInterruptedSends() {
-  const { sendCampaign } = await import('./emailService')
   for (const id of db.campaignsLeftSending()) {
     try {
       await sendCampaign(id, { resume: true })
