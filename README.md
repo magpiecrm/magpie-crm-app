@@ -89,7 +89,12 @@ USAGE_API_TOKEN=...      # optional — turns on GET /api/usage (monthly usage
                          # between its copies)
 PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
                          # verification: hides those settings (implies
-                         # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off)
+                         # SOCIALFETCH_BALANCE=hidden, VERIFICATION_HEALTH_CHECKS=off).
+                         # The copy also reads the host's rules for addresses
+                         # that can't be verified (GET {REACHER_URL}/v1/prospecting,
+                         # see prospecting/hostRules.ts), shares company email
+                         # formats as counts (POST /v1/formats, sharedFormats.ts),
+                         # and hands over Format confirmed addresses by default
 VERIFICATION_HEALTH_CHECKS=off  # optional — skip blocklist/DNS checks of the
                          # verifying IPs, when someone else runs verification
 SIGN_IN_LINK_SECRET=...  # optional — shared with a hosting portal: turns on
