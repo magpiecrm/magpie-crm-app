@@ -137,7 +137,7 @@ export const prospectTools = [
       companySizes: z
         .array(z.enum(HEADCOUNT_BUCKETS))
         .optional()
-        .describe("Company sizes by headcount. Each person's employer is looked up and people at other sizes are left out."),
+        .describe('Company sizes by headcount. Companies of these sizes are found first, then people there, so this needs `industries` or `keyword` too (to find the companies by).'),
       includeContacts: z
         .boolean()
         .optional()

@@ -430,16 +430,6 @@ describe('searchPeople in a workspace run by its host', () => {
   })
 })
 
-describe('searchPeople by company size', () => {
-  it("keeps people whose employer is one of the sizes, from the company cache, and leaves out the rest", async () => {
-    searchPage = pageOf(hit('ana'), hit('ben'), hit('cat'))
-    const res = await searchPeople({ titles: ['Business Analyst'], companySizes: ['11-50'] })
-    // Ben's Acme has 30 staff; Barclays is far bigger; Cat's employer has no company page to size.
-    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
-    expect(res.warnings).toContain("2 people's employers aren't one of the chosen sizes, or couldn't be sized, and were left out.")
-  })
-})
-
 describe('searchPeople carries on where the last search stopped', () => {
   const cursorArg = () => (searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { cursor?: string }
 
@@ -486,5 +476,79 @@ describe('searchPeople carries on where the last search stopped', () => {
     const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(searchPeopleMock.mock.calls.length).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe('searchPeople stops early when its filters throw away nearly everyone paid for', () => {
+  it('stops after the first page when most people turn out to work elsewhere, and says why', async () => {
+    // Twelve people found at Initech whose profiles all say they're at Acme now.
+    for (let i = 0; i < 12; i++) profiles[`p${i}`] = profiles.ben
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation(async () => ({
+      ...pageOf(...Array.from({ length: 12 }, (_, i) => hit(`p${i}`))),
+      nextCursor: 'more',
+    }))
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '999', name: 'Initech' } })
+    expect(searchPeopleMock).toHaveBeenCalledTimes(1)
+    expect(res.items).toEqual([])
+    expect(res.warnings).toContain(
+      'Working somewhere other than Initech left out 12 of the 12 people whose profiles were checked, so no more pages were searched, to save credits. Try other job titles. Load more carries on if you want to keep looking.',
+    )
+    expect(res.nextCursor).toBe('more')
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+  })
+
+  it('keeps topping up when enough of the people paid for are kept', async () => {
+    for (let i = 0; i < 12; i++) profiles[`p${i}`] = profiles.ben
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation(async () => ({ ...pageOf(...Array.from({ length: 12 }, (_, i) => hit(`p${i}`))), nextCursor: 'more' }))
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
+    expect(res.warnings.join(' ')).not.toContain('no more pages were searched')
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+  })
+})
+
+describe('searchPeople with a company size finds companies first', () => {
+  const org = (ref: string, name: string, country: string | null) => ({
+    ref, name, domain: `${name.toLowerCase()}.example`, industry: 'Banking', headcount: 30, companyType: null, country, linkedinUrl: null, source: 'socialfetch',
+  })
+
+  it('needs an industry or keyword to find the companies', async () => {
+    await expect(searchPeople({ titles: ['Founder'], companySizes: ['11-50'] })).rejects.toThrow(
+      'Company size needs an industry or keyword, to find companies of that size first.',
+    )
+  })
+
+  it('searches companies of that size in the chosen industry, then people inside them, without sizing anyone', async () => {
+    searchCompaniesMock.mockClear()
+    searchPeopleMock.mockClear()
+    getPerson.mockClear()
+    // Barclays (ref 42) is in the UK; Globex isn't, so it isn't searched.
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('77', 'Globex', 'United States'), org('7', 'Acme', null)], nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf(hit('ana'), hit('cat'))
+    const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'], country: 'United Kingdom' })
+
+    expect((searchCompaniesMock.mock.calls[0] as unknown[])[0]).toMatchObject({ keyword: 'Banking', industry: 'Banking', headcount: ['11-50'], country: 'United Kingdom' })
+    const asked = (searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as Record<string, unknown>
+    expect(asked).toMatchObject({ titles: ['Founder'], companyRefs: ['42', '7'], country: 'United Kingdom' })
+    // The company's industry and keyword found the companies; they don't narrow the people.
+    expect(asked.industries).toBeUndefined()
+    expect(asked.keyword).toBeUndefined()
+    // Ana works at Barclays (42), one of them. Cat's profile shows a company that isn't: left out.
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+    expect(res.nextCursor).toBeNull()
+  })
+
+  it('carries on with the next companies on Load more', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => org(String(1000 + i), `Co${i}`, 'United Kingdom'))
+    companyPage = { items: many, nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf()
+    searchPeopleMock.mockClear()
+    const first = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], keyword: 'fintech', country: 'United Kingdom', count: 25 })
+    expect(((searchPeopleMock.mock.calls[0] as unknown[])[1] as { companyRefs: string[] }).companyRefs).toHaveLength(20)
+    // The first twenty had nobody; the page tops up with the other five.
+    const refs = searchPeopleMock.mock.calls.map((c) => ((c as unknown[])[1] as { companyRefs: string[] }).companyRefs)
+    expect(refs[1]).toEqual(['1020', '1021', '1022', '1023', '1024'])
+    expect(first.nextCursor).toBeNull()
   })
 })

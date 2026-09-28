@@ -4,11 +4,11 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type HeadcountBucket, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
+import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
 import { isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { inHeadcountBuckets, meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -195,6 +195,15 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
  */
 const TOP_UPS = 3
 const MAX_TOP_UPS = 10
+/**
+ * After the first search, top-ups stop if fewer than this share of the people
+ * whose profiles were paid for made it onto the page: filters that throw away
+ * nearly everyone after the lookup (a narrow company size, say) would
+ * otherwise spend a page's worth of credits on nobody.
+ */
+const MIN_KEPT_SHARE = 0.2
+/** …judged once at least this many profiles have been paid for. */
+const MIN_LOOKUPS_TO_JUDGE = 10
 /** Most people SocialFetch returns for one people-search request. */
 const MAX_PER_REQUEST = 50
 const MAX_TITLES_SEARCHED = 5
@@ -209,27 +218,115 @@ interface Tally {
   failedError?: string
   noJob: number
   wrongCompany: number
-  wrongSize: number
   /** Left out before their profile lookup: remembered from a lookup that couldn't verify them. */
   remembered: number
 }
 
-type Source = PeopleSource & Partial<Pick<CompanySource, 'getCompany'>>
+type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies'>>
+
+/* ------------------------------------------------------------- companies first */
 
 /**
- * A person's employer's headcount: from the company cache, else its company
- * page when the page name is known (1 credit, then cached for everyone; the
- * 6-9 credit lookup by id isn't worth it for a filter). Null if unknown.
+ * With a company size chosen, a search finds companies of that size first
+ * (SocialFetch filters organizations by staff count itself) and then looks
+ * for people inside them, up to MAX_COMPANIES_PER_SEARCH companies a request.
+ * Everyone found works somewhere the right size, so no profile is paid for
+ * only to be thrown away, and no employer needs sizing. Organization search
+ * needs a keyword, hence an industry or keyword is required with a size.
  */
-async function companyHeadcount(p: PersonResult, source: Source, db: Db): Promise<number | null> {
-  if (!p.companyRef) return null
-  const cached = db.getProspectCompany(p.companyRef)
-  if (cached?.headcount != null) return cached.headcount
-  const slug = p.companySlug ?? cached?.slug
-  if (cached?.page_checked || !slug || !source.getCompany) return null
-  const { resolveCompanyDomain } = await import('./companies')
-  await resolveCompanyDomain(p.companyRef, p.company, { getCompany: source.getCompany }, db, slug).catch(() => null)
-  return db.getProspectCompany(p.companyRef)?.headcount ?? null
+export const SIZE_NEEDS_TERM = 'Company size needs an industry or keyword, to find companies of that size first.'
+
+/** Where a companies-first search has got to, carried in its page cursor. */
+interface CompanyFirstState {
+  /** Which company search (one per industry, or the keyword) is running, and its page. */
+  term: number
+  orgCursor?: string
+  /** Companies found and not yet searched for people. */
+  pending: Array<[ref: string, name: string]>
+  /** The companies being searched for people now, and that search's cursor. */
+  batch: Array<[ref: string, name: string]>
+  people?: string
+}
+
+const CF_PREFIX = 'cf1.'
+const encodeState = (s: CompanyFirstState) => CF_PREFIX + Buffer.from(JSON.stringify(s)).toString('base64url')
+function decodeState(cursor: string | undefined): CompanyFirstState {
+  if (cursor?.startsWith(CF_PREFIX)) {
+    try {
+      return JSON.parse(Buffer.from(cursor.slice(CF_PREFIX.length), 'base64url').toString('utf8'))
+    } catch {
+      // a broken cursor starts again from the top
+    }
+  }
+  return { term: 0, pending: [], batch: [] }
+}
+
+/** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
+function companyTerms(filters: PeopleFilters): Array<{ keyword: string; industry?: string }> {
+  const keyword = filters.keyword?.trim()
+  const industries = filters.industries ?? []
+  if (industries.length) return industries.map((industry) => ({ keyword: keyword || industry, industry }))
+  return keyword ? [{ keyword }] : []
+}
+
+/**
+ * The next page of people for a companies-first search: searches the next
+ * batch of companies, finding more companies when the batch runs out.
+ * Returns the page, the companies it covered, and how many company searches
+ * it ran.
+ */
+async function companyFirstPage(
+  source: Source,
+  db: Db,
+  filters: PeopleFilters,
+  cursor: string | undefined,
+  count: number,
+): Promise<{ page: Page<PersonResult>; companies: Map<string, string>; orgSearches: number; found: number }> {
+  const { canonicalCountry } = await import('./geo')
+  const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
+  const terms = companyTerms(filters)
+  const wantCountry = canonicalCountry(filters.country)
+  let s = decodeState(cursor)
+  let orgSearches = 0
+  let found = 0
+  // A few company pages at most, in case pages come back with none that fit.
+  for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
+    if (s.pending.length) {
+      s = { ...s, batch: s.pending.slice(0, MAX_COMPANIES_PER_SEARCH), pending: s.pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
+      break
+    }
+    const term = terms[s.term]
+    if (!term || !source.searchCompanies) break
+    const res = await source.searchCompanies({ keyword: term.keyword, industry: term.industry, headcount: filters.companySizes, country: filters.country, cursor: s.orgCursor })
+    orgSearches++
+    // Companies are non-personal, so they're cached for everyone (domains for reveals).
+    db.upsertProspectCompanies(
+      res.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount, slug: slugFromCompanyUrl(c.linkedinUrl) })),
+    )
+    // SocialFetch barely narrows companies by country, so their head office is checked here.
+    const fits = res.items.filter((c) => /^\d+$/.test(c.ref) && (!wantCountry || !c.country || canonicalCountry(c.country) === wantCountry))
+    found += fits.length
+    s = {
+      ...s,
+      pending: fits.map((c) => [c.ref, c.name] as [string, string]),
+      orgCursor: res.nextCursor ?? undefined,
+      term: res.nextCursor ? s.term : s.term + 1,
+    }
+  }
+  const companies = new Map(s.batch)
+  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [] }, companies, orgSearches, found }
+
+  const page = await source.searchPeople(null, {
+    titles: filters.titles,
+    seniorities: filters.seniorities,
+    country: filters.country,
+    companyRefs: s.batch.map(([ref]) => ref),
+    count,
+    cursor: s.people,
+  })
+  const next: CompanyFirstState = page.nextCursor ? { ...s, people: page.nextCursor } : { ...s, batch: [], people: undefined }
+  const more = next.batch.length > 0 || next.pending.length > 0 || next.orgCursor !== undefined || next.term < terms.length
+  return { page: { ...page, reportedTotal: null, nextCursor: more ? encodeState(next) : null }, companies, orgSearches, found }
 }
 
 /**
@@ -245,10 +342,11 @@ async function processBatch(
   source: Source,
   db: Db,
   tally: Tally,
-  sizes?: HeadcountBucket[],
   hideUnverifiable = false,
   includeContacts = false,
-): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string }> {
+  /** Companies-first: the companies this page searched inside (ref → name). */
+  companySet?: Map<string, string>,
+): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: number }> {
   let items = people
   for (const person of items) {
     person.companyDomain ??= person.companyRef ? db.getProspectCompany(person.companyRef)?.domain ?? null : null
@@ -332,21 +430,14 @@ async function processBatch(
     )
     tally.wrongCompany += items.length - atCompany.length
     items = atCompany
-  }
-
-  // With a company-size filter, each employer's size: from the company cache,
-  // else its company page (1 credit, then cached). People at other sizes, or
-  // whose employer's size can't be found, are left out.
-  if (sizes?.length) {
-    const refs = [...new Map(items.filter((p) => p.companyRef).map((p) => [p.companyRef!, p])).values()]
-    const sizes_ = await mapLimit(refs, ENRICH_CONCURRENCY, async (p) => [p.companyRef!, await companyHeadcount(p, source, db)] as const)
-    const sizeOf = new Map<string, number | null>(sizes_)
-    const fits = items.filter((p) => {
-      const size = p.companyRef ? sizeOf.get(p.companyRef) ?? null : null
-      return size !== null && inHeadcountBuckets(size, sizes)
-    })
-    tally.wrongSize += items.length - fits.length
-    items = fits
+  } else if (companySet?.size) {
+    // Someone who has moved on since LinkedIn indexed them isn't at one of them any more.
+    const names = [...companySet.values()]
+    const atOne = items.filter(
+      (p) => !refined.includes(p.profileUrl) || (p.companyRef && companySet.has(p.companyRef)) || names.some((n) => sameCompanyName(p.company, n)),
+    )
+    tally.wrongCompany += items.length - atOne.length
+    items = atOne
   }
 
   // Mark people at companies already known to accept every address. The
@@ -364,7 +455,7 @@ async function processBatch(
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
 
-  return { items, refined, lookupError }
+  return { items, refined, lookupError, lookedUp: toLookUp.length }
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -387,7 +478,9 @@ export async function searchPeople(
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
-  const source = getSource()
+  const source: Source = getSource()
+  const companyFirst = !company && Boolean(filters.companySizes?.length)
+  if (companyFirst && !companyTerms(filters).length) throw new Error(SIZE_NEEDS_TERM)
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
@@ -412,7 +505,7 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = { noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0, remembered: 0 }
+  const tally: Tally = { noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, remembered: 0 }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
 
@@ -425,14 +518,25 @@ export async function searchPeople(
   let reportedTotal: number | null = null
   let searches = 0
   let lookupError: string | undefined
+  let lookedUp = 0
+  let wasteful = false
+  let orgSearches = 0
+  let companiesFound = 0
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
-      const page = await source.searchPeople(company ?? null, {
-        ...filters,
-        cursor,
-        count: Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots))),
-      })
+      const count = Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots)))
+      let page: Page<PersonResult>
+      let companySet: Map<string, string> | undefined
+      if (companyFirst) {
+        const r = await companyFirstPage(source, db, filters, cursor, count)
+        page = r.page
+        companySet = r.companies
+        orgSearches += r.orgSearches
+        companiesFound += r.found
+      } else {
+        page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
+      }
       searches++
       // The first search's notes describe the whole query; later top-ups would repeat them.
       if (searches === 1) {
@@ -444,17 +548,21 @@ export async function searchPeople(
       const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
       fresh.forEach((p) => seen.add(p.profileUrl))
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes, hideUnverifiable, includeContacts)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
       items.push(...batch.items)
       refined.push(...batch.refined)
+      lookedUp += batch.lookedUp
       if (batch.lookupError) {
         lookupError = batch.lookupError
         break
       }
       if (usable() >= target || !nextCursor || searches >= planned + MAX_TOP_UPS) break
-      // What a full page normally costs: its searches, a profile lookup per
-      // person, and a company lookup each when sizing employers.
-      const pageBudget = planned * 3 + target * 3 + (!company && filters.companySizes?.length ? target : 0)
+      if (searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
+        wasteful = true
+        break
+      }
+      // What a full page normally costs: its searches and a profile lookup per person.
+      const pageBudget = planned * 3 + target * 3
       if (searches >= planned + TOP_UPS && spent() >= pageBudget) break
       // No top-up search once what's been spent uses up the credits left.
       if (prospectCredits(spent()) >= left) break
@@ -467,7 +575,10 @@ export async function searchPeople(
 
   // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
-  recordUsage({ searches, prospects: usable(), prospectCredits: prospectCredits(credits) })
+  recordUsage({ searches: searches + orgSearches, prospects: usable(), prospectCredits: prospectCredits(credits) })
+  if (companyFirst && companiesFound) {
+    details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
+  }
 
   if (lookupError) details.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
   if (tally.noSurname > 0) {
@@ -491,16 +602,15 @@ export async function searchPeople(
   if (company && tally.wrongCompany > 0) {
     details.push(`${plural(tally.wrongCompany, "person doesn't", "people don't")} currently work at ${company.name} and ${tally.wrongCompany === 1 ? 'was' : 'were'} left out.`)
   }
-  if (tally.wrongSize > 0) {
-    details.push(`${plural(tally.wrongSize, "person's employer isn't", "people's employers aren't")} one of the chosen sizes, or couldn't be sized, and ${tally.wrongSize === 1 ? 'was' : 'were'} left out.`)
-  }
+
   if (searches > planned) {
     details.push(`Some results were left out, so ${plural(searches - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
     warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
   }
-  if (!lookupError && usable() < target && nextCursor) {
+  if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
+  if (!lookupError && usable() < target && nextCursor && !wasteful) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
   } else if (!lookupError && usable() < target) {
     // A warning, not a detail: a hosted copy shows it too, as it says what to do.
@@ -508,6 +618,17 @@ export async function searchPeople(
   }
 
   return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined, resumed: Boolean(saved) }
+}
+
+/** Why a search stopped early: the filter that threw away most of the people paid for, and what to try. */
+function wastefulWarning(tally: Tally, hidden: number, lookedUp: number, companyName?: string): string {
+  const reasons: Array<[number, string, string]> = [
+    [tally.wrongCompany, companyName ? `Working somewhere other than ${companyName}` : 'Their current employer', 'Try other job titles.'],
+    [hidden, "Emails that can't be verified", 'Settings → Prospect search can show these people, marked as unverifiable.'],
+  ]
+  const [n, why, next] = reasons.sort((a, b) => b[0] - a[0])[0]
+  const left = n > 0 ? `${why} left out ${n} of the ${lookedUp} people whose profiles were checked` : `Most of the ${lookedUp} people whose profiles were checked were left out`
+  return `${left}, so no more pages were searched, to save credits. ${n > 0 ? next : 'Try broader filters.'} Load more carries on if you want to keep looking.`
 }
 
 /** The same filters give the same key, whatever order titles or options were picked in. */

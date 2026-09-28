@@ -136,6 +136,11 @@ export interface PeopleFilters {
    */
   includeContacts?: boolean
   /**
+   * LinkedIn company ids to search inside (up to 20), for a search that
+   * found companies of the chosen size first. Set by search.ts, not the page.
+   */
+  companyRefs?: string[]
+  /**
    * Start at the top of the results. Otherwise a new search (no cursor) with
    * the same filters as an earlier one carries on from where that one stopped.
    */

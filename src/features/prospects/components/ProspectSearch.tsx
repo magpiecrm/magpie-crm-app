@@ -88,6 +88,9 @@ const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: 
 const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, count: PAGE_SIZES[0] }
 const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
+/** A size with no company chosen is searched companies first, which needs an industry or keyword to find them by. */
+const sizeNeedsTerm = (f: PeopleForm) => !f.company && f.companySizes.length > 0 && f.industries.length === 0 && !f.keyword.trim()
+
 /**
  * Upper bound on one page, per title: 3 credits a search request (up to 50
  * results each) plus 3 per result's profile.
@@ -284,6 +287,12 @@ export function ProspectSearch() {
     } else {
       if (!peopleForm.company && peopleForm.titles.length === 0 && !peopleForm.keyword.trim()) {
         setFormError('Enter a job title or keyword, or pick a company.')
+        return
+      }
+      // Companies of a size are found first, and finding companies needs something to search by.
+      if (sizeNeedsTerm(peopleForm)) {
+        setFormError('Company size needs an industry or keyword, to find companies of that size first.')
+        setExpanded((prev) => ({ ...prev, peopleIndustry: true }))
         return
       }
       // A company known to accept every address can't give a verified
@@ -612,9 +621,9 @@ export function ProspectSearch() {
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
           {peopleForm.company
             ? 'Not used while a company is chosen.'
-            : hosted
-              ? "By the employee count of the company they work at. People whose company size can't be found are left out."
-              : "Each person's employer is looked up for its size (1 credit per new company, then cached). People whose company size can't be found are left out."}
+            : sizeNeedsTerm(peopleForm)
+              ? 'Add an industry or keyword too: companies of this size are found first, then the people who work there.'
+              : 'Companies of this size are found first, then the people who work there, so no credits go on people at other sizes.'}
         </p>
       </FilterAccordion>
 

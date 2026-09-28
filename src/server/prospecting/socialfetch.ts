@@ -15,11 +15,12 @@
 // `location` (no positions, employer or structured country), and page by
 // offset (`start`) rather than cursor.
 //
-// The docs give no value format for `currentCompany`, `industry`,
-// `headcountRange` or `geoEntityId`, so none of them are sent; industry,
-// headcount, country and seniority are post-filters over what comes back.
-// A person's employer is taken from their headline for display, and resolved
-// properly from their profile only when they're saved.
+// The docs give no value formats; these were checked against the live API
+// (2026-09-28): `currentCompany` takes numeric company ids, several
+// comma-separated; organization search's `headcountRange` takes this app's
+// buckets ("11-50", comma-separated, up to 20) and needs a `keyword`; its
+// `geoEntityId` barely narrows by country, so companies' head-office country
+// is checked after. Seniority is a post-filter over what comes back.
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { env } from '../env'
@@ -46,6 +47,12 @@ const MAX_ATTEMPTS = 3
 const MAX_TITLES = 5
 // SocialFetch's documented maximum for `start`.
 const MAX_START = 999
+/**
+ * Company ids one people search takes in `currentCompany`, comma-separated.
+ * Checked against the live API (2026-09-28): two companies searched together
+ * return exactly the people each returns alone.
+ */
+export const MAX_COMPANIES_PER_SEARCH = 20
 
 class SocialFetchError extends Error {
   constructor(
@@ -578,6 +585,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // A chosen company with a LinkedIn id is searched by it; otherwise its
       // name goes in the keyword.
       const companyId = company && /^\d+$/.test(company.ref) ? company.ref : null
+      // Several companies at once (found by size first): one comma-separated list.
+      const companyIds = filters.companyRefs?.filter((r) => /^\d+$/.test(r)).slice(0, MAX_COMPANIES_PER_SEARCH).join(',') || null
 
 
       const settled = await Promise.allSettled(
@@ -594,7 +603,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             keyword: keyword || undefined,
             geoEntityId: geoEntityId ?? undefined,
             industry: industry.length ? industry.join(',') : undefined,
-            currentCompany: companyId ?? undefined,
+            currentCompany: companyId ?? companyIds ?? undefined,
             count,
             start,
             cursor,
