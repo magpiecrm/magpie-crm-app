@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 export const campaignsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -76,6 +77,16 @@ export const sendCampaignFn = createServerFn({ method: 'POST' })
     const emailService = await import('../emailService')
     await requireAuth()
     return emailService.sendCampaign(data.id)
+  })
+
+/** Takes a scheduled campaign off the schedule, back to a draft. */
+export const unscheduleCampaignFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: number }) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const emailService = await import('../emailService')
+    await requireAuth()
+    return emailService.unscheduleCampaign(data.id)
   })
 
 export const sendTestEmailFn = createServerFn({ method: 'POST' })

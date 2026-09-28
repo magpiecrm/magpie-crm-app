@@ -15,7 +15,10 @@ const state: {
   allowance: any
   suppression: Array<{ hash: string; kind: string; created_at: string }>
   unsubscribeEnabled: boolean | undefined
-} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined }
+  status: string
+  alreadySent: string[]
+  released: number
+} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined, status: 'draft', alreadySent: [], released: 0 }
 
 vi.mock('./db', () => ({
   db: {
@@ -42,7 +45,7 @@ vi.mock('./db', () => ({
         if (sql.includes('FROM campaigns c')) {
           return {
             id: 1, name: 'Test', subject: 'Hi', htmlContent: state.html,
-            status: 'draft', listId: 1, senderId: 1,
+            status: state.status, listId: 1, senderId: 1,
             senderName: 'Acme', senderEmail: 'hi@acme.com',
             unsubscribeEnabled: state.unsubscribeEnabled,
           }
@@ -54,6 +57,17 @@ vi.mock('./db', () => ({
     prepare: () => ({ run: () => {} }),
     transaction: (fn: () => void) => fn,
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
+    campaignScheduledAt: () => null,
+    campaignRecipientEmails: () => new Set(state.alreadySent),
+    claimCampaignForSending: (_id: number, opts: { resume?: boolean } = {}) => {
+      if (state.status === 'sent' || (state.status === 'sending' && !opts.resume)) return false
+      state.status = 'sending'
+      return true
+    },
+    releaseCampaign: () => {
+      state.released++
+      state.status = 'draft'
+    },
   },
 }))
 
@@ -83,6 +97,9 @@ beforeEach(() => {
   state.allowance = null
   state.suppression = []
   state.unsubscribeEnabled = undefined
+  state.status = 'draft'
+  state.alreadySent = []
+  state.released = 0
   delete process.env.SENDING_MANAGED
   // Avoids the getRequest() fallback for the tracking base URL.
   process.env.PUBLIC_URL = 'https://example.test'
@@ -237,6 +254,7 @@ describe('sendCampaign unsubscribe', () => {
     const { sendMail } = await import('./nodemailer')
     vi.mocked(sendMail).mockClear()
     state.html = html
+    state.status = 'draft' // each call is a fresh campaign
     listOf({ email: 'bob@other.test', status: 'subscribed' })
     await emailService.sendCampaign(1)
     return vi.mocked(sendMail).mock.calls[0][0]
@@ -278,3 +296,37 @@ describe('adding contacts by hand', () => {
     await expect(emailService.createContact({ email: 'jane@acme.test' })).rejects.toThrow(/opted out of being contacted/)
   })
 })
+
+describe('sendCampaign never sends twice', () => {
+  it('refuses a campaign that has been sent or is being sent', async () => {
+    listOf({ email: 'a@b.com', status: 'subscribed' })
+    state.status = 'sent'
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/already been sent/)
+    state.status = 'sending'
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/already being sent/)
+    const { sendMail } = await import('./nodemailer')
+    expect(sendMail).not.toHaveBeenCalledWith(expect.objectContaining({ to: 'a@b.com', campaignId: 1 }))
+  })
+
+  it('skips everyone it already reached, and a resumed send finishes the rest', async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    listOf({ email: 'a@b.com', status: 'subscribed' }, { email: 'c@d.com', status: 'subscribed' })
+    state.alreadySent = ['a@b.com']
+    state.status = 'sending'
+    const res = await emailService.sendCampaign(1, { resume: true })
+    expect(vi.mocked(sendMail).mock.calls.map((c) => c[0].to)).toEqual(['c@d.com'])
+    expect(res.sentCount).toBe(1)
+  })
+
+  it('goes back to a draft when sending stops partway', async () => {
+    const { sendMail } = await import('./nodemailer')
+    const { AllowanceError } = await import('./allowance')
+    listOf({ email: 'a@b.com', status: 'subscribed' })
+    vi.mocked(sendMail).mockRejectedValueOnce(new AllowanceError('emailsSent', 'Out of emails.', null))
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/Out of emails/)
+    expect(state.released).toBe(1)
+    expect(state.status).toBe('draft')
+  })
+})
+

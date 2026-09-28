@@ -42,7 +42,7 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'survey_response' | 'verifier_alert'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert'
 
 type ContactRecord = DbSchema['contacts'][number]
 
@@ -84,6 +84,8 @@ interface DbSchema {
     unsubscribe_enabled: boolean
     created_at: string
     sent_at: string | null
+    /** When a 'scheduled' campaign sends (ISO); the email scheduler sends it once due. */
+    scheduled_at?: string | null
   }>
   campaign_recipients: Array<{
     campaign_id: number
@@ -540,6 +542,67 @@ class JsonDb {
     return [...this.data.disclosure_log!]
   }
 
+  // --- Campaign sending state -------------------------------------------------
+  // A campaign is 'draft' (or 'suspended'), 'scheduled' with a scheduled_at,
+  // 'sending' while its emails go out, then 'sent'. Claiming it for sending
+  // is one synchronous step, so a scheduled send and a manual send can never
+  // both start the same campaign.
+
+  campaignScheduledAt(id: number): string | null {
+    return this.data.campaigns.find((c) => c.id === id)?.scheduled_at ?? null
+  }
+
+  /** Schedules a campaign for `at` (ISO), or with null takes it off the schedule. */
+  setCampaignSchedule(id: number, at: string | null) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign) return
+    campaign.scheduled_at = at
+    if (at) campaign.status = 'scheduled'
+    else if (campaign.status === 'scheduled') campaign.status = 'draft'
+    this.save()
+  }
+
+  /** Scheduled campaigns whose time has come, oldest first. */
+  dueScheduledCampaigns(now = new Date()): number[] {
+    const iso = now.toISOString()
+    return this.data.campaigns
+      .filter((c) => c.status === 'scheduled' && c.scheduled_at && c.scheduled_at <= iso)
+      .sort((a, b) => (a.scheduled_at! < b.scheduled_at! ? -1 : 1))
+      .map((c) => c.id)
+  }
+
+  /** Campaigns left half-sent (the server stopped mid-send). */
+  campaignsLeftSending(): number[] {
+    return this.data.campaigns.filter((c) => c.status === 'sending').map((c) => c.id)
+  }
+
+  /**
+   * Marks a campaign 'sending' unless it's already sending or sent. True if
+   * this call claimed it (`resume` also claims one left 'sending').
+   */
+  claimCampaignForSending(id: number, opts: { resume?: boolean } = {}): boolean {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign || campaign.status === 'sent') return false
+    if (campaign.status === 'sending' && !opts.resume) return false
+    campaign.status = 'sending'
+    this.save()
+    return true
+  }
+
+  /** Puts a campaign that couldn't finish sending back to 'draft', off the schedule. */
+  releaseCampaign(id: number) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign || campaign.status === 'sent') return
+    campaign.status = 'draft'
+    campaign.scheduled_at = null
+    this.save()
+  }
+
+  /** Everyone a campaign has already gone to (or been tried on), so a resumed or repeated send skips them. */
+  campaignRecipientEmails(id: number): Set<string> {
+    return new Set(this.data.campaign_recipients.filter((r) => r.campaign_id === id).map((r) => r.contact_email))
+  }
+
   getCopilotSettings(): { secrets?: string; updated_at: string } | null {
     return this.data.copilot_settings ?? null
   }
@@ -708,6 +771,9 @@ class JsonDb {
   }
 
 
+  /** The id of the row the last INSERT into senders, lists or campaigns created (sqlite's last_insert_rowid()). */
+  private lastInsertId = 0
+
   // Mimics sqlite's db.run
   run(sql: string, params: any[] = []) {
     const cleanSql = sql.replace(/\s+/g, ' ').trim()
@@ -715,10 +781,12 @@ class JsonDb {
     if (cleanSql.startsWith('INSERT INTO senders')) {
       const id = this.data.senders.length > 0 ? Math.max(...this.data.senders.map(s => s.id)) + 1 : 1
       this.data.senders.push({ id, name: params[0], email: params[1] })
+      this.lastInsertId = id
       this.save()
     } else if (cleanSql.startsWith('INSERT INTO lists')) {
       const id = this.data.lists.length > 0 ? Math.max(...this.data.lists.map(l => l.id)) + 1 : 1
       this.data.lists.push({ id, name: params[0], created_at: params[1] })
+      this.lastInsertId = id
       this.save()
     } else if (cleanSql.startsWith('INSERT OR IGNORE INTO list_contacts') || cleanSql.startsWith('INSERT INTO list_contacts')) {
       let listId = params[0]
@@ -801,6 +869,7 @@ class JsonDb {
         created_at: hasUnsub ? (params[7] || new Date().toISOString()) : (params[6] || new Date().toISOString()),
         sent_at: null,
       })
+      this.lastInsertId = id
       this.save()
     } else if (cleanSql.startsWith('INSERT OR REPLACE INTO campaign_recipients')) {
       const cid = params[0]
@@ -946,14 +1015,11 @@ class JsonDb {
           return this.data.senders.find(s => s.email.toLowerCase() === params[0].toLowerCase()) || null
         }
         if (cleanSql.startsWith('SELECT last_insert_rowid() as id')) {
-          // Emulate returning the ID of the last insert
-          // We can return the max id from campaigns, lists, senders depending on context
-          // Since it's a mock, we inspect the size of our lists
-          return { id: Math.max(
-            this.data.lists.length,
-            this.data.senders.length,
-            this.data.campaigns.length
-          ) }
+          // The id the last INSERT created. (This used to be the size of the
+          // biggest of the lists, senders and campaigns tables, so a new
+          // campaign in a workspace with more lists than campaigns came back
+          // with another campaign's id, or one that doesn't exist.)
+          return { id: this.lastInsertId }
         }
         if (cleanSql.startsWith('SELECT c.id, c.name, c.subject')) {
           // getCampaign(id)

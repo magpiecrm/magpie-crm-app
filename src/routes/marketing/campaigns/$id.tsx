@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { useState } from 'react'
-import { 
-  getCampaignFn, 
-  listsFn 
+import {
+  getCampaignFn,
+  listsFn,
+  sendCampaignFn,
+  unscheduleCampaignFn,
 } from '../../../server/functions'
 import { 
   ArrowLeft, 
@@ -15,8 +17,15 @@ import {
   CheckCircle2,
   Clock,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  Loader2,
+  Send,
+  CalendarClock,
+  FilePen,
 } from 'lucide-react'
+
+const when = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 /**
  * The four "breakdown by lists" tables on this page all share one shape:
@@ -96,6 +105,15 @@ function CampaignDetailPage() {
     queryFn: () => listsFn(),
   })
 
+  // A scheduled campaign sends on its own; these send it now or take it off the schedule.
+  const queryClient = useQueryClient()
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.email.campaign(id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
+  }
+  const sendNow = useMutation({ mutationFn: () => sendCampaignFn({ data: { id: parseInt(id) } }), onSettled: refresh })
+  const unschedule = useMutation({ mutationFn: () => unscheduleCampaignFn({ data: { id: parseInt(id) } }), onSettled: refresh })
+
   if (isLoadingCampaign) {
     return (
       <div className="p-4 lg:p-8 space-y-6">
@@ -118,6 +136,8 @@ function CampaignDetailPage() {
   // Statistics extraction
   const isSent = campaign.status === 'sent'
   const isSuspended = campaign.status === 'suspended'
+  const isScheduled = campaign.status === 'scheduled' && Boolean(campaign.scheduledAt)
+  const isSending = campaign.status === 'sending'
   const showMetrics = isSent || isSuspended
 
   const globalStats = campaign.statistics?.globalStats || {}
@@ -257,7 +277,13 @@ function CampaignDetailPage() {
               <span>#{campaign.id}</span>
               <span>•</span>
               <span>
-                {isSent ? `Sent on ${formattedDate}` : `Created on ${formattedDate}`}
+                {isSent
+                  ? `Sent on ${formattedDate}`
+                  : isScheduled
+                    ? `Scheduled for ${when(campaign.scheduledAt!)}`
+                    : isSending
+                      ? 'Sending now'
+                      : `Created on ${formattedDate}`}
               </span>
             </div>
 
@@ -324,6 +350,51 @@ function CampaignDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Not sent yet: when it will go, and what can be done about it. */}
+      {!isSent && !isSuspended && (
+        <div className={`mb-6 rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${isScheduled ? 'border-accent/30 bg-accent/5' : 'border-border bg-muted/30'}`}>
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            {isSending ? <Loader2 className="w-5 h-5 text-accent animate-spin shrink-0 mt-0.5" /> : isScheduled ? <CalendarClock className="w-5 h-5 text-accent shrink-0 mt-0.5" /> : <FilePen className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {isSending ? 'Sending now' : isScheduled ? `Scheduled for ${when(campaign.scheduledAt!)}` : 'Not sent yet'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {isSending
+                  ? 'Results appear here as soon as it has gone out.'
+                  : isScheduled
+                    ? 'It sends on its own at that time. Results appear here once it has gone out.'
+                    : 'This campaign is a draft. Send it, or schedule it from the editor.'}
+              </p>
+              {(sendNow.error || unschedule.error) && (
+                <p className="text-xs text-destructive mt-1">{((sendNow.error || unschedule.error) as Error).message}</p>
+              )}
+            </div>
+          </div>
+          {isScheduled && (
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => unschedule.mutate()}
+                disabled={unschedule.isPending || sendNow.isPending}
+                className="px-3 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50"
+              >
+                {unschedule.isPending ? 'Cancelling…' : 'Cancel schedule'}
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Send this campaign now instead of at its scheduled time?')) sendNow.mutate()
+                }}
+                disabled={sendNow.isPending || unschedule.isPending}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/85 disabled:opacity-50"
+              >
+                {sendNow.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send now
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs Menu */}
       <div className="border-b border-border mb-8">
@@ -478,31 +549,28 @@ function CampaignDetailPage() {
               <h2 className="text-lg font-bold text-foreground">Timeline</h2>
               <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
                 <div className="relative border-l border-border pl-6 space-y-6">
-                  {/* Timeline Entry 1 */}
-                  <div className="relative">
-                    <div className="absolute -left-[31px] top-0 bg-accent text-accent-foreground rounded-full p-1 border-4 border-card">
-                      <Mail className="w-3 h-3" />
-                    </div>
-                    <p className="text-sm font-bold text-foreground">Campaign sent</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      The campaign [{campaign.id}] {campaign.name} was successfully delivered.
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60 font-mono mt-1">{formattedDate}</p>
-                  </div>
-
-                  {/* Timeline Entry 2 */}
-                  <div className="relative">
-                    <div className="absolute -left-[31px] top-0 bg-muted border border-border rounded-full p-1 border-4 border-card">
-                      <Clock className="w-3 h-3 text-muted-foreground" />
-                    </div>
-                    <p className="text-sm font-bold text-foreground">Campaign scheduled</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Campaign queued for delivery.
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60 font-mono mt-1">
-                      {campaign.createdAt ? new Date(campaign.createdAt).toLocaleString() : formattedDate}
-                    </p>
-                  </div>
+                  {[
+                    campaign.sentAt && { icon: Mail, strong: true, title: 'Sent', text: `Went out to ${cSent.toLocaleString()} recipient${cSent === 1 ? '' : 's'}.`, at: campaign.sentAt },
+                    campaign.scheduledAt && {
+                      icon: Clock,
+                      strong: !campaign.sentAt,
+                      title: isSent ? 'Was scheduled for' : 'Scheduled for',
+                      text: isSent ? 'Its scheduled send time.' : 'It sends on its own at this time.',
+                      at: campaign.scheduledAt,
+                    },
+                    campaign.createdAt && { icon: FilePen, strong: false, title: 'Created', text: 'The campaign was created as a draft.', at: campaign.createdAt },
+                  ]
+                    .filter((e): e is { icon: typeof Mail; strong: boolean; title: string; text: string; at: string } => Boolean(e))
+                    .map((e) => (
+                      <div key={e.title} className="relative">
+                        <div className={`absolute -left-[31px] top-0 rounded-full p-1 border-4 border-card ${e.strong ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>
+                          <e.icon className="w-3 h-3" />
+                        </div>
+                        <p className="text-sm font-bold text-foreground">{e.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{e.text}</p>
+                        <p className="text-[10px] text-muted-foreground/60 font-mono mt-1">{when(e.at)}</p>
+                      </div>
+                    ))}
                 </div>
               </div>
             </div>

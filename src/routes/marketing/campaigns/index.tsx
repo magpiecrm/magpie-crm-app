@@ -56,6 +56,8 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
 
   const isSent = campaign.status === 'sent'
   const isSuspended = campaign.status === 'suspended'
+  const isScheduled = campaign.status === 'scheduled' && Boolean(campaign.scheduledAt)
+  const isSending = campaign.status === 'sending'
   const showMetrics = isSent || isSuspended
 
   // Calculate metrics
@@ -87,8 +89,8 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
   const campaignClickRate = cDelivered > 0 ? (cClicked / cDelivered) * 100 : 0
   const campaignUnsubRate = cDelivered > 0 ? (cUnsubscribed / cDelivered) * 100 : 0
 
-  // Format dates
-  const dateStr = campaign.sentDate || campaign.createdAt
+  // The date that matters for the campaign's state: sent, scheduled, or created.
+  const dateStr = isSent ? campaign.sentAt : isScheduled ? campaign.scheduledAt : campaign.createdAt
   const formattedDate = dateStr
     ? new Date(dateStr).toLocaleString(undefined, {
         month: 'short',
@@ -124,7 +126,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${
-                isSent ? 'bg-emerald-500' : isSuspended ? 'bg-red-500' : 'bg-muted-foreground/60'
+                isSent ? 'bg-emerald-500' : isSuspended ? 'bg-red-500' : isScheduled || isSending ? 'bg-accent' : 'bg-muted-foreground/60'
               }`} />
               <span className={`capitalize font-medium text-foreground`}>{campaign.status}</span>
             </div>
@@ -132,10 +134,13 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
             <span>•</span>
             
             <span>
-              {isSent 
-                ? `Sent on ${formattedDate}` 
-                : `Last edited ${formattedDate}`
-              }
+              {isSent
+                ? `Sent on ${formattedDate}`
+                : isScheduled
+                  ? `Scheduled for ${formattedDate}`
+                  : isSending
+                    ? 'Sending now'
+                    : `Created ${formattedDate}`}
             </span>
           </div>
 
@@ -178,10 +183,10 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
 
       {/* Actions Far-Right Panel */}
       <div className="flex items-center justify-end gap-1 shrink-0 xl:pl-4 xl:border-l border-border/80 w-full xl:w-[140px]">
-        {!isSent && (
+        {!isSent && !isSending && (
           <button 
             onClick={() => {
-              if (confirm('Are you sure you want to send this campaign now?')) {
+              if (confirm(isScheduled ? 'This campaign is scheduled. Send it now instead?' : 'Are you sure you want to send this campaign now?')) {
                 sendMutation.mutate(campaign.id)
               }
             }}
@@ -192,7 +197,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
             {sendMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
           </button>
         )}
-        {!isSent && (
+        {!isSent && !isSending && (
           <button 
             onClick={() => onEdit(campaign.id)}
             className="p-2 text-muted-foreground hover:text-accent rounded-md-s hover:bg-accent/10 transition-colors md-state-hover"

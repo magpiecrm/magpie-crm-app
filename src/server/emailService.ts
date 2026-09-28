@@ -298,6 +298,7 @@ export async function getCampaigns() {
       unsubscribeEnabled: c.unsubscribeEnabled,
       createdAt: c.createdAt,
       sentAt: c.sentAt,
+      scheduledAt: db.campaignScheduledAt(c.id),
       recipients: { listIds: c.listId ? [c.listId] : [] },
       sender: { name: c.senderName, email: c.senderEmail },
       statistics: {
@@ -341,6 +342,7 @@ export async function getCampaign(id: number) {
     createdAt: c.createdAt,
     sentAt: c.sentAt,
     sentDate: c.sentAt, // Alias for backward compatibility
+    scheduledAt: db.campaignScheduledAt(c.id),
     recipients: { 
       listIds: c.listId ? [c.listId] : [],
       lists: c.listId ? [c.listId] : [], // Alias for backward compatibility
@@ -427,6 +429,16 @@ export async function updateCampaign(id: number, payload: {
   if (existing.status === 'sent') {
     throw new Error('Cannot edit a campaign that has already been sent')
   }
+  if (existing.status === 'sending') {
+    throw new Error('This campaign is being sent right now, so it can\'t be changed.')
+  }
+  let scheduledAt: string | null = null
+  if (payload.scheduledAt) {
+    const at = new Date(payload.scheduledAt)
+    if (Number.isNaN(at.getTime())) throw new Error('That schedule time isn\'t a valid date.')
+    if (at.getTime() <= Date.now()) throw new Error('Schedule time must be in the future.')
+    scheduledAt = at.toISOString()
+  }
 
   let senderId = existing.sender?.id
   if (payload.sender) {
@@ -448,7 +460,7 @@ export async function updateCampaign(id: number, payload: {
   const subject = payload.subject ?? existing.subject
   const previewText = payload.previewText ?? existing.previewText
   const htmlContent = payload.htmlContent ?? existing.htmlContent
-  const status = payload.scheduledAt ? 'scheduled' : existing.status
+  const status = existing.status
   const unsubscribeEnabled = payload.unsubscribeEnabled ?? existing.unsubscribeEnabled
 
   db.run(
@@ -457,7 +469,17 @@ export async function updateCampaign(id: number, payload: {
      WHERE id = ?`,
     [name, subject, previewText, htmlContent, listId, senderId, status, unsubscribeEnabled, id]
   )
+  // Sent by the email scheduler once due (emailScheduler.ts).
+  if (scheduledAt) db.setCampaignSchedule(id, scheduledAt)
 
+  return { id }
+}
+
+/** Takes a scheduled campaign off the schedule, back to a draft. */
+export async function unscheduleCampaign(id: number) {
+  const existing = await getCampaign(id)
+  if (existing.status !== 'scheduled') throw new Error('This campaign isn\'t scheduled.')
+  db.setCampaignSchedule(id, null)
   return { id }
 }
 
@@ -466,8 +488,15 @@ export async function deleteCampaign(id: number) {
   return { success: true }
 }
 
-export async function sendCampaign(id: number) {
+/**
+ * Sends a campaign to its list. `resume` finishes one the server stopped in
+ * the middle of sending. Anyone it already went to is skipped, so a campaign
+ * never reaches the same person twice.
+ */
+export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) {
   const campaign = await getCampaign(id)
+  if (campaign.status === 'sent') throw new Error('This campaign has already been sent.')
+  if (campaign.status === 'sending' && !opts.resume) throw new Error('This campaign is already being sent.')
   const listId = campaign.recipients?.listIds?.[0]
   if (!listId) {
     throw new Error('No contact list associated with this campaign')
@@ -523,8 +552,12 @@ export async function sendCampaign(id: number) {
     )
   }
 
+  // Anyone it already went to (a resumed send, or a second press of Send) is skipped.
+  const alreadySent = db.campaignRecipientEmails(id)
+  const toSend = contacts.filter((c) => !alreadySent.has(c.email))
+
   // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
-  requireAllowance('emailsSent', contacts.length, 'Sending this campaign')
+  requireAllowance('emailsSent', toSend.length, 'Sending this campaign')
 
   const senderEmail = campaign.sender?.email
   const senderName = campaign.sender?.name
@@ -550,136 +583,145 @@ export async function sendCampaign(id: number) {
     }
   }
 
-  // Send to all contacts
-  for (const contact of contacts) {
-    const email = contact.email
-    const firstName = contact.first_name || ''
-    const lastName = contact.last_name || ''
-    const company = contact.company || ''
+  // Everything above passed: claim it. From here it's 'sending', which a
+  // scheduled send and a manual one can't both do (db.claimCampaignForSending).
+  if (!db.claimCampaignForSending(id, opts)) throw new Error('This campaign is already being sent.')
 
-    const personalize = (text: string, isHtml: boolean) => {
-      const fn = isHtml ? escapeHtml(firstName) : firstName
-      const ln = isHtml ? escapeHtml(lastName) : lastName
-      const comp = isHtml ? escapeHtml(company) : company
-      const em = isHtml ? escapeHtml(email) : email
+  try {
+    for (const contact of toSend) {
+      const email = contact.email
+      const firstName = contact.first_name || ''
+      const lastName = contact.last_name || ''
+      const company = contact.company || ''
 
-      return text
-        .replace(/\{\{\s*contact\.first_name\s*\}\}/gi, fn)
-        .replace(/\{\{\s*contact\.last_name\s*\}\}/gi, ln)
-        .replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/gi, fn)
-        .replace(/\{\{\s*contact\.LASTNAME\s*\}\}/gi, ln)
-        .replace(/\{\{\s*contact\.COMPANY\s*\}\}/gi, comp)
-        .replace(/\{\{\s*contact\.EMAIL\s*\}\}/gi, em)
-        .replace(CUSTOM_FIELD_TAG, (_m: string, key: string) => {
-          const value = formatCustomValue(contact.custom?.[key])
-          return isHtml ? escapeHtml(value) : value
-        })
-    }
+      const personalize = (text: string, isHtml: boolean) => {
+        const fn = isHtml ? escapeHtml(firstName) : firstName
+        const ln = isHtml ? escapeHtml(lastName) : lastName
+        const comp = isHtml ? escapeHtml(company) : company
+        const em = isHtml ? escapeHtml(email) : email
 
-    // Personalize variables in subject (plain text - no HTML escape needed)
-    let personalizedSubject = personalize(campaign.subject, false)
+        return text
+          .replace(/\{\{\s*contact\.first_name\s*\}\}/gi, fn)
+          .replace(/\{\{\s*contact\.last_name\s*\}\}/gi, ln)
+          .replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/gi, fn)
+          .replace(/\{\{\s*contact\.LASTNAME\s*\}\}/gi, ln)
+          .replace(/\{\{\s*contact\.COMPANY\s*\}\}/gi, comp)
+          .replace(/\{\{\s*contact\.EMAIL\s*\}\}/gi, em)
+          .replace(CUSTOM_FIELD_TAG, (_m: string, key: string) => {
+            const value = formatCustomValue(contact.custom?.[key])
+            return isHtml ? escapeHtml(value) : value
+          })
+      }
 
-    // Personalize variables in HTML (escaped to prevent Stored XSS)
-    let personalizedHtml = personalize(campaign.htmlContent, true)
+      // Personalize variables in subject (plain text - no HTML escape needed)
+      let personalizedSubject = personalize(campaign.subject, false)
 
-    if (campaign.previewText) {
-      const personalizedPreview = personalize(campaign.previewText, false)
-      personalizedHtml = injectPreviewText(personalizedHtml, personalizedPreview)
-    }
+      // Personalize variables in HTML (escaped to prevent Stored XSS)
+      let personalizedHtml = personalize(campaign.htmlContent, true)
 
-    // Add tracking pixel using encrypted token
-    const openToken = encryptToken({ email, campaignId: id })
-    const pixelUrl = `${appUrl}/api/track/open?t=${encodeURIComponent(openToken)}`
-    const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`
+      if (campaign.previewText) {
+        const personalizedPreview = personalize(campaign.previewText, false)
+        personalizedHtml = injectPreviewText(personalizedHtml, personalizedPreview)
+      }
+
+      // Add tracking pixel using encrypted token
+      const openToken = encryptToken({ email, campaignId: id })
+      const pixelUrl = `${appUrl}/api/track/open?t=${encodeURIComponent(openToken)}`
+      const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`
     
-    // Inject tracking pixel inside <body> if present, otherwise append it
-    const bodyCloseRegex = /<\/body>/i
-    if (bodyCloseRegex.test(personalizedHtml)) {
-      personalizedHtml = personalizedHtml.replace(bodyCloseRegex, (match: string) => `${trackingPixel}${match}`)
-    } else {
-      personalizedHtml += trackingPixel
-    }
-
-    // Append unsubscribe link using encrypted token
-    const unsubToken = encryptToken({ email, campaignId: id })
-    const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(unsubToken)}`
-    if (unsubscribeEnabled) {
-      personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, unsubscribeUrl)
-
-      // Unless the design already links to it, add the link at the very bottom.
-      if (!personalizedHtml.includes(unsubscribeUrl)) {
-        const footer = `
-          <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #666;">
-            Sent by ${escapeHtml(senderName || senderEmail || '')}. Don't want these emails?
-            <a href="${unsubscribeUrl}" style="color: #666; text-decoration: underline;">Unsubscribe</a>
-          </div>
-        `
-        personalizedHtml = /<\/body>/i.test(personalizedHtml)
-          ? personalizedHtml.replace(/<\/body>/i, (m: string) => `${footer}${m}`)
-          : personalizedHtml + footer
+      // Inject tracking pixel inside <body> if present, otherwise append it
+      const bodyCloseRegex = /<\/body>/i
+      if (bodyCloseRegex.test(personalizedHtml)) {
+        personalizedHtml = personalizedHtml.replace(bodyCloseRegex, (match: string) => `${trackingPixel}${match}`)
+      } else {
+        personalizedHtml += trackingPixel
       }
-    } else {
-      personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, '#')
-    }
 
-    // Per-recipient survey links, so answers are tied to this contact.
-    personalizedHtml = expandSurveyPlaceholders(personalizedHtml, { appUrl, email, campaignId: id })
+      // Append unsubscribe link using encrypted token
+      const unsubToken = encryptToken({ email, campaignId: id })
+      const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(unsubToken)}`
+      if (unsubscribeEnabled) {
+        personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, unsubscribeUrl)
 
-    // Absolutize before tokenizing, so the URL baked into the click token (and
-    // therefore the eventual 302 Location) is a real absolute URL.
-    personalizedHtml = absolutizeHrefs(personalizedHtml)
-
-    // Rewrite all href links to track clicks with encrypted token
-    const hrefRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"/gi
-    personalizedHtml = personalizedHtml.replace(hrefRegex, (match: string, p1: string) => {
-      // Survey links stay direct (shorter URLs, no extra redirect); the survey
-      // page records the click itself via markRecipientClicked.
-      if (p1.startsWith('#') || p1.startsWith('mailto:') || p1.includes('api/unsubscribe') || p1.startsWith(`${appUrl}/s/`)) {
-        return match
+        // Unless the design already links to it, add the link at the very bottom.
+        if (!personalizedHtml.includes(unsubscribeUrl)) {
+          const footer = `
+            <div style="text-align: center; margin-top: 30px; font-size: 12px; color: #666;">
+              Sent by ${escapeHtml(senderName || senderEmail || '')}. Don't want these emails?
+              <a href="${unsubscribeUrl}" style="color: #666; text-decoration: underline;">Unsubscribe</a>
+            </div>
+          `
+          personalizedHtml = /<\/body>/i.test(personalizedHtml)
+            ? personalizedHtml.replace(/<\/body>/i, (m: string) => `${footer}${m}`)
+            : personalizedHtml + footer
+        }
+      } else {
+        personalizedHtml = personalizedHtml.replace(/\{\{\s*unsubscribe\s*\}\}/gi, '#')
       }
-      const clickToken = encryptToken({ email, campaignId: id, url: p1 })
-      const trackUrl = `${appUrl}/api/track/click?t=${encodeURIComponent(clickToken)}`
-      // Target the href attribute itself — a bare `replace(p1, ...)` would hit
-      // the first occurrence of the URL anywhere in the tag (a preceding
-      // style/class value), corrupting the anchor instead of retargeting it.
-      return match.replace(`href="${p1}"`, `href="${trackUrl}"`)
-    })
 
+      // Per-recipient survey links, so answers are tied to this contact.
+      personalizedHtml = expandSurveyPlaceholders(personalizedHtml, { appUrl, email, campaignId: id })
 
-    try {
-      await sendMail({
-        from,
-        to: email,
-        subject: personalizedSubject,
-        html: personalizedHtml,
-        campaignId: id,
-        // One-click unsubscribe in the mail client (List-Unsubscribe), which Gmail and Yahoo require of bulk senders.
-        ...(unsubscribeEnabled ? { unsubscribeUrl } : {}),
+      // Absolutize before tokenizing, so the URL baked into the click token (and
+      // therefore the eventual 302 Location) is a real absolute URL.
+      personalizedHtml = absolutizeHrefs(personalizedHtml)
+
+      // Rewrite all href links to track clicks with encrypted token
+      const hrefRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"/gi
+      personalizedHtml = personalizedHtml.replace(hrefRegex, (match: string, p1: string) => {
+        // Survey links stay direct (shorter URLs, no extra redirect); the survey
+        // page records the click itself via markRecipientClicked.
+        if (p1.startsWith('#') || p1.startsWith('mailto:') || p1.includes('api/unsubscribe') || p1.startsWith(`${appUrl}/s/`)) {
+          return match
+        }
+        const clickToken = encryptToken({ email, campaignId: id, url: p1 })
+        const trackUrl = `${appUrl}/api/track/click?t=${encodeURIComponent(clickToken)}`
+        // Target the href attribute itself — a bare `replace(p1, ...)` would hit
+        // the first occurrence of the URL anywhere in the tag (a preceding
+        // style/class value), corrupting the anchor instead of retargeting it.
+        return match.replace(`href="${p1}"`, `href="${trackUrl}"`)
       })
-      logRecipientStmt.run(id, email)
-    } catch (err) {
-      // Out of allowance isn't the recipient's fault: stop, without marking anyone bounced.
-      if (err instanceof AllowanceError) throw err
-      console.error(`Failed to send campaign email to ${email}:`, err)
-      // Save recipient as bounced
-      db.run(
-        `INSERT OR REPLACE INTO campaign_recipients (campaign_id, contact_email, status)
-         VALUES (?, ?, 'bounced_soft')`,
-        [id, email]
-      )
+
+
+      try {
+        await sendMail({
+          from,
+          to: email,
+          subject: personalizedSubject,
+          html: personalizedHtml,
+          campaignId: id,
+          // One-click unsubscribe in the mail client (List-Unsubscribe), which Gmail and Yahoo require of bulk senders.
+          ...(unsubscribeEnabled ? { unsubscribeUrl } : {}),
+        })
+        logRecipientStmt.run(id, email)
+      } catch (err) {
+        // Out of allowance isn't the recipient's fault: stop, without marking anyone bounced.
+        if (err instanceof AllowanceError) throw err
+        console.error(`Failed to send campaign email to ${email}:`, err)
+        // Save recipient as bounced
+        db.run(
+          `INSERT OR REPLACE INTO campaign_recipients (campaign_id, contact_email, status)
+           VALUES (?, ?, 'bounced_soft')`,
+          [id, email]
+        )
+      }
     }
+  } catch (err) {
+    // Stopped partway: back to a draft. Sending again skips everyone it reached.
+    db.releaseCampaign(id)
+    throw err
   }
 
   db.run("UPDATE campaigns SET status = 'sent', sent_at = ? WHERE id = ?", [new Date().toISOString(), id])
 
   notify(
     'campaign_sent',
-    `"${campaign.name}" finished sending to ${contacts.length} recipient${contacts.length === 1 ? '' : 's'}` +
+    `"${campaign.name}" finished sending to ${toSend.length} recipient${toSend.length === 1 ? '' : 's'}` +
       (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : ''),
     { url: `/marketing/campaigns/${id}` },
   )
 
-  return { success: true, sentCount: contacts.length, skippedOptOuts }
+  return { success: true, sentCount: toSend.length, skippedOptOuts }
 }
 
 export async function sendTestEmail(payload: {

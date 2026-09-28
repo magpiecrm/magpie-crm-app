@@ -7,6 +7,7 @@ const DEFAULT_URLS: Record<NotificationType, string> = {
   contact_added: '/marketing/contacts',
   form_submission: '/marketing/forms',
   campaign_sent: '/marketing/campaigns',
+  campaign_failed: '/marketing/campaigns',
   survey_response: '/marketing/surveys',
   verifier_alert: '/settings?tab=prospecting',
 }
