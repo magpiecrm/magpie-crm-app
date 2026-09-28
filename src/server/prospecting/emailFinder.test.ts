@@ -390,6 +390,11 @@ describe('isKnownCatchAll', () => {
       isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(days), ...patch }) }), NOW)
     expect(known(20)).toBe(true)
     expect(known(40)).toBe(false)
+    // Google and Microsoft turn unknown addresses away by default: re-tested after a day.
+    expect(known(0.5, { mx_provider: 'google' })).toBe(true)
+    expect(known(2, { mx_provider: 'google' })).toBe(false)
+    expect(known(2, { mx_family: 'microsoft' })).toBe(false)
+    expect(known(80, { catch_all_confirmed: true, mx_family: 'google' })).toBe(true)
     expect(known(80, { catch_all_confirmed: true })).toBe(true)
     expect(known(120, { catch_all_confirmed: true })).toBe(false)
     expect(known(120, { catch_all_confirmed: true, mx_family: 'proofpoint' })).toBe(true)

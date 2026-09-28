@@ -52,6 +52,12 @@ const CATCH_ALL_CONFIRMED_MS = 90 * DAY
 const CATCH_ALL_GATEWAY_MS = 180 * DAY
 /** One session's verdict, or one recorded before verdicts were confirmed. */
 const CATCH_ALL_UNCONFIRMED_MS = 30 * DAY
+/**
+ * The same at Google Workspace or Microsoft 365, which turn unknown
+ * addresses away unless a company sets up catch-all routing: an unconfirmed
+ * verdict there is more likely a fluke, so it's tested again soon.
+ */
+const CATCH_ALL_UNCONFIRMED_MAILBOX_HOST_MS = DAY
 /** A company that turned a made-up address away. */
 const NOT_CATCH_ALL_MS = 180 * DAY
 /** An inconclusive catch-all test is repeated after this long, not on every lookup. */
@@ -255,7 +261,10 @@ const isStale = (iso: string | null, maxAgeMs: number, now: number) =>
 
 function catchAllMaxAge(rec: EmailDomainRecord): number {
   if (rec.catch_all !== true) return NOT_CATCH_ALL_MS
-  if (!rec.catch_all_confirmed) return CATCH_ALL_UNCONFIRMED_MS
+  if (!rec.catch_all_confirmed) {
+    const host = rec.mx_family ?? rec.mx_provider
+    return host === 'google' || host === 'microsoft' ? CATCH_ALL_UNCONFIRMED_MAILBOX_HOST_MS : CATCH_ALL_UNCONFIRMED_MS
+  }
   return isGateway(rec.mx_family) ? CATCH_ALL_GATEWAY_MS : CATCH_ALL_CONFIRMED_MS
 }
 
