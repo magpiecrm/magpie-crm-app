@@ -89,6 +89,24 @@ export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {
 const complete = (row: Partial<UsageCounts> | undefined): UsageCounts =>
   Object.fromEntries(USAGE_COUNTERS.map((k) => [k, row?.[k] ?? 0])) as UsageCounts
 
+/**
+ * Lookup outcomes where no mail server could have been asked: no mail
+ * domain, no company domain, a hidden surname or unusable name, a
+ * verification limit, or verification switched off. Left out of the hit
+ * rate, which should only move when finding addresses gets better or worse.
+ */
+const UNCHECKABLE: LookupOutcome[] = ['noMail', 'noDomain', 'hiddenSurname', 'badName', 'limit', 'unchecked']
+
+/**
+ * Verified lookups out of those that reached a mail server. `rate` is null
+ * with none of those yet. Catch-all companies count as misses.
+ */
+export function lookupHitRate(counts: UsageCounts): { verified: number; checkable: number; rate: number | null } {
+  const checkable = LOOKUP_OUTCOMES.filter((o) => !UNCHECKABLE.includes(o)).reduce((n, o) => n + counts[lookupCounter(o)], 0)
+  const verified = counts.lookupVerified
+  return { verified, checkable, rate: checkable ? verified / checkable : null }
+}
+
 /** Every month with usage, oldest first, each with every counter. */
 export function getUsage(): Array<{ month: string } & UsageCounts> {
   flush()

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ProxyRouter, parseProxyConfig, providerFromMx } from './proxyRouter'
+import { ProxyRouter, familyFromMx, isGateway, parseProxyConfig, providerFromMx } from './proxyRouter'
 import { classifySmtpOutcome } from './reacher'
 
 // A controllable clock: `sleep` advances time instead of waiting.
@@ -223,6 +223,23 @@ describe('providerFromMx', () => {
     expect(providerFromMx(['aspmx.l.google.com'])).toBe('google')
     expect(providerFromMx(['acme-com.mail.protection.outlook.com'])).toBe('microsoft')
     expect(providerFromMx(['mx1.mailgun.org'])).toBe('other')
+  })
+})
+
+describe('familyFromMx', () => {
+  it('names the security gateway in front of a mailbox host', () => {
+    expect(familyFromMx(['eu-smtp-inbound-1.mimecast.com', 'eu-smtp-inbound-2.mimecast.com'])).toBe('mimecast')
+    expect(familyFromMx(['mx0a-00123401.pphosted.com'])).toBe('proofpoint')
+    expect(familyFromMx(['d123456a.ess.barracudanetworks.com'])).toBe('barracuda')
+    expect(familyFromMx(['mx1.hc1234-56.iphmx.com.'])).toBe('cisco')
+    expect(familyFromMx(['cluster1.eu.messagelabs.com'])).toBe('symantec')
+    expect(isGateway(familyFromMx(['acme.mail.protection.outlook.com']))).toBe(false)
+  })
+
+  it('falls back to the mailbox provider', () => {
+    expect(familyFromMx(['aspmx.l.google.com'])).toBe('google')
+    expect(familyFromMx(['acme-com.mail.protection.outlook.com'])).toBe('microsoft')
+    expect(familyFromMx(['mail.acme.example'])).toBe('other')
   })
 })
 

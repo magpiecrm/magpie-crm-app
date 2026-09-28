@@ -73,4 +73,16 @@ describe('GET /api/usage', () => {
     expect(body.storage.rows).toMatchObject({ contacts: expect.any(Number), campaigns: expect.any(Number) })
     expect((await get('/api/usage?month=2026-9', 'tok_123')).status).toBe(400)
   })
+
+  it('gives each month a hit rate over lookups that reached a mail server', async () => {
+    process.env.USAGE_API_TOKEN = 'tok_123'
+    recordLookup('noDomain', new Date('2026-09-15T09:00:00Z'))
+    recordLookup('limit', new Date('2026-09-15T09:00:00Z'))
+    recordLookup('rejected', new Date('2026-09-15T09:00:00Z'))
+    const body = await (await get('/api/usage?month=2026-09', 'tok_123')).json()
+    // 1 verified out of verified + 2 catch-all + 1 rejected; noDomain and limit left out.
+    expect(body.hitRate).toEqual({ verified: 1, checkable: 4, rate: 0.25 })
+    const all = await (await get('/api/usage', 'tok_123')).json()
+    expect(all.months[0].hitRate).toEqual({ verified: 0, checkable: 0, rate: null })
+  })
 })

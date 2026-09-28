@@ -122,7 +122,7 @@ describe('revealEmail', () => {
   it('withholds an unconfirmed guess by default, with the reason and no disclosure', async () => {
     const catchAll: FinderDeps = {
       ...finder,
-      getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
+      getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_confirmed: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', mx_family: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
     }
     const res = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any })
     expect(res).toEqual({ status: 'unconfirmed', message: 'acme.com accepts every address, so none can be confirmed.', catchAll: true, unverifiable: true })
@@ -137,7 +137,7 @@ describe('revealEmail', () => {
   it('hands over the best guess only when verified-only is switched off', async () => {
     const catchAll: FinderDeps = {
       ...finder,
-      getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
+      getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_confirmed: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', mx_family: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
     }
     const res = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any, verifiedOnly: false })
     expect(res).toMatchObject({ status: 'found', email: 'jane.smith@acme.com', emailStatus: 'catch_all_likely' })

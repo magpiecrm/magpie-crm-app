@@ -1,8 +1,10 @@
 // Finds one work email for one person at one domain.
 //
 //   1. MX lookup (cached per domain): no MX means the domain takes no mail.
-//   2. Catch-all probe (once per domain, cached 180 days): a random address is
-//      checked; if the server accepts it, nothing on that domain can be
+//   2. Catch-all probe (once per domain, cached 30-180 days): a made-up
+//      address is checked, and if the server accepts it, a second one of a
+//      different shape in a separate session. Only when both are accepted is
+//      the domain treated as accepting everything: nothing there can be
 //      verified and the best-ranked guess is returned as `catch_all_likely`.
 //   3. Candidates in likelihood order — a trusted learned pattern first — are
 //      checked through the verification server until the first `safe`.
@@ -16,7 +18,16 @@ import crypto from 'crypto'
 import type { EmailDomainRecord } from '../db'
 import { firstLastLikelihood } from './formatStats'
 import { generateCandidates, type Candidate } from './patterns'
-import { providerFromMx, refusedIp, VerificationLimitError, type Lease, type MailProvider } from './proxyRouter'
+import {
+  familyFromMx,
+  isGateway,
+  providerFromMx,
+  refusedIp,
+  VerificationLimitError,
+  type Lease,
+  type MailFamily,
+  type MailProvider,
+} from './proxyRouter'
 import type { CheckResult } from './reacher'
 import type { EmailStatus, LookupOutcome } from './types'
 import { recordLookup } from '../usage'
@@ -25,11 +36,22 @@ const DAY = 86_400_000
 /** A learned address format is re-checked after this long. */
 const DOMAIN_REFRESH_MS = 90 * DAY
 /**
- * A company found to accept every address stays marked (and hidden from
- * search) this long before it's tested again. Longer than for formats: mail
- * setups rarely change, and each re-test is a check that can't succeed.
+ * How long a catch-all verdict stands before the company is tested again
+ * (while it stands, the company is also hidden from search). Mail setups
+ * rarely change and each re-test is a check that can't succeed, but a
+ * verdict from one SMTP session can be a fluke, and a wrong one costs every
+ * address at that company.
  */
-const CATCH_ALL_REFRESH_MS = 180 * DAY
+const CATCH_ALL_CONFIRMED_MS = 90 * DAY
+/** Confirmed, behind a security gateway that accepts everything by design. */
+const CATCH_ALL_GATEWAY_MS = 180 * DAY
+/** One session's verdict, or one recorded before verdicts were confirmed. */
+const CATCH_ALL_UNCONFIRMED_MS = 30 * DAY
+/** A company that turned a made-up address away. */
+const NOT_CATCH_ALL_MS = 180 * DAY
+/** An inconclusive catch-all test is repeated after this long, not on every lookup. */
+const GREYLIST_RECHECK_MS = 5 * 60_000
+const INCONCLUSIVE_RECHECK_MS = DAY
 const MX_REFRESH_MS = 30 * DAY
 /** A pattern at or above this confidence is tried first, on its own. */
 const TRUSTED_CONFIDENCE = 0.8
@@ -79,7 +101,7 @@ export function isKnownCatchAll(domain: string, getDomain: FinderDeps['getDomain
   const labels = domain.toLowerCase().trim().split('.')
   for (;;) {
     const rec = getDomain(labels.join('.'))
-    if (rec?.catch_all === true && !isStale(rec.catch_all_checked_at, CATCH_ALL_REFRESH_MS, now)) return true
+    if (rec?.catch_all === true && !isStale(rec.catch_all_checked_at, catchAllMaxAge(rec), now)) return true
     if (rec?.accepts_mail !== false || labels.length <= 2) return false
     labels.shift()
     if (PUBLIC_SUFFIX_RE.test(labels.join('.'))) return false
@@ -176,6 +198,60 @@ async function verify(
 const isStale = (iso: string | null, maxAgeMs: number, now: number) =>
   !iso || now - new Date(iso).getTime() > maxAgeMs
 
+function catchAllMaxAge(rec: EmailDomainRecord): number {
+  if (rec.catch_all !== true) return NOT_CATCH_ALL_MS
+  if (!rec.catch_all_confirmed) return CATCH_ALL_UNCONFIRMED_MS
+  return isGateway(rec.mx_family) ? CATCH_ALL_GATEWAY_MS : CATCH_ALL_CONFIRMED_MS
+}
+
+const GATEWAY_NAMES: Partial<Record<MailFamily, string>> = {
+  mimecast: 'Mimecast',
+  proofpoint: 'Proofpoint',
+  barracuda: 'Barracuda',
+  cisco: 'Cisco Secure Email',
+  trendmicro: 'Trend Micro',
+  sophos: 'Sophos',
+  symantec: 'Symantec',
+  forcepoint: 'Forcepoint',
+  hornetsecurity: 'Hornetsecurity',
+}
+
+type ProbeVerdict =
+  | { catchAll: true; source: 'reacher_flag' | 'probe_accepted' }
+  | { catchAll: false }
+  | { catchAll: null; greylisted: boolean }
+
+/**
+ * What one made-up address's check says about the domain. `risky` (a full
+ * inbox, say) and no answer say nothing either way.
+ */
+function probeVerdict(result: CheckResult | null): ProbeVerdict {
+  if (!result) return { catchAll: null, greylisted: false }
+  if (result.isCatchAll === true) return { catchAll: true, source: 'reacher_flag' }
+  if (result.isCatchAll === false) return { catchAll: false }
+  if (result.reachability === 'safe') return { catchAll: true, source: 'probe_accepted' }
+  if (result.reachability === 'invalid') return { catchAll: false }
+  return { catchAll: null, greylisted: result.outcome === 'greylisted' }
+}
+
+/** A made-up address shaped like hex noise, the first probe. */
+const hexProbe = () => crypto.randomBytes(9).toString('hex')
+
+/**
+ * A made-up address shaped like a person's (`first.last`), the second probe:
+ * some servers treat noise differently from a plausible name.
+ */
+function nameProbe(): string {
+  const consonants = 'bcdfghklmnprstvz'
+  const vowels = 'aeiou'
+  const word = () =>
+    Array.from({ length: 7 }, (_, i) => {
+      const letters = i % 2 ? vowels : consonants
+      return letters[crypto.randomInt(letters.length)]
+    }).join('')
+  return `${word()}.${word()}`
+}
+
 function trustedPattern(rec: EmailDomainRecord | null, now: number): string | null {
   if (!rec?.pattern || rec.pattern_confidence < TRUSTED_CONFIDENCE) return null
   return isStale(rec.pattern_verified_at, DOMAIN_REFRESH_MS, now) ? null : rec.pattern
@@ -193,12 +269,13 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
     const now = deps.now()
     let rec = deps.getDomain(domain) ?? deps.updateDomain(domain, {})
 
-    if (isStale(rec.mx_checked_at, MX_REFRESH_MS, now)) {
+    if (isStale(rec.mx_checked_at, MX_REFRESH_MS, now) || rec.mx_family === undefined) {
       try {
         const hosts = await deps.resolveMx(domain)
         rec = deps.updateDomain(domain, {
           accepts_mail: hosts.length > 0,
           mx_provider: hosts.length > 0 ? providerFromMx(hosts) : null,
+          mx_family: hosts.length > 0 ? familyFromMx(hosts) : null,
           mx_checked_at: new Date(now).toISOString(),
         })
       } catch {
@@ -206,18 +283,29 @@ async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDom
       }
     }
 
+    const recheckAt = rec.catch_all_recheck_at ? Date.parse(rec.catch_all_recheck_at) : 0
     if (
       deps.verifier &&
       rec.accepts_mail !== false &&
-      isStale(rec.catch_all_checked_at, CATCH_ALL_REFRESH_MS, now)
+      isStale(rec.catch_all_checked_at, catchAllMaxAge(rec), now) &&
+      recheckAt <= now
     ) {
-      const probe = `${crypto.randomBytes(9).toString('hex')}@${domain}`
-      const { result } = await verify(deps.verifier, probe, domain, rec.mx_provider ?? 'other')
-      const catchAll = !result
-        ? null
-        : result.isCatchAll ?? (result.reachability === 'safe' || result.reachability === 'risky' ? true : result.reachability === 'invalid' ? false : null)
-      if (catchAll !== null) {
-        rec = deps.updateDomain(domain, { catch_all: catchAll, catch_all_checked_at: new Date(now).toISOString() })
+      const provider = rec.mx_provider ?? 'other'
+      const first = probeVerdict((await verify(deps.verifier, `${hexProbe()}@${domain}`, domain, provider)).result)
+      const checkedAt = new Date(now).toISOString()
+      if (first.catchAll === true) {
+        // Confirm in a separate session before writing off every address there.
+        const second = probeVerdict((await verify(deps.verifier, `${nameProbe()}@${domain}`, domain, provider)).result)
+        rec = deps.updateDomain(domain, second.catchAll === false
+          ? { catch_all: false, catch_all_source: null, catch_all_confirmed: false, catch_all_checked_at: checkedAt, catch_all_recheck_at: null }
+          : { catch_all: true, catch_all_source: first.source, catch_all_confirmed: second.catchAll === true, catch_all_checked_at: checkedAt, catch_all_recheck_at: null })
+      } else if (first.catchAll === false) {
+        rec = deps.updateDomain(domain, { catch_all: false, catch_all_source: null, catch_all_confirmed: false, catch_all_checked_at: checkedAt, catch_all_recheck_at: null })
+      } else {
+        // Inconclusive: keep the last verdict, and don't spend a probe on
+        // every lookup until it's worth trying again.
+        const wait = first.greylisted ? GREYLIST_RECHECK_MS : INCONCLUSIVE_RECHECK_MS
+        rec = deps.updateDomain(domain, { catch_all_recheck_at: new Date(now + wait).toISOString() })
       }
     }
     return rec
@@ -310,7 +398,10 @@ export async function findEmail(
     : candidates[0].pattern === '{first}.{last}'
       ? firstLastLikelihood(opts.headcount)
       : 'This is the most likely format.'
-  const catchAllReason = `${domain} accepts every address, so none can be confirmed.`
+  const gateway = GATEWAY_NAMES[rec.mx_family ?? 'other']
+  const catchAllReason = gateway
+    ? `${domain}'s mail is filtered by ${gateway}, which accepts every address, so none can be confirmed.`
+    : `${domain} accepts every address, so none can be confirmed.`
   const catchAll: FindResult = {
     email: candidates[0].email,
     status: 'catch_all_likely',
@@ -365,7 +456,13 @@ export async function findEmail(
 
     if (result.isCatchAll) {
       // The probe missed it (or it was never run); record and stop guessing.
-      deps.updateDomain(domain, { catch_all: true, catch_all_checked_at: new Date(deps.now()).toISOString() })
+      deps.updateDomain(domain, {
+        catch_all: true,
+        catch_all_source: 'candidate_flag',
+        catch_all_confirmed: false,
+        catch_all_checked_at: new Date(deps.now()).toISOString(),
+        catch_all_recheck_at: null,
+      })
       return done(catchAll)
     }
 

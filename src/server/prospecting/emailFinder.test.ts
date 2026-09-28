@@ -5,13 +5,22 @@ import type { Reachability } from './reacher'
 
 const NOW = Date.parse('2026-09-01T00:00:00Z')
 
+/** The finder's made-up catch-all probes: hex noise, then a made-up `first.last`. */
+const isProbe = (email: string) => {
+  const local = email.split('@')[0]
+  return /^[0-9a-f]{18}$/.test(local) || /^([bcdfghklmnprstvz][aeiou]){3}[bcdfghklmnprstvz]\.([bcdfghklmnprstvz][aeiou]){3}[bcdfghklmnprstvz]$/.test(local)
+}
+
 /**
- * Fake finder deps. `mailbox` decides the verification server's verdict on each address; random
- * catch-all probes fall through to `probe`.
+ * Fake finder deps. `mailbox` decides the verification server's verdict on each address; the
+ * made-up catch-all probes fall through to `probe` (a list: one verdict per probe, in order, the
+ * last repeating).
  */
 function setup(opts: {
   mailbox?: Record<string, Reachability>
-  probe?: Reachability
+  probe?: Reachability | Reachability[]
+  /** SMTP message on every probe, e.g. a greylisting reply. */
+  probeMessage?: string
   mx?: string[] | Error
   /** Per-domain MX hosts; domains not listed have none. Overrides `mx`. */
   mxByDomain?: Record<string, string[]>
@@ -28,10 +37,13 @@ function setup(opts: {
     })
   }
   const checked: string[] = []
+  const probes = [opts.probe ?? 'invalid'].flat()
+  let probeCount = 0
   const check = vi.fn(async (email: string) => {
     checked.push(email)
-    const verdict = opts.mailbox?.[email] ?? (email.split('@')[0].length === 18 ? opts.probe ?? 'invalid' : 'invalid')
-    const message = opts.smtpMessage?.[email]
+    const probe = isProbe(email)
+    const verdict = opts.mailbox?.[email] ?? (probe ? probes[Math.min(probeCount++, probes.length - 1)] : 'invalid')
+    const message = probe ? opts.probeMessage : opts.smtpMessage?.[email]
     return {
       reachability: verdict,
       isCatchAll: null,
@@ -60,9 +72,10 @@ function setup(opts: {
     },
     now: () => NOW,
   }
-  // Candidate checks, excluding the random catch-all probe.
-  const candidateChecks = () => checked.filter((e) => e.split('@')[0].length !== 18)
-  return { deps, domains, checked, candidateChecks }
+  // Candidate checks, excluding the made-up catch-all probes.
+  const candidateChecks = () => checked.filter((e) => !isProbe(e))
+  const probeChecks = () => checked.filter(isProbe)
+  return { deps, domains, checked, candidateChecks, probeChecks }
 }
 
 const jane = { firstName: 'Jane', lastName: 'Smith' }
@@ -118,10 +131,75 @@ describe('findEmail', () => {
     expect(domains.get('acme.com')!.pattern).toBeNull()
   })
 
+  it('confirms a catch-all with a second, name-shaped probe before trusting it', async () => {
+    const { deps, domains, probeChecks } = setup({ probe: 'safe' })
+    await findEmail(jane, 'acme.com', deps)
+    expect(probeChecks()).toHaveLength(2)
+    expect(probeChecks()[1]).toMatch(/^[a-z]{7}\.[a-z]{7}@acme\.com$/)
+    expect(domains.get('acme.com')).toMatchObject({ catch_all: true, catch_all_source: 'probe_accepted', catch_all_confirmed: true })
+  })
+
+  it('checks people normally when the second probe is turned away', async () => {
+    const { deps, domains, candidateChecks } = setup({ probe: ['safe', 'invalid'], mailbox: { 'jsmith@acme.com': 'safe' } })
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result).toMatchObject({ email: 'jsmith@acme.com', status: 'verified' })
+    expect(candidateChecks()).toEqual(['jane.smith@acme.com', 'jsmith@acme.com'])
+    expect(domains.get('acme.com')!.catch_all).toBe(false)
+  })
+
+  it('keeps an unconfirmed catch-all when the second probe gets no answer', async () => {
+    const { deps, domains } = setup({ probe: ['safe', 'unknown'] })
+    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('catch_all_likely')
+    expect(domains.get('acme.com')).toMatchObject({ catch_all: true, catch_all_confirmed: false })
+  })
+
+  it('does not take a risky answer on a made-up address as catch-all', async () => {
+    const { deps, domains, candidateChecks } = setup({ probe: 'risky', mailbox: { 'jane.smith@acme.com': 'safe' } })
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result.status).toBe('verified')
+    expect(candidateChecks()).toEqual(['jane.smith@acme.com'])
+    const rec = domains.get('acme.com')!
+    expect(rec.catch_all).toBeNull()
+    // Inconclusive: tried again tomorrow, not on every lookup.
+    expect(rec.catch_all_recheck_at).toBe(new Date(NOW + 86_400_000).toISOString())
+  })
+
+  it('repeats a greylisted catch-all test after the greylist window, not on every lookup', async () => {
+    const { deps, probeChecks } = setup({ probe: 'unknown', probeMessage: '451 4.7.1 greylisted, try again later' })
+    let now = NOW
+    deps.now = () => now
+    await findEmail(jane, 'acme.com', deps)
+    await findEmail(jane, 'acme.com', deps)
+    expect(probeChecks()).toHaveLength(1)
+    now += 5 * 60_000
+    await findEmail(jane, 'acme.com', deps)
+    expect(probeChecks()).toHaveLength(2)
+  })
+
+  it('re-tests an unconfirmed catch-all after 30 days, a confirmed one after 90', async () => {
+    const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
+    const known = { accepts_mail: true, mx_provider: 'google' as const, mx_family: 'google' as const, mx_checked_at: daysAgo(1) }
+    const legacy = setup({ probe: 'invalid', domain: { ...known, catch_all: true, catch_all_checked_at: daysAgo(40) } })
+    await findEmail(jane, 'acme.com', legacy.deps)
+    expect(legacy.probeChecks()).toHaveLength(1)
+    expect(legacy.domains.get('acme.com')!.catch_all).toBe(false)
+
+    const confirmed = setup({ domain: { ...known, catch_all: true, catch_all_confirmed: true, catch_all_checked_at: daysAgo(40) } })
+    expect((await findEmail(jane, 'acme.com', confirmed.deps)).status).toBe('catch_all_likely')
+    expect(confirmed.checked).toEqual([])
+  })
+
+  it('names the security gateway that makes a company accept every address', async () => {
+    const { deps, domains } = setup({ probe: 'safe', mx: ['eu-smtp-inbound-1.mimecast.com'] })
+    const result = await findEmail(jane, 'acme.com', deps)
+    expect(result.reason).toBe("acme.com's mail is filtered by Mimecast, which accepts every address, so none can be confirmed.")
+    expect(domains.get('acme.com')!.mx_family).toBe('mimecast')
+  })
+
   it('probes catch-all once per domain even for concurrent lookups', async () => {
     const { deps, checked } = setup({ mailbox: { 'jane.smith@acme.com': 'safe', 'bob.jones@acme.com': 'safe' } })
     await Promise.all([findEmail(jane, 'acme.com', deps), findEmail({ firstName: 'Bob', lastName: 'Jones' }, 'acme.com', deps)])
-    expect(checked.filter((e) => e.split('@')[0].length === 18)).toHaveLength(1)
+    expect(checked.filter(isProbe)).toHaveLength(1)
   })
 
   it('falls back from a website subdomain that takes no mail to its parent domain', async () => {
@@ -234,10 +312,16 @@ describe('isKnownCatchAll', () => {
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: fresh }) }), NOW)).toBe(true)
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: false, catch_all_checked_at: fresh }) }), NOW)).toBe(false)
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: '2025-01-01T00:00:00Z' }) }), NOW)).toBe(false)
-    // Remembered for 180 days (learned formats only 90).
+    // Remembered 30 days from one session, 90 once confirmed, 180 behind a gateway.
     const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
-    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(120) }) }), NOW)).toBe(true)
-    expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(200) }) }), NOW)).toBe(false)
+    const known = (days: number, patch: Partial<EmailDomainRecord> = {}) =>
+      isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: daysAgo(days), ...patch }) }), NOW)
+    expect(known(20)).toBe(true)
+    expect(known(40)).toBe(false)
+    expect(known(80, { catch_all_confirmed: true })).toBe(true)
+    expect(known(120, { catch_all_confirmed: true })).toBe(false)
+    expect(known(120, { catch_all_confirmed: true, mx_family: 'proofpoint' })).toBe(true)
+    expect(known(200, { catch_all_confirmed: true, mx_family: 'proofpoint' })).toBe(false)
     // Never checked: unknown, so not hidden.
     expect(isKnownCatchAll('acme.com', lookup({}), NOW)).toBe(false)
   })

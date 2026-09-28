@@ -438,3 +438,46 @@ export function providerFromMx(mxHosts: string[]): MailProvider {
   if (hosts.some((h) => /(outlook\.com|protection\.outlook\.com|hotmail\.com)\.?$/.test(h))) return 'microsoft'
   return 'other'
 }
+
+/**
+ * Who answers a domain's mail, finer than `MailProvider`: the mailbox host,
+ * or the email security gateway in front of it. Gateways often accept every
+ * address at RCPT and bounce unknown ones afterwards, which makes a company
+ * look catch-all whatever its mailboxes are.
+ */
+export type MailFamily =
+  | 'google'
+  | 'microsoft'
+  | 'mimecast'
+  | 'proofpoint'
+  | 'barracuda'
+  | 'cisco'
+  | 'trendmicro'
+  | 'sophos'
+  | 'symantec'
+  | 'forcepoint'
+  | 'hornetsecurity'
+  | 'other'
+
+const GATEWAY_MX: Array<[Exclude<MailFamily, 'google' | 'microsoft' | 'other'>, RegExp]> = [
+  ['mimecast', /mimecast(-offshore)?\.(com|co\.za)\.?$/],
+  ['proofpoint', /(pphosted\.com|ppe-hosted\.com|proofpoint\.com)\.?$/],
+  ['barracuda', /(barracudanetworks\.com|barracuda\.com|cudasvc\.com)\.?$/],
+  ['cisco', /iphmx\.com\.?$/],
+  ['trendmicro', /(trendmicro\.com|trendmicro\.eu)\.?$/],
+  ['sophos', /sophos\.com\.?$/],
+  ['symantec', /messagelabs\.com\.?$/],
+  ['forcepoint', /mailcontrol\.com\.?$/],
+  ['hornetsecurity', /hornetsecurity\.com\.?$/],
+]
+
+export function familyFromMx(mxHosts: string[]): MailFamily {
+  const hosts = mxHosts.map((h) => h.toLowerCase())
+  // A gateway in front of Google or Microsoft is what answers RCPT, so it wins.
+  for (const [family, re] of GATEWAY_MX) if (hosts.some((h) => re.test(h))) return family
+  const provider = providerFromMx(hosts)
+  return provider
+}
+
+export const isGateway = (family: MailFamily | null | undefined) =>
+  !!family && family !== 'google' && family !== 'microsoft' && family !== 'other'

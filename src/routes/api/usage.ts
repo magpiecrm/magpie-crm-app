@@ -9,6 +9,8 @@ import { createFileRoute } from '@tanstack/react-router'
  *   Authorization: Bearer <USAGE_API_TOKEN>
  *
  * Off (404) unless USAGE_API_TOKEN is set. Counts only; nothing about who.
+ * Each month also carries `hitRate`: verified lookups out of those that
+ * reached a mail server (`lookupHitRate` in usage.ts).
  * Each response also carries `storage`: the data file's size in bytes and
  * the row count of each collection, so a host can see a copy outgrowing it.
  */
@@ -25,15 +27,16 @@ export const Route = createFileRoute('/api/usage')({
         const { hasUsageToken } = await import('../../server/usageToken')
         if (!hasUsageToken(request)) return json({ error: 'Unauthorized' }, 401)
 
-        const { getUsage, usageForMonth } = await import('../../server/usage')
+        const { getUsage, lookupHitRate, usageForMonth } = await import('../../server/usage')
         const { db } = await import('../../server/db')
         const storage = db.storageStats()
         const month = new URL(request.url).searchParams.get('month')
         if (month !== null) {
           if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({ error: 'month must look like 2026-09' }, 400)
-          return json({ month, ...usageForMonth(month), storage })
+          const counts = usageForMonth(month)
+          return json({ month, ...counts, hitRate: lookupHitRate(counts), storage })
         }
-        return json({ months: getUsage(), storage })
+        return json({ months: getUsage().map((m) => ({ ...m, hitRate: lookupHitRate(m) })), storage })
       },
     },
   },
