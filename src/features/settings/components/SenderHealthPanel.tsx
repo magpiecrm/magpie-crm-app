@@ -46,7 +46,7 @@ function Lists({ listedOn, unchecked, total }: { listedOn: string[]; unchecked: 
 }
 
 /**
- * Blocklist, reverse DNS and SPF status of the IPs and FROM domain Reacher
+ * Blocklist, reverse DNS and SPF status of the IPs and FROM domain the verification server
  * verifies from. Checked every six hours in the background; a new listing
  * also raises a notification.
  */
@@ -71,7 +71,7 @@ export function SenderHealthPanel({
     setError('')
     try {
       const next = await checkSenderHealthFn()
-      if (!next) setError('Reacher isn’t in use, so there’s nothing to check. Save your settings first.')
+      if (!next) setError('The verification server isn’t in use, so there’s nothing to check. Save your settings first.')
       queryClient.setQueryData(queryKeys.prospects.senderHealth(), next)
       queryClient.invalidateQueries({ queryKey: queryKeys.prospects.status() })
     } catch (e: any) {
@@ -178,7 +178,7 @@ export function SenderHealthPanel({
 
           {report.issues.length > 0 && (
             <div className="px-3 py-2.5 flex flex-col gap-1.5">
-              <span className="text-sm font-semibold text-foreground">Reacher setup</span>
+              <span className="text-sm font-semibold text-foreground">Verification server setup</span>
               <ul className="flex flex-col gap-1.5">
                 {report.issues.map((issue) => (
                   <IssueRow key={issue.code} issue={issue} />

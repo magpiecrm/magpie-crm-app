@@ -164,7 +164,7 @@ export function Sidebar({
           {status && !status.managed && (
             <p className="text-[10px] text-muted-foreground mt-2">
               Email verification:{' '}
-              {status.verification.provider === 'reacher' ? 'Reacher' : 'off (best guess only)'}
+              {status.verification.provider === 'reacher' ? 'on' : 'off (best guess only)'}
             </p>
           )}
           {(status?.senderHealth?.level === 'critical' || status?.senderHealth?.level === 'warning') && (

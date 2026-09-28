@@ -166,10 +166,10 @@ export interface PeopleSource {
 
 /** Outcome of email finding for one person, before anything is stored. */
 export type EmailStatus =
-  | 'verified' // Reacher `safe` on a domain that is not catch-all
+  | 'verified' // verification server's `safe` on a domain that is not catch-all
   | 'catch_all_likely' // domain accepts everything; best-ranked guess
-  | 'risky' // Reacher `risky` and nothing better found
-  | 'unverified' // Reacher not configured, or every check came back `unknown`
+  | 'risky' // verification server's `risky` and nothing better found
+  | 'unverified' // no verification server, or every check came back `unknown`
   | 'not_found' // every candidate was rejected, or the domain takes no mail
 
 /**

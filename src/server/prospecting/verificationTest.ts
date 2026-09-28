@@ -1,4 +1,4 @@
-// "Test verification" in Settings → Email verification: does Reacher work, directly
+// "Test verification" in Settings → Email verification: does the verification server work, directly
 // or through each configured proxy?
 //
 // Each route is checked against Gmail and Microsoft 365 (the strictest common

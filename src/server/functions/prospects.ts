@@ -103,7 +103,7 @@ const personInput = z.object({
 
 /**
  * Finds and verifies one person's work email without saving them. Uses
- * Reacher (free) and, only if the company's website isn't cached yet, one
+ * the verification server (free) and, only if the company's website isn't cached yet, one
  * company-page lookup (1 credit, or 6-9 without the page name).
  */
 export const revealEmailFn = createServerFn({ method: 'POST' })
@@ -173,7 +173,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
         // The host's IPs aren't a managed copy's business.
         proxies: verifier?.provider === 'reacher' && !env.prospectingManaged() ? getProxyRouter().health() : [],
       },
-      // Only while Reacher is verifying and the checks are on: an old report
+      // Only while the verification server is verifying and the checks are on: an old report
       // shouldn't warn after switching away or turning them off.
       senderHealth:
         health && verifier?.provider === 'reacher' && env.verificationHealthChecks()
@@ -264,7 +264,7 @@ export const saveProspectingSettingsFn = createServerFn({ method: 'POST' })
     return getMaskedProspectingSettings()
   })
 
-/** Runs a no-real-mailbox SMTP check through Reacher, directly or via each proxy. */
+/** Runs a no-real-mailbox SMTP check through the verification server, directly or via each proxy. */
 export const testVerificationFn = createServerFn({ method: 'POST' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
@@ -274,7 +274,7 @@ export const testVerificationFn = createServerFn({ method: 'POST' })
     return testVerification()
   })
 
-/** Latest blocklist / reverse DNS / SPF report for the IPs and domain Reacher verifies from. */
+/** Latest blocklist / reverse DNS / SPF report for the IPs and domain the verification server verifies from. */
 export const senderHealthFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
@@ -284,7 +284,7 @@ export const senderHealthFn = createServerFn({ method: 'GET' })
     return env.verificationHealthChecks() ? db.getSenderHealth() : null
   })
 
-/** Runs the sender health check now. Null when Reacher isn't in use. */
+/** Runs the sender health check now. Null when the verification server isn't in use. */
 export const checkSenderHealthFn = createServerFn({ method: 'POST' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')

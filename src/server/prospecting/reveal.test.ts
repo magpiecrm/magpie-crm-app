@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinderDeps } from './emailFinder'
 import type { CompanySource, PersonResult } from './types'
 
-// Reveal against an in-memory db, a fake company source and a fake Reacher.
+// Reveal against an in-memory db, a fake company source and a fake verification server.
 
 let allowance: any = null
 const state = { suppression: [] as Array<{ hash: string }>, disclosure: [] as any[], companies: [] as any[], unverifiable: [] as any[] }

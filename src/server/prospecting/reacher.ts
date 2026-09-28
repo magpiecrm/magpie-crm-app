@@ -1,5 +1,5 @@
-// HTTP client for a self-hosted Reacher backend
-// (reacherhq/check-if-email-exists, AGPL-3.0). Reacher runs as its own
+// HTTP client for the self-hosted email verification server
+// (an open-source SMTP verifier, AGPL-3.0). It runs as its own
 // service; this app only talks to it over HTTP and never vendors its code.
 //
 //   POST {REACHER_URL}/v1/check_email
@@ -26,14 +26,14 @@ export interface CheckResult {
   isCatchAll: boolean | null
   /** How the SMTP exchange went, for proxy health. */
   outcome: CheckOutcome
-  /** Reacher's SMTP error message, if any. Server replies only, no address. */
+  /** The verification server's SMTP error message, if any. Server replies only, no address. */
   detail?: string
 }
 
 const TIMEOUT_MS = 60_000
 
 /**
- * Reacher reports SMTP failures as `smtp: { type, message }` with
+ * The verification server reports SMTP failures as `smtp: { type, message }` with
  * `is_reachable: 'unknown'`. The reply code in the message separates a
  * greylist (4xx, retry later) from a block (5xx policy rejection).
  */
@@ -90,7 +90,7 @@ export async function checkEmail(
   config: ReacherConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<CheckResult> {
-  // Plain SMTP for every provider: the headless-browser methods Reacher uses
+  // Plain SMTP for every provider: the headless-browser methods the verification server uses
   // for consumer Outlook/Yahoo by default need a WebDriver we don't run, and
   // prospecting targets company domains anyway.
   const body: Record<string, unknown> = {
@@ -123,12 +123,12 @@ export async function checkEmail(
     })
     if (!res.ok) {
       // Status only: the response can echo the address back.
-      console.warn(`[Reacher] check_email ${res.status}`)
+      console.warn(`[Verifier] check_email ${res.status}`)
       return {
         reachability: 'unknown',
         isCatchAll: null,
         outcome: res.status >= 500 ? 'timeout' : 'ok',
-        detail: res.status === 400 || res.status === 401 ? 'Reacher refused the request; check the Reacher secret.' : `Reacher returned HTTP ${res.status}`,
+        detail: res.status === 400 || res.status === 401 ? 'The verification server refused the request; check its secret.' : `The verification server returned HTTP ${res.status}`,
       }
     }
     const json = await res.json()
@@ -152,8 +152,8 @@ export async function checkEmail(
             : undefined,
     }
   } catch {
-    console.warn('[Reacher] check_email request failed or timed out')
-    return { reachability: 'unknown', isCatchAll: null, outcome: 'timeout', detail: 'Could not reach Reacher (is it running?)' }
+    console.warn('[Verifier] check_email request failed or timed out')
+    return { reachability: 'unknown', isCatchAll: null, outcome: 'timeout', detail: 'Could not reach the verification server (is it running?)' }
   } finally {
     clearTimeout(timer)
   }

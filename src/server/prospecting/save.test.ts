@@ -3,7 +3,7 @@ import type { FinderDeps } from './emailFinder'
 import type { CompanySource, PeopleSource, PersonResult } from './types'
 
 // End-to-end save and opt-out against an in-memory stand-in for the JSON db,
-// a fake SocialFetch company source and a fake Reacher. Nothing touches the
+// a fake SocialFetch company source and a fake verification server. Nothing touches the
 // network or disk.
 
 type Contact = {

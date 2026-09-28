@@ -116,7 +116,7 @@ describe('verification provider', () => {
     expect(settings.getActiveVerifier()).toBeNull()
   })
 
-  it('is Reacher once it is set up, unless switched off', () => {
+  it('is the verification server once it is set up, unless switched off', () => {
     settings.saveProspectingSettings({ reacherUrl: 'http://reacher:8080' })
     expect(settings.getActiveVerifier()).toMatchObject({ provider: 'reacher', reacher: { url: 'http://reacher:8080' } })
     settings.saveProspectingSettings({ verificationProvider: 'none' })
@@ -161,7 +161,7 @@ describe('verified only', () => {
   })
 })
 
-describe('Reacher config', () => {
+describe('verification server config', () => {
   it('is off until a URL is set', () => {
     expect(settings.getReacherConfig()).toBeNull()
   })

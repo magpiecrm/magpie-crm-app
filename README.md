@@ -10,8 +10,8 @@ layer:
   third-party ESP.
 - **[SocialFetch](https://www.socialfetch.dev/)** — the only source of company and
   people data for prospect search. Emails are generated from name + company
-  domain and, optionally, verified with a self-hosted
-  [Reacher](https://github.com/reacherhq/check-if-email-exists) instance.
+  domain and, optionally, verified with a self-hosted email verification
+  server (an open-source SMTP verifier; see [docs/proxies.md](docs/proxies.md)).
 
 There is also a copilot, an agent running on Claude or OpenAI models with
 your own API key, that can search prospects, create lists/campaigns/personas,
@@ -56,10 +56,10 @@ SOCIALFETCH_BALANCE=hidden # optional — don't show the credit balance (someone
 SUPPRESSION_SECRET=...   # recommended — keys the opt-out/suppression hashes;
                          # falls back to TRACKING_SECRET. Never rotate it.
 REACHER_URL=...          # optional — or set in Settings → Email verification;
-                         # e.g. http://reacher:8080; enables email
+                         # e.g. http://localhost:8080; enables email
                          # verification. Without it, emails are saved as
                          # "unverified" best guesses.
-REACHER_SECRET=...       # optional — matches RCH__HEADER_SECRET on Reacher
+REACHER_SECRET=...       # optional — matches the verification server's RCH__HEADER_SECRET
 REACHER_FROM_EMAIL=...   # optional — SMTP FROM used for verification
 REACHER_HELLO_NAME=...   # optional — EHLO name; should match the proxy's PTR
 ANTHROPIC_API_KEY=...    # optional — the copilot's Claude key; or set in Settings → Copilot
@@ -162,15 +162,15 @@ an OAuth sign-in flow that isn't built yet.
 Add your SocialFetch API key in **Settings → Data source** (it's stored
 encrypted in the database with `CREDENTIALS_SECRET` and takes priority over the
 `SOCIALFETCH_API_KEY` env var). "Test connection" checks it against
-SocialFetch's free balance endpoint. The Reacher and proxy settings live on the
-same tab.
+SocialFetch's free balance endpoint. The verification server and proxy
+settings are under **Settings → Email verification**.
 
 People search looks up every result's profile for their real current title and
 company (3 credits per result, on top of 3 per search page). **Reveal email**
 on a result finds and verifies that person's address without saving them;
 saving reuses it.
 
-Emails are verified by a self-hosted Reacher (`bun run reacher:up`, free),
+Emails are verified by a self-hosted verification server (`bun run verifier:up`, free),
 ideally through SOCKS5 proxies on servers with a clean IP. See
 [docs/proxies.md](docs/proxies.md) for setup, reverse DNS, rate limits and IP
 reputation.
@@ -181,11 +181,11 @@ contacts, and that is the only point where emails are looked up.
 
 - **Email finding**: candidates are ranked from the person's name (accents,
   hyphens, apostrophes and surname particles handled) and checked through
-  Reacher until one comes back `safe`. A verified address teaches the domain its
+  the verification server until one comes back `safe`. A verified address teaches the domain its
   pattern (e.g. `{first}.{last}`), cached globally *without* any name or
   address; catch-all status and MX are cached per domain too.
 - **Statuses**: `verified`, `catch_all_likely`, `risky`, `unverified` (no
-  Reacher, or greylisted), `not_found` (not saved).
+  verification server, or greylisted), `not_found` (not saved).
 - **Suppression**: `/api/opt-out` is a public page where anyone can opt out by
   email, LinkedIn URL, or name + company website. Identifiers are stored only as
   HMAC hashes (`SUPPRESSION_SECRET`), matching saved contacts are deleted, and
@@ -230,7 +230,7 @@ src/
     db.ts            JSON-file data store (contacts, lists, campaigns, ...)
     emailService.ts  Campaign send pipeline (reads db.ts, sends via nodemailer)
     nodemailer.ts    SMTP transport
-    prospecting/     SocialFetch connector, email finder, Reacher client,
+    prospecting/     SocialFetch connector, email finder, verification client,
                      proxy router, suppression + disclosure log, save jobs
     env.ts           Centralized API keys + base URLs
     functions/       createServerFn endpoints, split by domain

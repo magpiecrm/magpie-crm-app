@@ -19,7 +19,7 @@ key), with the app's actions as tools.
     interfaces in `types.ts`; it maps responses down to the few allowed fields
     (name, title, seniority, company, domain, country, profile URL) and nothing
     else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via the
-    self-hosted Reacher (`reacher.ts`), through `proxyRouter.ts`, which holds
+    self-hosted verification server (`reacher.ts`), through `proxyRouter.ts`, which holds
     the per-IP and per-company rate limits and pauses listed IPs.
     `reveal.ts` finds one
     email without saving (logged to the disclosure log like a save). `save.ts`

@@ -34,7 +34,7 @@ const toRows = (s: Masked): ProxyRow[] =>
 
 /**
  * Settings → Data source (the SocialFetch key) or Email verification
- * (Reacher, proxies, health, test). One form behind both pages: they share
+ * (verification server, proxies, health, test). One form behind both pages: they share
  * the saved prospecting settings, and blank secret fields mean "keep".
  */
 export function ProspectingTab({ section }: { section: 'source' | 'verification' }) {
@@ -313,7 +313,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
           {(
             [
               ['none', 'Off', 'Best guesses only'],
-              ['reacher', 'Reacher', 'Self-hosted, free. Checks come from your server or proxies.'],
+              ['reacher', 'Verification server', 'Self-hosted, free. Checks come from your server or proxies.'],
             ] as const
           ).map(([value, label, hint]) => (
             <label
@@ -354,45 +354,37 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
         </label>
 
         {settings?.verification.active && settings.verification.active !== provider && (
-          <p className="text-xs text-accent">Currently using Reacher. Save to switch.</p>
+          <p className="text-xs text-accent">Currently using the verification server. Save to switch.</p>
         )}
       </SettingsBlock>
 
       {provider === 'reacher' && (
         <>
-        {/* Reacher */}
+        {/* Verification server */}
         <SettingsBlock
-          title="Reacher (self-hosted)"
+          title="Verification server (self-hosted)"
           description={
           <p>
-            Point this at a self-hosted{' '}
-            <a
-              href="https://github.com/reacherhq/check-if-email-exists"
-              target="_blank"
-              rel="noreferrer"
-              className="text-accent hover:underline"
-            >
-              Reacher
-            </a>{' '}
-            server (<code className="font-mono">bun run reacher:up</code>). Checks come from its IP, or the proxies below.
+            Point this at your self-hosted email verification server (start one with{' '}
+            <code className="font-mono">bun run verifier:up</code>). Checks come from its IP, or the proxies below.
           </p>
           }
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Reacher URL</label>
+              <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Server URL</label>
               <input
                 id="reacher-url"
                 type="url"
                 autoComplete="off"
                 value={reacherUrl}
                 onChange={(e) => setReacherUrl(e.target.value)}
-                placeholder="http://reacher:8080"
+                placeholder="http://localhost:8080"
                 className={INPUT_CLASS}
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-secret" className="text-xs font-semibold text-foreground">Reacher secret</label>
+              <label htmlFor="reacher-secret" className="text-xs font-semibold text-foreground">Server secret</label>
               <SecretInput
                 id="reacher-secret"
                 value={reacherSecret}
@@ -435,7 +427,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
           description={
           <p>
             SOCKS5 proxies on servers with outbound port 25 open. Checks rotate across them, with stricter limits for Gmail
-            and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With none, Reacher connects
+            and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With none, the server connects
             directly from its own IP. Setup guide: <code className="font-mono">docs/proxies.md</code>.
           </p>
           }
@@ -564,7 +556,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
         title="Test verification"
         description={
         <p>
-          Checks a made-up address at Gmail and at Microsoft 365 through Reacher, directly or via each proxy. No real
+          Checks a made-up address at Gmail and at Microsoft 365 through the verification server, directly or via each proxy. No real
           mailbox is contacted. Save your changes first.
         </p>
         }

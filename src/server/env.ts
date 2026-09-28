@@ -91,7 +91,7 @@ export const env = {
   openai: {
     apiKey: () => readEnv('OPENAI_API_KEY'),
   },
-  // Reacher (reacherhq/check-if-email-exists) runs as its own service. Optional:
+  // The email verification server runs as its own service. Optional:
   // without it, email finding falls back to an unverified best-guess candidate.
   // URL, secret, FROM and HELO can also be set in Settings → Email verification.
   reacher: {
@@ -102,7 +102,7 @@ export const env = {
     /**
      * SOCKS5 proxies for SMTP verification, as a JSON array of
      * `{ "host", "port", "username"?, "password"?, "label"? }`. Unset means
-     * Reacher connects directly (which needs outbound port 25 on its host).
+     * The verification server connects directly (which needs outbound port 25 on its host).
      */
     proxies: () => readEnv('REACHER_PROXIES'),
   },

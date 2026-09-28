@@ -1,4 +1,4 @@
-// Prospecting integrations: the SocialFetch API key and the optional Reacher
+// Prospecting integrations: the SocialFetch API key and the optional verification server
 // verification service.
 //
 // Values saved in Settings → Data source and Email verification live in the DB (secrets encrypted with
@@ -65,7 +65,7 @@ type VerificationProvider = 'reacher' | 'none'
 export type ActiveVerifier = { provider: 'reacher'; reacher: ReacherConfig } | null
 
 /**
- * The verifier emails are checked with: Reacher, when it's set up and not
+ * The verifier emails are checked with: the verification server, when it's set up and not
  * switched off in Settings. (A leftover choice of NeverBounce, which was
  * removed, counts as "automatic".)
  */
@@ -116,7 +116,7 @@ export function saveSearchPreferences(input: { hideUnverifiable: boolean }) {
   db.saveProspectingSettings({ ...db.getProspectingSettings(), hide_unverifiable: input.hideUnverifiable, updated_at: new Date().toISOString() })
 }
 
-/** Null when no Reacher URL is set, i.e. verification is off. */
+/** Null when no verification server URL is set, i.e. verification is off. */
 export function getReacherConfig(): ReacherConfig | null {
   const stored = db.getProspectingSettings()
   const url = clean(stored?.reacher_url) ?? clean(env.reacher.url())
@@ -193,7 +193,7 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
 
   const reacherUrl = clean(input.reacherUrl)
   if (reacherUrl && !/^https?:\/\//i.test(reacherUrl)) {
-    throw new Error('Reacher URL must start with http:// or https://')
+    throw new Error('The verification server URL must start with http:// or https://')
   }
 
   db.saveProspectingSettings({

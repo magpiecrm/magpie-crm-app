@@ -1,4 +1,4 @@
-// Health of the identity Reacher verifies from: each IP it connects from (the
+// Health of the identity the verification server verifies from: each IP it connects from (the
 // proxies, or the server itself) and the domain in its FROM address. Mail
 // servers decide whether to answer a check by the same signals they use for
 // incoming mail, so a blocklisted IP or a sender domain without SPF turns
@@ -410,7 +410,7 @@ export async function checkSenderHealth(input: HealthInput, deps: HealthDeps): P
     issues.push({
       level: 'warning',
       code: 'no-from',
-      message: "No FROM address is set, so Reacher uses its default gmail.com sender. Mimecast and others reject it from a non-Google IP.",
+      message: "No FROM address is set, so the verification server uses its default gmail.com sender. Mimecast and others reject it from a non-Google IP.",
       fix: 'Set a FROM address on a domain you own (not your campaign sending domain).',
     })
   }
@@ -418,7 +418,7 @@ export async function checkSenderHealth(input: HealthInput, deps: HealthDeps): P
     issues.push({
       level: 'warning',
       code: 'no-helo',
-      message: "No HELO name is set, so Reacher introduces itself with a default name that doesn't match its IP.",
+      message: "No HELO name is set, so the verification server introduces itself with a default name that doesn't match its IP.",
       fix: "Set the HELO name to the verifying IP's reverse DNS name.",
     })
   }

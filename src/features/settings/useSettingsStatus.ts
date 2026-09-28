@@ -56,7 +56,7 @@ export function useSettingsStatus(): {
             }
           : health?.level === 'warning'
             ? { level: 'warning', text: 'The verification setup needs attention.', action: 'Review' }
-            : { level: 'ok', text: 'Reacher is checking found emails.' }
+            : { level: 'ok', text: 'The verification server is checking found emails.' }
   }
 
   const s = sending.data

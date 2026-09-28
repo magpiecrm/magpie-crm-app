@@ -315,7 +315,7 @@ describe('classifySmtpOutcome', () => {
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'Socks5', message: 'Error with reply: Host unreachable.' } } })).toBe('unreachable')
     // The proxy itself refusing the connection is still the proxy's problem.
     expect(classifySmtpOutcome({ is_reachable: 'unknown', smtp: { error: { type: 'Socks5', message: 'Connection refused (os error 111)' } } })).toBe('blocked')
-    // Shape observed from Reacher v0.11.7 when the proxy rejects the login.
+    // Shape observed from the verification server (v0.11.7) when the proxy rejects the login.
     expect(
       classifySmtpOutcome({
         is_reachable: 'unknown',
@@ -326,7 +326,7 @@ describe('classifySmtpOutcome', () => {
 })
 
 describe('checkEmail request', () => {
-  it('asks Reacher for plain SMTP checks, sends the secret, and routes through the proxy', async () => {
+  it('asks the verification server for plain SMTP checks, sends the secret, and routes through the proxy', async () => {
     const { checkEmail } = await import('./reacher')
     let sent: any = null
     let headers: any = null

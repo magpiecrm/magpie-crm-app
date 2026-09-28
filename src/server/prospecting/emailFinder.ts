@@ -5,7 +5,7 @@
 //      checked; if the server accepts it, nothing on that domain can be
 //      verified and the best-ranked guess is returned as `catch_all_likely`.
 //   3. Candidates in likelihood order — a trusted learned pattern first — are
-//      checked through Reacher until the first `safe`.
+//      checked through the verification server until the first `safe`.
 //   4. A `safe` result on a non-catch-all domain teaches the domain its
 //      pattern. Only the pattern is stored, never the name or address.
 //
@@ -34,7 +34,7 @@ const MX_REFRESH_MS = 30 * DAY
 /** A pattern at or above this confidence is tried first, on its own. */
 const TRUSTED_CONFIDENCE = 0.8
 /**
- * Reacher opens a fresh SMTP session per check, so the practical cap on RCPT
+ * The verification server opens a fresh SMTP session per check, so the practical cap on RCPT
  * TO probes against one domain is checks per person, plus the per-provider
  * rate limits in the proxy router.
  */
@@ -112,7 +112,7 @@ export interface FinderDeps {
   updateDomain(domain: string, patch: Partial<Omit<EmailDomainRecord, 'domain'>>): EmailDomainRecord
   /** MX hostnames; `[]` when the domain has none. Throws on lookup failure. */
   resolveMx(domain: string): Promise<string[]>
-  /** Null when verification (Reacher) isn't set up. */
+  /** Null when the verification server isn't set up. */
   verifier: {
     /** A slot to check an address at `domain`, within the per-IP and per-company limits. */
     acquire(provider: MailProvider, domain: string): Promise<Lease>

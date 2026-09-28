@@ -265,7 +265,7 @@ interface DbSchema {
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
-   * SocialFetch API key and Reacher secret; the rest isn't sensitive.
+   * SocialFetch API key and the verification server's secret; the rest isn't sensitive.
    */
   prospecting_settings?: ProspectingSettingsRecord
   /**
@@ -275,7 +275,7 @@ interface DbSchema {
   copilot_settings?: { secrets?: string; updated_at: string }
   /**
    * Latest blocklist / reverse DNS / SPF check of the IPs and FROM domain
-   * Reacher verifies from (prospecting/senderHealth.ts). The app's own
+   * the verification server checks from (prospecting/senderHealth.ts). The app's own
    * infrastructure only; no personal data.
    */
   sender_health?: SenderHealthReport
@@ -293,7 +293,7 @@ interface DbSchema {
 export interface ProspectingSettingsRecord {
   secrets?: string
   /**
-   * Whether emails are verified (Reacher) or not. Absent means "Reacher when
+   * Whether emails are verified (by the verification server) or not. Absent means "verify when
    * it's set up". `neverbounce` may linger from before it was removed; it's
    * treated as absent.
    */

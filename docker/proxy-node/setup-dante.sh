@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Turns a fresh Ubuntu/Debian server into a SOCKS5 proxy for email
-# verification (Dante). Only the IP that runs Reacher may use it, only for
+# verification (Dante). Only the verification server's IP may use it, only for
 # outbound SMTP (port 25), with a username and password.
 #
-#   sudo ALLOW_FROM=<ip that runs Reacher> PROXY_USER=reacher PROXY_PASS='<strong password>' \
+#   sudo ALLOW_FROM=<verification server IP> PROXY_USER=verify PROXY_PASS='<strong password>' \
 #     bash setup-dante.sh
 #
 # Then add the proxy in Settings → Prospecting (host = this server's IP,
@@ -23,7 +23,7 @@
 # See docs/proxies.md for reverse DNS (PTR) and IP reputation.
 set -euo pipefail
 
-: "${ALLOW_FROM:?Set ALLOW_FROM to the public IP that Reacher connects from}"
+: "${ALLOW_FROM:?Set ALLOW_FROM to the public IP the verification server connects from}"
 : "${PROXY_USER:?Set PROXY_USER}"
 PORT="${PORT:-1080}"
 EXTERNAL_IPS="${EXTERNAL_IPS:-}"
@@ -40,7 +40,7 @@ socksmethod: username
 user.privileged: root
 user.unprivileged: nobody
 
-# Only the Reacher host may connect at all.
+# Only the verification server may connect at all.
 client pass { from: $ALLOW_FROM/32 to: 0.0.0.0/0 }
 client block { from: 0.0.0.0/0 to: 0.0.0.0/0 }
 

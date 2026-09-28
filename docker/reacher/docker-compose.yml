@@ -1,9 +1,9 @@
-# Reacher (reacherhq/check-if-email-exists, AGPL-3.0) — the SMTP email
-# verifier, run as its own service and called over HTTP. Nothing from Reacher
+# The email verification server (an open-source SMTP verifier, AGPL-3.0),
+# run as its own service and called over HTTP. Nothing from it
 # is vendored into this repo.
 #
-#   bun run reacher:up      # start (reads REACHER_* from ../../.env)
-#   bun run reacher:down
+#   bun run verifier:up      # start (reads REACHER_* from ../../.env)
+#   bun run verifier:down
 #
 # Bound to localhost only: the header secret is the only auth, so it must not
 # be reachable from the network.

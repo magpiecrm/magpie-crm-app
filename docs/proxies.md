@@ -1,17 +1,17 @@
-# Email verification: Reacher and proxies
+# Email verification: the verification server and proxies
 
 "Reveal email" and "Save to list" find a work email by generating likely
 addresses (`jane.smith@`, `jsmith@`, …) and asking the company's mail server,
 over SMTP, whether each mailbox exists. No email is ever sent. That check is
-done by [Reacher](https://github.com/reacherhq/check-if-email-exists)
-(AGPL-3.0), which runs as its own service.
+done by the email verification server, an open-source SMTP verifier
+(AGPL-3.0) that runs as its own service (`docker/reacher/docker-compose.yml`).
 
-## 1. Run Reacher
+## 1. Run the verification server
 
 ```bash
-bun run reacher:up     # docker compose, bound to 127.0.0.1:8080
-bun run reacher:logs
-bun run reacher:down
+bun run verifier:up     # docker compose, bound to 127.0.0.1:8080
+bun run verifier:logs
+bun run verifier:down
 ```
 
 It reads `REACHER_SECRET` (required) and optionally `REACHER_HELLO_NAME` /
@@ -27,7 +27,7 @@ best guess.
 ## 2. Do you need proxies?
 
 Verification needs **outbound port 25**. Check from the machine running
-Reacher:
+the verification server:
 
 ```bash
 timeout 8 bash -c '</dev/tcp/gmail-smtp-in.l.google.com/25' && echo open || echo blocked
@@ -54,7 +54,7 @@ On a fresh Ubuntu/Debian server:
 ```bash
 scp docker/proxy-node/setup-dante.sh root@PROXY_IP:
 ssh root@PROXY_IP \
-  "ALLOW_FROM=<public IP that runs Reacher> PROXY_USER=reacher PROXY_PASS='<long random password>' bash setup-dante.sh"
+  "ALLOW_FROM=<public IP of the verification server> PROXY_USER=verify PROXY_PASS='<long random password>' bash setup-dante.sh"
 ```
 
 The script installs [Dante](https://www.inet.no/dante/) as a SOCKS5 proxy
@@ -65,7 +65,7 @@ that:
 - only relays to port 25, so it can't be used as a general proxy.
 
 (This configuration was tested: SMTP through the proxy works, other ports
-and wrong passwords are refused, and Reacher's checks go through it.)
+and wrong passwords are refused, and the verification server's checks go through it.)
 
 Then in **Settings → Email verification → Verification proxies** add the server's IP,
 port `1080` and the same username/password, save, and run **Test
@@ -98,8 +98,8 @@ connecting out from that IP, so each counts as a separate verification IP:
    port 1080:
 
    ```bash
-   EXTERNAL_IPS="<main IP> 203.0.113.10 203.0.113.11" ALLOW_FROM=<public IP that runs Reacher> \
-     PROXY_USER=reacher PROXY_PASS='<long random password>' bash setup-dante.sh
+   EXTERNAL_IPS="<main IP> 203.0.113.10 203.0.113.11" ALLOW_FROM=<public IP of the verification server> \
+     PROXY_USER=verify PROXY_PASS='<long random password>' bash setup-dante.sh
    ```
 
    It prints one line per IP (host, port, outgoing IP) to add as separate

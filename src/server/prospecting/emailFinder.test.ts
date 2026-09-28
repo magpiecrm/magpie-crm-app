@@ -6,7 +6,7 @@ import type { Reachability } from './reacher'
 const NOW = Date.parse('2026-09-01T00:00:00Z')
 
 /**
- * Fake finder deps. `mailbox` decides each address's Reacher verdict; random
+ * Fake finder deps. `mailbox` decides the verification server's verdict on each address; random
  * catch-all probes fall through to `probe`.
  */
 function setup(opts: {
@@ -191,7 +191,7 @@ describe('findEmail', () => {
     expect((await findEmail(jane, 'acme.com', deps)).status).toBe('verified')
   })
 
-  it('returns an unverified best guess without Reacher', async () => {
+  it('returns an unverified best guess without the verification server', async () => {
     const { deps } = setup({ verifier: false })
     expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({
       email: 'jane.smith@acme.com', status: 'unverified', outcome: 'unchecked', greylisted: false, detail: expect.stringMatching(/verification is off/),

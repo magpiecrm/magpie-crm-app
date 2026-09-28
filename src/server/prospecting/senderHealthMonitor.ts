@@ -36,7 +36,7 @@ const deps: HealthDeps = {
   now: () => Date.now(),
 }
 
-/** Reacher's URL points at this machine (or a private network), so it connects out from this machine's IP. */
+/** The verification server's URL points at this machine (or a private network), so it connects out from this machine's IP. */
 function isLocalHost(hostname: string): boolean {
   return (
     !hostname.includes('.') || // docker service name, e.g. "reacher"
@@ -52,7 +52,7 @@ function isLocalHost(hostname: string): boolean {
   )
 }
 
-/** The Reacher setup in use, or null when Reacher isn't verifying anything. */
+/** The verification server setup in use, or null when the verification server isn't verifying anything. */
 function reacherInUse(): ReacherConfig | null {
   return getActiveVerifier()?.reacher ?? null
 }
@@ -66,7 +66,7 @@ function targetsFor(reacher: ReacherConfig): HealthTarget[] {
   } catch {
     // Invalid URL: fall through to this machine.
   }
-  return hostname && !isLocalHost(hostname) ? [{ label: 'Reacher server', host: hostname }] : [{ label: 'This server', host: null }]
+  return hostname && !isLocalHost(hostname) ? [{ label: 'Verification server', host: hostname }] : [{ label: 'This server', host: null }]
 }
 
 /**
@@ -101,8 +101,8 @@ export function verificationPauseReason(proxy: ProxyConfig | null): string | nul
 let running: Promise<SenderHealthReport | null> | null = null
 
 /**
- * Checks the IPs and FROM domain Reacher verifies from, stores the report and
- * notifies about new critical problems. Null when Reacher isn't in use or
+ * Checks the IPs and FROM domain the verification server verifies from, stores the report and
+ * notifies about new critical problems. Null when the verification server isn't in use or
  * the checks are off (VERIFICATION_HEALTH_CHECKS=off).
  */
 export function runSenderHealthCheck(): Promise<SenderHealthReport | null> {
