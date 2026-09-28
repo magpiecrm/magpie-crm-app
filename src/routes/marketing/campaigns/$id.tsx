@@ -3,101 +3,64 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { useState } from 'react'
 import {
+  getCampaignActivityFn,
   getCampaignFn,
   listsFn,
   sendCampaignFn,
   unscheduleCampaignFn,
 } from '../../../server/functions'
-import { 
-  ArrowLeft, 
-  Share2, 
-  Download, 
-  Mail, 
-  HelpCircle,
+import {
+  ArrowLeft,
+  Mail,
   CheckCircle2,
   Clock,
   ExternalLink,
-  ChevronDown,
   Loader2,
   Send,
   CalendarClock,
   FilePen,
 } from 'lucide-react'
+import { ExportMenu } from '../../../components/ui/ExportMenu'
+import {
+  ClicksTab,
+  DeliverabilityTab,
+  OpensTab,
+  UnsubscribesTab,
+} from '../../../features/campaigns/components/CampaignResultTabs'
+import { RECIPIENT_EXPORT_COLUMNS, campaignTotals, percent } from '../../../features/campaigns/results'
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-
-/**
- * The four "breakdown by lists" tables on this page all share one shape:
- * a list name plus N right-aligned metrics. Below md they render as cards,
- * because six right-aligned numeric columns are unreadable on a phone.
- */
-function ListBreakdownTable({
-  lists,
-  columns,
-}: {
-  lists: any[]
-  columns: { label: string; render: (list: any) => React.ReactNode; strong?: boolean }[]
-}) {
-  return (
-    <>
-      <ul className="md:hidden divide-y divide-border">
-        {lists.map(list => (
-          <li key={list.id} className="p-4">
-            <p className="font-semibold text-foreground truncate mb-2">{list.name}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {columns.map(col => (
-                <div key={col.label} className="bg-muted/20 rounded-lg p-2">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider truncate">{col.label}</p>
-                  <p className="text-sm font-semibold text-foreground">{col.render(list)}</p>
-                </div>
-              ))}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <table className="hidden md:table w-full text-left border-collapse">
-        <thead>
-          <tr className="border-b border-border bg-muted/10 text-xs font-semibold text-muted-foreground uppercase">
-            <th className="px-6 py-3">List Name</th>
-            {columns.map(col => (
-              <th key={col.label} className="px-6 py-3 text-right">{col.label}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border text-sm">
-          {lists.map(list => (
-            <tr key={list.id} className="hover:bg-muted/30">
-              <td className="px-6 py-4 font-semibold text-foreground">{list.name}</td>
-              {columns.map(col => (
-                <td
-                  key={col.label}
-                  className={`px-6 py-4 text-right ${col.strong ? 'font-medium' : 'text-muted-foreground'}`}
-                >
-                  {col.render(list)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  )
-}
 
 export const Route = createFileRoute('/marketing/campaigns/$id')({
   component: CampaignDetailPage,
 })
 
+const TABS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'deliverability', label: 'Deliverability' },
+  { id: 'opens', label: 'Opens' },
+  { id: 'clicks', label: 'Clicks' },
+  { id: 'unsubscribes', label: 'Unsubscribes' },
+] as const
+
 function CampaignDetailPage() {
   const { id } = Route.useParams()
-  const [activeTab, setActiveTab] = useState<'overview' | 'deliverability' | 'opens' | 'clicks' | 'conversions' | 'unsubscribes'>('overview')
-  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['id']>('overview')
 
   const { data: campaign, isLoading: isLoadingCampaign } = useQuery({
     queryKey: queryKeys.email.campaign(id),
     queryFn: () => getCampaignFn({ data: { id: parseInt(id) } }),
+    // Results keep arriving after the send; refresh them while the page is open.
+    refetchInterval: (q) => (q.state.data?.status === 'sent' || q.state.data?.status === 'sending' ? 30_000 : false),
+  })
+  const hasResults = campaign?.status === 'sent' || campaign?.status === 'suspended'
+
+  const { data: activity } = useQuery({
+    queryKey: queryKeys.email.campaignActivity(id),
+    queryFn: () => getCampaignActivityFn({ data: { id: parseInt(id) } }),
+    enabled: hasResults,
+    refetchInterval: campaign?.status === 'sent' ? 30_000 : false,
   })
 
   const { data: listsData } = useQuery({
@@ -133,103 +96,25 @@ function CampaignDetailPage() {
     )
   }
 
-  // Statistics extraction
   const isSent = campaign.status === 'sent'
   const isSuspended = campaign.status === 'suspended'
   const isScheduled = campaign.status === 'scheduled' && Boolean(campaign.scheduledAt)
   const isSending = campaign.status === 'sending'
-  const showMetrics = isSent || isSuspended
+  const totals = campaignTotals(campaign.statistics?.globalStats)
+  const formattedDate = when(campaign.sentAt || campaign.createdAt)
+  const tabProps = { totals, activity, sentAt: campaign.sentAt, hasResults }
 
-  const globalStats = campaign.statistics?.globalStats || {}
-  const campaignStatsArray = campaign.statistics?.campaignStats || []
-
-  let cSent = globalStats.sent || 0
-  let cDelivered = globalStats.delivered || 0
-  let cOpened = globalStats.uniqueViews || globalStats.viewed || 0
-  let cClicked = globalStats.uniqueClicks || globalStats.clickers || 0
-  let cUnsubscribed = globalStats.unsubscriptions || 0
-  let cSoftBounces = globalStats.softBounces || 0
-  let cHardBounces = globalStats.hardBounces || 0
-  let cBounces = cSoftBounces + cHardBounces
-  let cTotalOpens = (cOpened * 1.1)
-  let cTotalClicks = (cClicked * 1.3)
-
-  // Fallback for Campaign ID 28 based on screenshots if database returns empty/0 stats
-  if (parseInt(id) === 28 && cSent === 0) {
-    cSent = 67
-    cDelivered = 67
-    cOpened = 11
-    cClicked = 1
-    cUnsubscribed = 0
-    cSoftBounces = 0
-    cHardBounces = 0
-    cBounces = 0
-    cTotalOpens = 12
-    cTotalClicks = 3
-  }
-
-  if (cSent === 0 && campaignStatsArray.length > 0) {
-    cSent = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.sent || 0), 0)
-    cDelivered = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.delivered || 0), 0)
-    cOpened = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueViews || cs.viewed || 0), 0)
-    cClicked = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueClicks || cs.clickers || 0), 0)
-    cUnsubscribed = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.unsubscriptions || 0), 0)
-    cSoftBounces = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.softBounces || 0), 0)
-    cHardBounces = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.hardBounces || 0), 0)
-    cBounces = cSoftBounces + cHardBounces
-  }
-
-  if (cDelivered === 0 && cSent > 0) {
-    cDelivered = cSent - cBounces
-    if (cDelivered < 0) cDelivered = 0
-  }
-
-  const deliveryRate = cSent > 0 ? (cDelivered / cSent) * 100 : 0
-  const openRate = cDelivered > 0 ? (cOpened / cDelivered) * 100 : 0
-  const clickRate = cDelivered > 0 ? (cClicked / cDelivered) * 100 : 0
-  const clickToOpenRate = cOpened > 0 ? (cClicked / cOpened) * 100 : 0
-  const unsubRate = cDelivered > 0 ? (cUnsubscribed / cDelivered) * 100 : 0
-
-  // Format Date
-  const dateStr = campaign.sentDate || campaign.createdAt
-  const formattedDate = dateStr
-    ? new Date(dateStr).toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '-'
-
-  // Map lists and segments
-  const combinedListIds = [
-    ...(campaign.recipients?.lists || []),
-    ...(campaign.recipients?.segments || [])
-  ]
-  const recipientLists = combinedListIds.map((listId: number) => {
+  const recipientLists = (campaign.recipients?.listIds || []).map((listId: number) => {
     const found = listsData?.lists?.find((l: any) => l.id === listId)
-    return {
-      id: listId,
-      name: found ? found.name : `List #${listId}`,
-    }
+    return { id: listId, name: found ? found.name : `List #${listId}` }
   })
-
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'deliverability', label: 'Deliverability' },
-    { id: 'opens', label: 'Opens' },
-    { id: 'clicks', label: 'Clicks' },
-    { id: 'conversions', label: 'Conversions' },
-    { id: 'unsubscribes', label: 'Unsubscribes' },
-  ] as const
 
   return (
     <div className="p-4 lg:p-8 max-w-7xl mx-auto min-h-[100dvh]">
       {/* Back button & Breadcrumb */}
       <div className="mb-6">
-        <Link 
-          to="/marketing/campaigns" 
+        <Link
+          to="/marketing/campaigns"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-accent transition-colors group mb-4"
         >
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
@@ -310,45 +195,18 @@ function CampaignDetailPage() {
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 shrink-0 self-stretch md:self-auto border-t md:border-t-0 border-border/60 pt-4 md:pt-0">
-          <button className="flex items-center justify-center p-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors">
-            <Share2 className="w-4 h-4" />
-          </button>
-          
-          <div className="relative">
-            <button 
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/85 active:scale-95 transition-all text-sm"
-            >
-              <Download className="w-4 h-4" />
-              <span>Export report</span>
-              <ChevronDown className="w-3.5 h-3.5 opacity-80" />
-            </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-xl shadow-lg z-20 overflow-hidden py-1">
-                <button 
-                  onClick={() => {
-                    alert('PDF Report generated!')
-                    setShowExportMenu(false)
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-muted/50 transition-colors text-sm"
-                >
-                  Download PDF
-                </button>
-                <button 
-                  onClick={() => {
-                    alert('CSV Statistics exported!')
-                    setShowExportMenu(false)
-                  }}
-                  className="w-full text-left px-4 py-2 hover:bg-muted/50 transition-colors text-sm"
-                >
-                  Export CSV Stats
-                </button>
-              </div>
-            )}
+        {/* Everyone it went to and what they did, as a spreadsheet. */}
+        {hasResults && activity && activity.recipients.length > 0 && (
+          <div className="shrink-0 self-stretch md:self-auto border-t md:border-t-0 border-border/60 pt-4 md:pt-0">
+            <ExportMenu
+              filename={`campaign_${campaign.name}_results`}
+              sheetName="Recipients"
+              rows={activity.recipients}
+              columns={RECIPIENT_EXPORT_COLUMNS}
+              label="Export results"
+            />
           </div>
-        </div>
+        )}
       </div>
 
       {/* Not sent yet: when it will go, and what can be done about it. */}
@@ -399,7 +257,7 @@ function CampaignDetailPage() {
       {/* Tabs Menu */}
       <div className="border-b border-border mb-8">
         <div className="flex gap-8 -mb-px overflow-x-auto scrollbar-none">
-          {tabs.map((tab) => (
+          {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -425,11 +283,7 @@ function CampaignDetailPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-foreground">Campaign performance</h2>
-                <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  Automated opens and clicks excluded.
-                  <HelpCircle className="w-3.5 h-3.5 cursor-pointer opacity-70" />
-                </span>
+                {isSent && <span className="text-xs text-muted-foreground">Updates every 30 seconds</span>}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -438,7 +292,7 @@ function CampaignDetailPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Delivered</span>
-                      <span className="text-3xl font-extrabold text-foreground">{showMetrics ? cDelivered.toLocaleString() : '-'}</span>
+                      <span className="text-3xl font-extrabold text-foreground">{hasResults ? totals.delivered.toLocaleString() : '-'}</span>
                     </div>
                     <button onClick={() => setActiveTab('deliverability')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1">
                       View <ExternalLink className="w-3 h-3" />
@@ -446,7 +300,7 @@ function CampaignDetailPage() {
                   </div>
                   <div className="pt-3 border-t border-border/60">
                     <span className="text-[11px] text-muted-foreground block">Delivery rate</span>
-                    <span className="text-sm font-bold text-foreground">{showMetrics ? `${deliveryRate.toFixed(2)}%` : '-'}</span>
+                    <span className="text-sm font-bold text-foreground">{hasResults ? percent(totals.delivered, totals.sent) : '-'}</span>
                   </div>
                 </div>
 
@@ -455,7 +309,7 @@ function CampaignDetailPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Opens</span>
-                      <span className="text-3xl font-extrabold text-foreground">{showMetrics ? cOpened.toLocaleString() : '-'}</span>
+                      <span className="text-3xl font-extrabold text-foreground">{hasResults ? totals.opened.toLocaleString() : '-'}</span>
                     </div>
                     <button onClick={() => setActiveTab('opens')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1">
                       View <ExternalLink className="w-3 h-3" />
@@ -463,7 +317,7 @@ function CampaignDetailPage() {
                   </div>
                   <div className="pt-3 border-t border-border/60">
                     <span className="text-[11px] text-muted-foreground block">Open rate</span>
-                    <span className="text-sm font-bold text-foreground">{showMetrics ? `${openRate.toFixed(2)}%` : '-'}</span>
+                    <span className="text-sm font-bold text-foreground">{hasResults ? percent(totals.opened, totals.delivered) : '-'}</span>
                   </div>
                 </div>
 
@@ -472,7 +326,7 @@ function CampaignDetailPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Clicks</span>
-                      <span className="text-3xl font-extrabold text-foreground">{showMetrics ? cClicked.toLocaleString() : '-'}</span>
+                      <span className="text-3xl font-extrabold text-foreground">{hasResults ? totals.clicked.toLocaleString() : '-'}</span>
                     </div>
                     <button onClick={() => setActiveTab('clicks')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1">
                       View <ExternalLink className="w-3 h-3" />
@@ -480,7 +334,7 @@ function CampaignDetailPage() {
                   </div>
                   <div className="pt-3 border-t border-border/60">
                     <span className="text-[11px] text-muted-foreground block">Click-through rate</span>
-                    <span className="text-sm font-bold text-foreground">{showMetrics ? `${clickRate.toFixed(2)}%` : '-'}</span>
+                    <span className="text-sm font-bold text-foreground">{hasResults ? percent(totals.clicked, totals.delivered) : '-'}</span>
                   </div>
                 </div>
 
@@ -489,7 +343,7 @@ function CampaignDetailPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Unsubscribes</span>
-                      <span className="text-3xl font-extrabold text-foreground">{showMetrics ? cUnsubscribed.toLocaleString() : '-'}</span>
+                      <span className="text-3xl font-extrabold text-foreground">{hasResults ? totals.unsubscribed.toLocaleString() : '-'}</span>
                     </div>
                     <button onClick={() => setActiveTab('unsubscribes')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1">
                       View <ExternalLink className="w-3 h-3" />
@@ -497,7 +351,7 @@ function CampaignDetailPage() {
                   </div>
                   <div className="pt-3 border-t border-border/60">
                     <span className="text-[11px] text-muted-foreground block">Unsubscribe rate</span>
-                    <span className="text-sm font-bold text-foreground">{showMetrics ? `${unsubRate.toFixed(2)}%` : '-'}</span>
+                    <span className="text-sm font-bold text-foreground">{hasResults ? percent(totals.unsubscribed, totals.delivered) : '-'}</span>
                   </div>
                 </div>
               </div>
@@ -510,9 +364,13 @@ function CampaignDetailPage() {
                 {/* Conditions applied */}
                 <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-3">Conditions applied</span>
-                  <div className="flex items-center gap-3 py-2 px-3 bg-muted/40 rounded-lg border border-border/60">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                    <span className="text-sm font-medium text-foreground">Not sent to unengaged contacts</span>
+                  <div className="space-y-2">
+                    {['Only subscribed contacts', "Skips anyone who asked not to be contacted", 'Never sends to the same person twice'].map((c) => (
+                      <div key={c} className="flex items-center gap-3 py-2 px-3 bg-muted/40 rounded-lg border border-border/60">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                        <span className="text-sm font-medium text-foreground">{c}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -523,7 +381,7 @@ function CampaignDetailPage() {
                     {recipientLists.length === 0 ? (
                       <span className="text-sm text-muted-foreground">No lists specified.</span>
                     ) : (
-                      recipientLists.map(list => (
+                      recipientLists.map((list: { id: number; name: string }) => (
                         <div key={list.id} className="flex justify-between items-center py-2 px-3 bg-muted/40 rounded-lg border border-border/60">
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground">#{list.id}</span>
@@ -550,7 +408,7 @@ function CampaignDetailPage() {
               <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
                 <div className="relative border-l border-border pl-6 space-y-6">
                   {[
-                    campaign.sentAt && { icon: Mail, strong: true, title: 'Sent', text: `Went out to ${cSent.toLocaleString()} recipient${cSent === 1 ? '' : 's'}.`, at: campaign.sentAt },
+                    campaign.sentAt && { icon: Mail, strong: true, title: 'Sent', text: `Went out to ${totals.sent.toLocaleString()} recipient${totals.sent === 1 ? '' : 's'}.`, at: campaign.sentAt },
                     campaign.scheduledAt && {
                       icon: Clock,
                       strong: !campaign.sentAt,
@@ -577,216 +435,10 @@ function CampaignDetailPage() {
           </div>
         )}
 
-        {/* DELIVERABILITY TAB */}
-        {activeTab === 'deliverability' && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-bold text-foreground mb-4">Deliverability details</h2>
-              <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Sent to</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cSent.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Delivered</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cDelivered.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Delivery rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? `${deliveryRate.toFixed(2)}%` : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">In Processing</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? '0' : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Soft bounces</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cSoftBounces.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm text-left">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Hard bounces</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cHardBounces.toLocaleString() : '-'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Bounce reasons */}
-            <div className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-bold text-foreground">Reasons for soft bounce</span>
-                <button className="text-xs font-semibold text-accent hover:underline flex items-center gap-1">
-                  Export CSV
-                </button>
-              </div>
-              <div className="py-8 text-center text-muted-foreground text-sm">
-                No data to show
-              </div>
-            </div>
-
-            {/* List breakdown */}
-            <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-border bg-muted/20 flex justify-between items-center">
-                <span className="text-sm font-bold text-foreground">Deliverability breakdown by lists</span>
-                <button className="text-xs font-semibold text-accent hover:underline flex items-center gap-1">
-                  Export List Breakdown
-                </button>
-              </div>
-              <ListBreakdownTable
-                lists={recipientLists}
-                columns={[
-                  { label: 'Delivery Rate', strong: true, render: () => (showMetrics ? `${deliveryRate.toFixed(2)}%` : '-') },
-                  { label: 'Processing', render: () => 0 },
-                  { label: 'Deferred', render: () => 0 },
-                  { label: 'Soft Bounces', render: () => (showMetrics ? cSoftBounces : '-') },
-                  { label: 'Hard Bounces', render: () => (showMetrics ? cHardBounces : '-') },
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* OPENS TAB */}
-        {activeTab === 'opens' && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-bold text-foreground mb-4">Opens Details</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Opens</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cOpened.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Open rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? `${openRate.toFixed(2)}%` : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Total opens</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cTotalOpens.toFixed(0) : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Apple MPP opens</span>
-                  <span className="text-2xl font-extrabold text-foreground">0</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-border bg-muted/20 flex justify-between items-center">
-                <span className="text-sm font-bold text-foreground">Opens breakdown by lists</span>
-                <span className="text-xs text-muted-foreground">Bot opens excluded</span>
-              </div>
-              <ListBreakdownTable
-                lists={recipientLists}
-                columns={[
-                  { label: 'Open Rate', strong: true, render: () => (showMetrics ? `${openRate.toFixed(2)}%` : '-') },
-                  { label: 'Total Opens', render: () => (showMetrics ? cOpened : '-') },
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* CLICKS TAB */}
-        {activeTab === 'clicks' && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-bold text-foreground mb-4">Clicks details</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Click-through rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? `${clickRate.toFixed(2)}%` : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Total clicks</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cTotalClicks.toFixed(0) : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Clicks</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cClicked.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Click-to-open rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? `${clickToOpenRate.toFixed(2)}%` : '-'}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-border bg-muted/20 flex justify-between items-center">
-                <span className="text-sm font-bold text-foreground">Clicks breakdown by lists</span>
-                <span className="text-xs text-muted-foreground">Bot clicks excluded</span>
-              </div>
-              <ListBreakdownTable
-                lists={recipientLists}
-                columns={[
-                  { label: 'Clicks Percentage', strong: true, render: () => (showMetrics ? `${clickRate.toFixed(2)}%` : '-') },
-                  { label: 'Total Clicks', render: () => (showMetrics ? cClicked : '-') },
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* CONVERSIONS TAB */}
-        {activeTab === 'conversions' && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-bold text-foreground mb-4">Conversions</h2>
-              <div className="bg-card border border-border rounded-xl p-4 lg:p-8 text-center text-muted-foreground shadow-sm">
-                No conversions tracked for this campaign. Enable Conversion tracking on your website to associate metrics.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* UNSUBSCRIBES TAB */}
-        {activeTab === 'unsubscribes' && (
-          <div className="space-y-8">
-            <div>
-              <h2 className="text-lg font-bold text-foreground mb-4">Unsubscribes details</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Unsubscribes</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? cUnsubscribed.toLocaleString() : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Unsubscribe rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">{showMetrics ? `${unsubRate.toFixed(2)}%` : '-'}</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Spam complaints</span>
-                  <span className="text-2xl font-extrabold text-foreground">0</span>
-                </div>
-                <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase block mb-1">Spam complaint rate</span>
-                  <span className="text-2xl font-extrabold text-foreground">0%</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-6 shadow-sm space-y-4">
-              <span className="text-sm font-bold text-foreground">Unsubscribe reasons</span>
-              <div className="py-8 text-center text-muted-foreground text-sm">
-                No data to show
-              </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-4 border-b border-border bg-muted/20 flex justify-between items-center">
-                <span className="text-sm font-bold text-foreground">Unsubscribes breakdown by lists</span>
-                <button className="text-xs font-semibold text-accent hover:underline">Export Breakdown</button>
-              </div>
-              <ListBreakdownTable
-                lists={recipientLists}
-                columns={[
-                  { label: 'Unsubscribe Rate', strong: true, render: () => (showMetrics ? `${unsubRate.toFixed(2)}%` : '-') },
-                  { label: 'Spam Complaint Rate', render: () => '0%' },
-                ]}
-              />
-            </div>
-          </div>
-        )}
-
+        {activeTab === 'deliverability' && <DeliverabilityTab {...tabProps} />}
+        {activeTab === 'opens' && <OpensTab {...tabProps} />}
+        {activeTab === 'clicks' && <ClicksTab {...tabProps} />}
+        {activeTab === 'unsubscribes' && <UnsubscribesTab {...tabProps} />}
       </div>
     </div>
   )

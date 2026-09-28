@@ -17,14 +17,7 @@ export const Route = createFileRoute('/api/track/click')({
             if (email && campaignId) {
               const decodedEmail = email.toLowerCase().trim()
               const cid = typeof campaignId === 'number' ? campaignId : parseInt(campaignId, 10)
-              if (!isNaN(cid)) {
-                db.run(
-                  `UPDATE campaign_recipients 
-                   SET status = 'clicked', clicked_at = ? 
-                   WHERE campaign_id = ? AND contact_email = ? AND (status = 'sent' OR status = 'opened' OR status = 'bounced_soft')`,
-                  [new Date().toISOString(), cid, decodedEmail]
-                )
-              }
+              if (!isNaN(cid)) db.recordClick(decodedEmail, cid, typeof targetUrl === 'string' ? targetUrl : undefined)
             }
             if (targetUrl) {
               redirectUrl = targetUrl

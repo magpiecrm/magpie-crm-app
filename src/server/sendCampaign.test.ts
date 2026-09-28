@@ -24,7 +24,7 @@ vi.mock('./db', () => ({
   db: {
     getAllowance: () => state.allowance,
     get data() {
-      return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression }
+      return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression, campaign_recipients: [] }
     },
     getContact: (email: string) => state.contacts.find((c) => c.email === email) ?? null,
     getDisclosures: () => [],

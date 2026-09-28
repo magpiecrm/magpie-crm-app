@@ -18,6 +18,16 @@ export const getCampaignFn = createServerFn({ method: 'GET' })
     return emailService.getCampaign(data.id)
   })
 
+/** Who a sent campaign reached and what each of them did, plus clicks per link. */
+export const getCampaignActivityFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { id: number }) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const emailService = await import('../emailService')
+    await requireAuth()
+    return emailService.getCampaignActivity(data.id)
+  })
+
 export const getSendersFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')

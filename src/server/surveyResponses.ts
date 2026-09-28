@@ -230,7 +230,8 @@ export function loadPublicSurvey(
   let existing: SurveyResponse | null = null
   if (token) {
     existing = db.findSurveyResponse(survey.id, token.e, token.c)
-    if (token.c !== null && !token.test) db.markRecipientClicked(token.e, token.c)
+    // Survey links skip the click redirect, so the visit is recorded here.
+    if (token.c !== null && !token.test) db.recordClick(token.e, token.c, `/s/${survey.id}`)
   } else if (opts.resumeKey) {
     existing = db.findSurveyResponseByResumeHash(survey.id, hashKey(opts.resumeKey))
   }

@@ -16,14 +16,7 @@ export const Route = createFileRoute('/api/track/open')({
             if (email && campaignId) {
               const decodedEmail = email.toLowerCase().trim()
               const cid = typeof campaignId === 'number' ? campaignId : parseInt(campaignId, 10)
-              if (!isNaN(cid)) {
-                db.run(
-                  `UPDATE campaign_recipients 
-                   SET status = 'opened', opened_at = ? 
-                   WHERE campaign_id = ? AND contact_email = ? AND (status = 'sent' OR status = 'bounced_soft')`,
-                  [new Date().toISOString(), cid, decodedEmail]
-                )
-              }
+              if (!isNaN(cid)) db.recordOpen(decodedEmail, cid)
             }
           }
         }

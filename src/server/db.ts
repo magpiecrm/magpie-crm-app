@@ -45,6 +45,10 @@ type ApiKeyScope = 'api' | 'mcp'
 export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert'
 
 type ContactRecord = DbSchema['contacts'][number]
+export type RecipientRecord = DbSchema['campaign_recipients'][number]
+
+/** Enough for any real email, and keeps one recipient's row from growing without end. */
+const MAX_LINKS_PER_RECIPIENT = 50
 
 interface DbSchema {
   lists: Array<{ id: number; name: string; created_at: string }>
@@ -91,8 +95,21 @@ interface DbSchema {
     campaign_id: number
     contact_email: string
     status: string
+    /** First open and first click (a click counts as an open: images may be off). */
     opened_at: string | null
     clicked_at: string | null
+    /** When it went out. Missing on rows from before this was recorded. */
+    sent_at?: string | null
+    /** Every time the email's images loaded, and every tracked click. */
+    opens?: number
+    last_opened_at?: string | null
+    clicks?: number
+    /** Clicks per link (URL → count), capped at MAX_LINKS_PER_RECIPIENT links. */
+    links?: Record<string, number>
+    bounced_at?: string | null
+    unsubscribed_at?: string | null
+    /** Marked the email as spam. They are unsubscribed too. */
+    complained_at?: string | null
   }>
   users: Array<{
     email: string
@@ -882,16 +899,24 @@ class JsonDb {
       }
 
       const existingIdx = this.data.campaign_recipients.findIndex(cr => cr.campaign_id === cid && cr.contact_email === email)
+      const now = new Date().toISOString()
       const record = {
         campaign_id: cid,
         contact_email: email,
         status,
         opened_at: null,
         clicked_at: null,
+        sent_at: now,
+        opens: 0,
+        clicks: 0,
+        ...(status === 'bounced_soft' ? { bounced_at: now } : {}),
       }
 
       if (existingIdx >= 0) {
-        this.data.campaign_recipients[existingIdx].status = status
+        const existing = this.data.campaign_recipients[existingIdx]
+        existing.status = status
+        existing.sent_at = now
+        if (status === 'bounced_soft') existing.bounced_at = now
       } else {
         this.data.campaign_recipients.push(record)
       }
@@ -1707,16 +1732,44 @@ class JsonDb {
     }
   }
 
-  /**
-   * Record a campaign click, with the same status rules as /api/track/click:
-   * never regress a later status such as unsubscribed.
-   */
-  markRecipientClicked(email: string, campaignId: number) {
+  private recipientRecord(campaignId: number, email: string) {
     const normalized = email.toLowerCase().trim()
-    const record = this.data.campaign_recipients.find(cr => cr.campaign_id == campaignId && cr.contact_email === normalized)
-    if (!record || !['sent', 'opened', 'bounced_soft'].includes(record.status)) return
-    record.status = 'clicked'
-    record.clicked_at = new Date().toISOString()
+    return this.data.campaign_recipients.find(cr => cr.campaign_id == campaignId && cr.contact_email === normalized)
+  }
+
+  /**
+   * The email's tracking pixel loaded. Every load is counted; the status only
+   * moves forward (sent → opened), never back from clicked, unsubscribed or a
+   * bounce.
+   */
+  recordOpen(email: string, campaignId: number, at = new Date().toISOString()) {
+    const record = this.recipientRecord(campaignId, email)
+    if (!record || record.status === 'bounced_hard') return
+    // Rows from before counts were kept start from their first open or click.
+    record.clicks ??= record.clicked_at ? 1 : 0
+    record.opens = (record.opens ?? (record.opened_at ? 1 : 0)) + 1
+    record.opened_at ??= at
+    record.last_opened_at = at
+    if (record.status === 'sent' || record.status === 'bounced_soft') record.status = 'opened'
+    this.save()
+  }
+
+  /**
+   * A tracked link in the email was clicked. Also counts as opened, since
+   * someone who clicks has read it even if their images were off.
+   */
+  recordClick(email: string, campaignId: number, url?: string, at = new Date().toISOString()) {
+    const record = this.recipientRecord(campaignId, email)
+    if (!record || record.status === 'bounced_hard') return
+    record.opens ??= record.opened_at ? 1 : 0
+    record.clicks = (record.clicks ?? (record.clicked_at ? 1 : 0)) + 1
+    record.clicked_at ??= at
+    record.opened_at ??= at
+    if (url) {
+      const links = (record.links ??= {})
+      if (url in links || Object.keys(links).length < MAX_LINKS_PER_RECIPIENT) links[url] = (links[url] ?? 0) + 1
+    }
+    if (['sent', 'opened', 'bounced_soft'].includes(record.status)) record.status = 'clicked'
     this.save()
   }
 
@@ -1768,26 +1821,32 @@ class JsonDb {
     const normalizedEmail = email.toLowerCase().trim()
     const contact = this.data.contacts.find(c => c.email === normalizedEmail)
     if (contact) contact.status = 'unsubscribed'
-    this.markRecipientUnsubscribed(normalizedEmail)
+    const record = this.markRecipientUnsubscribed(normalizedEmail)
+    if (record) {
+      record.complained_at = new Date().toISOString()
+      this.save()
+    }
   }
 
+  /** Marks the recipient row unsubscribed and returns it: that campaign's, or else their latest one still open to it. */
   markRecipientUnsubscribed(email: string, campaignId?: string | number) {
     const normalizedEmail = email.toLowerCase().trim()
+    let record: RecipientRecord | undefined
 
     if (campaignId && !isNaN(Number(campaignId))) {
-      const record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
-      if (record) {
-        record.status = 'unsubscribed'
-      }
+      record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
     } else {
-      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && cr.status === 'sent')
-      if (records.length > 0) {
-        records.sort((a, b) => b.campaign_id - a.campaign_id)
-        records[0].status = 'unsubscribed'
-      }
+      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && ['sent', 'opened', 'clicked'].includes(cr.status))
+      records.sort((a, b) => b.campaign_id - a.campaign_id)
+      record = records[0]
+    }
+    if (record) {
+      record.status = 'unsubscribed'
+      record.unsubscribed_at ??= new Date().toISOString()
     }
 
     this.save()
+    return record
   }
 
   updateRecipientBounceStatus(email: string, type: string, campaignId?: string) {
@@ -1802,12 +1861,14 @@ class JsonDb {
       const record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
       if (record) {
         record.status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
+        record.bounced_at = new Date().toISOString()
       }
     } else {
       const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && cr.status === 'sent')
       if (records.length > 0) {
         records.sort((a, b) => b.campaign_id - a.campaign_id)
         records[0].status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
+        records[0].bounced_at = new Date().toISOString()
       }
     }
     

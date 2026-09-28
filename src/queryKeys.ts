@@ -26,6 +26,7 @@ export const queryKeys = {
     listContacts: (listId: string | number) => ['email', 'list', listId, 'contacts'] as const,
     campaigns: () => ['email', 'campaigns'] as const,
     campaign: (id: string | number | undefined) => ['email', 'campaign', id] as const,
+    campaignActivity: (id: string | number) => ['email', 'campaign', id, 'activity'] as const,
     contact: (email: string) => ['email', 'contact', email] as const,
     forms: () => ['email', 'forms'] as const,
     form: (id: string) => ['email', 'forms', id] as const,

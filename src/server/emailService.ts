@@ -1,4 +1,4 @@
-import { db } from './db'
+import { db, type RecipientRecord } from './db'
 import { sendMail } from './nodemailer'
 import { encryptToken } from './crypto'
 import { notify } from './notify'
@@ -670,7 +670,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) 
       const hrefRegex = /<a\s+(?:[^>]*?\s+)?href="([^"]*)"/gi
       personalizedHtml = personalizedHtml.replace(hrefRegex, (match: string, p1: string) => {
         // Survey links stay direct (shorter URLs, no extra redirect); the survey
-        // page records the click itself via markRecipientClicked.
+        // page records the click itself via db.recordClick.
         if (p1.startsWith('#') || p1.startsWith('mailto:') || p1.includes('api/unsubscribe') || p1.startsWith(`${appUrl}/s/`)) {
           return match
         }
@@ -789,63 +789,106 @@ export async function sendTestEmail(payload: {
 
 // --- Analytics ---
 
+/** What happened to one recipient, in order of how far they got. */
+export type RecipientOutcome = 'complained' | 'unsubscribed' | 'bounced' | 'clicked' | 'opened' | 'sent'
+
+function recipientOutcome(r: RecipientRecord): RecipientOutcome {
+  if (r.complained_at) return 'complained'
+  if (r.status === 'unsubscribed') return 'unsubscribed'
+  if (r.status === 'bounced_hard' || r.status === 'bounced_soft') return 'bounced'
+  if (r.clicked_at || r.status === 'clicked') return 'clicked'
+  if (r.opened_at || r.status === 'opened') return 'opened'
+  return 'sent'
+}
+
+const wasOpened = (r: RecipientRecord) => Boolean(r.opened_at || r.clicked_at || r.status === 'opened' || r.status === 'clicked')
+const wasClicked = (r: RecipientRecord) => Boolean(r.clicked_at || r.status === 'clicked')
+// Rows from before counts were kept count their first open or click once.
+const openCount = (r: RecipientRecord) => r.opens ?? (wasOpened(r) ? 1 : 0)
+const clickCount = (r: RecipientRecord) => r.clicks ?? (wasClicked(r) ? 1 : 0)
+
 export async function getCampaignStats(id: number) {
-  const stats = db.query(`
-    SELECT status, COUNT(*) as count 
-    FROM campaign_recipients 
-    WHERE campaign_id = ? 
-    GROUP BY status
-  `).all(id) as Array<{ status: string, count: number }>
+  const rows = db.data.campaign_recipients.filter((r) => r.campaign_id == id)
+  const count = (test: (r: RecipientRecord) => boolean) => rows.filter(test).length
 
-  const summary = {
-    sent: 0,
-    opened: 0,
-    clicked: 0,
-    bounced_soft: 0,
-    bounced_hard: 0,
-    unsubscribed: 0,
-  }
+  const sent = rows.length
+  const softBounces = count((r) => r.status === 'bounced_soft')
+  const hardBounces = count((r) => r.status === 'bounced_hard')
+  const delivered = sent - softBounces - hardBounces
+  const opened = count(wasOpened)
+  const clicked = count(wasClicked)
+  const complaints = count((r) => Boolean(r.complained_at))
+  const unsubscribed = count((r) => r.status === 'unsubscribed' && !r.complained_at)
+  const rate = (n: number) => (delivered > 0 ? parseFloat(((n / delivered) * 100).toFixed(2)) : 0)
 
-  for (const s of stats) {
-    if (s.status === 'sent') {
-      summary.sent += s.count
-    } else if (s.status === 'opened') {
-      summary.opened += s.count
-      summary.sent += s.count // Opened counts as sent
-    } else if (s.status === 'clicked') {
-      summary.clicked += s.count
-      summary.opened += s.count // Clicked also counts as opened!
-      summary.sent += s.count // Clicked counts as sent
-    } else if (s.status === 'bounced_soft') {
-      summary.bounced_soft += s.count
-    } else if (s.status === 'bounced_hard') {
-      summary.bounced_hard += s.count
-    } else if (s.status === 'unsubscribed') {
-      summary.unsubscribed += s.count
-      summary.opened += s.count // Unsubscribed also counts as opened!
-      summary.sent += s.count
-    }
-  }
-
-  // Calculate rate percentages for frontend compatibility
-  const totalSent = summary.sent || 1
   return {
     globalStats: {
-      sent: summary.sent,
-      delivered: summary.sent - (summary.bounced_soft + summary.bounced_hard),
-      uniqueClicks: summary.clicked,
-      uniqueOpens: summary.opened,
-      uniqueViews: summary.opened, // Alias for backward compatibility
-      viewed: summary.opened, // Alias for backward compatibility
-      clickers: summary.clicked, // Alias for backward compatibility
-      softBounces: summary.bounced_soft,
-      hardBounces: summary.bounced_hard,
-      unsubscribed: summary.unsubscribed,
-      unsubscriptions: summary.unsubscribed, // Alias for backward compatibility
-      openRate: parseFloat(((summary.opened / totalSent) * 100).toFixed(2)),
-      clickRate: parseFloat(((summary.clicked / totalSent) * 100).toFixed(2)),
+      sent,
+      delivered,
+      uniqueOpens: opened,
+      uniqueClicks: clicked,
+      totalOpens: rows.reduce((n, r) => n + openCount(r), 0),
+      totalClicks: rows.reduce((n, r) => n + clickCount(r), 0),
+      softBounces,
+      hardBounces,
+      unsubscribed,
+      complaints,
+      openRate: rate(opened),
+      clickRate: rate(clicked),
+      // Older names the campaign pages and tools still read.
+      uniqueViews: opened,
+      viewed: opened,
+      clickers: clicked,
+      unsubscriptions: unsubscribed,
+    },
+  }
+}
+
+/**
+ * Who a sent campaign reached and what each of them did, plus clicks per
+ * link. Opens are counted when the email's images load, so they are a lower
+ * bound where images are blocked and run high where a mail app loads them
+ * automatically; clicks are the firmer signal.
+ */
+export async function getCampaignActivity(id: number) {
+  const rows = db.data.campaign_recipients.filter((r) => r.campaign_id == id)
+  const contacts = new Map(db.data.contacts.map((c) => [c.email, c]))
+
+  const recipients = rows.map((r) => {
+    const contact = contacts.get(r.contact_email)
+    const name = [contact?.first_name, contact?.last_name].filter(Boolean).join(' ')
+    return {
+      email: r.contact_email,
+      name: name || null,
+      company: contact?.company || null,
+      outcome: recipientOutcome(r),
+      bounce: r.status === 'bounced_hard' ? ('hard' as const) : r.status === 'bounced_soft' ? ('soft' as const) : null,
+      sentAt: r.sent_at ?? null,
+      openedAt: r.opened_at ?? null,
+      lastOpenedAt: r.last_opened_at ?? r.opened_at ?? null,
+      opens: openCount(r),
+      clickedAt: r.clicked_at ?? null,
+      clicks: clickCount(r),
+      links: Object.entries(r.links ?? {})
+        .map(([url, clicks]) => ({ url, clicks }))
+        .sort((a, b) => b.clicks - a.clicks),
+      bouncedAt: r.bounced_at ?? null,
+      unsubscribedAt: r.unsubscribed_at ?? r.complained_at ?? null,
+    }
+  })
+
+  const byLink = new Map<string, { url: string; clicks: number; people: number }>()
+  for (const r of rows) {
+    for (const [url, clicks] of Object.entries(r.links ?? {})) {
+      const link = byLink.get(url) ?? { url, clicks: 0, people: 0 }
+      link.clicks += clicks
+      link.people += 1
+      byLink.set(url, link)
     }
   }
+  const links = [...byLink.values()].sort((a, b) => b.people - a.people || b.clicks - a.clicks)
+
+  return { recipients, links }
 }
 
 // --- Senders ---
