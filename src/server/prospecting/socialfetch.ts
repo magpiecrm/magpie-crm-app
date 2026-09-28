@@ -635,7 +635,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
 
         const rawPeople: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
-          `[SocialFetch] people/search returned ${rawPeople.length} (status=${res.data?.lookupStatus ?? '?'}, reported=${total ?? '?'})`,
+          `[SocialFetch] people/search returned ${rawPeople.length} of ${count} (status=${res.data?.lookupStatus ?? '?'}, reported=${total ?? '?'}, more=${page?.hasMore ? 'yes' : 'no'})`,
         )
         for (const raw of rawPeople) {
           const person = mapPerson(raw)

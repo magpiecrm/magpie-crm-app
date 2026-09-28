@@ -56,6 +56,8 @@ const hit = (handle: string, title = 'Business Analyst'): PersonResult => ({
   firstName: handle, lastName: 'Smith', title, seniority: null,
   company: '', companyRef: null, companyDomain: null, country: 'United Kingdom', source: 'socialfetch',
 })
+/** The note when a search runs out of people before the page is full. */
+const allFound = (n: number) => `That's everyone this search found: ${n} of the 25 asked for. Broader job titles or fewer filters will find more.`
 const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextCursor: null, reportedTotal: 100, warnings: [] })
 
 beforeEach(() => {
@@ -96,7 +98,7 @@ describe('searchPeople profile lookups', () => {
       ['Lead Business Analyst', 'Barclays', 'barclays.com'],
       ['Business Analyst', 'Acme', 'acme.com'],
     ])
-    expect(res.warnings).toEqual([])
+    expect(res.warnings).toEqual([allFound(2)])
     // Marked so saving doesn't pay for the same lookup again.
     expect(res.items.every((p) => p.profileChecked)).toBe(true)
   })
@@ -107,7 +109,7 @@ describe('searchPeople profile lookups', () => {
     expect(res.refined).toEqual(['https://www.linkedin.com/in/cat', 'https://www.linkedin.com/in/ana'])
     const cat = res.items[0]
     expect([cat.title, cat.seniority, cat.company, cat.companyRef, cat.profileChecked]).toEqual(['Senior Business Analyst', 'senior', 'Cat Consulting', null, true])
-    expect(res.warnings).toEqual([])
+    expect(res.warnings).toEqual([allFound(2)])
   })
 
   it('keeps looking up the rest when the first person has no current job listed', async () => {
@@ -116,7 +118,7 @@ describe('searchPeople profile lookups', () => {
     expect(getPerson).toHaveBeenCalledTimes(3)
     expect(res.refined).toEqual(['https://www.linkedin.com/in/ana', 'https://www.linkedin.com/in/ben'])
     expect(res.items[0].title).toBe('Business Analyst') // the headline's, as nothing better is known
-    expect(res.warnings).toEqual(['1 profile has no current job listed; showing the headline instead.'])
+    expect(res.warnings).toEqual([allFound(3), '1 profile has no current job listed; showing the headline instead.'])
   })
 
   it('hides people who turn out to work somewhere other than the chosen company', async () => {
@@ -409,12 +411,17 @@ describe('searchPeople in a workspace run by its host', () => {
     try {
       searchPage = { ...pageOf(hit('dan'), hit('ana')), warnings: ['Only the first 5 job titles were searched.'], details: ['1 person was hidden.'] }
       const res = await searchPeople({ titles: ['Business Analyst'] })
-      expect(res.warnings).toEqual(['Only the first 5 job titles were searched.'])
+      expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', allFound(2)])
     } finally {
       delete process.env.PROSPECTING_MANAGED
     }
     const res = await searchPeople({ titles: ['Business Analyst'] })
-    expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', '1 person was hidden.', '1 profile has no current job listed; showing the headline instead.'])
+    expect(res.warnings).toEqual([
+      'Only the first 5 job titles were searched.',
+      allFound(2),
+      '1 person was hidden.',
+      '1 profile has no current job listed; showing the headline instead.',
+    ])
   })
 })
 

@@ -386,12 +386,12 @@ export function ProspectSearch() {
   )
   const isCatchAll = (p: PersonResult) =>
     Boolean(p.catchAll) || catchAllCompanies.has(p.companyRef ?? '') || catchAllCompanies.has(p.companyDomain ?? '')
-  // Can't be verified: at a company known to accept every address or take no
-  // email, or a reveal here that ended in a way no retry changes.
-  const cantVerify = (p: PersonResult) => {
-    const r = reveals.get(p.profileUrl)
-    return Boolean(p.catchAll || p.noMail || (r && r.status !== 'found' && r.unverifiable))
-  }
+  // Hidden as unverifiable: at a company known to accept every address
+  // (including one a reveal here just found out about) or to take no email.
+  // Someone the user has revealed stays in view with the outcome on their
+  // row, however it ended, rather than vanishing on the click; later
+  // searches leave them out (unverifiable.ts).
+  const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail)
   const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
   const hiding = hiddenCount > 0 && !showHidden
   const peopleItems = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople

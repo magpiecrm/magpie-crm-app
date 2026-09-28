@@ -484,6 +484,9 @@ export async function searchPeople(
   }
   if (!lookupError && usable() < target && nextCursor) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
+  } else if (!lookupError && usable() < target) {
+    // A warning, not a detail: a hosted copy shows it too, as it says what to do.
+    warnings.push(`That's everyone this search found: ${usable()} of the ${target} asked for. Broader job titles or fewer filters will find more.`)
   }
 
   return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined }

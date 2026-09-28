@@ -118,8 +118,11 @@ function FixDomain({
   )
 }
 
-/** What a hosted copy says when an address couldn't be verified, whatever the mail server's reason. */
-const UNABLE = 'Unable to verify email.'
+/**
+ * What a hosted copy says when an address couldn't be verified, whatever the
+ * mail server's reason. Only verified emails count against a plan's reveals.
+ */
+const UNABLE = "Unable to verify email. This didn't use a reveal."
 const UNVERIFIABLE_WHY = 'Their company accepts every address, so no email there can be verified.'
 
 /** Reveal button, then the email and its verification status. */
