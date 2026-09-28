@@ -234,7 +234,7 @@ type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies'>>
  * only to be thrown away, and no employer needs sizing. Organization search
  * needs a keyword, hence an industry or keyword is required with a size.
  */
-export const SIZE_NEEDS_TERM = 'Company size needs an industry or keyword, to find companies of that size first.'
+const SIZE_NEEDS_TERM = 'Company size needs an industry or keyword, to find companies of that size first.'
 
 /** Where a companies-first search has got to, carried in its page cursor. */
 interface CompanyFirstState {

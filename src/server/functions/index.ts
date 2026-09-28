@@ -18,6 +18,7 @@ export * from './push'
 export * from './surveys'
 export * from './usage'
 export * from './templates'
+export * from './sales'
 
 // Background jobs start on the server only. Wrapped in createServerOnlyFn so
 // the client build drops the body, and with it the server-only modules the

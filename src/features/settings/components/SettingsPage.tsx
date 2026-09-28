@@ -13,6 +13,7 @@ import { McpTab } from './McpTab'
 import { TeamTab } from './TeamTab'
 import { ContactFieldsTab } from './ContactFieldsTab'
 import { ApiKeysTab } from './ApiKeysTab'
+import { PipelineSettings } from '../../sales/components/PipelineSettings'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
@@ -142,6 +143,7 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
           {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}
           {active === 'senders' && <SendersTab />}
+          {active === 'pipelines' && <PipelineSettings />}
           {active === 'copilot' && <CopilotTab />}
           {active === 'mcp' && <McpTab />}
           {active === 'team' && <TeamTab />}

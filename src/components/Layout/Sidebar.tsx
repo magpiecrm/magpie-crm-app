@@ -1,24 +1,39 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake } from 'lucide-react'
 import { markSignedOut } from '../../utils/auth'
 import { getUsageFn, logoutFn } from '../../server/functions'
 import { AllowanceMeter } from '../../features/settings/components/AllowanceMeter'
 import { MagpieWordmark } from '../ui/MagpieLogo'
 
+// Grouped by the job being done: finding people, the people themselves,
+// selling to them, and marketing to them.
 const navItems = [
   {
-    label: 'Contacts',
+    label: 'Find',
     items: [
       { label: 'Prospect Search', to: '/collection/prospect-search', icon: Search },
       { label: 'Personas', to: '/collection/personas', icon: UserCircle },
+    ],
+  },
+  {
+    label: 'People',
+    items: [
       { label: 'Contacts', to: '/marketing/contacts', icon: Contact },
+      { label: 'Companies', to: '/marketing/companies', icon: Building2 },
       { label: 'Lists', to: '/marketing/lists', icon: Users },
     ],
   },
   {
-    label: 'Email Marketing',
+    label: 'Sell',
+    items: [
+      { label: 'Pipeline', to: '/sales/pipeline', icon: Kanban },
+      { label: 'Deals', to: '/sales/deals', icon: Handshake },
+    ],
+  },
+  {
+    label: 'Market',
     items: [
       { label: 'Campaigns', to: '/marketing/campaigns', icon: Mail },
       { label: 'Templates', to: '/marketing/templates', icon: LayoutTemplate },

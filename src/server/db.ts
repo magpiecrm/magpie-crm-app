@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, statSync } from 'fs'
 import { join } from 'path'
 import crypto from 'crypto'
 import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
+import type { Activity, Company, Deal, Pipeline } from '../features/sales/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
@@ -54,7 +55,7 @@ const MAX_LINKS_PER_RECIPIENT = 50
 const SEARCH_POSITION_MS = 30 * 24 * 60 * 60_000
 const MAX_SEARCH_POSITIONS = 300
 
-interface DbSchema {
+export interface DbSchema {
   lists: Array<{ id: number; name: string; created_at: string }>
   contacts: Array<{
     email: string
@@ -77,6 +78,8 @@ interface DbSchema {
      * Consent given after an opt-out from prospecting lets campaigns reach them.
      */
     signed_up_at?: string
+    /** The company they work at (sales/companies.ts links them by email domain or name). */
+    company_id?: string | null
   }>
   list_contacts: Array<{ list_id: number; contact_email: string }>
   senders: Array<{ id: number; name: string; email: string }>
@@ -292,6 +295,14 @@ interface DbSchema {
    * never anyone found.
    */
   search_positions?: Record<string, { cursor: string; updated_at: string }>
+  /**
+   * Sales (server/sales/). `companies` is absent until contacts have first
+   * been grouped into companies; pipelines get a default on first use.
+   */
+  companies?: Company[]
+  pipelines?: Pipeline[]
+  deals?: Deal[]
+  activities?: Activity[]
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
@@ -815,6 +826,33 @@ class JsonDb {
 
   private save() {
     this.saveData(this.data)
+  }
+
+  /**
+   * Runs a change to the data made by a domain module (e.g. server/sales/),
+   * then saves it. The change runs synchronously, so nothing interleaves.
+   */
+  /**
+   * How big the data file is, and how many rows each collection holds, for
+   * whoever runs this copy (GET /api/usage): the whole file is rewritten on
+   * every save, so it slows down as it grows.
+   */
+  storageStats(): { bytes: number; rows: Record<string, number> } {
+    let bytes = 0
+    try {
+      bytes = statSync(dbPath).size
+    } catch {
+      // not written yet
+    }
+    const rows: Record<string, number> = {}
+    for (const [key, value] of Object.entries(this.data)) if (Array.isArray(value)) rows[key] = value.length
+    return { bytes, rows }
+  }
+
+  mutate<T>(change: (data: DbSchema) => T): T {
+    const result = change(this.data)
+    this.save()
+    return result
   }
 
 

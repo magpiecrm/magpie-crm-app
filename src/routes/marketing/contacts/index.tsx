@@ -657,7 +657,7 @@ function ContactsPage() {
                       <p className="text-xs text-muted-foreground truncate">
                         {contact.attributes.JOB_TITLE}
                         {contact.attributes.JOB_TITLE && contact.attributes.COMPANY && ' at '}
-                        {contact.attributes.COMPANY}
+                        <CompanyName name={contact.attributes.COMPANY} companyId={contact.companyId} />
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1.5">
@@ -764,7 +764,7 @@ function ContactsPage() {
                             <p className="text-xs text-muted-foreground">
                               {contact.attributes.JOB_TITLE}
                               {contact.attributes.JOB_TITLE && contact.attributes.COMPANY && ' at '}
-                              {contact.attributes.COMPANY}
+                              <CompanyName name={contact.attributes.COMPANY} companyId={contact.companyId} />
                             </p>
                           )}
                         </div>
@@ -799,5 +799,20 @@ function ContactsPage() {
         onPageChange={setCurrentPage}
       />
     </div>
+  )
+}
+
+/** The contact's company name, linking to its company page when it has one. */
+function CompanyName({ name, companyId }: { name: string; companyId: string | null }) {
+  if (!name || !companyId) return <>{name}</>
+  return (
+    <Link
+      to="/marketing/companies/$id"
+      params={{ id: companyId }}
+      onClick={(e) => e.stopPropagation()}
+      className="hover:text-accent hover:underline"
+    >
+      {name}
+    </Link>
   )
 }

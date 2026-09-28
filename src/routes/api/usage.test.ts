@@ -66,7 +66,11 @@ describe('GET /api/usage', () => {
 
   it('returns one month, and rejects a malformed one', async () => {
     process.env.USAGE_API_TOKEN = 'tok_123'
-    expect(await (await get('/api/usage?month=2026-09', 'tok_123')).json()).toMatchObject({ month: '2026-09', emailsSent: 250 })
+    const body = await (await get('/api/usage?month=2026-09', 'tok_123')).json()
+    expect(body).toMatchObject({ month: '2026-09', emailsSent: 250 })
+    // How big the copy's data is, for the host: a size and row counts, nothing else.
+    expect(body.storage.bytes).toEqual(expect.any(Number))
+    expect(body.storage.rows).toMatchObject({ contacts: expect.any(Number), campaigns: expect.any(Number) })
     expect((await get('/api/usage?month=2026-9', 'tok_123')).status).toBe(400)
   })
 })

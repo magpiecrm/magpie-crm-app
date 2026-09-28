@@ -83,6 +83,10 @@ export async function getLists() {
 }
 
 export async function getContacts(limit?: number, offset?: number) {
+  // Contacts added since companies were last read get theirs (sales/companies.ts).
+  const { syncCompanies } = await import('./sales/companies')
+  if (syncCompanies(db.data)) db.mutate(() => {})
+
   let query = 'SELECT email, first_name, last_name, job_title, company, status, created_at FROM contacts'
   const params: any[] = []
 
@@ -103,6 +107,8 @@ export async function getContacts(limit?: number, offset?: number) {
       COMPANY: r.company || '',
     },
     custom: r.custom ?? {},
+    /** Their company record, for linking to it. */
+    companyId: (r.company_id as string | null | undefined) ?? null,
   }))
 
   const totalCount = (db.query('SELECT COUNT(*) as count FROM contacts').get() as { count: number }).count

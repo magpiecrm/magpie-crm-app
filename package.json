@@ -19,6 +19,9 @@
     "verifier:logs": "docker compose -f docker/reacher/docker-compose.yml --env-file .env logs -f"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "latest",

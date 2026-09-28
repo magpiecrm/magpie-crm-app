@@ -9,6 +9,8 @@ import { createFileRoute } from '@tanstack/react-router'
  *   Authorization: Bearer <USAGE_API_TOKEN>
  *
  * Off (404) unless USAGE_API_TOKEN is set. Counts only; nothing about who.
+ * Each response also carries `storage`: the data file's size in bytes and
+ * the row count of each collection, so a host can see a copy outgrowing it.
  */
 
 const json = (body: unknown, status = 200) =>
@@ -24,12 +26,14 @@ export const Route = createFileRoute('/api/usage')({
         if (!hasUsageToken(request)) return json({ error: 'Unauthorized' }, 401)
 
         const { getUsage, usageForMonth } = await import('../../server/usage')
+        const { db } = await import('../../server/db')
+        const storage = db.storageStats()
         const month = new URL(request.url).searchParams.get('month')
         if (month !== null) {
           if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({ error: 'month must look like 2026-09' }, 400)
-          return json({ month, ...usageForMonth(month) })
+          return json({ month, ...usageForMonth(month), storage })
         }
-        return json({ months: getUsage() })
+        return json({ months: getUsage(), storage })
       },
     },
   },

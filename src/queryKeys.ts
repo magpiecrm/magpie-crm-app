@@ -33,6 +33,14 @@ export const queryKeys = {
     formSubmissions: (formId: string) => ['email', 'forms', formId, 'submissions'] as const,
     contactFields: () => ['email', 'contactFields'] as const,
   },
+  sales: {
+    companies: () => ['sales', 'companies'] as const,
+    company: (id: string) => ['sales', 'companies', id] as const,
+    pipelines: () => ['sales', 'pipelines'] as const,
+    /** Without filters, the prefix of every deals list (for invalidating them all). */
+    deals: (filters?: unknown) => (filters === undefined ? (['sales', 'deals'] as const) : (['sales', 'deals', filters] as const)),
+    deal: (id: string) => ['sales', 'deal', id] as const,
+  },
   surveys: {
     list: () => ['surveys'] as const,
     survey: (id: string) => ['surveys', id] as const,

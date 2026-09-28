@@ -410,7 +410,7 @@ const BUCKET_BOUNDS: Record<HeadcountBucket, [number, number]> = {
   '10001+': [10001, Number.POSITIVE_INFINITY],
 }
 
-export function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
+function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
   if (buckets.length === 0) return true
   if (headcount === null) return false
   return buckets.some((b) => headcount >= BUCKET_BOUNDS[b][0] && headcount <= BUCKET_BOUNDS[b][1])

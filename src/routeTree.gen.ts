@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CollectionIndexRouteImport } from './routes/collection/index'
+import { Route as SalesPipelineRouteImport } from './routes/sales/pipeline'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
 import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templates'
 import { Route as MarketingSurveysRouteImport } from './routes/marketing/surveys'
@@ -24,19 +25,23 @@ import { Route as ApiUnsubscribeRouteImport } from './routes/api/unsubscribe'
 import { Route as ApiSubscribeRouteImport } from './routes/api/subscribe'
 import { Route as ApiOptOutRouteImport } from './routes/api/opt-out'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as SalesDealsIndexRouteImport } from './routes/sales/deals/index'
 import { Route as MarketingTemplatesIndexRouteImport } from './routes/marketing/templates/index'
 import { Route as MarketingSurveysIndexRouteImport } from './routes/marketing/surveys/index'
 import { Route as MarketingListsIndexRouteImport } from './routes/marketing/lists/index'
 import { Route as MarketingFormsIndexRouteImport } from './routes/marketing/forms/index'
 import { Route as MarketingContactsIndexRouteImport } from './routes/marketing/contacts/index'
+import { Route as MarketingCompaniesIndexRouteImport } from './routes/marketing/companies/index'
 import { Route as MarketingCampaignsIndexRouteImport } from './routes/marketing/campaigns/index'
 import { Route as MarketingAnalyticsIndexRouteImport } from './routes/marketing/analytics/index'
 import { Route as CollectionProspectSearchIndexRouteImport } from './routes/collection/prospect-search/index'
 import { Route as CollectionPersonasIndexRouteImport } from './routes/collection/personas/index'
 import { Route as ApiUploadsIndexRouteImport } from './routes/api/uploads/index'
+import { Route as SalesDealsIdRouteImport } from './routes/sales/deals/$id'
 import { Route as MarketingListsListIdRouteImport } from './routes/marketing/lists/$listId'
 import { Route as MarketingFormsFormIdRouteImport } from './routes/marketing/forms/$formId'
 import { Route as MarketingContactsImportRouteImport } from './routes/marketing/contacts/import'
+import { Route as MarketingCompaniesIdRouteImport } from './routes/marketing/companies/$id'
 import { Route as MarketingCampaignsIdRouteImport } from './routes/marketing/campaigns/$id'
 import { Route as CollectionPersonasNewRouteImport } from './routes/collection/personas/new'
 import { Route as CollectionPersonasPersonaIdRouteImport } from './routes/collection/personas/$personaId'
@@ -75,6 +80,11 @@ const IndexRoute = IndexRouteImport.update({
 const CollectionIndexRoute = CollectionIndexRouteImport.update({
   id: '/collection/',
   path: '/collection/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesPipelineRoute = SalesPipelineRouteImport.update({
+  id: '/sales/pipeline',
+  path: '/sales/pipeline',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SSurveyIdRoute = SSurveyIdRouteImport.update({
@@ -132,6 +142,11 @@ const ApiMcpRoute = ApiMcpRouteImport.update({
   path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalesDealsIndexRoute = SalesDealsIndexRouteImport.update({
+  id: '/sales/deals/',
+  path: '/sales/deals/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketingTemplatesIndexRoute = MarketingTemplatesIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -156,6 +171,11 @@ const MarketingContactsIndexRoute = MarketingContactsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => MarketingContactsRoute,
+} as any)
+const MarketingCompaniesIndexRoute = MarketingCompaniesIndexRouteImport.update({
+  id: '/marketing/companies/',
+  path: '/marketing/companies/',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const MarketingCampaignsIndexRoute = MarketingCampaignsIndexRouteImport.update({
   id: '/marketing/campaigns/',
@@ -183,6 +203,11 @@ const ApiUploadsIndexRoute = ApiUploadsIndexRouteImport.update({
   path: '/api/uploads/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalesDealsIdRoute = SalesDealsIdRouteImport.update({
+  id: '/sales/deals/$id',
+  path: '/sales/deals/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketingListsListIdRoute = MarketingListsListIdRouteImport.update({
   id: '/marketing/lists/$listId',
   path: '/marketing/lists/$listId',
@@ -197,6 +222,11 @@ const MarketingContactsImportRoute = MarketingContactsImportRouteImport.update({
   id: '/import',
   path: '/import',
   getParentRoute: () => MarketingContactsRoute,
+} as any)
+const MarketingCompaniesIdRoute = MarketingCompaniesIdRouteImport.update({
+  id: '/marketing/companies/$id',
+  path: '/marketing/companies/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const MarketingCampaignsIdRoute = MarketingCampaignsIdRouteImport.update({
   id: '/marketing/campaigns/$id',
@@ -314,6 +344,7 @@ export interface FileRoutesByFullPath {
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/pipeline': typeof SalesPipelineRoute
   '/collection/': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -329,19 +360,23 @@ export interface FileRoutesByFullPath {
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
+  '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/sales/deals/$id': typeof SalesDealsIdRoute
   '/api/uploads/': typeof ApiUploadsIndexRoute
   '/collection/personas/': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search/': typeof CollectionProspectSearchIndexRoute
   '/marketing/analytics/': typeof MarketingAnalyticsIndexRoute
   '/marketing/campaigns/': typeof MarketingCampaignsIndexRoute
+  '/marketing/companies/': typeof MarketingCompaniesIndexRoute
   '/marketing/contacts/': typeof MarketingContactsIndexRoute
   '/marketing/forms/': typeof MarketingFormsIndexRoute
   '/marketing/lists/': typeof MarketingListsIndexRoute
   '/marketing/surveys/': typeof MarketingSurveysIndexRoute
   '/marketing/templates/': typeof MarketingTemplatesIndexRoute
+  '/sales/deals/': typeof SalesDealsIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -359,6 +394,7 @@ export interface FileRoutesByTo {
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/pipeline': typeof SalesPipelineRoute
   '/collection': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -374,19 +410,23 @@ export interface FileRoutesByTo {
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
+  '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/sales/deals/$id': typeof SalesDealsIdRoute
   '/api/uploads': typeof ApiUploadsIndexRoute
   '/collection/personas': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search': typeof CollectionProspectSearchIndexRoute
   '/marketing/analytics': typeof MarketingAnalyticsIndexRoute
   '/marketing/campaigns': typeof MarketingCampaignsIndexRoute
+  '/marketing/companies': typeof MarketingCompaniesIndexRoute
   '/marketing/contacts': typeof MarketingContactsIndexRoute
   '/marketing/forms': typeof MarketingFormsIndexRoute
   '/marketing/lists': typeof MarketingListsIndexRoute
   '/marketing/surveys': typeof MarketingSurveysIndexRoute
   '/marketing/templates': typeof MarketingTemplatesIndexRoute
+  '/sales/deals': typeof SalesDealsIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -409,6 +449,7 @@ export interface FileRoutesById {
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/pipeline': typeof SalesPipelineRoute
   '/collection/': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -424,19 +465,23 @@ export interface FileRoutesById {
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
   '/collection/personas/new': typeof CollectionPersonasNewRoute
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
+  '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/sales/deals/$id': typeof SalesDealsIdRoute
   '/api/uploads/': typeof ApiUploadsIndexRoute
   '/collection/personas/': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search/': typeof CollectionProspectSearchIndexRoute
   '/marketing/analytics/': typeof MarketingAnalyticsIndexRoute
   '/marketing/campaigns/': typeof MarketingCampaignsIndexRoute
+  '/marketing/companies/': typeof MarketingCompaniesIndexRoute
   '/marketing/contacts/': typeof MarketingContactsIndexRoute
   '/marketing/forms/': typeof MarketingFormsIndexRoute
   '/marketing/lists/': typeof MarketingListsIndexRoute
   '/marketing/surveys/': typeof MarketingSurveysIndexRoute
   '/marketing/templates/': typeof MarketingTemplatesIndexRoute
+  '/sales/deals/': typeof SalesDealsIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -460,6 +505,7 @@ export interface FileRouteTypes {
     | '/marketing/surveys'
     | '/marketing/templates'
     | '/s/$surveyId'
+    | '/sales/pipeline'
     | '/collection/'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -475,19 +521,23 @@ export interface FileRouteTypes {
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
     | '/marketing/campaigns/$id'
+    | '/marketing/companies/$id'
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/sales/deals/$id'
     | '/api/uploads/'
     | '/collection/personas/'
     | '/collection/prospect-search/'
     | '/marketing/analytics/'
     | '/marketing/campaigns/'
+    | '/marketing/companies/'
     | '/marketing/contacts/'
     | '/marketing/forms/'
     | '/marketing/lists/'
     | '/marketing/surveys/'
     | '/marketing/templates/'
+    | '/sales/deals/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -505,6 +555,7 @@ export interface FileRouteTypes {
     | '/api/usage'
     | '/auth/link'
     | '/s/$surveyId'
+    | '/sales/pipeline'
     | '/collection'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -520,19 +571,23 @@ export interface FileRouteTypes {
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
     | '/marketing/campaigns/$id'
+    | '/marketing/companies/$id'
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/sales/deals/$id'
     | '/api/uploads'
     | '/collection/personas'
     | '/collection/prospect-search'
     | '/marketing/analytics'
     | '/marketing/campaigns'
+    | '/marketing/companies'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/lists'
     | '/marketing/surveys'
     | '/marketing/templates'
+    | '/sales/deals'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -554,6 +609,7 @@ export interface FileRouteTypes {
     | '/marketing/surveys'
     | '/marketing/templates'
     | '/s/$surveyId'
+    | '/sales/pipeline'
     | '/collection/'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -569,19 +625,23 @@ export interface FileRouteTypes {
     | '/collection/personas/$personaId'
     | '/collection/personas/new'
     | '/marketing/campaigns/$id'
+    | '/marketing/companies/$id'
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/sales/deals/$id'
     | '/api/uploads/'
     | '/collection/personas/'
     | '/collection/prospect-search/'
     | '/marketing/analytics/'
     | '/marketing/campaigns/'
+    | '/marketing/companies/'
     | '/marketing/contacts/'
     | '/marketing/forms/'
     | '/marketing/lists/'
     | '/marketing/surveys/'
     | '/marketing/templates/'
+    | '/sales/deals/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -604,6 +664,7 @@ export interface RootRouteChildren {
   MarketingSurveysRoute: typeof MarketingSurveysRouteWithChildren
   MarketingTemplatesRoute: typeof MarketingTemplatesRouteWithChildren
   SSurveyIdRoute: typeof SSurveyIdRoute
+  SalesPipelineRoute: typeof SalesPipelineRoute
   CollectionIndexRoute: typeof CollectionIndexRoute
   ApiCopilotPermissionRoute: typeof ApiCopilotPermissionRoute
   ApiCopilotStreamRoute: typeof ApiCopilotStreamRoute
@@ -616,13 +677,17 @@ export interface RootRouteChildren {
   CollectionPersonasPersonaIdRoute: typeof CollectionPersonasPersonaIdRoute
   CollectionPersonasNewRoute: typeof CollectionPersonasNewRoute
   MarketingCampaignsIdRoute: typeof MarketingCampaignsIdRoute
+  MarketingCompaniesIdRoute: typeof MarketingCompaniesIdRoute
   MarketingListsListIdRoute: typeof MarketingListsListIdRoute
+  SalesDealsIdRoute: typeof SalesDealsIdRoute
   ApiUploadsIndexRoute: typeof ApiUploadsIndexRoute
   CollectionPersonasIndexRoute: typeof CollectionPersonasIndexRoute
   CollectionProspectSearchIndexRoute: typeof CollectionProspectSearchIndexRoute
   MarketingAnalyticsIndexRoute: typeof MarketingAnalyticsIndexRoute
   MarketingCampaignsIndexRoute: typeof MarketingCampaignsIndexRoute
+  MarketingCompaniesIndexRoute: typeof MarketingCompaniesIndexRoute
   MarketingListsIndexRoute: typeof MarketingListsIndexRoute
+  SalesDealsIndexRoute: typeof SalesDealsIndexRoute
   ApiSurveysSurveyIdTokenRoute: typeof ApiSurveysSurveyIdTokenRoute
   ApiWebhooksEmailProviderRoute: typeof ApiWebhooksEmailProviderRoute
 }
@@ -655,6 +720,13 @@ declare module '@tanstack/react-router' {
       path: '/collection'
       fullPath: '/collection/'
       preLoaderRoute: typeof CollectionIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/pipeline': {
+      id: '/sales/pipeline'
+      path: '/sales/pipeline'
+      fullPath: '/sales/pipeline'
+      preLoaderRoute: typeof SalesPipelineRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/s/$surveyId': {
@@ -734,6 +806,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/deals/': {
+      id: '/sales/deals/'
+      path: '/sales/deals'
+      fullPath: '/sales/deals/'
+      preLoaderRoute: typeof SalesDealsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/marketing/templates/': {
       id: '/marketing/templates/'
       path: '/'
@@ -768,6 +847,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/marketing/contacts/'
       preLoaderRoute: typeof MarketingContactsIndexRouteImport
       parentRoute: typeof MarketingContactsRoute
+    }
+    '/marketing/companies/': {
+      id: '/marketing/companies/'
+      path: '/marketing/companies'
+      fullPath: '/marketing/companies/'
+      preLoaderRoute: typeof MarketingCompaniesIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/marketing/campaigns/': {
       id: '/marketing/campaigns/'
@@ -804,6 +890,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUploadsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/deals/$id': {
+      id: '/sales/deals/$id'
+      path: '/sales/deals/$id'
+      fullPath: '/sales/deals/$id'
+      preLoaderRoute: typeof SalesDealsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/marketing/lists/$listId': {
       id: '/marketing/lists/$listId'
       path: '/marketing/lists/$listId'
@@ -824,6 +917,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/marketing/contacts/import'
       preLoaderRoute: typeof MarketingContactsImportRouteImport
       parentRoute: typeof MarketingContactsRoute
+    }
+    '/marketing/companies/$id': {
+      id: '/marketing/companies/$id'
+      path: '/marketing/companies/$id'
+      fullPath: '/marketing/companies/$id'
+      preLoaderRoute: typeof MarketingCompaniesIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/marketing/campaigns/$id': {
       id: '/marketing/campaigns/$id'
@@ -1047,6 +1147,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingSurveysRoute: MarketingSurveysRouteWithChildren,
   MarketingTemplatesRoute: MarketingTemplatesRouteWithChildren,
   SSurveyIdRoute: SSurveyIdRoute,
+  SalesPipelineRoute: SalesPipelineRoute,
   CollectionIndexRoute: CollectionIndexRoute,
   ApiCopilotPermissionRoute: ApiCopilotPermissionRoute,
   ApiCopilotStreamRoute: ApiCopilotStreamRoute,
@@ -1059,13 +1160,17 @@ const rootRouteChildren: RootRouteChildren = {
   CollectionPersonasPersonaIdRoute: CollectionPersonasPersonaIdRoute,
   CollectionPersonasNewRoute: CollectionPersonasNewRoute,
   MarketingCampaignsIdRoute: MarketingCampaignsIdRoute,
+  MarketingCompaniesIdRoute: MarketingCompaniesIdRoute,
   MarketingListsListIdRoute: MarketingListsListIdRoute,
+  SalesDealsIdRoute: SalesDealsIdRoute,
   ApiUploadsIndexRoute: ApiUploadsIndexRoute,
   CollectionPersonasIndexRoute: CollectionPersonasIndexRoute,
   CollectionProspectSearchIndexRoute: CollectionProspectSearchIndexRoute,
   MarketingAnalyticsIndexRoute: MarketingAnalyticsIndexRoute,
   MarketingCampaignsIndexRoute: MarketingCampaignsIndexRoute,
+  MarketingCompaniesIndexRoute: MarketingCompaniesIndexRoute,
   MarketingListsIndexRoute: MarketingListsIndexRoute,
+  SalesDealsIndexRoute: SalesDealsIndexRoute,
   ApiSurveysSurveyIdTokenRoute: ApiSurveysSurveyIdTokenRoute,
   ApiWebhooksEmailProviderRoute: ApiWebhooksEmailProviderRoute,
 }
