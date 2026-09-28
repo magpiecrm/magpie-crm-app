@@ -21,6 +21,7 @@ import {
   FilePen,
 } from 'lucide-react'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
+import { HeldBackBanner } from '../../../features/campaigns/components/HeldBackBanner'
 import {
   ClicksTab,
   DeliverabilityTab,
@@ -253,6 +254,8 @@ function CampaignDetailPage() {
           )}
         </div>
       )}
+
+      {isSent && campaign.guessHold && <HeldBackBanner campaignId={campaign.id} hold={campaign.guessHold} />}
 
       {/* Tabs Menu */}
       <div className="border-b border-border mb-8">

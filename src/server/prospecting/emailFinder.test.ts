@@ -208,6 +208,24 @@ describe('findEmail', () => {
     expect(result.detail).toMatch(/2 addresses you already have at acme\.com use this format\./)
   })
 
+  it('calls a catch-all guess format_confirmed once enough addresses there agree', async () => {
+    const people = [['Bob', 'Jones'], ['Ann', 'Lee'], ['Tom', 'Hart'], ['Sue', 'Ray']]
+    const known = people.map(([f, l]) => ({ email: `${f[0]}${l}@acme.com`.toLowerCase(), firstName: f, lastName: l, kind: 'known' as const }))
+    const three = setup({ probe: 'safe' })
+    three.deps.knownAddresses = () => known.slice(0, 3)
+    expect(await findEmail(jane, 'acme.com', three.deps)).toMatchObject({ status: 'catch_all_likely', outcome: 'catchAll' })
+    const four = setup({ probe: 'safe' })
+    four.deps.knownAddresses = () => known
+    const result = await findEmail(jane, 'acme.com', four.deps)
+    expect(result).toMatchObject({ email: 'jsmith@acme.com', status: 'format_confirmed', outcome: 'formatConfirmed' })
+    expect(result.confidence).toBeGreaterThanOrEqual(0.85)
+  })
+
+  it('never calls a size-based guess format_confirmed', async () => {
+    const { deps } = setup({ probe: 'safe' })
+    expect((await findEmail(jane, 'acme.com', deps, { headcount: 50000 })).status).toBe('catch_all_likely')
+  })
+
   it('gives a size-based confidence for a guess with nothing known about the company', async () => {
     const { deps } = setup({ probe: 'safe' })
     const result = await findEmail(jane, 'acme.com', deps, { headcount: 20000 })

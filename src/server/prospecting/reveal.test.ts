@@ -134,6 +134,22 @@ describe('revealEmail', () => {
     expect(check).not.toHaveBeenCalled()
   })
 
+  it('hands over a format_confirmed guess with verified-only on only when allowed', async () => {
+    const catchAll: FinderDeps = {
+      ...finder,
+      getDomain: () => ({ domain: 'acme.com', pattern: null, pattern_confidence: 0, pattern_verified_at: null, catch_all: true, catch_all_confirmed: true, catch_all_checked_at: new Date().toISOString(), mx_provider: 'other', mx_family: 'other', accepts_mail: true, mx_checked_at: new Date().toISOString(), last_used_at: '' }),
+      knownAddresses: () => ['Bob Jones', 'Ann Lee', 'Tom Hart', 'Sue Ray'].map((n) => {
+        const [firstName, lastName] = n.split(' ')
+        return { email: `${firstName}.${lastName}@acme.com`.toLowerCase(), firstName, lastName, kind: 'known' as const }
+      }),
+    }
+    const withheld = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any })
+    expect(withheld).toMatchObject({ status: 'unconfirmed', catchAll: true })
+    const res = await revealEmail(jane, { source, finder: catchAll, db: fakeDb as any, allowFormatConfirmed: true })
+    expect(res).toMatchObject({ status: 'found', email: 'jane.smith@acme.com', emailStatus: 'format_confirmed' })
+    expect(state.disclosure).toHaveLength(1)
+  })
+
   it('hands over the best guess only when verified-only is switched off', async () => {
     const catchAll: FinderDeps = {
       ...finder,

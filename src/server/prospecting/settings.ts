@@ -112,8 +112,24 @@ export function hidesUnverifiable(): boolean {
   return db.getProspectingSettings()?.hide_unverifiable !== false
 }
 
-export function saveSearchPreferences(input: { hideUnverifiable: boolean }) {
-  db.saveProspectingSettings({ ...db.getProspectingSettings(), hide_unverifiable: input.hideUnverifiable, updated_at: new Date().toISOString() })
+/**
+ * With verified-only on, whether addresses at a company that accepts every
+ * address are still handed over when its format is well established
+ * (`format_confirmed`). A preference, so hosted copies can change it too. Off
+ * unless turned on: these can still bounce.
+ */
+export function allowsFormatConfirmed(): boolean {
+  return db.getProspectingSettings()?.allow_format_confirmed === true
+}
+
+export function saveSearchPreferences(input: { hideUnverifiable?: boolean; allowFormatConfirmed?: boolean }) {
+  const current = db.getProspectingSettings()
+  db.saveProspectingSettings({
+    ...current,
+    hide_unverifiable: input.hideUnverifiable ?? current?.hide_unverifiable,
+    allow_format_confirmed: input.allowFormatConfirmed ?? current?.allow_format_confirmed,
+    updated_at: new Date().toISOString(),
+  })
 }
 
 /** Null when no verification server URL is set, i.e. verification is off. */
@@ -201,6 +217,7 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
     verification_provider: input.verificationProvider ?? (current?.verification_provider === 'none' ? 'none' : current?.verification_provider === 'reacher' ? 'reacher' : undefined),
     verified_only: input.verifiedOnly ?? current?.verified_only,
     hide_unverifiable: current?.hide_unverifiable,
+    allow_format_confirmed: current?.allow_format_confirmed,
     verification_daily_cap: input.verificationDailyCap ?? current?.verification_daily_cap,
     listed_domain_override: input.listedDomainOverride === undefined ? current?.listed_domain_override : input.listedDomainOverride,
     reacher_url: input.reacherUrl === undefined ? current?.reacher_url : reacherUrl,

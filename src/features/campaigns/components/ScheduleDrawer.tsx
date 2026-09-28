@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
-import { X, HelpCircle, Sparkles, Crown, AlertCircle } from 'lucide-react'
+import { X, HelpCircle, Sparkles, Crown, AlertCircle, Info } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
-import { sendCampaignFn, updateCampaignFn } from '../../../server/functions'
+import { sendCampaignFn, unconfirmedInListFn, updateCampaignFn } from '../../../server/functions'
 import { sentMessage } from '../sendResult'
 
 interface ScheduleDrawerProps {
@@ -33,6 +33,12 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const listId = campaignData.selectedListId
+  const { data: unconfirmed } = useQuery({
+    queryKey: queryKeys.email.listUnconfirmed(listId ?? 0),
+    queryFn: () => unconfirmedInListFn({ data: { listId: listId! } }),
+    enabled: isOpen && listId != null,
+  })
 
   // Reset states when opening
   useEffect(() => {
@@ -209,6 +215,20 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
                   {missingFields.map(field => <li key={field}>{field}</li>)}
                 </ul>
               </div>
+            </div>
+          )}
+          {unconfirmed && unconfirmed.unconfirmed > 0 && (
+            <div className="p-4 bg-muted/40 border border-border text-xs rounded-xl flex gap-3 items-start">
+              <Info className="w-5 h-5 shrink-0 text-muted-foreground mt-0.5" />
+              <p className="text-muted-foreground leading-normal">
+                <span className="font-semibold text-foreground">
+                  {unconfirmed.unconfirmed} of {unconfirmed.total} recipients have unverified addresses
+                </span>{' '}
+                (at companies whose mail server accepts every address, or that couldn't be checked).
+                {unconfirmed.unconfirmed > unconfirmed.firstBatch
+                  ? ` The first ${unconfirmed.firstBatch} go out with everyone else; the rest follow an hour later, unless more than 2% of those bounce.`
+                  : ' Some may bounce.'}
+              </p>
             </div>
           )}
           <div>

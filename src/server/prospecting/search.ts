@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
 import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
-import { isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
+import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
 import { meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
@@ -30,11 +30,12 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   // Mark companies whose mail domain is already known to accept every
   // address: searching for people there can't produce a verified email.
   const now = Date.now()
+  const worthIt = await formatConfirmedAt(db)
   for (const company of page.items) {
-    if (company.domain && isKnownCatchAll(company.domain, (d) => db.getEmailDomain(d), now)) company.catchAll = true
+    if (company.domain && isKnownCatchAll(company.domain, (d) => db.getEmailDomain(d), now) && !worthIt(company.domain)) company.catchAll = true
   }
   // In a hosted copy, also those any other copy there has found out about.
-  const unmarked = page.items.filter((c) => !c.catchAll)
+  const unmarked = page.items.filter((c) => !c.catchAll && !(c.domain && worthIt(c.domain)))
   const shared = await sharedCatchAll(unmarked.map((c) => ({ ref: c.ref, domain: c.domain })))
   unmarked.forEach((c, i) => shared[i] && (c.catchAll = true))
 
@@ -71,6 +72,7 @@ export async function resolveCompany(ref: string): Promise<{ ref: string; domain
   const domain = await resolveCompanyDomain(ref, name, getSource(), db)
   // Known here, or (in a hosted copy) by any other copy there: the page asks
   // before spending a search on a company where nothing can be verified.
+  if (domain && (await formatConfirmedAt(db))(domain)) return { ref, domain, catchAll: false }
   const catchAll = companyIsCatchAll(domain, db) || (await sharedCatchAll([{ ref, domain }]))[0]
   return { ref, domain, catchAll }
 }
@@ -78,6 +80,24 @@ export async function resolveCompany(ref: string): Promise<{ ref: string; domain
 /** Whether a company's mail domain is already known to accept every address (cache only). */
 export function companyIsCatchAll(domain: string | null, db: Db): boolean {
   return Boolean(domain && isKnownCatchAll(domain, (d) => db.getEmailDomain(d), Date.now()))
+}
+
+/**
+ * While `format_confirmed` guesses are handed over (Settings → Prospect
+ * search), a catch-all company whose format is well established isn't a dead
+ * end: this says which, for search not to mark or hide it. Always false
+ * otherwise.
+ */
+async function formatConfirmedAt(db: Db): Promise<(domain: string) => boolean> {
+  const { allowsFormatConfirmed } = await import('./settings')
+  if (!allowsFormatConfirmed()) return () => false
+  const deps = { getDomain: (d: string) => db.getEmailDomain(d), knownAddresses: (d: string) => db.knownAddressesAt(d) }
+  const now = Date.now()
+  const memo = new Map<string, boolean>()
+  return (domain) => {
+    if (!memo.has(domain)) memo.set(domain, hasConfirmedFormat(domain, deps, now))
+    return memo.get(domain)!
+  }
 }
 
 const ENRICH_CONCURRENCY = 3
@@ -445,13 +465,14 @@ async function processBatch(
   // Only the cache is read: finding out about a new company would take an
   // SMTP check, and that waits until someone is actually revealed or saved.
   const now = Date.now()
+  const worthIt = await formatConfirmedAt(db)
   for (const p of items) {
-    if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = true
+    if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = !worthIt(p.companyDomain)
     else if (p.companyDomain && isKnownNoMail(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.noMail = true
   }
   // In a hosted copy, also companies any other copy there has found out
   // about (sharedCatchAll.ts): company refs and domains only.
-  const unmarked = items.filter((p) => !p.catchAll)
+  const unmarked = items.filter((p) => !p.catchAll && !(p.companyDomain && worthIt(p.companyDomain)))
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
 
@@ -652,6 +673,12 @@ export async function startSave(listId: number, people: PersonResult[]) {
   if (!db.data.lists.some((l) => l.id === listId)) throw new Error(`List ${listId} does not exist`)
   const { getSource, getFinderDeps } = await import('./runtime')
   const { saveProspects } = await import('./save')
-  const { isVerifiedOnly } = await import('./settings')
-  return saveProspects(listId, people, { source: getSource(), finder: await getFinderDeps({ background: true }), db, verifiedOnly: isVerifiedOnly() })
+  const { allowsFormatConfirmed, isVerifiedOnly } = await import('./settings')
+  return saveProspects(listId, people, {
+    source: getSource(),
+    finder: await getFinderDeps({ background: true }),
+    db,
+    verifiedOnly: isVerifiedOnly(),
+    allowFormatConfirmed: allowsFormatConfirmed(),
+  })
 }

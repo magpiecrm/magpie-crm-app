@@ -10,6 +10,7 @@ import { AllowanceError, requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
 import { env } from './env'
 import { optedOutAt, signedUpSince } from './prospecting/suppression'
+import { firstBatchPassed, GUESS_HOLD_MS, splitGuesses } from './guessedRecipients'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -349,6 +350,8 @@ export async function getCampaign(id: number) {
     sentAt: c.sentAt,
     sentDate: c.sentAt, // Alias for backward compatibility
     scheduledAt: db.campaignScheduledAt(c.id),
+    /** Unverified recipients held back after a first batch, if any (guessedRecipients.ts). */
+    guessHold: db.getGuessHold(c.id),
     recipients: { 
       listIds: c.listId ? [c.listId] : [],
       lists: c.listId ? [c.listId] : [], // Alias for backward compatibility
@@ -497,11 +500,17 @@ export async function deleteCampaign(id: number) {
 /**
  * Sends a campaign to its list. `resume` finishes one the server stopped in
  * the middle of sending. Anyone it already went to is skipped, so a campaign
- * never reaches the same person twice.
+ * never reaches the same person twice. Unconfirmed prospected addresses past
+ * a first batch are held back (guessedRecipients.ts); `releaseGuesses` sends
+ * those of a sent campaign.
  */
-export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) {
+export async function sendCampaign(id: number, opts: { resume?: boolean; releaseGuesses?: boolean } = {}) {
   const campaign = await getCampaign(id)
-  if (campaign.status === 'sent') throw new Error('This campaign has already been sent.')
+  const releasing = Boolean(opts.releaseGuesses)
+  const hold = db.getGuessHold(id)
+  if (releasing) {
+    if (campaign.status !== 'sent' || !hold || hold.status === 'released') throw new Error('This campaign has nobody held back to send to.')
+  } else if (campaign.status === 'sent') throw new Error('This campaign has already been sent.')
   if (campaign.status === 'sending' && !opts.resume) throw new Error('This campaign is already being sent.')
   const listId = campaign.recipients?.listIds?.[0]
   if (!listId) {
@@ -560,7 +569,11 @@ export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) 
 
   // Anyone it already went to (a resumed send, or a second press of Send) is skipped.
   const alreadySent = db.campaignRecipientEmails(id)
-  const toSend = contacts.filter((c) => !alreadySent.has(c.email))
+  const { send: toSend, held, firstBatch, startHold } = splitGuesses(
+    contacts.filter((c) => !alreadySent.has(c.email)),
+    hold,
+    releasing,
+  )
 
   // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
   requireAllowance('emailsSent', toSend.length, 'Sending this campaign')
@@ -591,7 +604,15 @@ export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) 
 
   // Everything above passed: claim it. From here it's 'sending', which a
   // scheduled send and a manual one can't both do (db.claimCampaignForSending).
-  if (!db.claimCampaignForSending(id, opts)) throw new Error('This campaign is already being sent.')
+  if (!db.claimCampaignForSending(id, { resume: opts.resume, release: releasing })) throw new Error('This campaign is already being sent.')
+  if (startHold) {
+    db.setGuessHold(id, {
+      status: 'waiting',
+      first_batch: firstBatch,
+      held: held.length,
+      release_at: new Date(Date.now() + GUESS_HOLD_MS).toISOString(),
+    })
+  }
 
   try {
     for (const contact of toSend) {
@@ -713,21 +734,60 @@ export async function sendCampaign(id: number, opts: { resume?: boolean } = {}) 
       }
     }
   } catch (err) {
-    // Stopped partway: back to a draft. Sending again skips everyone it reached.
-    db.releaseCampaign(id)
+    // Stopped partway: back to a draft (or, sending held-back recipients, to
+    // sent). Sending again skips everyone it reached.
+    if (releasing) db.restoreSent(id)
+    else db.releaseCampaign(id)
     throw err
   }
 
-  db.run("UPDATE campaigns SET status = 'sent', sent_at = ? WHERE id = ?", [new Date().toISOString(), id])
+  db.run("UPDATE campaigns SET status = 'sent', sent_at = ? WHERE id = ?", [releasing ? (campaign.sentAt ?? new Date().toISOString()) : new Date().toISOString(), id])
+  if (releasing) db.setGuessHold(id, { ...hold!, status: 'released' })
 
+  const plural = (n: number) => `${n} recipient${n === 1 ? '' : 's'}`
   notify(
     'campaign_sent',
-    `"${campaign.name}" finished sending to ${toSend.length} recipient${toSend.length === 1 ? '' : 's'}` +
-      (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : ''),
+    releasing
+      ? `"${campaign.name}" finished sending to the ${plural(toSend.length)} held back`
+      : `"${campaign.name}" finished sending to ${plural(toSend.length)}` +
+          (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : '') +
+          (held.length
+            ? `. ${held.length} more with unverified addresses follow in an hour, unless too many of the first ${firstBatch} bounce`
+            : ''),
     { url: `/marketing/campaigns/${id}` },
   )
 
-  return { success: true, sentCount: toSend.length, skippedOptOuts }
+  return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length }
+}
+
+/**
+ * Held-back unconfirmed recipients whose wait is over (guessedRecipients.ts):
+ * sent if the first batch bounced little enough, otherwise kept back and the
+ * user told. Run by the email scheduler.
+ */
+export async function settleHeldGuesses(now = new Date()) {
+  for (const id of db.campaignsWithHeldGuessesDue(now)) {
+    const hold = db.getGuessHold(id)!
+    const name = db.data.campaigns.find((c) => c.id === id)?.name ?? `#${id}`
+    const hardBounces = db.unconfirmedHardBounces(id)
+    const url = `/marketing/campaigns/${id}`
+    if (!firstBatchPassed(hold, hardBounces)) {
+      db.setGuessHold(id, { ...hold, status: 'stopped', hard_bounces: hardBounces })
+      notify(
+        'campaign_failed',
+        `"${name}": ${hardBounces} of the first ${hold.first_batch} unverified addresses bounced, so the other ${hold.held} weren't sent.`,
+        { url },
+      )
+      continue
+    }
+    db.setGuessHold(id, { ...hold, hard_bounces: hardBounces })
+    try {
+      await sendCampaign(id, { releaseGuesses: true })
+    } catch (err: any) {
+      db.setGuessHold(id, { ...hold, status: 'stopped', hard_bounces: hardBounces })
+      notify('campaign_failed', `"${name}": the ${hold.held} held-back recipients couldn't be sent: ${err?.message ?? 'unknown error'}`, { url })
+    }
+  }
 }
 
 export async function sendTestEmail(payload: {

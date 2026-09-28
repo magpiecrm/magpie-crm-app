@@ -89,6 +89,34 @@ export const sendCampaignFn = createServerFn({ method: 'POST' })
     return emailService.sendCampaign(data.id)
   })
 
+/**
+ * Sends a sent campaign's held-back unverified recipients now
+ * (guessedRecipients.ts), e.g. after the first batch bounced too much and the
+ * user decides to go ahead anyway.
+ */
+export const sendHeldRecipientsFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: number }) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const emailService = await import('../emailService')
+    await requireAuth()
+    return emailService.sendCampaign(data.id, { releaseGuesses: true })
+  })
+
+/** How many subscribed contacts in a list have unverified prospected addresses, for a note before sending. */
+export const unconfirmedInListFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { listId: number }) => z.object({ listId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { db } = await import('../db')
+    const { isUnconfirmedGuess } = await import('../prospecting/types')
+    const { FIRST_GUESS_BATCH } = await import('../guessedRecipients')
+    const members = new Set(db.data.list_contacts.filter((lc) => lc.list_id === data.listId).map((lc) => lc.contact_email))
+    const subscribed = db.data.contacts.filter((c) => members.has(c.email) && c.status === 'subscribed')
+    return { unconfirmed: subscribed.filter(isUnconfirmedGuess).length, total: subscribed.length, firstBatch: FIRST_GUESS_BATCH }
+  })
+
 /** Takes a scheduled campaign off the schedule, back to a draft. */
 export const unscheduleCampaignFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { id: number }) => z.object({ id: z.number().int() }).parse(d))

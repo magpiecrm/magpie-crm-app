@@ -15,7 +15,8 @@ import type { db as Db } from '../db'
 import { profileHash } from './suppressionHash'
 import type { LookupOutcome } from './types'
 
-const DEFINITE = new Set<LookupOutcome>(['catchAll', 'rejected', 'noMail', 'hiddenSurname', 'badName'])
+// `formatConfirmed` only reaches here when such guesses are withheld.
+const DEFINITE = new Set<LookupOutcome>(['catchAll', 'formatConfirmed', 'rejected', 'noMail', 'hiddenSurname', 'badName'])
 const KEEP_MS = 90 * 24 * 60 * 60_000
 
 type Store = Pick<typeof Db, 'getUnverifiable' | 'setUnverifiable'>

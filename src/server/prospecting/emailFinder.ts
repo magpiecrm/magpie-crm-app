@@ -61,6 +61,14 @@ const MX_REFRESH_MS = 30 * DAY
 /** A pattern at or above this confidence is tried first, on its own. */
 const TRUSTED_CONFIDENCE = 0.8
 /**
+ * At a company that accepts every address, a guess this likely is handed
+ * over as `format_confirmed` rather than `catch_all_likely`: about four
+ * addresses already there in the same format, and none against it, or a
+ * format the mail server confirmed repeatedly before the company started
+ * accepting everything. A size-based prior alone never gets here (74% at most).
+ */
+export const FORMAT_CONFIRMED = 0.85
+/**
  * A format backed by addresses already at the company goes first at or above
  * this: one first.last (0.74) or flast (0.63) match does, a lone first-name
  * address (a founder's, often) doesn't.
@@ -135,6 +143,26 @@ export function isKnownNoMail(domain: string, getDomain: FinderDeps['getDomain']
   }
 }
 
+/**
+ * Whether a guess at `domain` would come back `format_confirmed` if the
+ * company accepts every address: its format is well established, by the mail
+ * server before or by addresses already held there. Cache and contacts only,
+ * no checks, so search can tell a catch-all company that's still worth
+ * revealing people at from a dead end.
+ */
+export function hasConfirmedFormat(
+  domain: string,
+  deps: Pick<FinderDeps, 'getDomain' | 'knownAddresses'>,
+  now: number,
+  headcount?: number | null,
+): boolean {
+  const rec = deps.getDomain(domain.toLowerCase().trim())
+  const known = rec && trustedPattern(rec, now)
+  if (known) return rec.pattern_confidence >= FORMAT_CONFIRMED
+  const evidence = weighFormats(deps.knownAddresses?.(domain.toLowerCase().trim()) ?? [], headcount)
+  return Boolean(evidence && evidence.confidence >= FORMAT_CONFIRMED)
+}
+
 /** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
 export function surnameHidden(lastName: string): boolean {
   return /^\p{L}\.?$/u.test(lastName.trim())
@@ -166,7 +194,8 @@ export interface FindResult {
   /** At least one check was greylisted; worth retrying later for a better answer. */
   greylisted: boolean
   /**
-   * For an unconfirmed guess (`catch_all_likely`, `unverified`): the chance,
+   * For an unconfirmed guess (`format_confirmed`, `catch_all_likely`,
+   * `unverified`): the chance,
    * 0-1, that it's right, from what's known about the company's format.
    */
   confidence?: number
@@ -429,10 +458,11 @@ export async function findEmail(
   const catchAllReason = gateway
     ? `${domain}'s mail is filtered by ${gateway}, which accepts every address, so none can be confirmed.`
     : `${domain} accepts every address, so none can be confirmed.`
+  const formatConfirmed = confidence >= FORMAT_CONFIRMED && ((known && top === known) || (evidence && top === evidence.pattern))
   const catchAll: FindResult = {
     email: candidates[0].email,
-    status: 'catch_all_likely',
-    outcome: 'catchAll',
+    status: formatConfirmed ? 'format_confirmed' : 'catch_all_likely',
+    outcome: formatConfirmed ? 'formatConfirmed' : 'catchAll',
     greylisted: false,
     confidence,
     reason: catchAllReason,

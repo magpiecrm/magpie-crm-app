@@ -8,7 +8,7 @@ import type { Activity, Company, Deal, Pipeline } from '../features/sales/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
-import type { EmailStatus, NoticeStatus } from './prospecting/types'
+import { isUnconfirmedGuess, type EmailStatus, type NoticeStatus } from './prospecting/types'
 import type { MailFamily, MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
 import type { KnownAddress } from './prospecting/patternEvidence'
@@ -98,6 +98,8 @@ export interface DbSchema {
     sent_at: string | null
     /** When a 'scheduled' campaign sends (ISO); the email scheduler sends it once due. */
     scheduled_at?: string | null
+    /** Unconfirmed prospected addresses held back after a first batch (guessedRecipients.ts). */
+    guess_hold?: GuessHold | null
   }>
   campaign_recipients: Array<{
     campaign_id: number
@@ -349,6 +351,12 @@ export interface ProspectingSettingsRecord {
    * Absent means true. False shows them, marked Unverifiable.
    */
   hide_unverifiable?: boolean
+  /**
+   * With verified-only on, still hand over addresses at companies that
+   * accept every address when their format is well established
+   * (`format_confirmed`). Absent means false.
+   */
+  allow_format_confirmed?: boolean
   reacher_url?: string
   reacher_from_email?: string
   reacher_hello_name?: string
@@ -363,6 +371,22 @@ export interface ProspectingSettingsRecord {
 }
 
 export type { SuppressionKind }
+
+/**
+ * A campaign's unconfirmed addresses held back after a first batch
+ * (guessedRecipients.ts): `waiting` until `release_at`, then `released`
+ * (sent) or `stopped` (too many of the first batch bounced).
+ */
+export interface GuessHold {
+  status: 'waiting' | 'released' | 'stopped'
+  /** Unconfirmed addresses in the first batch. */
+  first_batch: number
+  /** How many were held back. */
+  held: number
+  release_at: string
+  /** Hard bounces among the first batch, once looked at. */
+  hard_bounces?: number
+}
 
 export interface EmailDomainRecord {
   domain: string
@@ -574,8 +598,7 @@ class JsonDb {
     }
     return contacts.flatMap((c): KnownAddress[] => {
       const address = { email: c.email, firstName: c.first_name, lastName: c.last_name }
-      const unconfirmed = !!c.source && c.email_status !== 'verified'
-      if (!unconfirmed) return [{ ...address, kind: 'known' }]
+      if (!isUnconfirmedGuess(c)) return [{ ...address, kind: 'known' }]
       if (bounced.has(c.email)) return [{ ...address, kind: 'bounced' }]
       return clicked.has(c.email) ? [{ ...address, kind: 'engaged' }] : []
     })
@@ -678,15 +701,51 @@ class JsonDb {
 
   /**
    * Marks a campaign 'sending' unless it's already sending or sent. True if
-   * this call claimed it (`resume` also claims one left 'sending').
+   * this call claimed it (`resume` also claims one left 'sending'; `release`
+   * a sent one, to send its held-back recipients).
    */
-  claimCampaignForSending(id: number, opts: { resume?: boolean } = {}): boolean {
+  claimCampaignForSending(id: number, opts: { resume?: boolean; release?: boolean } = {}): boolean {
     const campaign = this.data.campaigns.find((c) => c.id === id)
-    if (!campaign || campaign.status === 'sent') return false
+    if (!campaign || (campaign.status === 'sent' && !opts.release)) return false
     if (campaign.status === 'sending' && !opts.resume) return false
     campaign.status = 'sending'
     this.save()
     return true
+  }
+
+  setGuessHold(id: number, hold: GuessHold | null) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign) return
+    campaign.guess_hold = hold
+    this.save()
+  }
+
+  getGuessHold(id: number): GuessHold | null {
+    return this.data.campaigns.find((c) => c.id === id)?.guess_hold ?? null
+  }
+
+  /** Sent campaigns whose held-back recipients are due a decision. */
+  campaignsWithHeldGuessesDue(now = new Date()): number[] {
+    const iso = now.toISOString()
+    return this.data.campaigns
+      .filter((c) => c.status === 'sent' && c.guess_hold?.status === 'waiting' && c.guess_hold.release_at <= iso)
+      .map((c) => c.id)
+  }
+
+  /** Hard bounces this campaign got from prospected addresses that were never confirmed. */
+  unconfirmedHardBounces(id: number): number {
+    const bounced = new Set(
+      this.data.campaign_recipients.filter((r) => r.campaign_id === id && r.status === 'bounced_hard').map((r) => r.contact_email),
+    )
+    return this.data.contacts.filter((c) => bounced.has(c.email) && isUnconfirmedGuess(c)).length
+  }
+
+  /** Back to 'sent' after sending held-back recipients stopped partway. */
+  restoreSent(id: number) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign || campaign.status !== 'sending') return
+    campaign.status = 'sent'
+    this.save()
   }
 
   /** Puts a campaign that couldn't finish sending back to 'draft', off the schedule. */

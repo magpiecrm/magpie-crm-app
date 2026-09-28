@@ -11,7 +11,7 @@ import crypto from 'crypto'
 import { domainForPerson } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import type { CompanySource, EmailStatus, LookupOutcome, PeopleSource, PersonResult } from './types'
+import { handsOver, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { remaining } from '../allowance'
 import { rememberIfUnverifiable } from './unverifiable'
@@ -64,6 +64,8 @@ export interface SaveDeps {
   sleep?: (ms: number) => Promise<void>
   /** Only save emails the mail server confirmed. Defaults to true. */
   verifiedOnly?: boolean
+  /** With `verifiedOnly`, still save `format_confirmed` guesses. */
+  allowFormatConfirmed?: boolean
 }
 
 const jobs = new Map<string, ProspectJob>()
@@ -161,10 +163,10 @@ async function processPerson(
   if (found.outcome) recordLookup(found.outcome)
   // Nothing handed over, for a reason no retry changes: remembered, so later
   // searches can leave them out (unverifiable.ts).
-  if (found.outcome && (!found.email || ((deps.verifiedOnly ?? true) && found.status !== 'verified'))) {
+  if (found.outcome && (!found.email || !handsOver(found.status, deps))) {
     rememberIfUnverifiable(person.profileUrl, found.outcome, deps.db)
   }
-  if (found.email && (deps.verifiedOnly ?? true) && found.status !== 'verified') {
+  if (found.email && !handsOver(found.status, deps)) {
     return { ...base, status: 'unconfirmed', message: found.reason ?? found.detail }
   }
   if (!found.email) return { ...base, status: 'not_found', message: found.detail }

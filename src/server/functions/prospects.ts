@@ -2,7 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../prospecting/types'
 
-const EMAIL_STATUSES = ['verified', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
+const EMAIL_STATUSES = ['verified', 'format_confirmed', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
 
 // Prospect search over SocialFetch. Search results are fetched live and never
 // stored; only saving (saveProspectsFn) creates contacts, and that is the only
@@ -115,9 +115,15 @@ export const revealEmailFn = createServerFn({ method: 'POST' })
     await requireAuth()
     const { revealEmail } = await import('../prospecting/reveal')
     const { getSource, getFinderDeps } = await import('../prospecting/runtime')
-    const { isVerifiedOnly } = await import('../prospecting/settings')
+    const { allowsFormatConfirmed, isVerifiedOnly } = await import('../prospecting/settings')
     const { db } = await import('../db')
-    return revealEmail(data.person, { source: getSource(), finder: await getFinderDeps(), db, verifiedOnly: isVerifiedOnly() })
+    return revealEmail(data.person, {
+      source: getSource(),
+      finder: await getFinderDeps(),
+      db,
+      verifiedOnly: isVerifiedOnly(),
+      allowFormatConfirmed: allowsFormatConfirmed(),
+    })
   })
 
 const saveInput = z.object({
@@ -151,7 +157,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { getSocialFetchBalance } = await import('../prospecting/socialfetch')
-    const { getActiveVerifier, isSocialFetchConfigured, hidesUnverifiable, isVerifiedOnly, requireSocialFetchKey } = await import('../prospecting/settings')
+    const { allowsFormatConfirmed, getActiveVerifier, isSocialFetchConfigured, hidesUnverifiable, isVerifiedOnly, requireSocialFetchKey } = await import('../prospecting/settings')
     const { getProxyRouter } = await import('../prospecting/runtime')
 
     const { db } = await import('../db')
@@ -169,7 +175,12 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       /** PROSPECTING_MANAGED: the host runs search and verification; hide their setup. */
       managed: env.prospectingManaged(),
       socialfetch: { configured, balance, balanceHidden, prospectsThisMonth },
-      verification: { provider: verifier?.provider ?? null, verifiedOnly: isVerifiedOnly(), hideUnverifiable: hidesUnverifiable() },
+      verification: {
+        provider: verifier?.provider ?? null,
+        verifiedOnly: isVerifiedOnly(),
+        hideUnverifiable: hidesUnverifiable(),
+        allowFormatConfirmed: allowsFormatConfirmed(),
+      },
       reacher: {
         configured: verifier?.provider === 'reacher',
         // The host's IPs aren't a managed copy's business.
@@ -209,7 +220,9 @@ async function refuseIfManaged() {
 // What search shows: a preference, so hosted copies can change it too.
 
 export const saveSearchPreferencesFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { hideUnverifiable: boolean }) => z.object({ hideUnverifiable: z.boolean() }).parse(d))
+  .inputValidator((d: { hideUnverifiable?: boolean; allowFormatConfirmed?: boolean }) =>
+    z.object({ hideUnverifiable: z.boolean().optional(), allowFormatConfirmed: z.boolean().optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()

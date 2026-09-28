@@ -142,3 +142,42 @@ describe('new rows', () => {
   })
 })
 
+
+describe('unverified addresses held back after a first batch', () => {
+  async function guessedCampaign(prefix: string) {
+    const emails = Array.from({ length: 60 }, (_, i) => `${prefix}${i}@acme.test`)
+    const id = await campaignFor(emails)
+    for (const email of emails) db.setContactProspectFields(email, { source: 'socialfetch', email_status: 'catch_all_likely' })
+    await emailService.sendCampaign(id)
+    expect(sent).toHaveLength(50)
+    return { id, emails }
+  }
+
+  it('go out an hour later when the first batch barely bounced', async () => {
+    const { id, emails } = await guessedCampaign('ok')
+    db.updateRecipientBounceStatus(emails[0], 'hard', String(id))
+    const sentAt = (await emailService.getCampaign(id)).sentAt
+
+    await sendDueCampaigns(new Date(Date.now() + 30 * 60_000))
+    expect(sent).toHaveLength(50)
+    await sendDueCampaigns(new Date(Date.now() + HOUR + 60_000))
+    expect(sent.slice(50).sort()).toEqual(emails.slice(50).sort())
+    const done = await emailService.getCampaign(id)
+    expect(done).toMatchObject({ status: 'sent', sentAt })
+    expect(db.getGuessHold(id)).toMatchObject({ status: 'released', hard_bounces: 1 })
+  })
+
+  it('stay held, and the user is told, when too many of the first batch bounced', async () => {
+    const { id, emails } = await guessedCampaign('bad')
+    db.updateRecipientBounceStatus(emails[0], 'hard', String(id))
+    db.updateRecipientBounceStatus(emails[1], 'hard', String(id))
+
+    await sendDueCampaigns(new Date(Date.now() + HOUR + 60_000))
+    expect(sent).toHaveLength(50)
+    expect(db.getGuessHold(id)).toMatchObject({ status: 'stopped', hard_bounces: 2, held: 10 })
+    expect(notices.at(-1)).toMatch(/2 of the first 50 unverified addresses bounced, so the other 10 weren't sent/)
+    // Looked at once: a later minute doesn't send them either.
+    await sendDueCampaigns(new Date(Date.now() + 2 * HOUR))
+    expect(sent).toHaveLength(50)
+  })
+})

@@ -99,12 +99,14 @@ const UNCHECKABLE: LookupOutcome[] = ['noMail', 'noDomain', 'hiddenSurname', 'ba
 
 /**
  * Verified lookups out of those that reached a mail server. `rate` is null
- * with none of those yet. Catch-all companies count as misses.
+ * with none of those yet. Catch-all companies count as misses, including
+ * those with a confirmed format (`formatConfirmed`, counted separately:
+ * handed over when allowed, but never verified).
  */
-export function lookupHitRate(counts: UsageCounts): { verified: number; checkable: number; rate: number | null } {
+export function lookupHitRate(counts: UsageCounts): { verified: number; formatConfirmed: number; checkable: number; rate: number | null } {
   const checkable = LOOKUP_OUTCOMES.filter((o) => !UNCHECKABLE.includes(o)).reduce((n, o) => n + counts[lookupCounter(o)], 0)
   const verified = counts.lookupVerified
-  return { verified, checkable, rate: checkable ? verified / checkable : null }
+  return { verified, formatConfirmed: counts.lookupFormatConfirmed, checkable, rate: checkable ? verified / checkable : null }
 }
 
 /** Every month with usage, oldest first, each with every counter. */

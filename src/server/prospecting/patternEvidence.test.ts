@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { formatPrior } from './formatStats'
 import { weighFormats, type KnownAddress } from './patternEvidence'
+import { handsOver } from './types'
 
 const at = (email: string, name: string, kind: KnownAddress['kind'] = 'known'): KnownAddress => {
   const [firstName, lastName] = name.split(' ')
@@ -47,5 +48,15 @@ describe('formatPrior', () => {
     expect(formatPrior('{first}.{last}')).toBeCloseTo(0.477, 3)
     expect(formatPrior('{f}{last}', 20000)).toBeCloseTo(0.268, 3)
     expect(formatPrior('{last}{f}')).toBeCloseTo(0.0005, 4)
+  })
+})
+
+describe('handsOver', () => {
+  it('always hands over verified, format_confirmed only when allowed, and anything with verified-only off', () => {
+    expect(handsOver('verified', {})).toBe(true)
+    expect(handsOver('format_confirmed', {})).toBe(false)
+    expect(handsOver('format_confirmed', { allowFormatConfirmed: true })).toBe(true)
+    expect(handsOver('catch_all_likely', { allowFormatConfirmed: true })).toBe(false)
+    expect(handsOver('catch_all_likely', { verifiedOnly: false })).toBe(true)
   })
 })

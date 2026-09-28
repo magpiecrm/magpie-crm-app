@@ -11,7 +11,7 @@
 import { domainForPerson } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import type { CompanySource, EmailStatus, PersonResult } from './types'
+import { handsOver, type CompanySource, type EmailStatus, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { requireAllowance } from '../allowance'
 import { rememberIfUnverifiable } from './unverifiable'
@@ -38,6 +38,8 @@ export interface RevealDeps {
   db: typeof import('../db')['db']
   /** Withhold anything the mail server didn't confirm. Defaults to true. */
   verifiedOnly?: boolean
+  /** With `verifiedOnly`, still hand over `format_confirmed` guesses. */
+  allowFormatConfirmed?: boolean
 }
 
 export async function revealEmail(person: PersonResult, deps: RevealDeps): Promise<RevealResult> {
@@ -77,12 +79,12 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   if (isSuppressed(hashesFor({ email: found.email }), suppressed)) return unavailable
 
   // An unconfirmed guess is never handed over (or logged as disclosed) while
-  // verified-only is on.
-  if ((deps.verifiedOnly ?? true) && found.status !== 'verified') {
+  // verified-only is on, except a `format_confirmed` one if allowed.
+  if (!handsOver(found.status, deps)) {
     return {
       status: 'unconfirmed',
       message: found.reason ?? found.detail ?? 'No address could be confirmed.',
-      catchAll: found.status === 'catch_all_likely' || undefined,
+      catchAll: found.status === 'catch_all_likely' || found.status === 'format_confirmed' || undefined,
       unverifiable: rememberIfUnverifiable(person.profileUrl, found.outcome, deps.db) || undefined,
     }
   }

@@ -183,10 +183,31 @@ export interface PeopleSource {
 /** Outcome of email finding for one person, before anything is stored. */
 export type EmailStatus =
   | 'verified' // verification server's `safe` on a domain that is not catch-all
+  | 'format_confirmed' // domain accepts everything, but its format is well established (FORMAT_CONFIRMED)
   | 'catch_all_likely' // domain accepts everything; best-ranked guess
   | 'risky' // verification server's `risky` and nothing better found
   | 'unverified' // no verification server, or every check came back `unknown`
   | 'not_found' // every candidate was rejected, or the domain takes no mail
+
+/**
+ * A prospected contact whose address the mail server never confirmed:
+ * `format_confirmed`, `catch_all_likely`, `risky` or `unverified` (or none
+ * recorded). Contacts not from prospecting are the user's own.
+ */
+export function isUnconfirmedGuess(contact: { source?: string; email_status?: EmailStatus }): boolean {
+  return Boolean(contact.source) && contact.email_status !== 'verified'
+}
+
+/**
+ * Whether an address found with `status` is handed over (revealed or saved).
+ * Verified always is; with verified-only off, any guess is; with it on, a
+ * `format_confirmed` guess only when the user allowed those
+ * (Settings → Prospect search).
+ */
+export function handsOver(status: EmailStatus, policy: { verifiedOnly?: boolean; allowFormatConfirmed?: boolean }): boolean {
+  if (status === 'verified' || !(policy.verifiedOnly ?? true)) return true
+  return status === 'format_confirmed' && Boolean(policy.allowFormatConfirmed)
+}
 
 /**
  * How one email lookup ended: `verified`, or why no address was confirmed.
@@ -194,6 +215,7 @@ export type EmailStatus =
  */
 export const LOOKUP_OUTCOMES = [
   'verified',
+  'formatConfirmed', // accepts every address, but the company's format is well established
   'catchAll', // the company's mail server accepts every address
   'rejected', // every likely format was rejected
   'risky', // only risky answers

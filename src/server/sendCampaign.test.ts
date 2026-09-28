@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // success. These pin down the new behaviour, and — importantly — that the
 // refusal path never touches contact records.
 
-type Contact = { email: string; status: string; first_name?: string; last_name?: string; signed_up_at?: string }
+type Contact = { email: string; status: string; first_name?: string; last_name?: string; signed_up_at?: string; source?: string; email_status?: string }
 
 const state: {
   contacts: Contact[]
@@ -18,7 +18,8 @@ const state: {
   status: string
   alreadySent: string[]
   released: number
-} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined, status: 'draft', alreadySent: [], released: 0 }
+  hold: any
+} = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined, status: 'draft', alreadySent: [], released: 0, hold: null }
 
 vi.mock('./db', () => ({
   db: {
@@ -59,8 +60,11 @@ vi.mock('./db', () => ({
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
     campaignScheduledAt: () => null,
     campaignRecipientEmails: () => new Set(state.alreadySent),
-    claimCampaignForSending: (_id: number, opts: { resume?: boolean } = {}) => {
-      if (state.status === 'sent' || (state.status === 'sending' && !opts.resume)) return false
+    getGuessHold: () => state.hold,
+    setGuessHold: (_id: number, hold: any) => { state.hold = hold },
+    restoreSent: () => { state.status = 'sent' },
+    claimCampaignForSending: (_id: number, opts: { resume?: boolean; release?: boolean } = {}) => {
+      if ((state.status === 'sent' && !opts.release) || (state.status === 'sending' && !opts.resume)) return false
       state.status = 'sending'
       return true
     },
@@ -100,6 +104,7 @@ beforeEach(() => {
   state.status = 'draft'
   state.alreadySent = []
   state.released = 0
+  state.hold = null
   delete process.env.SENDING_MANAGED
   // Avoids the getRequest() fallback for the tracking base URL.
   process.env.PUBLIC_URL = 'https://example.test'
@@ -186,7 +191,7 @@ describe('sendCampaign happy path still works', () => {
 
     const res = await emailService.sendCampaign(1)
 
-    expect(res).toEqual({ success: true, sentCount: 1, skippedOptOuts: 0 })
+    expect(res).toEqual({ success: true, sentCount: 1, skippedOptOuts: 0, heldBack: 0 })
     // The unsubscribed contact must be skipped, not merely un-emailed.
     expect(sendMail).toHaveBeenCalledTimes(1)
     expect((sendMail as any).mock.calls[0][0].to).toBe('yes@b.com')
@@ -330,3 +335,64 @@ describe('sendCampaign never sends twice', () => {
   })
 })
 
+
+describe('unverified prospected addresses', () => {
+  const guesses = (n: number, status = 'catch_all_likely') =>
+    Array.from({ length: n }, (_, i) => ({ email: `p${i}@acme.test`, status: 'subscribed', source: 'socialfetch', email_status: status }))
+  const sentTo = async () => {
+    const { sendMail } = await import('./nodemailer')
+    return vi.mocked(sendMail).mock.calls.map((c) => c[0].to)
+  }
+
+  beforeEach(async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+  })
+
+  it('go out in a first batch of 50, the rest held back an hour', async () => {
+    listOf(
+      { email: 'own@b.com', status: 'subscribed' },
+      { email: 'checked@acme.test', status: 'subscribed', source: 'socialfetch', email_status: 'verified' },
+      ...guesses(60),
+    )
+    const before = Date.now()
+    const res = await emailService.sendCampaign(1)
+    const sent = await sentTo()
+    expect(sent).toHaveLength(52)
+    expect(sent).toContain('own@b.com')
+    expect(sent).toContain('checked@acme.test')
+    expect(sent).not.toContain('p50@acme.test')
+    expect(res).toMatchObject({ sentCount: 52, heldBack: 10 })
+    expect(state.hold).toMatchObject({ status: 'waiting', first_batch: 50, held: 10 })
+    expect(Date.parse(state.hold.release_at) - before).toBeGreaterThanOrEqual(60 * 60_000)
+  })
+
+  it('all go out when there are no more than 50', async () => {
+    listOf(...guesses(50, 'format_confirmed'))
+    expect(await emailService.sendCampaign(1)).toMatchObject({ sentCount: 50, heldBack: 0 })
+    expect(state.hold).toBeNull()
+  })
+
+  it('stay held when an interrupted send is resumed', async () => {
+    listOf({ email: 'own@b.com', status: 'subscribed' }, ...guesses(60))
+    state.hold = { status: 'waiting', first_batch: 50, held: 10, release_at: new Date().toISOString() }
+    state.alreadySent = guesses(50).map((g) => g.email)
+    state.status = 'sending'
+    await emailService.sendCampaign(1, { resume: true })
+    expect(await sentTo()).toEqual(['own@b.com'])
+  })
+
+  it('released: only the held-back ones go, and the campaign stays sent', async () => {
+    listOf({ email: 'added-later@b.com', status: 'subscribed' }, ...guesses(60))
+    state.status = 'sent'
+    state.hold = { status: 'waiting', first_batch: 50, held: 10, release_at: new Date().toISOString() }
+    state.alreadySent = guesses(50).map((g) => g.email)
+    const res = await emailService.sendCampaign(1, { releaseGuesses: true })
+    expect(await sentTo()).toEqual(guesses(60).slice(50).map((g) => g.email))
+    expect(res.sentCount).toBe(10)
+    expect(state.status).toBe('sending') // the mock's claim; the real db then writes 'sent'
+    expect(state.runs.some((r) => r.sql.includes("status = 'sent'"))).toBe(true)
+    expect(state.hold.status).toBe('released')
+    await expect(emailService.sendCampaign(1, { releaseGuesses: true })).rejects.toThrow(/nobody held back/)
+  })
+})

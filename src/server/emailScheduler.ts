@@ -2,7 +2,7 @@ import { db } from './db'
 import { sendMail } from './nodemailer'
 import { pollBounces } from './bouncePoller'
 import { notify } from './notify'
-import { sendCampaign } from './emailService'
+import { sendCampaign, settleHeldGuesses } from './emailService'
 
 // Use globalThis so the flag and interval survive Vite HMR module disposal.
 // Without this, every file save in dev kills the setInterval and emails stop sending.
@@ -34,6 +34,8 @@ export async function sendDueCampaigns(now = new Date()) {
         })
       }
     }
+    // Unverified addresses held back after a first batch (guessedRecipients.ts).
+    await settleHeldGuesses(now)
   } finally {
     g.__campaignRunBusy = false
   }

@@ -81,8 +81,8 @@ describe('GET /api/usage', () => {
     recordLookup('rejected', new Date('2026-09-15T09:00:00Z'))
     const body = await (await get('/api/usage?month=2026-09', 'tok_123')).json()
     // 1 verified out of verified + 2 catch-all + 1 rejected; noDomain and limit left out.
-    expect(body.hitRate).toEqual({ verified: 1, checkable: 4, rate: 0.25 })
+    expect(body.hitRate).toEqual({ verified: 1, formatConfirmed: 0, checkable: 4, rate: 0.25 })
     const all = await (await get('/api/usage', 'tok_123')).json()
-    expect(all.months[0].hitRate).toEqual({ verified: 0, checkable: 0, rate: null })
+    expect(all.months[0].hitRate).toEqual({ verified: 0, formatConfirmed: 0, checkable: 0, rate: null })
   })
 })
