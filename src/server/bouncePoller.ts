@@ -35,6 +35,17 @@ function classifyBounce(e: EmailEvent): 'hard' | 'soft' {
   return HARD_BOUNCE_PATTERNS.some((p) => p.test(detail)) ? 'hard' : 'soft'
 }
 
+/** Whether bounces come from polling Cloudflare (the active provider), not from a webhook. */
+export async function pollsBounces(): Promise<boolean> {
+  const { getActiveProviderConfig } = await import('./emailSettings')
+  return getActiveProviderConfig().providerId === 'cloudflare'
+}
+
+/** Up to when (ISO) Cloudflare's bounces have been read, or null before the first poll. */
+export function bouncesPolledUntil(): string | null {
+  return (globalThis as any).__bouncePollerSince ?? null
+}
+
 export async function pollBounces(): Promise<void> {
   // Only meaningful while Cloudflare is the active provider. Every other
   // provider pushes bounces to /api/webhooks/email/{provider} instead, and

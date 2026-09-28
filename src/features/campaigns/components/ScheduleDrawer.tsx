@@ -26,6 +26,9 @@ interface ScheduleDrawerProps {
 
 type SendOption = 'now' | 'later' | 'best' | 'batches'
 
+const hours = (h: number) => (h === 1 ? 'an hour' : `${h} hours`)
+const pct = (rate: number) => `${+(rate * 100).toFixed(1)}%`
+
 export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSendSuccess }: ScheduleDrawerProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -226,7 +229,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
                 </span>{' '}
                 (at companies whose mail server accepts every address, or that couldn't be checked).
                 {unconfirmed.unconfirmed > unconfirmed.firstBatch
-                  ? ` The first ${unconfirmed.firstBatch} go out with everyone else; the rest follow an hour later, unless more than 2% of those bounce.`
+                  ? ` The first ${unconfirmed.firstBatch} go out with everyone else; the rest follow at least ${hours(unconfirmed.holdHours)} later, once their bounces are in, unless more than ${pct(unconfirmed.maxBounceRate)} of those bounce.`
                   : ' Some may bounce.'}
               </p>
             </div>

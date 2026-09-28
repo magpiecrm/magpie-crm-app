@@ -19,6 +19,10 @@ export function ProspectSearchTab() {
   const verifiedOnly = status?.verification.verifiedOnly ?? true
   const hideUnverifiable = save.isPending ? save.variables : (status?.verification.hideUnverifiable ?? true)
   const allowFormatConfirmed = saveFormat.isPending ? saveFormat.variables : (status?.verification.allowFormatConfirmed ?? false)
+  const rules = status?.verification.rules
+  const batch = rules?.firstBatch ?? 50
+  const wait = !rules || rules.holdHours === 1 ? 'an hour' : `${rules.holdHours} hours`
+  const stopAt = `${+((rules?.maxBounceRate ?? 0.02) * 100).toFixed(1)}%`
 
   return (
     <div className="flex flex-col gap-6">
@@ -77,8 +81,8 @@ export function ProspectSearchTab() {
             </p>
             <p>
               These addresses are marked Format confirmed. They're right most of the time but can still bounce, so a
-              campaign sends them in a first batch of 50 and holds the rest for an hour. If more than 2% of that batch
-              bounces, the rest aren't sent until you choose to.
+              campaign sends them in a first batch of {batch} and holds the rest for at least {wait}, until that batch's
+              bounces are in. If more than {stopAt} of it bounces, the rest aren't sent until you choose to.
             </p>
             {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these are always handed over.</p>}
           </>

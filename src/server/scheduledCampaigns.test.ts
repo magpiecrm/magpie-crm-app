@@ -181,3 +181,48 @@ describe('unverified addresses held back after a first batch', () => {
     expect(sent).toHaveLength(50)
   })
 })
+
+describe('held-back addresses in a hosted copy', () => {
+  const KEYS = ['SENDING_MANAGED', 'PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET'] as const
+  const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
+  afterAll(() => {
+    for (const k of KEYS) (original[k] === undefined ? delete process.env[k] : (process.env[k] = original[k]))
+    vi.unstubAllGlobals()
+  })
+
+  it("wait until the host has passed on every bounce, however long the wait was set to", async () => {
+    const emails = Array.from({ length: 60 }, (_, i) => `hosted${i}@acme.test`)
+    const id = await campaignFor(emails)
+    for (const email of emails) db.setContactProspectFields(email, { source: 'socialfetch', email_status: 'catch_all_likely' })
+    await emailService.sendCampaign(id)
+    expect(sent).toHaveLength(50)
+
+    Object.assign(process.env, { SENDING_MANAGED: 'on', PROSPECTING_MANAGED: 'on', REACHER_URL: 'https://services.magpie.test', REACHER_SECRET: 'vt_mc_acme' })
+    let eventsPending = true
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ rules: {}, formatSharing: false, eventsPending })))
+
+    await sendDueCampaigns(new Date(Date.now() + HOUR + 60_000))
+    expect(sent).toHaveLength(50)
+    expect(db.getGuessHold(id)?.status).toBe('waiting')
+
+    eventsPending = false
+    await sendDueCampaigns(new Date(Date.now() + HOUR + 120_000))
+    expect(sent).toHaveLength(60)
+    expect(db.getGuessHold(id)?.status).toBe('released')
+  })
+
+  it("don't wait forever on a host that never answers", async () => {
+    const emails = Array.from({ length: 60 }, (_, i) => `silent${i}@acme.test`)
+    delete process.env.SENDING_MANAGED
+    const id = await campaignFor(emails)
+    for (const email of emails) db.setContactProspectFields(email, { source: 'socialfetch', email_status: 'catch_all_likely' })
+    await emailService.sendCampaign(id)
+    process.env.SENDING_MANAGED = 'on'
+    vi.stubGlobal('fetch', async () => new Response('down', { status: 502 }))
+
+    await sendDueCampaigns(new Date(Date.now() + 3 * HOUR))
+    expect(db.getGuessHold(id)?.status).toBe('waiting')
+    await sendDueCampaigns(new Date(Date.now() + 26 * HOUR))
+    expect(db.getGuessHold(id)?.status).toBe('released')
+  })
+})

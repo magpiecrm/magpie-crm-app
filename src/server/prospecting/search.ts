@@ -91,7 +91,14 @@ export function companyIsCatchAll(domain: string | null, db: Db): boolean {
 async function formatConfirmedAt(db: Db): Promise<(domain: string) => boolean> {
   const { allowsFormatConfirmed } = await import('./settings')
   if (!allowsFormatConfirmed()) return () => false
-  const deps = { getDomain: (d: string) => db.getEmailDomain(d), knownAddresses: (d: string) => db.knownAddressesAt(d) }
+  const { cachedSharedFormat } = await import('./sharedFormats')
+  const { prospectingRules } = await import('./hostRules')
+  const deps = {
+    getDomain: (d: string) => db.getEmailDomain(d),
+    knownAddresses: (d: string) => db.knownAddressesAt(d),
+    cachedSharedFormat,
+    formatConfirmedAt: prospectingRules().formatConfirmed,
+  }
   const now = Date.now()
   const memo = new Map<string, boolean>()
   return (domain) => {

@@ -152,15 +152,17 @@ export function isKnownNoMail(domain: string, getDomain: FinderDeps['getDomain']
  */
 export function hasConfirmedFormat(
   domain: string,
-  deps: Pick<FinderDeps, 'getDomain' | 'knownAddresses'>,
+  deps: Pick<FinderDeps, 'getDomain' | 'knownAddresses' | 'cachedSharedFormat' | 'formatConfirmedAt'>,
   now: number,
   headcount?: number | null,
 ): boolean {
-  const rec = deps.getDomain(domain.toLowerCase().trim())
+  const d = domain.toLowerCase().trim()
+  const threshold = deps.formatConfirmedAt ?? FORMAT_CONFIRMED
+  const rec = deps.getDomain(d)
   const known = rec && trustedPattern(rec, now)
-  if (known) return rec.pattern_confidence >= FORMAT_CONFIRMED
-  const evidence = weighFormats(deps.knownAddresses?.(domain.toLowerCase().trim()) ?? [], headcount)
-  return Boolean(evidence && evidence.confidence >= FORMAT_CONFIRMED)
+  if (known) return rec.pattern_confidence >= threshold
+  const evidence = weighFormats(deps.knownAddresses?.(d) ?? [], headcount, deps.cachedSharedFormat?.(d))
+  return Boolean(evidence && evidence.confidence >= threshold)
 }
 
 /** LinkedIn shows some surnames as an initial ("Andy C."); no address can be guessed from that. */
@@ -184,6 +186,12 @@ export interface FinderDeps {
   suggestMailDomain?(domain: string): Promise<string | null>
   /** Addresses this copy already has at `domain`, as evidence of its format. */
   knownAddresses?(domain: string): KnownAddress[]
+  /** Other workspaces' counts of addresses per format at `domain` (sharedFormats.ts). */
+  sharedFormat?(domain: string, headcount: number | null | undefined): Promise<Record<string, number> | null>
+  /** The same, from what's already been asked (no request), for search. */
+  cachedSharedFormat?(domain: string): Record<string, number> | null
+  /** Confidence for `format_confirmed`, from the host's rules; FORMAT_CONFIRMED otherwise. */
+  formatConfirmedAt?: number
 }
 
 export interface FindResult {
@@ -431,7 +439,8 @@ export async function findEmail(
   }
 
   const known = trustedPattern(rec, deps.now())
-  const evidence = known ? null : weighFormats(deps.knownAddresses?.(domain) ?? [], opts.headcount)
+  const shared = known ? null : ((await deps.sharedFormat?.(domain, opts.headcount).catch(() => null)) ?? null)
+  const evidence = known ? null : weighFormats(deps.knownAddresses?.(domain) ?? [], opts.headcount, shared)
   const candidates: Candidate[] = generateCandidates(person.firstName, person.lastName, domain, {
     knownPattern: known ?? (evidence && evidence.confidence >= EVIDENCE_FIRST ? evidence.pattern : null),
     max: MAX_CHECKS_PER_PERSON,
@@ -450,7 +459,9 @@ export async function findEmail(
   const likelihood = known && top === known
     ? 'It matches the format already confirmed for others at this company.'
     : evidence && top === evidence.pattern
-      ? `${evidence.agree} ${evidence.agree === 1 ? 'address you already have' : 'addresses you already have'} at ${domain} ${evidence.agree === 1 ? 'uses' : 'use'} this format.`
+      ? evidence.shared
+        ? `${evidence.agree} addresses at ${domain} known to MagpieCRM use this format.`
+        : `${evidence.agree} ${evidence.agree === 1 ? 'address you already have' : 'addresses you already have'} at ${domain} ${evidence.agree === 1 ? 'uses' : 'use'} this format.`
       : top === '{first}.{last}'
         ? firstLastLikelihood(opts.headcount)
         : 'This is the most likely format.'
@@ -458,7 +469,8 @@ export async function findEmail(
   const catchAllReason = gateway
     ? `${domain}'s mail is filtered by ${gateway}, which accepts every address, so none can be confirmed.`
     : `${domain} accepts every address, so none can be confirmed.`
-  const formatConfirmed = confidence >= FORMAT_CONFIRMED && ((known && top === known) || (evidence && top === evidence.pattern))
+  const formatConfirmed =
+    confidence >= (deps.formatConfirmedAt ?? FORMAT_CONFIRMED) && ((known && top === known) || (evidence && top === evidence.pattern))
   const catchAll: FindResult = {
     email: candidates[0].email,
     status: formatConfirmed ? 'format_confirmed' : 'catch_all_likely',

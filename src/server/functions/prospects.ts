@@ -180,6 +180,7 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
         verifiedOnly: isVerifiedOnly(),
         hideUnverifiable: hidesUnverifiable(),
         allowFormatConfirmed: allowsFormatConfirmed(),
+        rules: (await import('../prospecting/hostRules')).prospectingRules(),
       },
       reacher: {
         configured: verifier?.provider === 'reacher',

@@ -24,6 +24,7 @@ const ENV_KEYS = [
   'REACHER_HELLO_NAME',
   'REACHER_PROXIES',
   'NEVERBOUNCE_API_KEY',
+  'PROSPECTING_MANAGED',
 ] as const
 const original = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]))
 
@@ -158,6 +159,19 @@ describe('verified only', () => {
     expect(settings.getMaskedProspectingSettings().verification.verifiedOnly).toBe(false)
     settings.saveProspectingSettings({ verifiedOnly: true })
     expect(settings.isVerifiedOnly()).toBe(true)
+  })
+})
+
+describe('format-confirmed addresses', () => {
+  it('are off by default, on by default in a hosted copy, and a choice either way', () => {
+    expect(settings.allowsFormatConfirmed()).toBe(false)
+    process.env.PROSPECTING_MANAGED = 'true'
+    expect(settings.allowsFormatConfirmed()).toBe(true)
+    settings.saveSearchPreferences({ allowFormatConfirmed: false })
+    expect(settings.allowsFormatConfirmed()).toBe(false)
+    // Saving another preference keeps the choice.
+    settings.saveSearchPreferences({ hideUnverifiable: false })
+    expect(settings.allowsFormatConfirmed()).toBe(false)
   })
 })
 

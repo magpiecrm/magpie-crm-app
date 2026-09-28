@@ -25,8 +25,10 @@ export interface KnownAddress {
 
 export interface FormatEvidence {
   pattern: EmailPattern
-  /** Addresses in this format that are real (known or engaged). */
+  /** Addresses in this format that are real (known or engaged), here or shared. */
   agree: number
+  /** Of those, how many other workspaces shared (sharedFormats.ts). */
+  shared: number
   /** Real addresses in other formats, plus bounces in this one. */
   against: number
   /** 0-1: the chance a new address in this format is right. */
@@ -38,10 +40,17 @@ export interface FormatEvidence {
  * matches any format. Confidence starts from the format's prior (`formatPrior`)
  * counted as one address, so one match lifts first.last from about 0.5 to
  * 0.74, and three matches to 0.87; each address in another format, or bounce
- * in this one, pulls it back down.
+ * in this one, pulls it back down. `shared`: other workspaces' counts of real
+ * addresses per format (sharedFormats.ts), which count like this copy's own.
  */
-export function weighFormats(addresses: KnownAddress[], headcount?: number | null): FormatEvidence | null {
+export function weighFormats(
+  addresses: KnownAddress[],
+  headcount?: number | null,
+  shared?: Record<EmailPattern, number> | null,
+): FormatEvidence | null {
   const real = new Map<EmailPattern, number>()
+  const sharedCounts = new Map(Object.entries(shared ?? {}).filter(([, n]) => Number.isInteger(n) && n > 0))
+  for (const [pattern, n] of sharedCounts) real.set(pattern, n)
   const bounced = new Map<EmailPattern, number>()
   const seen = new Set<string>()
   for (const a of addresses) {
@@ -59,7 +68,7 @@ export function weighFormats(addresses: KnownAddress[], headcount?: number | nul
   for (const [pattern, agree] of real) {
     const against = totalReal - agree + (bounced.get(pattern) ?? 0)
     const confidence = (agree + formatPrior(pattern, headcount)) / (agree + against + 1)
-    if (!best || confidence > best.confidence) best = { pattern, agree, against, confidence }
+    if (!best || confidence > best.confidence) best = { pattern, agree, shared: sharedCounts.get(pattern) ?? 0, against, confidence }
   }
   return best
 }

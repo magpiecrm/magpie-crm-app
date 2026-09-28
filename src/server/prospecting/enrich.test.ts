@@ -38,6 +38,7 @@ vi.mock('../db', () => ({
       ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 } : null,
     getSuppressionHashes: () => suppressedHashes,
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
+    knownAddressesAt: () => [],
     getDisclosures: () => disclosures,
     upsertProspectCompanies: () => {},
     getProspectingSettings: () => prospectingSettings,

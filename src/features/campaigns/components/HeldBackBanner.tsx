@@ -41,7 +41,7 @@ export function HeldBackBanner({ campaignId, hold }: { campaignId: number; hold:
           <p className="text-xs text-muted-foreground">
             {stopped
               ? `${hold.hard_bounces ?? 0} of the first ${hold.first_batch} bounced. Sending the rest risks more bounces, which can hurt the delivery of all your campaigns.`
-              : `The first ${hold.first_batch} went out with everyone else. The rest follow at ${when(hold.release_at)}, unless more than 2% of those bounce.`}
+              : `The first ${hold.first_batch} went out with everyone else. The rest follow from ${when(hold.release_at)}, once their bounces are in, unless more than ${+((hold.max_bounce_rate ?? 0.02) * 100).toFixed(1)}% of those bounce.`}
           </p>
           {send.error && <p className="text-xs text-destructive mt-1">{(send.error as Error).message}</p>}
         </div>

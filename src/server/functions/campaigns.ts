@@ -111,10 +111,11 @@ export const unconfirmedInListFn = createServerFn({ method: 'GET' })
     await requireAuth()
     const { db } = await import('../db')
     const { isUnconfirmedGuess } = await import('../prospecting/types')
-    const { FIRST_GUESS_BATCH } = await import('../guessedRecipients')
+    const { prospectingRules } = await import('../prospecting/hostRules')
     const members = new Set(db.data.list_contacts.filter((lc) => lc.list_id === data.listId).map((lc) => lc.contact_email))
     const subscribed = db.data.contacts.filter((c) => members.has(c.email) && c.status === 'subscribed')
-    return { unconfirmed: subscribed.filter(isUnconfirmedGuess).length, total: subscribed.length, firstBatch: FIRST_GUESS_BATCH }
+    const { firstBatch, holdHours, maxBounceRate } = prospectingRules()
+    return { unconfirmed: subscribed.filter(isUnconfirmedGuess).length, total: subscribed.length, firstBatch, holdHours, maxBounceRate }
   })
 
 /** Takes a scheduled campaign off the schedule, back to a draft. */

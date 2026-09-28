@@ -354,7 +354,7 @@ export interface ProspectingSettingsRecord {
   /**
    * With verified-only on, still hand over addresses at companies that
    * accept every address when their format is well established
-   * (`format_confirmed`). Absent means false.
+   * (`format_confirmed`). Absent means on in a hosted copy, off otherwise.
    */
   allow_format_confirmed?: boolean
   reacher_url?: string
@@ -384,6 +384,8 @@ export interface GuessHold {
   /** How many were held back. */
   held: number
   release_at: string
+  /** Hard-bounce share of the first batch above which the rest stay held (the rules when it started). */
+  max_bounce_rate?: number
   /** Hard bounces among the first batch, once looked at. */
   hard_bounces?: number
 }
@@ -586,7 +588,16 @@ class JsonDb {
    */
   knownAddressesAt(domain: string): KnownAddress[] {
     const suffix = `@${domain.toLowerCase()}`
-    const contacts = this.data.contacts.filter((c) => c.email.endsWith(suffix) && c.first_name && c.last_name)
+    return this.knownAddresses((email) => email.endsWith(suffix))
+  }
+
+  /** `knownAddressesAt` for every domain at once (sharedFormats.ts reports them, as counts). */
+  allKnownAddresses(): KnownAddress[] {
+    return this.knownAddresses(() => true)
+  }
+
+  private knownAddresses(match: (email: string) => boolean): KnownAddress[] {
+    const contacts = this.data.contacts.filter((c) => match(c.email) && c.first_name && c.last_name)
     if (contacts.length === 0) return []
     const emails = new Set(contacts.map((c) => c.email))
     const bounced = new Set<string>()

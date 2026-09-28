@@ -221,6 +221,28 @@ describe('findEmail', () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.85)
   })
 
+  it("counts other workspaces' shared formats, and says so", async () => {
+    const { deps } = setup({ probe: 'safe' })
+    const asked: Array<[string, number | null | undefined]> = []
+    deps.knownAddresses = () => [{ email: 'bjones@acme.com', firstName: 'Bob', lastName: 'Jones', kind: 'known' }]
+    deps.sharedFormat = async (domain, headcount) => (asked.push([domain, headcount]), { '{f}{last}': 3 })
+    const result = await findEmail(jane, 'acme.com', deps, { headcount: 500 })
+    expect(asked).toEqual([['acme.com', 500]])
+    expect(result).toMatchObject({ email: 'jsmith@acme.com', status: 'format_confirmed' })
+    expect(result.detail).toMatch(/4 addresses at acme\.com known to MagpieCRM use this format\./)
+  })
+
+  it('uses the host\'s confidence for format_confirmed', async () => {
+    const known = ['Bob Jones', 'Ann Lee', 'Tom Hart', 'Sue Ray'].map((n) => {
+      const [firstName, lastName] = n.split(' ')
+      return { email: `${firstName[0]}${lastName}@acme.com`.toLowerCase(), firstName, lastName, kind: 'known' as const }
+    })
+    const { deps } = setup({ probe: 'safe' })
+    deps.knownAddresses = () => known
+    deps.formatConfirmedAt = 0.9
+    expect((await findEmail(jane, 'acme.com', deps)).status).toBe('catch_all_likely')
+  })
+
   it('never calls a size-based guess format_confirmed', async () => {
     const { deps } = setup({ probe: 'safe' })
     expect((await findEmail(jane, 'acme.com', deps, { headcount: 50000 })).status).toBe('catch_all_likely')

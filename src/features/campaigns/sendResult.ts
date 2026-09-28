@@ -12,7 +12,7 @@ export function sentMessage(res: { sentCount?: number; skippedOptOuts?: number; 
     `Campaign sent to ${n} recipient${n === 1 ? '' : 's'}.` +
     (skipped ? ` ${skipped} ${skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.` : '') +
     (held
-      ? ` ${held} more with unverified addresses follow in an hour, once the first ones show they aren't bouncing.`
+      ? ` ${held} more with unverified addresses follow once the first ones show they aren't bouncing.`
       : '')
   )
 }

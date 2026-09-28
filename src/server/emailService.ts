@@ -10,7 +10,9 @@ import { AllowanceError, requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
 import { env } from './env'
 import { optedOutAt, signedUpSince } from './prospecting/suppression'
-import { firstBatchPassed, GUESS_HOLD_MS, splitGuesses } from './guessedRecipients'
+import { BOUNCE_WAIT_CAP_MS, firstBatchPassed, newHold, splitGuesses } from './guessedRecipients'
+import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
+import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -569,10 +571,12 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
 
   // Anyone it already went to (a resumed send, or a second press of Send) is skipped.
   const alreadySent = db.campaignRecipientEmails(id)
+  const rules = prospectingRules()
   const { send: toSend, held, firstBatch, startHold } = splitGuesses(
     contacts.filter((c) => !alreadySent.has(c.email)),
     hold,
     releasing,
+    rules.firstBatch,
   )
 
   // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
@@ -605,14 +609,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   // Everything above passed: claim it. From here it's 'sending', which a
   // scheduled send and a manual one can't both do (db.claimCampaignForSending).
   if (!db.claimCampaignForSending(id, { resume: opts.resume, release: releasing })) throw new Error('This campaign is already being sent.')
-  if (startHold) {
-    db.setGuessHold(id, {
-      status: 'waiting',
-      first_batch: firstBatch,
-      held: held.length,
-      release_at: new Date(Date.now() + GUESS_HOLD_MS).toISOString(),
-    })
-  }
+  if (startHold) db.setGuessHold(id, newHold(firstBatch, held.length, rules))
 
   try {
     for (const contact of toSend) {
@@ -752,12 +749,29 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
       : `"${campaign.name}" finished sending to ${plural(toSend.length)}` +
           (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : '') +
           (held.length
-            ? `. ${held.length} more with unverified addresses follow in an hour, unless too many of the first ${firstBatch} bounce`
+            ? `. ${held.length} more with unverified addresses follow once the first ${firstBatch} show how many bounce`
             : ''),
     { url: `/marketing/campaigns/${id}` },
   )
 
   return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length }
+}
+
+/**
+ * Whether bounces for mail sent before `releaseAt` have arrived. From a host's
+ * mail server (SENDING_MANAGED), once the host has passed on every event it
+ * has for this copy; from Cloudflare, once the poller has read past that time.
+ * Webhook providers push as they learn, so the wait itself is all there is.
+ * After BOUNCE_WAIT_CAP_MS, yes regardless.
+ */
+async function bouncesCaughtUp(releaseAt: string, now: Date): Promise<boolean> {
+  if (now.getTime() - Date.parse(releaseAt) > BOUNCE_WAIT_CAP_MS) return true
+  if (env.sendingManaged() && env.prospectingManaged()) {
+    const answer = await refreshHostRules()
+    return answer !== null && !answer.eventsPending
+  }
+  if (await pollsBounces()) return (bouncesPolledUntil() ?? '') >= releaseAt
+  return true
 }
 
 /**
@@ -768,6 +782,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
 export async function settleHeldGuesses(now = new Date()) {
   for (const id of db.campaignsWithHeldGuessesDue(now)) {
     const hold = db.getGuessHold(id)!
+    // Judged only once the first batch's bounces are in; checked again next minute.
+    if (!(await bouncesCaughtUp(hold.release_at, now))) continue
     const name = db.data.campaigns.find((c) => c.id === id)?.name ?? `#${id}`
     const hardBounces = db.unconfirmedHardBounces(id)
     const url = `/marketing/campaigns/${id}`

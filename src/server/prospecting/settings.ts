@@ -115,11 +115,12 @@ export function hidesUnverifiable(): boolean {
 /**
  * With verified-only on, whether addresses at a company that accepts every
  * address are still handed over when its format is well established
- * (`format_confirmed`). A preference, so hosted copies can change it too. Off
- * unless turned on: these can still bounce.
+ * (`format_confirmed`). A preference, so hosted copies can change it too.
+ * Unless chosen, on in a hosted copy (PROSPECTING_MANAGED), whose host sends
+ * its email and watches bounces, and off otherwise: these can still bounce.
  */
 export function allowsFormatConfirmed(): boolean {
-  return db.getProspectingSettings()?.allow_format_confirmed === true
+  return db.getProspectingSettings()?.allow_format_confirmed ?? env.prospectingManaged()
 }
 
 export function saveSearchPreferences(input: { hideUnverifiable?: boolean; allowFormatConfirmed?: boolean }) {

@@ -3,6 +3,8 @@ import { sendMail } from './nodemailer'
 import { pollBounces } from './bouncePoller'
 import { notify } from './notify'
 import { sendCampaign, settleHeldGuesses } from './emailService'
+import { refreshHostRules } from './prospecting/hostRules'
+import { reportFormats } from './prospecting/sharedFormats'
 
 // Use globalThis so the flag and interval survive Vite HMR module disposal.
 // Without this, every file save in dev kills the setInterval and emails stop sending.
@@ -77,6 +79,18 @@ export function startEmailScheduler() {
       }
     }
   }, 60_000)
+
+  // A hosted copy's rules for unverifiable addresses (prospecting/hostRules.ts),
+  // and its company email formats reported for sharing (sharedFormats.ts).
+  const refreshRules = () => refreshHostRules().catch((err) => console.error('[HostRules] Refresh failed:', err))
+  refreshRules()
+  g.__hostRulesInterval = setInterval(refreshRules, 10 * 60_000)
+  const shareFormats = () =>
+    reportFormats(db.allKnownAddresses())
+      .then((n) => n && console.log(`[SharedFormats] Reported formats at ${n} companies`))
+      .catch((err) => console.error('[SharedFormats] Report failed:', err))
+  g.__shareFormatsTimeout = setTimeout(shareFormats, 2 * 60_000)
+  g.__shareFormatsInterval = setInterval(shareFormats, 6 * 60 * 60_000)
 
   g.__bouncePollerInterval = setInterval(() => {
     pollBounces().catch((err) => console.error('[BouncePoller] Poll failed:', err))

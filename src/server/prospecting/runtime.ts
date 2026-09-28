@@ -12,6 +12,8 @@ import { verificationPauseReason } from './senderHealthMonitor'
 import { createSocialFetchSource } from './socialfetch'
 import { withProfileCache } from './profileCache'
 import type { CompanySource, PeopleSource } from './types'
+import { prospectingRules } from './hostRules'
+import { cachedSharedFormat, sharedFormat } from './sharedFormats'
 
 let source: (CompanySource & PeopleSource) | null = null
 let router: ProxyRouter | null = null
@@ -93,5 +95,8 @@ export async function getFinderDeps(opts: { background?: boolean } = {}): Promis
     now: () => Date.now(),
     suggestMailDomain: (domain) => suggestMailDomain(domain, { resolveSoaContact, resolveMx }),
     knownAddresses: (domain) => db.knownAddressesAt(domain),
+    sharedFormat: (domain, headcount) => sharedFormat(domain, headcount),
+    cachedSharedFormat: (domain) => cachedSharedFormat(domain),
+    formatConfirmedAt: prospectingRules().formatConfirmed,
   }
 }
