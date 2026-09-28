@@ -46,7 +46,7 @@ vi.mock('../db', () => ({
   },
 }))
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
-let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string }> = []
+let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
 
 const { searchPeople, searchCompanies } = await import('./search')
 const { hashesFor, emailHash, profileHash } = await import('./suppression')
@@ -227,11 +227,42 @@ describe('searchPeople and people who couldn\'t be verified', () => {
 })
 
 describe('searchPeople and people seen before', () => {
-  it('fills an already-saved person from their contact and pays for no profile lookup', async () => {
+  it('leaves out people already in contacts by default, paying for no profile lookup', async () => {
     contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays', email_status: 'verified' }]
     disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('ana.x@barclays.com') }]
     searchPage = pageOf(hit('ana'), hit('ben'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ben'])
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(res.warnings).toContain('1 person was left out because they\'re already in your contacts. Turn on "Include existing contacts" to see them.')
+  })
+
+  it('leaves out a contact added another way once their profile shows the same name at the same company', async () => {
+    // Imported, not saved from a search: no profile hash to match on.
+    contacts = [{ email: 'ana.smith@barclays.com', first_name: 'Ana', last_name: 'Smith', job_title: '', company: 'Barclays' }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(res.warnings).toContain('1 person was left out because they\'re already in your contacts. Turn on "Include existing contacts" to see them.')
+
+    const included = await searchPeople({ titles: ['Business Analyst'], includeContacts: true })
+    expect(included.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
+  })
+
+  it('searches again to fill the page when contacts are left out', async () => {
+    contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays' }]
+    disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('ana.x@barclays.com') }]
+    const pages = [{ ...pageOf(hit('ana'), hit('ben')), nextCursor: 'p2' }, pageOf(hit('cat'))]
+    searchPeopleMock.mockImplementationOnce(async () => structuredClone(pages[0])).mockImplementationOnce(async () => structuredClone(pages[1]))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 2 })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben', 'cat'])
+  })
+
+  it('with existing contacts included, fills an already-saved person from their contact and pays for no profile lookup', async () => {
+    contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays', email_status: 'verified' }]
+    disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('ana.x@barclays.com') }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'], includeContacts: true })
     expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ben'])
     expect(res.items[0]).toMatchObject({
       previously: 'saved',

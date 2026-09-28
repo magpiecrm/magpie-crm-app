@@ -159,6 +159,19 @@ function markPreviouslySeen(items: PersonResult[], db: Db): number {
   return saved
 }
 
+const nameKey = (first: string | null | undefined, last: string | null | undefined, domain: string) =>
+  `${(first ?? '').trim().toLowerCase()}|${(last ?? '').trim().toLowerCase()}|${domain.toLowerCase()}`
+
+/** Whether a person is already a contact: same first and last name, with an email at their company's domain. */
+function contactMatcher(db: Db): (p: PersonResult) => boolean {
+  const keys = new Set<string>()
+  for (const c of db.data.contacts) {
+    const domain = c.email.split('@')[1]
+    if (domain && c.first_name && c.last_name) keys.add(nameKey(c.first_name, c.last_name, domain))
+  }
+  return (p) => Boolean(p.companyDomain) && keys.has(nameKey(p.firstName, p.lastName, p.companyDomain!.replace(/^www\./, '')))
+}
+
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
@@ -183,6 +196,8 @@ const MAX_TITLES_SEARCHED = 5
 interface Tally {
   noSurname: number
   alreadySaved: number
+  /** Left out because they're already contacts (while existing contacts aren't included). */
+  inContacts: number
   failed: number
   failedError?: string
   noJob: number
@@ -225,6 +240,7 @@ async function processBatch(
   tally: Tally,
   sizes?: HeadcountBucket[],
   hideUnverifiable = false,
+  includeContacts = false,
 ): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string }> {
   let items = people
   for (const person of items) {
@@ -258,7 +274,14 @@ async function processBatch(
   tally.noSurname += items.length - withSurname.length
   items = withSurname
 
-  tally.alreadySaved += markPreviouslySeen(items, db)
+  const saved = markPreviouslySeen(items, db)
+  if (includeContacts) {
+    tally.alreadySaved += saved
+  } else if (saved > 0) {
+    // Saved from a search before: known without a profile lookup, so left out for free.
+    items = items.filter((p) => p.previously !== 'saved')
+    tally.inContacts += saved
+  }
   const toLookUp = items.filter((p) => p.previously !== 'saved')
 
   const refined: string[] = []
@@ -283,6 +306,15 @@ async function processBatch(
       tally.failedError ??= failed[0]?.error
       tally.noJob += results.length - refined.length - failed.length
     }
+  }
+
+  // Contacts added another way (imported, a form) only show up once the
+  // profile gives their employer: the same name at the same company domain.
+  if (!includeContacts && refined.length > 0) {
+    const isContact = contactMatcher(db)
+    const fresh = items.filter((p) => !(refined.includes(p.profileUrl) && isContact(p)))
+    tally.inContacts += items.length - fresh.length
+    items = fresh
   }
 
   // With the real employer known, people who don't work at the chosen
@@ -347,7 +379,7 @@ export async function searchPeople(
   const { db } = await import('../db')
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
-  const { company, ...filters } = input
+  const { company, includeContacts = false, ...filters } = input
   const source = getSource()
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
@@ -373,7 +405,7 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = { noSurname: 0, alreadySaved: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0, remembered: 0 }
+  const tally: Tally = { noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, wrongSize: 0, remembered: 0 }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
 
@@ -401,7 +433,7 @@ export async function searchPeople(
       const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
       fresh.forEach((p) => seen.add(p.profileUrl))
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes, hideUnverifiable)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, company ? undefined : filters.companySizes, hideUnverifiable, includeContacts)
       items.push(...batch.items)
       refined.push(...batch.refined)
       if (batch.lookupError) {
@@ -429,6 +461,11 @@ export async function searchPeople(
   if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
+  }
+  if (tally.inContacts > 0) {
+    details.push(
+      `${plural(tally.inContacts, 'person was', 'people were')} left out because they're already in your contacts. Turn on "Include existing contacts" to see them.`,
+    )
   }
   if (tally.alreadySaved > 0) {
     details.push(`${plural(tally.alreadySaved, 'person is', 'people are')} already in your contacts, so their details come from there and no profile lookup was paid for.`)

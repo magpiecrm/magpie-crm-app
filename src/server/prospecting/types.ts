@@ -130,6 +130,12 @@ export interface PeopleFilters {
    */
   companySizes?: HeadcountBucket[]
   /**
+   * Show people who are already contacts, filled in from the contact. Off
+   * (the default), they're left out and more people are searched for to fill
+   * the page.
+   */
+  includeContacts?: boolean
+  /**
    * Results per page. Asked of search.ts: per job title, in PAGE_SIZES. Asked
    * of a source: per request (1-50), each costing the same whatever its size.
    */

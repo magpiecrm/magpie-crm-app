@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteD
 import { Link } from '@tanstack/react-router'
 import {
   AlertCircle,
+  BookUser,
   Briefcase,
   Building2,
   Factory,
@@ -76,13 +77,15 @@ interface PeopleForm {
   keyword: string
   industries: string[]
   companySizes: HeadcountBucket[]
+  /** Also show people who are already contacts; off, they're left out. */
+  includeContacts: boolean
   /** Results per page. Each result's profile is looked up, so this drives cost. */
   count: number
 }
 
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], count: PAGE_SIZES[0] }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, count: PAGE_SIZES[0] }
 const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
 /**
@@ -200,6 +203,7 @@ export function ProspectSearch() {
           keyword: peopleSearch!.keyword || undefined,
           industries: peopleSearch!.industries?.length ? peopleSearch!.industries : undefined,
           companySizes: peopleSearch!.company || !peopleSearch!.companySizes?.length ? undefined : peopleSearch!.companySizes,
+          includeContacts: peopleSearch!.includeContacts || undefined,
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
@@ -430,7 +434,8 @@ export function ProspectSearch() {
         (peopleForm.titles.length ? 1 : 0) +
         (peopleForm.seniorities.length ? 1 : 0) +
         (peopleForm.industries.length ? 1 : 0) +
-        (peopleForm.companySizes.length ? 1 : 0)
+        (peopleForm.companySizes.length ? 1 : 0) +
+        (peopleForm.includeContacts ? 1 : 0)
 
   const companyFilters = (
     <div className="flex flex-col gap-3 py-2">
@@ -622,6 +627,36 @@ export function ProspectSearch() {
       <FilterAccordion label="Keyword" icon={<Search className="w-4 h-4" />} isOpen={!!expanded.keyword} onToggle={() => toggleSection('keyword')} badgeCount={peopleForm.keyword ? 1 : 0}>
         <input className={inputClass} value={peopleForm.keyword} placeholder="e.g. fintech" onChange={(e) => setPeopleForm({ ...peopleForm, keyword: e.target.value })} />
       </FilterAccordion>
+
+      <div className="flex items-start justify-between gap-3 py-3.5">
+        <div className="min-w-0">
+          <label htmlFor="include-contacts" className="flex items-center gap-2.5 text-xs font-medium text-foreground/80 cursor-pointer">
+            <BookUser className="w-4 h-4 text-muted-foreground shrink-0" />
+            Include existing contacts
+          </label>
+          <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+            {peopleForm.includeContacts
+              ? 'People already in your contacts are shown, with the details you saved.'
+              : 'People already in your contacts are left out, and more are searched for to fill the page.'}
+          </p>
+        </div>
+        <button
+          id="include-contacts"
+          type="button"
+          role="switch"
+          aria-checked={peopleForm.includeContacts}
+          onClick={() => setPeopleForm({ ...peopleForm, includeContacts: !peopleForm.includeContacts })}
+          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+            peopleForm.includeContacts ? 'bg-accent' : 'bg-muted'
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+              peopleForm.includeContacts ? 'translate-x-4' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
 
       {(personas as Persona[]).length > 0 && (
         <FilterAccordion label="Apply persona" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.personas} onToggle={() => toggleSection('personas')}>

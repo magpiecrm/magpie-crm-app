@@ -138,6 +138,10 @@ export const prospectTools = [
         .array(z.enum(HEADCOUNT_BUCKETS))
         .optional()
         .describe("Company sizes by headcount. Each person's employer is looked up and people at other sizes are left out."),
+      includeContacts: z
+        .boolean()
+        .optional()
+        .describe('Also show people who are already contacts. Off by default: they are left out, since the user usually wants new people.'),
       count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('Results per page per title: 25, 50, 75 or 100. Defaults to 25; each result uses about one prospect credit.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
