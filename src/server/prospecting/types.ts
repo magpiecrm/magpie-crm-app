@@ -136,6 +136,11 @@ export interface PeopleFilters {
    */
   includeContacts?: boolean
   /**
+   * Start at the top of the results. Otherwise a new search (no cursor) with
+   * the same filters as an earlier one carries on from where that one stopped.
+   */
+  fromStart?: boolean
+  /**
    * Results per page. Asked of search.ts: per job title, in PAGE_SIZES. Asked
    * of a source: per request (1-50), each costing the same whatever its size.
    */

@@ -43,8 +43,11 @@ vi.mock('../db', () => ({
     getProspectingSettings: () => prospectingSettings,
     getUnverifiable: () => unverifiable,
     data: { get contacts() { return contacts } },
+    getSearchPosition: (key: string) => positions.get(key) ?? null,
+    setSearchPosition: (key: string, cursor: string | null) => (cursor ? positions.set(key, cursor) : positions.delete(key)),
   },
 }))
+const positions = new Map<string, string>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
 
@@ -69,6 +72,7 @@ beforeEach(() => {
   unverifiable = []
   disclosures = []
   contacts = []
+  positions.clear()
 })
 
 describe('searchPeople with a plan allowance', () => {
@@ -342,14 +346,15 @@ describe('searchPeople fills the page', () => {
     expect(res.warnings).toContain('Some results were left out, so 1 more search page was run to fill this page (3 credits each).')
   })
 
-  it('stops after three extra searches and says so', async () => {
+  it('stops after ten extra searches when nothing found is worth paying for, and says so', async () => {
     searchPeopleMock.mockClear()
     searchPeopleMock.mockImplementation(async () => withCursor(pageOf({ ...hit(`x${Math.random()}`), lastName: 'C.' }), 'more'))
     const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
-    expect(searchPeopleMock).toHaveBeenCalledTimes(4)
+    // Hidden surnames are left out for free, so the page stays under its usual cost.
+    expect(searchPeopleMock).toHaveBeenCalledTimes(11)
     expect(res.items).toEqual([])
-    expect(res.warnings).toContain('Found 0 of 1 after 4 searches. Load more to keep looking.')
-    expect(res.warnings).toContain('4 people were left out because LinkedIn hides their surnames (e.g. "Andy C."), so no email can be found.')
+    expect(res.warnings).toContain('Found 0 of 1 after 11 searches. Load more to keep looking.')
+    expect(res.warnings).toContain('11 people were left out because LinkedIn hides their surnames (e.g. "Andy C."), so no email can be found.')
     // A hosted copy shows the results and Load more, without the tally.
     process.env.PROSPECTING_MANAGED = 'on'
     try {
@@ -432,5 +437,54 @@ describe('searchPeople by company size', () => {
     // Ben's Acme has 30 staff; Barclays is far bigger; Cat's employer has no company page to size.
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(res.warnings).toContain("2 people's employers aren't one of the chosen sizes, or couldn't be sized, and were left out.")
+  })
+})
+
+describe('searchPeople carries on where the last search stopped', () => {
+  const cursorArg = () => (searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { cursor?: string }
+
+  it('starts the same search again from where the last one stopped, and says so', async () => {
+    searchPage = { ...pageOf(hit('ana')), nextCursor: 'after-ana' }
+    const first = await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    expect(first.resumed).toBe(false)
+    expect(cursorArg().cursor).toBeUndefined()
+
+    searchPage = { ...pageOf(hit('ben')), nextCursor: 'after-ben' }
+    // Same filters, titles in another case and order of options: the same search.
+    const again = await searchPeople({ titles: ['business analyst '], count: 1 })
+    expect(cursorArg().cursor).toBe('after-ana')
+    expect(again.resumed).toBe(true)
+    expect(again.items.map((p) => p.firstName)).toEqual(['ben'])
+  })
+
+  it('starts at the top when asked, and for different filters', async () => {
+    searchPage = { ...pageOf(hit('ana')), nextCursor: 'after-ana' }
+    await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    await searchPeople({ titles: ['Business Analyst'], count: 1, fromStart: true })
+    expect(cursorArg().cursor).toBeUndefined()
+    await searchPeople({ titles: ['Business Analyst'], country: 'United Kingdom', count: 1 })
+    expect(cursorArg().cursor).toBeUndefined()
+  })
+
+  it('goes back to the top once the results run out', async () => {
+    searchPage = { ...pageOf(hit('ana')), nextCursor: 'after-ana' }
+    await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    searchPage = pageOf(hit('ben')) // the last page
+    await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    expect(cursorArg().cursor).toBeUndefined()
+  })
+
+  it('keeps searching past pages of people it skips for free, within what a page normally costs', async () => {
+    // Five pages of people already in contacts, then someone new.
+    contacts = [{ email: 'ana.x@barclays.com', job_title: 'Head of Analytics', company: 'Barclays' }]
+    disclosures = [{ event: 'saved', profile_hash: profileHash('https://www.linkedin.com/in/ana'), contact_hash: emailHash('ana.x@barclays.com') }]
+    for (let i = 0; i < 5; i++) {
+      searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(hit('ana')), nextCursor: `p${i + 1}` }))
+    }
+    searchPeopleMock.mockImplementationOnce(async () => pageOf(hit('ben')))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 1 })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(searchPeopleMock.mock.calls.length).toBeGreaterThanOrEqual(6)
   })
 })

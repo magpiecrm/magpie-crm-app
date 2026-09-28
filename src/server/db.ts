@@ -50,6 +50,10 @@ export type RecipientRecord = DbSchema['campaign_recipients'][number]
 /** Enough for any real email, and keeps one recipient's row from growing without end. */
 const MAX_LINKS_PER_RECIPIENT = 50
 
+/** How long a search's stopping point is kept, and how many are kept at most. */
+const SEARCH_POSITION_MS = 30 * 24 * 60 * 60_000
+const MAX_SEARCH_POSITIONS = 300
+
 interface DbSchema {
   lists: Array<{ id: number; name: string; created_at: string }>
   contacts: Array<{
@@ -281,6 +285,13 @@ interface DbSchema {
    * hash of the profile URL only.
    */
   unverifiable?: Array<{ hash: string; outcome: string; created_at: string }>
+  /**
+   * Where each people search last stopped, so the same filters carry on from
+   * there next time instead of showing the same first pages again. Keyed by
+   * a hash of the filters; the value is the search's page cursor (offsets),
+   * never anyone found.
+   */
+  search_positions?: Record<string, { cursor: string; updated_at: string }>
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
@@ -547,6 +558,25 @@ class JsonDb {
 
   setUnverifiable(entries: Array<{ hash: string; outcome: string; created_at: string }>) {
     this.data.unverifiable = entries
+    this.save()
+  }
+
+  getSearchPosition(key: string): string | null {
+    const entry = this.data.search_positions?.[key]
+    if (!entry || Date.now() - new Date(entry.updated_at).getTime() > SEARCH_POSITION_MS) return null
+    return entry.cursor
+  }
+
+  /** Remembers where a search stopped; null forgets it (the next one starts at the top). */
+  setSearchPosition(key: string, cursor: string | null) {
+    const positions = { ...(this.data.search_positions ?? {}) }
+    if (cursor) positions[key] = { cursor, updated_at: new Date().toISOString() }
+    else delete positions[key]
+    // Keep the most recent few hundred searches.
+    const keep = Object.entries(positions)
+      .sort((a, b) => b[1].updated_at.localeCompare(a[1].updated_at))
+      .slice(0, MAX_SEARCH_POSITIONS)
+    this.data.search_positions = Object.fromEntries(keep)
     this.save()
   }
 

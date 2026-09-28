@@ -103,8 +103,11 @@ interface StoredState {
   companyForm: CompanyForm
   peopleForm: PeopleForm
   companySearch: CompanyForm | null
-  peopleSearch: PeopleForm | null
+  peopleSearch: PeopleSearch | null
 }
+
+/** A people search as run: the form, and whether to start at the top rather than carry on. */
+type PeopleSearch = PeopleForm & { fromStart?: boolean }
 
 const STORAGE_KEY = 'prospectSearch.v3'
 
@@ -132,7 +135,7 @@ export function ProspectSearch() {
   const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY_FORM)
   const [peopleForm, setPeopleForm] = useState(EMPTY_PEOPLE_FORM)
   const [companySearch, setCompanySearch] = useState<CompanyForm | null>(null)
-  const [peopleSearch, setPeopleSearch] = useState<PeopleForm | null>(null)
+  const [peopleSearch, setPeopleSearch] = useState<PeopleSearch | null>(null)
   const [restored, setRestored] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Map<string, PersonResult>>(new Map())
@@ -150,13 +153,18 @@ export function ProspectSearch() {
       if (stored.companyForm) setCompanyForm({ ...EMPTY_COMPANY_FORM, ...stored.companyForm })
       // Page sizes go up in 25s; one saved from before is rounded up.
       if (stored.peopleForm) setPeopleForm({ ...EMPTY_PEOPLE_FORM, ...stored.peopleForm, count: pageSizeFor(stored.peopleForm.count) })
-      // Bring back results only while they're still cached (navigating within
-      // the app). After a full reload that would mean re-running a paid search
-      // unasked, so only the filters come back.
-      if (stored.companySearch && queryClient.getQueryData(queryKeys.prospects.companies(stored.companySearch))) {
+      // Bring back results while they're cached, or still coming: a search
+      // keeps running when the user moves to another page, and lands here.
+      // After a full reload that would mean re-running a paid search unasked,
+      // so only the filters come back.
+      const known = (key: readonly unknown[]) => {
+        const state = queryClient.getQueryState(key)
+        return Boolean(state && (state.data !== undefined || state.fetchStatus === 'fetching' || state.status === 'error'))
+      }
+      if (stored.companySearch && known(queryKeys.prospects.companies(stored.companySearch))) {
         setCompanySearch(stored.companySearch)
       }
-      if (stored.peopleSearch && queryClient.getQueryData(queryKeys.prospects.people(stored.peopleSearch))) {
+      if (stored.peopleSearch && known(queryKeys.prospects.people(stored.peopleSearch))) {
         setPeopleSearch(stored.peopleSearch)
       }
     }
@@ -204,6 +212,8 @@ export function ProspectSearch() {
           industries: peopleSearch!.industries?.length ? peopleSearch!.industries : undefined,
           companySizes: peopleSearch!.company || !peopleSearch!.companySizes?.length ? undefined : peopleSearch!.companySizes,
           includeContacts: peopleSearch!.includeContacts || undefined,
+          // Only the first page: Load more carries on from its own cursor.
+          fromStart: (!pageParam && peopleSearch!.fromStart) || undefined,
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
@@ -255,7 +265,7 @@ export function ProspectSearch() {
     setCatchAllPrompt(false)
     // A different search starts with no revealed emails. Re-running the
     // same one shows the same (cached) people, so theirs stay.
-    if (JSON.stringify(peopleForm) !== JSON.stringify(peopleSearch)) {
+    if (JSON.stringify(peopleForm) !== JSON.stringify({ ...peopleSearch, fromStart: undefined })) {
       queryClient.setQueryData(queryKeys.prospects.reveals(), new Map())
     }
     setPeopleSearch({ ...peopleForm })
@@ -837,6 +847,19 @@ export function ProspectSearch() {
             </span>
             <button type="button" onClick={() => setShowHidden((v) => !v)} className="font-semibold text-accent hover:underline">
               {hiding ? 'Show them' : 'Hide them'}
+            </button>
+          </div>
+        )}
+
+        {mode === 'people' && people.data?.pages[0]?.resumed && (
+          <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <span>Carried on from where your last search with these filters stopped, so you don't see the same people again.</span>
+            <button
+              type="button"
+              onClick={() => setPeopleSearch((s) => s && { ...s, fromStart: true })}
+              className="font-semibold text-accent hover:underline"
+            >
+              Start from the top
             </button>
           </div>
         )}

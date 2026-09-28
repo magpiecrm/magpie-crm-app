@@ -1,6 +1,7 @@
 // Entry points shared by the server functions and the copilot's tools, so both
 // get the same caching, suppression and save behaviour.
 
+import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
 import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type HeadcountBucket, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
@@ -186,8 +187,14 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
   return out
 }
 
-/** Extra search pages run to fill a page when results are left out (3 credits each). */
-const MAX_TOP_UPS = 3
+/**
+ * Extra search pages run to fill a page when results are left out (3 credits
+ * each): always up to 3, and up to 10 while the page has cost less than a
+ * full page normally does, so pages of people skipped for free (contacts,
+ * people who couldn't be verified before) can be passed over.
+ */
+const TOP_UPS = 3
+const MAX_TOP_UPS = 10
 /** Most people SocialFetch returns for one people-search request. */
 const MAX_PER_REQUEST = 50
 const MAX_TITLES_SEARCHED = 5
@@ -374,12 +381,12 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 export async function searchPeople(
   input: PeopleFilters & { company?: { ref: string; name: string } | null },
-): Promise<Page<PersonResult> & { refined: string[] }> {
+): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
-  const { company, includeContacts = false, ...filters } = input
+  const { company, includeContacts = false, fromStart = false, ...filters } = input
   const source = getSource()
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
@@ -409,7 +416,11 @@ export async function searchPeople(
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
 
-  let cursor = filters.cursor
+  // A new search carries on from where the last one with these filters
+  // stopped, so the same first pages aren't paid for and shown again.
+  const positionKey = searchPositionKey(input)
+  const saved = !filters.cursor && !fromStart ? db.getSearchPosition(positionKey) : null
+  let cursor = filters.cursor ?? saved ?? undefined
   let nextCursor: string | null = null
   let reportedTotal: number | null = null
   let searches = 0
@@ -441,11 +452,18 @@ export async function searchPeople(
         break
       }
       if (usable() >= target || !nextCursor || searches >= planned + MAX_TOP_UPS) break
+      // What a full page normally costs: its searches, a profile lookup per
+      // person, and a company lookup each when sizing employers.
+      const pageBudget = planned * 3 + target * 3 + (!company && filters.companySizes?.length ? target : 0)
+      if (searches >= planned + TOP_UPS && spent() >= pageBudget) break
       // No top-up search once what's been spent uses up the credits left.
       if (prospectCredits(spent()) >= left) break
       cursor = nextCursor
     }
   })
+
+  // Where to carry on next time; at the end of the results, back to the top.
+  if (!lookupError) db.setSearchPosition(positionKey, nextCursor)
 
   // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
@@ -489,7 +507,23 @@ export async function searchPeople(
     warnings.push(`That's everyone this search found: ${usable()} of the ${target} asked for. Broader job titles or fewer filters will find more.`)
   }
 
-  return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined }
+  return { ...forThisCopy({ items, nextCursor, reportedTotal, warnings, details }), refined, resumed: Boolean(saved) }
+}
+
+/** The same filters give the same key, whatever order titles or options were picked in. */
+function searchPositionKey(input: PeopleFilters & { company?: { ref: string; name: string } | null }): string {
+  const sorted = (xs?: string[]) => [...(xs ?? [])].map((x) => x.trim().toLowerCase()).filter(Boolean).sort()
+  const key = JSON.stringify({
+    company: input.company?.ref ?? null,
+    titles: sorted(input.titles),
+    seniorities: sorted(input.seniorities),
+    country: input.country?.trim().toLowerCase() || null,
+    keyword: input.keyword?.trim().toLowerCase() || null,
+    industries: sorted(input.industries),
+    sizes: input.company ? [] : sorted(input.companySizes),
+    includeContacts: Boolean(input.includeContacts),
+  })
+  return createHash('sha256').update(key).digest('base64url').slice(0, 32)
 }
 
 export async function startSave(listId: number, people: PersonResult[]) {
