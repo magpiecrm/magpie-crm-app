@@ -23,6 +23,8 @@ export const getEmailSettingsFn = createServerFn({ method: 'GET' })
       settings: getMaskedSettings(),
       /** The host runs sending through Amazon SES: show sending domains instead. */
       managed: env.sendingManaged(),
+      /** WEBHOOK_SECRET is set, so the bounce and complaint webhooks are on. */
+      webhooksOn: Boolean(env.webhookSecret()),
     }
   })
 

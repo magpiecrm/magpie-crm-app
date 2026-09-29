@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // created, nothing else touched.
 
 type Contact = { email: string; status: string }
+/** Addresses whose do-not-email record re-subscribing lifted. */
+const cleared: string[] = []
 const state: { contacts: Contact[]; runs: Array<{ sql: string; params: any[] }> } = {
   contacts: [],
   runs: [],
@@ -22,6 +24,7 @@ vi.mock('./db', () => ({
     },
     query: () => ({ all: () => [], get: () => null }),
     prepare: () => ({ run: () => {} }),
+    clearEmailStop: (email: string) => void cleared.push(email),
   },
 }))
 vi.mock('./nodemailer', () => ({ sendMail: vi.fn() }))

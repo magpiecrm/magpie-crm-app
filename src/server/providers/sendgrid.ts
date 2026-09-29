@@ -51,9 +51,16 @@ export const sendgridProvider: EmailProvider = {
           type: evt.type === 'blocked' ? 'soft' : 'hard',
           reason: evt.reason,
         })
-      } else if (evt.event === 'deferred' || evt.event === 'dropped') {
-        out.push({ email: evt.email, type: 'soft', reason: evt.reason })
+      } else if (evt.event === 'spamreport') {
+        out.push({ email: evt.email, type: 'complaint' })
+      } else if (evt.event === 'dropped') {
+        // Dropped before sending: for an address that bounced before (a hard
+        // bounce), one that reported spam, or one unsubscribed at SendGrid.
+        if (/bounced address|invalid/i.test(evt.reason ?? '')) out.push({ email: evt.email, type: 'hard', reason: evt.reason })
+        else if (/spam/i.test(evt.reason ?? '')) out.push({ email: evt.email, type: 'complaint', reason: evt.reason })
+        else if (!/unsubscribe/i.test(evt.reason ?? '')) out.push({ email: evt.email, type: 'soft', reason: evt.reason })
       }
+      // 'deferred' is only a delay: SendGrid keeps trying, so nothing is recorded.
     }
     return out
   },

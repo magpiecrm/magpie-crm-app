@@ -5,6 +5,8 @@ import { notify } from './notify'
 import { sendCampaign, settleHeldGuesses } from './emailService'
 import { refreshHostRules } from './prospecting/hostRules'
 import { reportFormats } from './prospecting/sharedFormats'
+import { getAppUrl } from './appUrl'
+import { encryptToken } from './crypto'
 
 // Use globalThis so the flag and interval survive Vite HMR module disposal.
 // Without this, every file save in dev kills the setInterval and emails stop sending.
@@ -56,6 +58,14 @@ async function resumeInterruptedSends() {
   }
 }
 
+/** A welcome email's unsubscribe link: where the design asks for it ({{ unsubscribe }}), else at the bottom. */
+export function withUnsubscribeLink(html: string, url: string): string {
+  const replaced = html.replace(/\{\{\s*unsubscribe\s*\}\}/gi, url)
+  if (replaced.includes(url)) return replaced
+  const footer = `<div style="text-align:center;margin-top:30px;font-size:12px;color:#666">Don't want these emails? <a href="${url}" style="color:#666;text-decoration:underline">Unsubscribe</a></div>`
+  return /<\/body>/i.test(replaced) ? replaced.replace(/<\/body>/i, (m) => `${footer}${m}`) : replaced + footer
+}
+
 export function startEmailScheduler() {
   if (g.__emailSchedulerStarted) return
   g.__emailSchedulerStarted = true
@@ -70,12 +80,21 @@ export function startEmailScheduler() {
     sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err))
     const due = db.getDuePendingEmails()
     for (const e of due) {
+      // Unsubscribed or bounced since they signed up: not sent.
+      const contact = db.getContact(e.contact_email)
+      if (!contact || contact.status !== 'subscribed' || db.emailStop(e.contact_email)) {
+        db.markPendingEmailSent(e.id, 'skipped')
+        console.log(`[EmailScheduler] Skipped the welcome email to ${e.contact_email}: no longer subscribed`)
+        continue
+      }
       try {
-        await sendMail({ to: e.contact_email, subject: e.subject, html: e.html, from: e.from })
+        const unsubscribeUrl = `${getAppUrl()}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email }))}`
+        await sendMail({ to: e.contact_email, subject: e.subject, html: withUnsubscribeLink(e.html, unsubscribeUrl), from: e.from, unsubscribeUrl })
         db.markPendingEmailSent(e.id)
         console.log(`[EmailScheduler] Sent welcome email to ${e.contact_email}`)
       } catch (err) {
-        console.error(`[EmailScheduler] Failed to send to ${e.contact_email}:`, err)
+        const gaveUp = db.notePendingEmailFailure(e.id)
+        console.error(`[EmailScheduler] Failed to send to ${e.contact_email}${gaveUp ? ' (giving up after 5 tries)' : ''}:`, err)
       }
     }
   }, 60_000)

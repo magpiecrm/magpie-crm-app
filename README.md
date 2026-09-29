@@ -80,8 +80,8 @@ TRACKING_SECRET=...      # required in production — signs tracking/unsubscribe
                          # and encrypts stored provider credentials.
                          # Generate with: openssl rand -hex 32
 CREDENTIALS_SECRET=...   # optional — separate key for stored credentials
-WEBHOOK_SECRET=...       # strongly recommended — without it the bounce/provider
-                         # webhooks accept requests from anyone
+WEBHOOK_SECRET=...       # needed for bounce and complaint tracking: the
+                         # webhooks refuse every request until it's set
 PUBLIC_URL=...           # optional — this app's public origin, for links in emails
 PUBLIC_SITE_URL=...      # optional — your website; unsubscribe page links back to it
 SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
@@ -129,12 +129,24 @@ in Cloudflare: `BOUNCE_WEBHOOK_URL` (e.g.
 `https://your-app.example.com/api/webhooks/bounce`) and `WEBHOOK_SECRET`
 (matching the app's).
 
-Sending providers post bounces to `/api/webhooks/email/<provider>` (with
-`?s=<WEBHOOK_SECRET>`). For Amazon SES: a configuration set
-(`SES_CONFIGURATION_SET`) publishing Bounce and Complaint events to an SNS
-topic with an HTTPS subscription to `/api/webhooks/email/ses?s=…`; the app
-confirms the subscription itself. A hard bounce marks the contact bounced; a
-spam complaint unsubscribes them.
+Sending providers post bounces and spam complaints to
+`/api/webhooks/email/<provider>?s=<WEBHOOK_SECRET>` (the webhooks are off
+until `WEBHOOK_SECRET` is set). Resend, Postmark, SendGrid, Mailgun, Brevo and
+Mandrill: add both their bounce and their spam complaint events. For Amazon
+SES: a configuration set (`SES_CONFIGURATION_SET`) publishing Bounce and
+Complaint events to an SNS topic with an HTTPS subscription to
+`/api/webhooks/email/ses?s=…`; the app confirms the subscription itself.
+Cloudflare's bounces are polled instead. Plain SMTP has no way to report them
+back; use the email worker above, or a provider with webhooks.
+
+A hard bounce (the address doesn't exist, including a "no such user" refusal
+at send time) marks the contact bounced, and a spam complaint or an
+unsubscribe marks them unsubscribed: they're left out of every campaign and
+welcome email, and one-off emails to them are refused. A soft bounce (a full
+mailbox, a busy server) only counts against that campaign; the next one tries
+again. Each is also remembered as a keyed hash of the address, so a contact
+who's deleted and imported again comes back unsubscribed or bounced rather
+than subscribed; re-subscribing them, or them signing up again, lifts it.
 
 Campaign emails carry an unsubscribe link (added at the bottom unless the
 design includes `{{unsubscribe}}`) and one-click `List-Unsubscribe` headers,

@@ -7,6 +7,7 @@ import { postmarkProvider } from './postmark'
 import { resendProvider } from './resend'
 import { sendgridProvider } from './sendgrid'
 import { isSnsUrl, parseMessageTags, sesProvider } from './ses'
+import { isUnknownRecipient } from './types'
 import type { OutboundMessage } from './types'
 
 const msg: OutboundMessage = {
@@ -228,6 +229,67 @@ describe('webhook normalizers', () => {
     expect(out).toEqual([
       { email: 'a@b.com', type: 'hard', reason: 'mailbox unavailable' },
     ])
+  })
+})
+
+describe('bounces and spam complaints from every provider', () => {
+  it('resend: complaints, and a temporary bounce as soft', () => {
+    expect(resendProvider.parseWebhook!({ type: 'email.complained', data: { to: ['a@b.com'] } })).toEqual([{ email: 'a@b.com', type: 'complaint' }])
+    expect(resendProvider.parseWebhook!({ type: 'email.bounced', data: { to: ['a@b.com'], bounce: { type: 'Transient' } } })[0].type).toBe('soft')
+  })
+
+  it('postmark: hard and soft bounces, and complaints either way they arrive', () => {
+    expect(postmarkProvider.parseWebhook!({ RecordType: 'Bounce', Type: 'HardBounce', Email: 'a@b.com' })[0].type).toBe('hard')
+    expect(postmarkProvider.parseWebhook!({ RecordType: 'Bounce', Type: 'SoftBounce', Email: 'a@b.com' })[0].type).toBe('soft')
+    expect(postmarkProvider.parseWebhook!({ RecordType: 'SpamComplaint', Email: 'a@b.com' })).toEqual([{ email: 'a@b.com', type: 'complaint' }])
+    expect(postmarkProvider.parseWebhook!({ RecordType: 'Bounce', Type: 'SpamComplaint', Email: 'a@b.com' })[0].type).toBe('complaint')
+    expect(postmarkProvider.parseWebhook!({ RecordType: 'Delivery', Email: 'a@b.com' })).toEqual([])
+  })
+
+  it('sendgrid: complaints; a delay is nothing; dropped depends why', () => {
+    const out = sendgridProvider.parseWebhook!([
+      { event: 'spamreport', email: 'spam@b.com' },
+      { event: 'deferred', email: 'slow@b.com', reason: 'try later' },
+      { event: 'dropped', email: 'gone@b.com', reason: 'Bounced Address' },
+      { event: 'dropped', email: 'reported@b.com', reason: 'Spam Reporting Address' },
+      { event: 'dropped', email: 'left@b.com', reason: 'Unsubscribed Address' },
+    ])
+    expect(out.map((b) => [b.email, b.type])).toEqual([
+      ['spam@b.com', 'complaint'],
+      ['gone@b.com', 'hard'],
+      ['reported@b.com', 'complaint'],
+    ])
+  })
+
+  it('mailgun: complaints, and a temporary failure as soft', () => {
+    expect(mailgunProvider.parseWebhook!({ 'event-data': { event: 'complained', recipient: 'a@b.com' } })).toEqual([{ email: 'a@b.com', type: 'complaint' }])
+    expect(mailgunProvider.parseWebhook!({ 'event-data': { event: 'failed', severity: 'temporary', recipient: 'a@b.com' } })[0].type).toBe('soft')
+  })
+
+  it('brevo: hard, soft, invalid and complaints', () => {
+    const one = (event: string) => brevoProvider.parseWebhook!({ event, email: 'a@b.com' })[0]?.type
+    expect([one('hard_bounce'), one('invalid_email'), one('soft_bounce'), one('blocked'), one('spam'), one('delivered')]).toEqual(['hard', 'hard', 'soft', 'soft', 'complaint', undefined])
+  })
+
+  it('mandrill: spam is a complaint, not a bounce', () => {
+    const out = mailchimpProvider.parseWebhook!([
+      { event: 'spam', msg: { email: 'spam@b.com' } },
+      { event: 'hard_bounce', msg: { email: 'gone@b.com' } },
+      { event: 'soft_bounce', msg: { email: 'full@b.com' } },
+    ])
+    expect(out.map((b) => b.type)).toEqual(['complaint', 'hard', 'soft'])
+  })
+})
+
+describe('a send refused because the address doesn\'t exist', () => {
+  it('is a hard bounce; anything else refused is only a failed attempt', () => {
+    expect(isUnknownRecipient({ responseCode: 550, response: '550 5.1.1 <a@b.com>: Recipient address rejected: User unknown' })).toBe(true)
+    expect(isUnknownRecipient({ responseCode: 550, response: '550 No such user here' })).toBe(true)
+    expect(isUnknownRecipient({ responseCode: 550, response: '550 5.7.1 Message rejected due to local policy' })).toBe(false)
+    expect(isUnknownRecipient({ responseCode: 552, response: '552 5.2.2 Mailbox full' })).toBe(false)
+    expect(isUnknownRecipient({ responseCode: 451, response: '451 4.1.1 try again later' })).toBe(false)
+    expect(isUnknownRecipient(new Error('resend email sending failed for a@b.com: invalid recipient'))).toBe(true)
+    expect(isUnknownRecipient(new Error('Rate limit exceeded'))).toBe(false)
   })
 })
 

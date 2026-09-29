@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { db } from '../../../server/db'
-import { env } from '../../../server/env'
+import { webhookAuth, webhookRefusal } from '../../../server/webhookAuth'
 import { PROVIDERS } from '../../../server/providers'
 import { isProviderId } from '../../../server/providers/descriptors'
 import { isSnsUrl } from '../../../server/providers/ses'
@@ -12,19 +12,13 @@ import { isSnsUrl } from '../../../server/providers/ses'
 //
 // Point the provider at:  {PUBLIC_URL}/api/webhooks/email/{provider}
 //
-// Auth reuses the existing optional WEBHOOK_SECRET shared-secret gate, accepted
-// either as a bearer token or a `?s=` query param since not every provider can
-// send custom headers. Per-provider signature verification (Mailgun HMAC,
-// Resend svix, SNS certificates) is the stronger long-term check and is not
-// implemented yet — set WEBHOOK_SECRET to keep the endpoint from being open.
-
-function authorized(request: Request): boolean {
-  const secret = env.webhookSecret()
-  if (!secret) return true
-  const authHeader = request.headers.get('Authorization')
-  if (authHeader === `Bearer ${secret}`) return true
-  return new URL(request.url).searchParams.get('s') === secret
-}
+//   ?s={WEBHOOK_SECRET}   (or the same as a bearer token)
+//
+// Off until WEBHOOK_SECRET is set (webhookAuth.ts): these mark people bounced
+// or unsubscribed. Per-provider signature verification (Mailgun HMAC, Resend
+// svix, SNS certificates) would be a further check; it isn't implemented.
+// Mailgun and Mandrill check the address with a GET or HEAD when the webhook is
+// added, which is answered without doing anything.
 
 /**
  * Mandrill posts form-encoded data with the events in a `mandrill_events`
@@ -50,12 +44,13 @@ async function readBody(request: Request): Promise<unknown> {
 export const Route = createFileRoute('/api/webhooks/email/$provider')({
   server: {
     handlers: {
+      // The address check some providers make when a webhook is added.
+      GET: async () => Response.json({ ok: true }),
+      HEAD: async () => new Response(null, { status: 200 }),
       POST: async ({ request, params }: { request: Request; params: { provider: string } }) => {
         try {
-          if (!authorized(request)) {
-            console.warn(`[WEBHOOK] Unauthorized ${params.provider} webhook attempt`)
-            return Response.json({ error: 'Unauthorized' }, { status: 401 })
-          }
+          const refused = webhookRefusal(webhookAuth(request), `${params.provider} webhook`)
+          if (refused) return refused
 
           const providerId = params.provider
           if (!isProviderId(providerId)) {

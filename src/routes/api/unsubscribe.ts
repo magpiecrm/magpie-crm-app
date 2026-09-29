@@ -23,6 +23,9 @@ function safeSiteUrl(): string | null {
 const escapeAttr = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** For values put into the page's HTML (the token comes from the link, so it's the visitor's). */
+const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
+
 export const Route = createFileRoute('/api/unsubscribe')({
   server: {
     handlers: {
@@ -263,10 +266,10 @@ export const Route = createFileRoute('/api/unsubscribe')({
                   <p>Confirm your email below to unsubscribe from our newsletter subscriber list.</p>
                   
                   <form id="unsub-form" onsubmit="handleUnsubscribe(event)">
-                    <input type="hidden" id="token" value="${token}" />
+                    <input type="hidden" id="token" value="${escapeHtml(token)}" />
                     <div class="form-group">
                       <label for="email">Email Address</label>
-                      <input type="email" id="email" value="${decodedEmail}" placeholder="name@company.com" required readonly />
+                      <input type="email" id="email" value="${escapeHtml(decodedEmail)}" placeholder="name@company.com" required readonly />
                     </div>
                     <button type="submit" id="submit-btn" class="btn">Unsubscribe</button>
                   </form>
@@ -359,21 +362,10 @@ export const Route = createFileRoute('/api/unsubscribe')({
           const email = decrypted.email.toLowerCase().trim()
           const campaignId = decrypted.campaignId
 
-          // 1. Fetch lists using getLists()
+          // Unsubscribed contacts are left out of every campaign, whatever lists
+          // they're on, so their lists are kept (removing them from one guessed
+          // list, as this used to, took them off a list that wasn't the campaign's).
           const { lists } = await getLists()
-          const newsletterList = lists.find((l: any) => 
-            l.name.toLowerCase().includes('newsletter') || 
-            l.name.toLowerCase().includes('synced') ||
-            l.name.toLowerCase().includes('default')
-          ) || lists[0]
-
-          if (newsletterList) {
-            // Delete contact link from the newsletter list
-            db.run(
-              "DELETE FROM list_contacts WHERE list_id = ? AND contact_email = ?",
-              [newsletterList.id, email]
-            )
-          }
 
           // 2. Find or create the "Unsubscribed List"
           let unsubList = lists.find((l: any) => 
@@ -397,11 +389,13 @@ export const Route = createFileRoute('/api/unsubscribe')({
             )
           }
 
-          // 3. Update global contact status to unsubscribed
+          // 3. Update global contact status to unsubscribed, and remember it
+          // (a keyed hash) in case the contact is deleted and imported again.
           db.run(
             "UPDATE contacts SET status = ? WHERE email = ?",
             ['unsubscribed', email]
           )
+          db.stopEmail(email, 'unsubscribed')
 
           // 4. Mark this recipient unsubscribed on the campaign that sent the
           // link, so campaign stats reflect it.

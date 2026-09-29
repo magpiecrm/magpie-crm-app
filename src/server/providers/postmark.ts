@@ -45,7 +45,10 @@ export const postmarkProvider: EmailProvider = {
   parseWebhook(body: unknown): NormalizedBounce[] {
     const evt = body as any
     const email = evt?.Email
-    if (!email || evt.RecordType !== 'Bounce') return []
+    if (!email) return []
+    // Spam complaints come on their own webhook (RecordType SpamComplaint), or as a bounce of that type.
+    if (evt.RecordType === 'SpamComplaint' || (evt.RecordType === 'Bounce' && evt.Type === 'SpamComplaint')) return [{ email, type: 'complaint' }]
+    if (evt.RecordType !== 'Bounce') return []
     // HardBounce / BadEmailAddress are permanent; everything else we treat as soft.
     const hard = evt.Type === 'HardBounce' || evt.Type === 'BadEmailAddress'
     return [{ email, type: hard ? 'hard' : 'soft', reason: evt.Description || evt.Details }]

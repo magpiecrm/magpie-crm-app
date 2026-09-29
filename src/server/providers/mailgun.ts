@@ -43,9 +43,10 @@ export const mailgunProvider: EmailProvider = {
   // https://documentation.mailgun.com/docs/mailgun/user-manual/events/
   parseWebhook(body: unknown): NormalizedBounce[] {
     const data = (body as any)?.['event-data']
-    if (!data || data.event !== 'failed') return []
-    const email = data.recipient
+    const email = data?.recipient
     if (!email) return []
+    if (data.event === 'complained') return [{ email, type: 'complaint' }]
+    if (data.event !== 'failed') return []
     return [
       {
         email,

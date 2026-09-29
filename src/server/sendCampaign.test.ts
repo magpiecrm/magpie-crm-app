@@ -19,6 +19,8 @@ const state: {
   alreadySent: string[]
   released: number
   hold: any
+  stops?: Record<string, { reason: string; at: string }>
+  bounces?: Array<{ email: string; type: string; campaignId?: string }>
 } = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined, status: 'draft', alreadySent: [], released: 0, hold: null }
 
 vi.mock('./db', () => ({
@@ -28,6 +30,8 @@ vi.mock('./db', () => ({
       return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression, campaign_recipients: [] }
     },
     getContact: (email: string) => state.contacts.find((c) => c.email === email) ?? null,
+    emailStop: (email: string) => state.stops?.[email] ?? null,
+    updateRecipientBounceStatus: (email: string, type: string, campaignId?: string) => void (state.bounces ??= []).push({ email, type, campaignId }),
     getDisclosures: () => [],
     // Only the subscribed-contacts SELECT matters here; everything else is
     // recorded so the tests can assert no writes happened.
@@ -250,7 +254,41 @@ describe('sendCampaign and opt-outs', () => {
   it('refuses when everyone subscribed has opted out', async () => {
     listOf({ email: 'jane@acme.test', status: 'subscribed' })
     optOut({ email: 'jane@acme.test' })
-    await expect(emailService.sendCampaign(1)).rejects.toThrow(/opted out of being contacted/)
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/opted out, unsubscribed or bounced before/)
+  })
+})
+
+describe('sendCampaign and earlier unsubscribes and bounces', () => {
+  it('skips an address that unsubscribed or hard-bounced before, even if its contact says subscribed', async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    listOf(
+      { email: 'back@acme.test', status: 'subscribed' },
+      { email: 'again@acme.test', status: 'subscribed', signed_up_at: '2026-09-20T00:00:00.000Z' },
+      { email: 'fine@acme.test', status: 'subscribed' },
+    )
+    // Re-imported after unsubscribing; the other signed up again since.
+    state.stops = { 'back@acme.test': { reason: 'unsubscribed', at: '2026-09-01T00:00:00.000Z' }, 'again@acme.test': { reason: 'unsubscribed', at: '2026-09-01T00:00:00.000Z' } }
+    const res = await emailService.sendCampaign(1)
+    expect(res).toMatchObject({ sentCount: 2, skippedOptOuts: 1 })
+    expect(vi.mocked(sendMail).mock.calls.map((c) => c[0].to)).toEqual(['again@acme.test', 'fine@acme.test'])
+    state.stops = undefined
+  })
+
+  it('counts a "no such user" refusal at send time as a hard bounce, and anything else refused as a failed attempt', async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockReset()
+    vi.mocked(sendMail)
+      .mockRejectedValueOnce(Object.assign(new Error('Recipient address rejected'), { responseCode: 550, response: '550 5.1.1 <gone@acme.test>: User unknown' }))
+      .mockRejectedValueOnce(Object.assign(new Error('Policy'), { responseCode: 550, response: '550 5.7.1 rejected by policy' }))
+      .mockResolvedValue({ messageId: 'x' } as any)
+    listOf({ email: 'gone@acme.test', status: 'subscribed' }, { email: 'blocked@acme.test', status: 'subscribed' }, { email: 'ok@acme.test', status: 'subscribed' })
+    state.bounces = []
+    await emailService.sendCampaign(1)
+    expect(state.bounces).toEqual([{ email: 'gone@acme.test', type: 'hard', campaignId: '1' }])
+    expect(state.runs.filter((r) => r.sql.includes("'bounced_soft'")).map((r) => r.params[1])).toEqual(['gone@acme.test', 'blocked@acme.test'])
+    vi.mocked(sendMail).mockReset()
+    vi.mocked(sendMail).mockResolvedValue({ messageId: 'x' } as any)
   })
 })
 

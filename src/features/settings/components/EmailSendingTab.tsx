@@ -30,6 +30,7 @@ export function EmailSendingTab() {
 
   const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [webhooksOn, setWebhooksOn] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -47,6 +48,7 @@ export function EmailSendingTab() {
         return
       }
       setManaged(res.managed)
+      setWebhooksOn(res.webhooksOn)
       setProviders(res.providers as ProviderDescriptor[])
       setFields(res.settings.fields)
       setProvider(res.settings.provider)
@@ -380,15 +382,22 @@ export function EmailSendingTab() {
         <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold block mb-0.5">Bounce tracking</span>
-            <span>
-              Point {descriptor.label}'s bounce webhook at{' '}
-              <code className="font-mono break-all">
-                {typeof window !== 'undefined' ? window.location.origin : ''}
-                /api/webhooks/email/{descriptor.id}
-              </code>{' '}
-              so bounced contacts are marked automatically.
-            </span>
+            <span className="font-semibold block mb-0.5">Bounces and spam complaints</span>
+            {webhooksOn ? (
+              <span>
+                Point {descriptor.label}'s bounce and spam complaint webhooks at{' '}
+                <code className="font-mono break-all">
+                  {typeof window !== 'undefined' ? window.location.origin : ''}
+                  /api/webhooks/email/{descriptor.id}?s=<i>your WEBHOOK_SECRET</i>
+                </code>{' '}
+                so bounced addresses and complaints are taken off your lists automatically.
+              </span>
+            ) : (
+              <span>
+                Set <code className="font-mono">WEBHOOK_SECRET</code> on this server to turn on bounce and complaint tracking; until then{' '}
+                {descriptor.label}'s webhooks are refused.
+              </span>
+            )}
           </div>
         </div>
       )}

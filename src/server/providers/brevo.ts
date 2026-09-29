@@ -37,8 +37,11 @@ export const brevoProvider: EmailProvider = {
     const evt = body as any
     const email = evt?.email
     if (!email) return []
-    if (evt.event === 'hard_bounce') {
+    if (evt.event === 'hard_bounce' || evt.event === 'invalid_email') {
       return [{ email, type: 'hard', reason: evt.reason }]
+    }
+    if (evt.event === 'spam' || evt.event === 'complaint') {
+      return [{ email, type: 'complaint' }]
     }
     if (evt.event === 'soft_bounce' || evt.event === 'blocked') {
       return [{ email, type: 'soft', reason: evt.reason }]

@@ -13,6 +13,7 @@ import { optedOutAt, signedUpSince } from './prospecting/suppression'
 import { BOUNCE_WAIT_CAP_MS, firstBatchPassed, newHold, splitGuesses } from './guessedRecipients'
 import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
 import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
+import { isUnknownRecipient } from './providers/types'
 
 /** `{{ contact.custom.<key> }}` — a custom contact field value. */
 const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
@@ -227,6 +228,8 @@ export async function resubscribeContact(email: string) {
   }
 
   db.run('UPDATE contacts SET status = ? WHERE email = ?', ['subscribed', normalized])
+  // Re-subscribed by hand: lifts the unsubscribe or bounce that stopped their email.
+  db.clearEmailStop(normalized)
 
   // Consent changes are worth a trace, since nothing else records them.
   console.log(`[Contacts] Resubscribed ${normalized} (was "${previousStatus}")`)
@@ -530,11 +533,16 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   // People who opted out of being contacted through MagpieCRM aren't sent to,
   // unless they've signed themselves up since.
   const optedOut = optedOutAt(db, subscribed)
-  const contacts = subscribed.filter((c) => signedUpSince(optedOut.get(c.email), db.getContact(c.email)?.signed_up_at))
+  // Nor anyone who unsubscribed, complained or hard-bounced before (kept if
+  // their contact was deleted and re-imported), unless they signed up since.
+  const contacts = subscribed.filter((c) => {
+    const signedUp = db.getContact(c.email)?.signed_up_at
+    return signedUpSince(optedOut.get(c.email), signedUp) && signedUpSince(db.emailStop(c.email)?.at, signedUp)
+  })
   const skippedOptOuts = subscribed.length - contacts.length
   if (subscribed.length > 0 && contacts.length === 0) {
     throw new Error(
-      `Campaign not sent: all ${subscribed.length} subscribed contact${subscribed.length === 1 ? ' has' : 's have'} opted out of being contacted.`,
+      `Campaign not sent: all ${subscribed.length} subscribed contact${subscribed.length === 1 ? ' has' : 's have'} opted out, unsubscribed or bounced before.`,
     )
   }
 
@@ -722,12 +730,14 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
         // Out of allowance isn't the recipient's fault: stop, without marking anyone bounced.
         if (err instanceof AllowanceError) throw err
         console.error(`Failed to send campaign email to ${email}:`, err)
-        // Save recipient as bounced
+        // A failed attempt for this campaign; the next one tries again...
         db.run(
           `INSERT OR REPLACE INTO campaign_recipients (campaign_id, contact_email, status)
            VALUES (?, ?, 'bounced_soft')`,
           [id, email]
         )
+        // ...unless the address doesn't exist: then it's a hard bounce, and they aren't emailed again.
+        if (isUnknownRecipient(err)) db.updateRecipientBounceStatus(email, 'hard', String(id))
       }
     }
   } catch (err) {
@@ -747,7 +757,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
     releasing
       ? `"${campaign.name}" finished sending to the ${plural(toSend.length)} held back`
       : `"${campaign.name}" finished sending to ${plural(toSend.length)}` +
-          (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out of being contacted)` : '') +
+          (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out, unsubscribed or bounced before)` : '') +
           (held.length
             ? `. ${held.length} more with unverified addresses follow once the first ${firstBatch} show how many bounce`
             : ''),

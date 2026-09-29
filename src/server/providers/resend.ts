@@ -32,9 +32,10 @@ export const resendProvider: EmailProvider = {
   // https://resend.com/docs/dashboard/webhooks/event-types
   parseWebhook(body: unknown): NormalizedBounce[] {
     const evt = body as any
-    if (evt?.type !== 'email.bounced') return []
-    const email = evt.data?.to?.[0]
+    const email = evt?.data?.to?.[0]
     if (!email) return []
+    if (evt.type === 'email.complained') return [{ email, type: 'complaint' }]
+    if (evt.type !== 'email.bounced') return []
     // Resend reports bounceType as Permanent | Transient | Undetermined.
     const type = /permanent/i.test(evt.data?.bounce?.type || '') ? 'hard' : 'soft'
     return [{ email, type, reason: evt.data?.bounce?.message }]

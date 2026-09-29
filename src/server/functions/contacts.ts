@@ -119,7 +119,16 @@ export const sendIndividualEmailFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const { sendMail } = await import('../nodemailer')
+    const { db } = await import('../db')
     await requireAuth()
+
+    // Not to someone who unsubscribed, complained or whose address bounced.
+    const status = db.getContact(data.email)?.status
+    const stop = db.emailStop(data.email)
+    if ((status && status !== 'subscribed') || stop) {
+      const why = stop?.reason === 'bounced' || status === 'bounced' ? 'their address bounced' : 'they unsubscribed'
+      throw new Error(`Not sent: ${why}. Re-subscribe them first if they've asked to hear from you again.`)
+    }
 
     await sendMail({
       to: data.email,

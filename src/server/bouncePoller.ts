@@ -16,8 +16,11 @@ interface EmailEvent {
   isLastEvent: boolean
 }
 
+// A hard bounce is an address that doesn't exist: 5.1.x statuses and the
+// usual wording. Other 5.x.x replies (5.7.1 policy blocks, full mailboxes)
+// aren't the address's fault, so they only count as a failed attempt.
 const HARD_BOUNCE_PATTERNS = [
-  /5\.\d+\.\d+/,
+  /\b5\.1\.[0-3]\b/,
   /user unknown/i,
   /no such user/i,
   /invalid recipient/i,
@@ -41,10 +44,13 @@ export async function pollsBounces(): Promise<boolean> {
   return getActiveProviderConfig().providerId === 'cloudflare'
 }
 
-/** Up to when (ISO) Cloudflare's bounces have been read, or null before the first poll. */
+/** Up to when (ISO) Cloudflare's bounces have been read, or null before the first poll. Kept across restarts. */
 export function bouncesPolledUntil(): string | null {
-  return (globalThis as any).__bouncePollerSince ?? null
+  return db.bouncePollerSince()
 }
+
+const PAGE = 1000
+const MAX_PAGES = 20
 
 export async function pollBounces(): Promise<void> {
   // Only meaningful while Cloudflare is the active provider. Every other
@@ -58,10 +64,9 @@ export async function pollBounces(): Promise<void> {
   const zoneId = config.creds.zoneId || env.cloudflare.zoneId()
   if (!token || !zoneId) return
 
-  const g = globalThis as any
-  // Overlap the previous window slightly; marking a bounce twice is harmless.
-  const since: string = g.__bouncePollerSince
-    || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  // Oldest first, a page at a time from where the last poll got to, so a busy
+  // few minutes can't push events past the end of one page.
+  let since: string = bouncesPolledUntil() || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const now = new Date().toISOString()
 
   const query = `
@@ -69,9 +74,9 @@ export async function pollBounces(): Promise<void> {
       viewer {
         zones(filter: { zoneTag: $zone }) {
           emailSendingAdaptive(
-            limit: 500
+            limit: ${PAGE}
             filter: { datetime_geq: $start, datetime_leq: $end }
-            orderBy: [datetime_DESC]
+            orderBy: [datetime_ASC]
           ) {
             datetime
             to
@@ -84,36 +89,48 @@ export async function pollBounces(): Promise<void> {
       }
     }`
 
-  const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query, variables: { zone: zoneId, start: since, end: now } }),
-  })
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables: { zone: zoneId, start: since, end: now } }),
+    })
 
-  const json = await res.json() as any
-  if (json.errors?.length) {
-    const msg = json.errors[0].message || ''
-    if (msg.includes('does not have permission')) {
-      console.warn('[BouncePoller] Cloudflare API token is missing zone "Analytics: Read" permission — bounce tracking is disabled until it is added.')
+    const json = await res.json() as any
+    if (json.errors?.length) {
+      const msg = json.errors[0].message || ''
+      if (msg.includes('does not have permission')) {
+        console.warn('[BouncePoller] Cloudflare API token is missing zone "Analytics: Read" permission — bounce tracking is disabled until it is added.')
+        return
+      }
+      console.error('[BouncePoller] GraphQL error:', msg)
       return
     }
-    console.error('[BouncePoller] GraphQL error:', msg)
-    return
+
+    const events: EmailEvent[] = json.data?.viewer?.zones?.[0]?.emailSendingAdaptive || []
+    const failures = events.filter((e) =>
+      e.isLastEvent && /fail|bounce|reject|drop/i.test(e.status || '')
+    )
+
+    // Marking a bounce twice (the page boundary overlaps by a moment) is harmless.
+    for (const e of failures) {
+      const type = classifyBounce(e)
+      console.log(`[BouncePoller] ${type} bounce for ${e.to} (${e.status}: ${e.errorCause || e.errorDetail || 'no detail'})`)
+      db.updateRecipientBounceStatus(e.to, type)
+    }
+
+    if (events.length < PAGE) {
+      since = now
+      break
+    }
+    // A full page: carry on from its last event.
+    const last = events[events.length - 1].datetime
+    if (last <= since) break
+    since = last
   }
 
-  const events: EmailEvent[] = json.data?.viewer?.zones?.[0]?.emailSendingAdaptive || []
-  const failures = events.filter((e) =>
-    e.isLastEvent && /fail|bounce|reject|drop/i.test(e.status || '')
-  )
-
-  for (const e of failures) {
-    const type = classifyBounce(e)
-    console.log(`[BouncePoller] ${type} bounce for ${e.to} (${e.status}: ${e.errorCause || e.errorDetail || 'no detail'})`)
-    db.updateRecipientBounceStatus(e.to, type)
-  }
-
-  g.__bouncePollerSince = now
+  db.setBouncePollerSince(since)
 }

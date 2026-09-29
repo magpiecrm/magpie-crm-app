@@ -17,6 +17,11 @@ import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
 import type { SuppressionKind } from './prospecting/suppressionHash'
 
+export type EmailStopReason = 'unsubscribed' | 'complained' | 'bounced'
+
+/** The contact status that goes with each stop. */
+const STOP_STATUS: Record<EmailStopReason, string> = { unsubscribed: 'unsubscribed', complained: 'unsubscribed', bounced: 'bounced' }
+
 /** Days of daily usage counts kept (about 13 months), for periods like the last 7 or 30 days. */
 export const DAILY_USAGE_DAYS = 400
 
@@ -182,6 +187,10 @@ export interface DbSchema {
     from?: string
     send_after: string
     sent: boolean
+    /** Failed sends so far; given up after a few. */
+    attempts?: number
+    /** Why it's no longer due: sent, skipped (they'd unsubscribed or bounced by then), or failed. */
+    outcome?: 'sent' | 'skipped' | 'failed'
   }>
   personas?: Persona[]
   notifications?: Array<{
@@ -333,6 +342,16 @@ export interface DbSchema {
   usage?: Record<string, Partial<Record<UsageCounter, number>>>
   /** The same counts by UTC day (YYYY-MM-DD), for any period; the last DAILY_USAGE_DAYS kept. */
   usage_daily?: Record<string, Partial<Record<UsageCounter, number>>>
+  /**
+   * Addresses not to email again, by a keyed hash (never the address): an
+   * unsubscribe, a spam complaint or a hard bounce. Kept when the contact is
+   * deleted, so a re-import doesn't start emailing them again. This copy's
+   * own; unlike the opt-out list, never shared. Lifted by re-subscribing them
+   * or them signing up again.
+   */
+  email_stops?: Record<string, { reason: EmailStopReason; at: string }>
+  /** Up to when Cloudflare's bounces have been read (bouncePoller.ts). */
+  bounce_poller_since?: string
   /** This billing period's allowances, when a host sets them (see allowance.ts). */
   allowance?: Allowance | null
   /** Domains mail is sent from when the host runs sending (see sendingDomains.ts). */
@@ -1018,6 +1037,9 @@ class JsonDb {
       } else if (params[5] && params[5] !== email) {
         status = params[5]
       }
+      // Someone who unsubscribed, complained or hard-bounced before comes back as that, not subscribed.
+      const stop = existingIdx < 0 ? this.emailStop(email) : null
+      if (stop) status = STOP_STATUS[stop.reason]
 
       let contact
       if (isSubscribeQuery) {
@@ -1584,13 +1606,27 @@ class JsonDb {
     return this.data.pending_emails.filter(e => !e.sent && e.send_after <= now)
   }
 
-  markPendingEmailSent(id: string) {
+  markPendingEmailSent(id: string, outcome: 'sent' | 'skipped' | 'failed' = 'sent') {
     if (!this.data.pending_emails) return
     const record = this.data.pending_emails.find(e => e.id === id)
     if (record) {
       record.sent = true
+      record.outcome = outcome
       this.save()
     }
+  }
+
+  /** A failed attempt at a pending email; after `max`, it's given up. Returns whether it was given up. */
+  notePendingEmailFailure(id: string, max = 5): boolean {
+    const record = this.data.pending_emails?.find(e => e.id === id)
+    if (!record) return false
+    record.attempts = (record.attempts ?? 0) + 1
+    if (record.attempts >= max) {
+      record.sent = true
+      record.outcome = 'failed'
+    }
+    this.save()
+    return record.outcome === 'failed'
   }
 
   // Brand kit
@@ -1883,7 +1919,43 @@ class JsonDb {
     const contact = this.data.contacts.find((c) => c.email === email.toLowerCase().trim())
     if (!contact) return
     contact.signed_up_at = new Date().toISOString()
+    // Signing up again is new consent.
+    this.clearEmailStop(email)
     this.save()
+  }
+
+  private stopKey(email: string) {
+    return crypto.createHmac('sha256', env.suppressionSecret()).update(`email-stop:${email.toLowerCase().trim()}`).digest('hex')
+  }
+
+  /** Don't email this address again (see email_stops); the latest reason wins, except a complaint stays a complaint. */
+  stopEmail(email: string, reason: EmailStopReason) {
+    const stops = (this.data.email_stops ??= {})
+    const key = this.stopKey(email)
+    if (stops[key]?.reason === 'complained' && reason !== 'complained') return
+    stops[key] = { reason, at: new Date().toISOString() }
+    this.save()
+  }
+
+  emailStop(email: string): { reason: EmailStopReason; at: string } | null {
+    return this.data.email_stops?.[this.stopKey(email)] ?? null
+  }
+
+  bouncePollerSince(): string | null {
+    return this.data.bounce_poller_since ?? null
+  }
+
+  setBouncePollerSince(at: string) {
+    this.data.bounce_poller_since = at
+    this.save()
+  }
+
+  clearEmailStop(email: string) {
+    const key = this.stopKey(email)
+    if (this.data.email_stops?.[key]) {
+      delete this.data.email_stops[key]
+      this.save()
+    }
   }
 
   getContact(email: string): ContactRecord | null {
@@ -1914,7 +1986,9 @@ class JsonDb {
         last_name: '',
         job_title: '',
         company: '',
-        status: opts.status ?? 'subscribed',
+        // A sign-up passes its status (new consent); otherwise someone who
+        // unsubscribed, complained or hard-bounced before comes back as that.
+        status: opts.status ?? (this.emailStop(normalized) ? STOP_STATUS[this.emailStop(normalized)!.reason] : 'subscribed'),
         created_at: new Date().toISOString(),
       }
       this.data.contacts.push(contact)
@@ -2023,6 +2097,7 @@ class JsonDb {
     const normalizedEmail = email.toLowerCase().trim()
     const contact = this.data.contacts.find(c => c.email === normalizedEmail)
     if (contact) contact.status = 'unsubscribed'
+    this.stopEmail(normalizedEmail, 'complained')
     const record = this.markRecipientUnsubscribed(normalizedEmail)
     if (record) {
       record.complained_at = new Date().toISOString()
@@ -2051,29 +2126,36 @@ class JsonDb {
     return record
   }
 
+  /**
+   * A bounce. Only a hard one (the address doesn't exist) stops future email
+   * to the contact; a soft one (mailbox full, server busy, a delay) is only
+   * recorded against the email it happened to, so the next campaign tries again.
+   */
   updateRecipientBounceStatus(email: string, type: string, campaignId?: string) {
     const normalizedEmail = email.toLowerCase().trim()
-    
+    const hard = type === 'hard'
+
     const contact = this.data.contacts.find(c => c.email === normalizedEmail)
-    if (contact) {
+    if (contact && hard) {
       contact.status = 'bounced'
     }
+    if (hard) this.stopEmail(normalizedEmail, 'bounced')
 
+    let record: RecipientRecord | undefined
     if (campaignId && !isNaN(Number(campaignId))) {
-      const record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
-      if (record) {
-        record.status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
-        record.bounced_at = new Date().toISOString()
-      }
+      record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
     } else {
-      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && cr.status === 'sent')
-      if (records.length > 0) {
-        records.sort((a, b) => b.campaign_id - a.campaign_id)
-        records[0].status = type === 'hard' ? 'bounced_hard' : 'bounced_soft'
-        records[0].bounced_at = new Date().toISOString()
-      }
+      // Their latest email: a bounce can arrive after an automatic "open" (Apple Mail prefetches).
+      const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && ['sent', 'opened', 'clicked', 'bounced_soft'].includes(cr.status))
+      records.sort((a, b) => b.campaign_id - a.campaign_id)
+      record = records[0]
     }
-    
+    // A hard bounce is never turned back into a soft one.
+    if (record && !(record.status === 'bounced_hard' && !hard)) {
+      record.status = hard ? 'bounced_hard' : 'bounced_soft'
+      record.bounced_at = new Date().toISOString()
+    }
+
     this.save()
   }
 

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { db } from '../../../server/db'
-import { env } from '../../../server/env'
+import { webhookAuth, webhookRefusal } from '../../../server/webhookAuth'
 
 export const Route = createFileRoute('/api/webhooks/bounce')({
   server: {
@@ -8,14 +8,9 @@ export const Route = createFileRoute('/api/webhooks/bounce')({
       POST: async ({ request }: { request: Request }) => {
         console.log('\n--- [WEBHOOK] BOUNCE EVENT RECEIVED ---')
         try {
-          const authHeader = request.headers.get('Authorization')
-          const secret = env.webhookSecret()
-
-          // Require WEBHOOK_SECRET only if it's set in the environment
-          if (secret && authHeader !== `Bearer ${secret}`) {
-            console.warn('[WEBHOOK] Unauthorized access attempt')
-            return Response.json({ error: 'Unauthorized' }, { status: 401 })
-          }
+          // Bearer token only: the Cloudflare email worker sends it as a header.
+          const refused = webhookRefusal(webhookAuth(request, { allowQuery: false }), 'bounce webhook')
+          if (refused) return refused
 
           const body = await request.json()
           console.log('[WEBHOOK] Received body:', JSON.stringify(body))

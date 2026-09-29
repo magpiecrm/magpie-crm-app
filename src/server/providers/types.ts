@@ -71,7 +71,7 @@ interface ProviderSendResult {
 /** A bounce event normalized out of a provider's webhook payload. */
 export interface NormalizedBounce {
   email: string
-  /** 'complaint': the recipient marked the email as spam (SES reports these). */
+  /** 'complaint': the recipient marked the email as spam. Only 'hard' stops email to them; 'soft' is a failed attempt. */
   type: 'hard' | 'soft' | 'complaint'
   campaignId?: number
   reason?: string
@@ -128,6 +128,21 @@ export class ProviderSendError extends Error {
     this.status = status
     this.retryable = status === 429 || (status !== undefined && status >= 500)
   }
+}
+
+/**
+ * A send refused because the address doesn't exist: a hard bounce, so the
+ * contact isn't emailed again. An SMTP 550-553 saying so (or with a 5.1.x
+ * status), or a provider's own words for it. Anything else refused at send
+ * time (a policy block, a full mailbox, rate limits) is only a failed attempt.
+ */
+export function isUnknownRecipient(err: any): boolean {
+  const text = `${err?.response ?? ''} ${err?.detail ?? ''} ${err?.message ?? ''}`
+  const code = Number(err?.responseCode)
+  if (code >= 550 && code <= 553) {
+    return /\b5\.1\.[0-3]\b|user unknown|unknown (user|recipient)|no such (user|mailbox|recipient)|does ?n[o']t exist|mailbox (unavailable|not found)|recipient (address )?rejected|invalid (recipient|mailbox)/i.test(text)
+  }
+  return /\b(invalid|unknown|non-?existent) recipient\b|recipient address rejected|no such (user|mailbox)/i.test(text)
 }
 
 export function providerError(

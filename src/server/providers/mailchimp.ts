@@ -60,7 +60,9 @@ export const mailchimpProvider: EmailProvider = {
     for (const evt of events as any[]) {
       const email = evt?.msg?.email
       if (!email) continue
-      if (evt.event === 'hard_bounce' || evt.event === 'spam') {
+      if (evt.event === 'spam') {
+        out.push({ email, type: 'complaint' })
+      } else if (evt.event === 'hard_bounce') {
         out.push({ email, type: 'hard', reason: evt.msg?.bounce_description })
       } else if (evt.event === 'soft_bounce' || evt.event === 'reject') {
         out.push({ email, type: 'soft', reason: evt.msg?.bounce_description })
