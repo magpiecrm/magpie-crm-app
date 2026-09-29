@@ -1,11 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 /**
- * Monthly usage counts (see `src/server/usage.ts`), for whoever runs this copy
- * of the app: e.g. a hosting provider billing per prospect and reveal.
+ * Usage counts (see `src/server/usage.ts`), for whoever runs this copy of the
+ * app: e.g. a hosting provider billing per prospect and reveal.
  *
- *   GET /api/usage                  every month with usage
- *   GET /api/usage?month=2026-09    one month
+ *   GET /api/usage                                every month with usage
+ *   GET /api/usage?month=2026-09                  one month
+ *   GET /api/usage?from=2026-09-22&to=2026-09-28  any days (UTC, both included);
+ *       `countedSince` is the first day with daily counts, so a period
+ *       starting earlier is only partly counted
  *   Authorization: Bearer <USAGE_API_TOKEN>
  *
  * Off (404) unless USAGE_API_TOKEN is set. Counts only; nothing about who.
@@ -27,10 +30,19 @@ export const Route = createFileRoute('/api/usage')({
         const { hasUsageToken } = await import('../../server/usageToken')
         if (!hasUsageToken(request)) return json({ error: 'Unauthorized' }, 401)
 
-        const { getUsage, lookupHitRate, usageForMonth } = await import('../../server/usage')
+        const { getUsage, lookupHitRate, usageBetween, usageForMonth } = await import('../../server/usage')
         const { db } = await import('../../server/db')
         const storage = db.storageStats()
-        const month = new URL(request.url).searchParams.get('month')
+        const params = new URL(request.url).searchParams
+        const from = params.get('from')
+        const to = params.get('to')
+        if (from !== null || to !== null) {
+          const day = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+          if (!from || !to || !day.test(from) || !day.test(to) || from > to) return json({ error: 'from and to must be days like 2026-09-22, from first' }, 400)
+          const { counts, countedSince } = usageBetween(from, to)
+          return json({ from, to, ...counts, hitRate: lookupHitRate(counts), countedSince, storage })
+        }
+        const month = params.get('month')
         if (month !== null) {
           if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return json({ error: 'month must look like 2026-09' }, 400)
           const counts = usageForMonth(month)

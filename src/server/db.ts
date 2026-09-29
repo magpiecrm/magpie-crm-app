@@ -17,6 +17,9 @@ import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
 import type { SuppressionKind } from './prospecting/suppressionHash'
 
+/** Days of daily usage counts kept (about 13 months), for periods like the last 7 or 30 days. */
+export const DAILY_USAGE_DAYS = 400
+
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
   const hash = crypto.scryptSync(password, salt, 64).toString('hex')
@@ -328,6 +331,8 @@ export interface DbSchema {
    * names, addresses or searches.
    */
   usage?: Record<string, Partial<Record<UsageCounter, number>>>
+  /** The same counts by UTC day (YYYY-MM-DD), for any period; the last DAILY_USAGE_DAYS kept. */
+  usage_daily?: Record<string, Partial<Record<UsageCounter, number>>>
   /** This billing period's allowances, when a host sets them (see allowance.ts). */
   allowance?: Allowance | null
   /** Domains mail is sent from when the host runs sending (see sendingDomains.ts). */
@@ -1590,17 +1595,34 @@ class JsonDb {
 
   // Brand kit
   /** Adds to this month's usage counts (see usage.ts). */
-  addUsage(month: string, deltas: Partial<Record<UsageCounter, number>>) {
+  /** Adds to a month's counts and, given its day (YYYY-MM-DD), that day's too. */
+  addUsage(month: string, deltas: Partial<Record<UsageCounter, number>>, day?: string) {
     this.data.usage ??= {}
     const row = (this.data.usage[month] ??= {})
     for (const [key, n] of Object.entries(deltas) as Array<[UsageCounter, number]>) {
       if (n) row[key] = (row[key] ?? 0) + n
+    }
+    if (day) {
+      const daily = (this.data.usage_daily ??= {})
+      if (!daily[day]) {
+        // A new day: drop the ones past keeping.
+        const oldest = new Date(Date.parse(`${day}T00:00:00Z`) - DAILY_USAGE_DAYS * 86_400_000).toISOString().slice(0, 10)
+        for (const d of Object.keys(daily)) if (d < oldest) delete daily[d]
+      }
+      const dayRow = (daily[day] ??= {})
+      for (const [key, n] of Object.entries(deltas) as Array<[UsageCounter, number]>) {
+        if (n) dayRow[key] = (dayRow[key] ?? 0) + n
+      }
     }
     this.save()
   }
 
   getUsage(): Record<string, Partial<Record<UsageCounter, number>>> {
     return this.data.usage ?? {}
+  }
+
+  getDailyUsage(): Record<string, Partial<Record<UsageCounter, number>>> {
+    return this.data.usage_daily ?? {}
   }
 
   getSendingDomains(): SendingDomain[] {

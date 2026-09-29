@@ -86,3 +86,35 @@ describe('GET /api/usage', () => {
     expect(all.months[0].hitRate).toEqual({ verified: 0, formatConfirmed: 0, checkable: 0, rate: null })
   })
 })
+
+describe('usage for any days', () => {
+  it('adds up the days asked for, and says since when days were counted', async () => {
+    process.env.USAGE_API_TOKEN = 'tok_123'
+    recordUsage({ prospects: 5 }, new Date('2026-10-01T10:00:00Z'))
+    recordUsage({ prospects: 7, emailsFound: 2 }, new Date('2026-10-02T23:59:00Z'))
+    recordLookup('verified', new Date('2026-10-02T12:00:00Z'))
+    recordLookup('rejected', new Date('2026-10-03T12:00:00Z'))
+    const body = await (await get('/api/usage?from=2026-10-02&to=2026-10-03', 'tok_123')).json()
+    expect(body).toMatchObject({ from: '2026-10-02', to: '2026-10-03', prospects: 7, emailsFound: 2, lookupVerified: 1, lookupRejected: 1 })
+    expect(body.hitRate).toMatchObject({ verified: 1, checkable: 2, rate: 0.5 })
+    // The earlier tests' days count too: daily counts began with the first of them.
+    expect(body.countedSince).toBe('2026-08-31')
+    // Months still add up the same.
+    expect((await (await get('/api/usage?month=2026-10', 'tok_123')).json()).prospects).toBe(12)
+  })
+
+  it('rejects days that aren’t days, or the wrong way round', async () => {
+    process.env.USAGE_API_TOKEN = 'tok_123'
+    expect((await get('/api/usage?from=2026-10-02', 'tok_123')).status).toBe(400)
+    expect((await get('/api/usage?from=2026-10-3&to=2026-10-04', 'tok_123')).status).toBe(400)
+    expect((await get('/api/usage?from=2026-10-04&to=2026-10-02', 'tok_123')).status).toBe(400)
+  })
+
+  it('keeps daily counts for about 13 months', async () => {
+    const { db, DAILY_USAGE_DAYS } = await import('../../server/db')
+    recordUsage({ prospects: 1 }, new Date('2026-10-05T10:00:00Z'))
+    recordUsage({ prospects: 1 }, new Date(Date.parse('2026-10-05T10:00:00Z') + (DAILY_USAGE_DAYS + 1) * 86_400_000))
+    getUsage()
+    expect(Object.keys(db.getDailyUsage()).sort()[0] > '2026-10-05').toBe(true)
+  })
+})

@@ -1,6 +1,7 @@
-// Monthly usage counts: what this copy of the app has used, for the Settings
-// overview and, when USAGE_API_TOKEN is set, for GET /api/usage (e.g. a
-// hosting provider's billing). Counts only, never who or what.
+// Usage counts: what this copy of the app has used, by month and by UTC day,
+// for the Settings overview and, when USAGE_API_TOKEN is set, for GET
+// /api/usage (e.g. a hosting provider's billing, or its figures for the last
+// day or week). Counts only, never who or what.
 //
 // Increments are gathered in memory and written a couple of seconds later in
 // one go, so sending a campaign doesn't rewrite the database once per email.
@@ -50,12 +51,14 @@ const g = globalThis as any
 const pending: Map<string, Partial<UsageCounts>> = (g.__usagePending ??= new Map())
 
 export const monthOf = (date: Date) => date.toISOString().slice(0, 7)
+export const dayOf = (date: Date) => date.toISOString().slice(0, 10)
 
 function flush() {
   clearTimeout(g.__usageTimer)
   g.__usageTimer = null
   try {
-    for (const [month, deltas] of pending) db.addUsage(month, deltas)
+    // Pending counts are kept by day; each goes to its month and its day.
+    for (const [day, deltas] of pending) db.addUsage(day.slice(0, 7), deltas, day)
   } catch (err: any) {
     // Counting must never break the search, save or send that triggered it.
     console.error('[Usage] Failed to save usage counts:', err?.message ?? err)
@@ -72,14 +75,14 @@ export function recordLookup(outcome: LookupOutcome, now = new Date()) {
   recordUsage({ [lookupCounter(outcome)]: 1 }, now)
 }
 
-/** Adds to this month's counts. */
+/** Adds to this month's (and today's) counts. */
 export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {
-  const month = monthOf(now)
-  const row = pending.get(month) ?? {}
+  const day = dayOf(now)
+  const row = pending.get(day) ?? {}
   for (const [key, n] of Object.entries(deltas) as Array<[UsageCounter, number]>) {
     if (n) row[key] = (row[key] ?? 0) + n
   }
-  pending.set(month, row)
+  pending.set(day, row)
   // Straight away, so the next search or send already sees what's left.
   countAgainstAllowance({ prospects: deltas.prospectCredits, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent })
   // unref: a pending count must not keep the process (or a test run) alive.
@@ -120,4 +123,21 @@ export function getUsage(): Array<{ month: string } & UsageCounts> {
 export function usageForMonth(month: string): UsageCounts {
   flush()
   return complete(db.getUsage()[month])
+}
+
+/**
+ * The counts from `from` to `to` (UTC days, both included), and the first day
+ * daily counts were kept: a period starting before then is only partly
+ * counted (copies before daily counts only kept months).
+ */
+export function usageBetween(from: string, to: string): { counts: UsageCounts; countedSince: string | null } {
+  flush()
+  const daily = db.getDailyUsage()
+  const days = Object.keys(daily).sort()
+  const sum: Partial<UsageCounts> = {}
+  for (const day of days) {
+    if (day < from || day > to) continue
+    for (const [key, n] of Object.entries(daily[day]) as Array<[UsageCounter, number]>) sum[key] = (sum[key] ?? 0) + n
+  }
+  return { counts: complete(sum), countedSince: days[0] ?? null }
 }
