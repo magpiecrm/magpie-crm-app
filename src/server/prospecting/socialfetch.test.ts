@@ -92,6 +92,18 @@ describe('mapping', () => {
     expect(both).toMatchObject({ companyRef: '12345', companySlug: 'acme-ltd' })
   })
 
+  it('treats organization id 0 as no company page, falling back to the page name', () => {
+    // LinkedIn sends 0 for a job with no company page; it isn't organization 0.
+    for (const organizationId of [0, '0']) {
+      const zero = mapPerson(rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId, isCurrent: true }] }))
+      expect(zero?.companyRef).toBeNull()
+    }
+    const withPage = mapPerson(
+      rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', organizationId: 0, organizationUrl: 'https://www.linkedin.com/company/acme-ltd/', isCurrent: true }] }),
+    )
+    expect(withPage).toMatchObject({ companyRef: 'acme-ltd', companySlug: 'acme-ltd' })
+  })
+
   it('rejects records with no profile URL or name', () => {
     expect(mapPerson({ firstName: 'No', lastName: 'Url' })).toBeNull()
     expect(mapPerson({ handle: 'nameless' })).toBeNull()
@@ -544,3 +556,19 @@ describe('meterCredits', () => {
   })
 })
 
+describe('getCompany', () => {
+  it('never asks for organization 0 (a result mapped before 0 meant no page)', async () => {
+    const f = fakeFetch([])
+    expect(await createSocialFetchSource(f.impl).getCompany('0')).toBeNull()
+    expect(await createSocialFetchSource(f.impl).getCompany('')).toBeNull()
+    expect(f.calls).toHaveLength(0)
+  })
+
+  it('still looks up real ids', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', organization: { liveOrganizationId: '167872', name: 'Stripe', website: 'https://stripe.com' } }, 6)])
+    const company = await createSocialFetchSource(f.impl).getCompany('167872')
+    expect(f.calls[0].pathname).toBe('/v2/linkedin/organizations')
+    expect(f.calls[0].searchParams.get('id')).toBe('167872')
+    expect(company?.domain).toBe('stripe.com')
+  })
+})

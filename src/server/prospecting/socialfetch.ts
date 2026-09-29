@@ -218,10 +218,18 @@ function str(v: unknown): string | null {
 }
 
 /** An identifier that may arrive as a string or a number. */
+/**
+ * A LinkedIn id, or null. LinkedIn sends 0 for a job with no company page
+ * (and some records carry "0"): that's no id, never organization 0, which
+ * the organizations endpoint answers with a slow 503.
+ */
 function idOf(v: unknown): string | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
-  return str(v)
+  const id = typeof v === 'number' && Number.isFinite(v) ? String(v) : str(v)
+  return id && !/^0+$/.test(id) ? id : null
 }
+
+/** A real numeric LinkedIn id (not 0). */
+const numericId = (ref: string | null | undefined): ref is string => Boolean(ref && /^\d+$/.test(ref) && !/^0+$/.test(ref))
 
 /** "https://www.linkedin.com/company/acme-ltd/" -> "acme-ltd". */
 function companySlug(position: any): string | null {
@@ -533,7 +541,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
     },
 
     async getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null> {
-      const numeric = /^\d+$/.test(ref)
+      // "0" (from a search result mapped before idOf dropped it) isn't a company.
+      if (!ref || /^0+$/.test(ref)) return null
+      const numeric = numericId(ref)
       // The company page by URL costs 1 credit; the organization lookup 6 (by
       // id) or 9 (by slug). The page needs the slug, so without one only the
       // organization lookup can be used.
@@ -584,9 +594,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const industry = industryCodes(filters.industries)
       // A chosen company with a LinkedIn id is searched by it; otherwise its
       // name goes in the keyword.
-      const companyId = company && /^\d+$/.test(company.ref) ? company.ref : null
+      const companyId = company && numericId(company.ref) ? company.ref : null
       // Several companies at once (found by size first): one comma-separated list.
-      const companyIds = filters.companyRefs?.filter((r) => /^\d+$/.test(r)).slice(0, MAX_COMPANIES_PER_SEARCH).join(',') || null
+      const companyIds = filters.companyRefs?.filter(numericId).slice(0, MAX_COMPANIES_PER_SEARCH).join(',') || null
 
 
       const settled = await Promise.allSettled(
