@@ -24,6 +24,17 @@ describe('host rules', () => {
     expect(formatSharingOn()).toBe(true)
   })
 
+  it("keep the copy's share of the host's verification, when the host gives one", async () => {
+    const { hostCheckShare } = await import('./hostRules')
+    expect(hostCheckShare()).toBeNull()
+    await refreshHostRules(reply({ rules: {}, checks: { perMinute: 15.7, perDay: 600 } }))
+    expect(hostCheckShare()).toEqual({ perMinute: 15, perDay: 600 })
+    await refreshHostRules(reply({ rules: {}, checks: { perMinute: 15, perDay: 600, perProvider: { google: 10, microsoft: 6, other: 40 } } }))
+    expect(hostCheckShare()).toEqual({ perMinute: 15, perDay: 600, perProvider: { google: 10, microsoft: 6, other: 15 } })
+    await refreshHostRules(reply({ rules: {}, checks: { perMinute: 0, perDay: 600 } }))
+    expect(hostCheckShare()).toBeNull()
+  })
+
   it('keep the last answer when the host fails, and are never asked outside a hosted copy', async () => {
     await refreshHostRules(reply({ rules: { firstBatch: 30 }, formatSharing: true }))
     expect(await refreshHostRules(reply({}, 500))).toBeNull()

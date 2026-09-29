@@ -10,6 +10,7 @@
 // the host first answers, the defaults below apply.
 
 import { env } from '../env'
+import type { MailProvider } from './proxyRouter'
 
 export interface ProspectingRules {
   /** Confidence at which a guess at a catch-all company is `format_confirmed`. */
@@ -31,17 +32,51 @@ interface HostAnswer {
   formatSharing: boolean
   /** Bounces from the host's mail server are still on their way to this copy. */
   eventsPending: boolean
+  /** This copy's share of the host's verification, to pace its checks to (runtime.ts). */
+  checks: CheckShare | null
+}
+
+export interface CheckShare {
+  perMinute: number
+  perDay: number
+  /** Per mail provider, what the host's IPs can take a minute, at most `perMinute`. */
+  perProvider?: Record<MailProvider, number>
 }
 
 const TIMEOUT_MS = 5_000
 // globalThis so the answer survives Vite's module re-evaluation on HMR.
 const g = globalThis as { __hostRules?: HostAnswer }
 
+const whole = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.floor(v) : null)
+
+function checkShareFrom(c: any): CheckShare | null {
+  const perMinute = whole(c?.perMinute)
+  const perDay = whole(c?.perDay)
+  if (!perMinute || !perDay) return null
+  const p = c?.perProvider
+  const google = whole(p?.google)
+  const microsoft = whole(p?.microsoft)
+  const other = whole(p?.other)
+  return {
+    perMinute,
+    perDay,
+    ...(google && microsoft && other ? { perProvider: { google: Math.min(google, perMinute), microsoft: Math.min(microsoft, perMinute), other: Math.min(other, perMinute) } } : {}),
+  }
+}
+
 const inRange = (v: unknown, min: number, max: number, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : fallback
 
 export function prospectingRules(): ProspectingRules {
   return g.__hostRules?.rules ?? DEFAULT_RULES
+}
+
+/**
+ * This copy's share of its host's verification, checks per minute and per
+ * day, or null before the host has said (or outside a hosted copy).
+ */
+export function hostCheckShare(): CheckShare | null {
+  return env.prospectingManaged() ? (g.__hostRules?.checks ?? null) : null
 }
 
 /** Whether this copy reports and asks for company email formats: hosted, and not left out. */
@@ -71,6 +106,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       },
       formatSharing: body?.formatSharing === true,
       eventsPending: body?.eventsPending === true,
+      checks: checkShareFrom(body?.checks),
     }
     g.__hostRules = answer
     return answer

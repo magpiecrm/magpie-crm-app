@@ -73,6 +73,8 @@ export interface RouterOptions {
   refusalMemoryMs: number
   /** Checks per IP per day. A function, so a change in Settings applies at once. */
   dailyCapPerIp: () => number
+  /** What to tell the user when every IP has reached `dailyCapPerIp`. */
+  dailyCapMessage: (cap: number) => string
   /** Consecutive blocks/timeouts before an IP is benched. */
   benchAfter: number
   /**
@@ -114,6 +116,8 @@ const DEFAULTS: RouterOptions = {
   // that a mail server that was only down gets tried again.
   refusalMemoryMs: 6 * 60 * MINUTE,
   dailyCapPerIp: () => 1_500,
+  dailyCapMessage: (cap) =>
+    `Today's verification limit is used up (${cap} checks per IP). Add another verification server or raise the limit in Settings → Email verification.`,
   benchAfter: 3,
   benchAfterUnreachable: 6,
   benchMs: 15 * MINUTE,
@@ -288,10 +292,7 @@ export class ProxyRouter {
     const paused = reasons.filter(Boolean) as string[]
     if (paused.length === open.length) return new VerificationLimitError(`Verification is paused: ${paused[0]}`, 'paused')
     if (open.every((p, i) => reasons[i] || p.today.length >= cap)) {
-      return new VerificationLimitError(
-        `Today's verification limit is used up (${cap} checks per IP). Add another verification server or raise the limit in Settings → Email verification.`,
-        'daily_cap',
-      )
+      return new VerificationLimitError(this.opts.dailyCapMessage(cap), 'daily_cap')
     }
     const benched = open.find((p) => p.benchedUntil > now)
     return new VerificationLimitError(
