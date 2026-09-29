@@ -70,7 +70,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * Credits SocialFetch charged inside `fn` (and whatever it awaits), for work
- * that's paid for by what it actually cost: a plan's prospect credits
+ * that's paid for by what it actually cost: a plan's search credits
  * (search.ts). Concurrent searches each get their own count.
  */
 const meter = new AsyncLocalStorage<{ credits: number }>()

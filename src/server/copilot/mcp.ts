@@ -200,7 +200,7 @@ Build emails from blocks, never hand-written HTML. The builder tools (getBlocks,
 
 Every marketing email needs an {{ unsubscribe }} link (the footer block has one), images need alt text, and image URLs come from searchImages, never invented.
 
-searchPeople and searchCompanies use the account's prospect credits on every call, so only search when the user asked for it.
+searchPeople and searchCompanies use the account's search credits on every call, so only search when the user asked for it.
 
 ${renderBlockReference()}
 
@@ -222,7 +222,7 @@ export function buildPublicMcpServer(): McpServer {
     },
   }
   registerTools(server, PUBLIC_TOOLS, ctx, null, (tool) =>
-    tool.costsCredits ? `${tool.description} Uses prospect credits on every call.` : tool.description,
+    tool.costsCredits ? `${tool.description} Uses search credits on every call.` : tool.description,
   )
   return server
 }

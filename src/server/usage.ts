@@ -20,7 +20,7 @@ const USAGE_COUNTERS = [
   /** People shown in prospect search results. */
   'prospects',
   /**
-   * What searches cost, in prospect credits (allowance.ts; to the hundredth):
+   * What searches cost, in search credits (allowance.ts; to the hundredth):
    * this is what a plan's prospect allowance counts.
    */
   'prospectCredits',

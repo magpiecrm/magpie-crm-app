@@ -125,7 +125,7 @@ export const prospectTools = [
   defineTool({
     name: 'searchPeople',
     description:
-      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, current titles and companies only — emails are found when the user saves people to a list in Prospect Search. Every result\'s profile is looked up for their real job and employer, so each result uses about one prospect credit: search once with well-chosen titles.',
+      'Find people by job title, optionally at one company (pass its ref and name from searchCompanies). Returns names, current titles and companies only — emails are found when the user saves people to a list in Prospect Search. Every result\'s profile is looked up for their real job and employer, so each result uses about one to two search credits: search once with well-chosen titles.',
     input: {
       companyRef: z.string().optional().describe('`ref` from searchCompanies.'),
       companyName: z.string().optional().describe('Required with companyRef.'),
@@ -142,7 +142,7 @@ export const prospectTools = [
         .boolean()
         .optional()
         .describe('Also show people who are already contacts. Off by default: they are left out, since the user usually wants new people.'),
-      count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('Results per page per title: 25, 50, 75 or 100. Defaults to 25; each result uses about one prospect credit.'),
+      count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('Results per page per title: 25, 50, 75 or 100. Defaults to 25; each result uses about one to two search credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
     target: 'server',
