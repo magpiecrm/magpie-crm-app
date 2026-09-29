@@ -149,6 +149,13 @@ export const env = {
    * used when SENDING_MANAGED is on.
    */
   managedSendingUrl: () => readEnv('MANAGED_SENDING_URL')?.replace(/\/+$/, ''),
+  /**
+   * Where the host keeps this copy's plan, when it bills for it (e.g.
+   * https://services.example.com/v1/billing/<name>), reached with
+   * USAGE_API_TOKEN. Set: Settings shows Plan and billing, to change or
+   * cancel the plan (see managedBilling.ts). Unset: no billing here.
+   */
+  managedBillingUrl: () => readEnv('MANAGED_BILLING_URL')?.replace(/\/+$/, ''),
   // Which sending provider to use when none is saved in Settings → Sending
   // (a provider id such as "ses"). Unset: inferred from the env vars present.
   emailProvider: () => readEnv('EMAIL_PROVIDER'),

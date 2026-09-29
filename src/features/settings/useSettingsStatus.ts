@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
+import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
 import type { SettingsSection } from './sections'
 
 export type StatusLevel = 'ok' | 'warning' | 'error' | 'info'
@@ -22,6 +22,8 @@ export function useSettingsStatus(): {
   isLoading: boolean
   /** PROSPECTING_MANAGED: Data source and Email verification are the host's, so they're hidden. */
   managed: boolean
+  /** The host bills for this workspace: Plan and billing is shown. */
+  billingManaged: boolean
 } {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
@@ -31,6 +33,9 @@ export function useSettingsStatus(): {
   const sendingManaged = Boolean(sending.data?.success && sending.data.managed)
   const domains = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: sendingManaged })
   const team = useQuery({ queryKey: queryKeys.settings.team(), queryFn: () => getUsersFn() })
+  const usage = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn() })
+  const billingManaged = Boolean(usage.data?.billingManaged)
+  const billing = useQuery({ queryKey: queryKeys.settings.billing(), queryFn: () => getBillingFn(), enabled: billingManaged })
 
   const statuses: Partial<Record<SettingsSection, SectionStatus>> = {}
 
@@ -102,6 +107,22 @@ export function useSettingsStatus(): {
     statuses.team = { level: 'info', text: `${people} ${people === 1 ? 'person' : 'people'} can sign in.` }
   }
 
+  const b = billing.data
+  if (b) {
+    const on = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
+    const price = b.monthlyPence !== null ? `${(b.monthlyPence / 100).toLocaleString('en-GB', { style: 'currency', currency: b.currency })} a month` : 'Your plan'
+    statuses.billing =
+      b.status === 'past_due'
+        ? { level: 'error', text: "Your last payment didn't go through. Update your card.", action: 'Update' }
+        : !b.live && b.endedAt
+          ? { level: 'error', text: `Your plan ended.${b.suspendOn ? ` The workspace closes on ${on(b.suspendOn)} unless you choose a plan.` : ''}`, action: 'Choose' }
+          : !b.live
+            ? { level: 'warning', text: 'Choose a plan to search, reveal and send.', action: 'Choose' }
+            : b.cancelAt
+              ? { level: 'warning', text: `Your plan ends on ${on(b.cancelAt)}.`, action: 'Review' }
+              : { level: 'ok', text: `${price}${b.periodEnd ? `, renews ${on(b.periodEnd)}` : ''}.` }
+  }
+
   const isLoading = [prospecting, copilot, sending, senders, team].some((q) => q.isLoading)
-  return { statuses, isLoading, managed: Boolean(p?.managed) }
+  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged }
 }

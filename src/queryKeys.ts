@@ -65,6 +65,7 @@ export const queryKeys = {
     sendingDomains: () => ['settings', 'sending', 'domains'] as const,
     team: () => ['settings', 'team'] as const,
     usage: () => ['settings', 'usage'] as const,
+    billing: () => ['settings', 'billing'] as const,
   },
   notifications: {
     list: () => ['notifications'] as const,

@@ -10,7 +10,7 @@ const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsS
  * hosts this copy sells usage up front (see server/allowance.ts). Renders
  * nothing otherwise.
  */
-export function AllowanceMeter({ compact = false }: { compact?: boolean }) {
+export function AllowanceMeter({ compact = false, showUpgrade = true }: { compact?: boolean; showUpgrade?: boolean }) {
   const { data } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60_000 })
   const allowance = data?.allowance
   if (!allowance || allowance.items.length === 0) return null
@@ -60,7 +60,7 @@ export function AllowanceMeter({ compact = false }: { compact?: boolean }) {
           </div>
         )
       })}
-      {allowance.upgradeUrl && (compact ? nearlyOut : true) && (
+      {showUpgrade && allowance.upgradeUrl && (compact ? nearlyOut : true) && (
         <a
           href={allowance.upgradeUrl}
           className={`inline-flex items-center justify-center gap-1 rounded-md-s font-semibold transition-colors ${

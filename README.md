@@ -50,6 +50,12 @@ MANAGED_SENDING_URL=...  # with SENDING_MANAGED — the host's API that keeps th
                          #   /v1/mta/domains/<domain>, SMTP login as Basic auth).
                          #   Its bounce and complaint events arrive at
                          #   /api/webhooks/email/smtp as {"events":[{email,type}]}
+MANAGED_BILLING_URL=...  # optional — the host bills for this copy: Settings →
+                         #   Plan and billing shows the plan, to change or cancel
+                         #   it, through the host's API at this address (GET for
+                         #   the plan and what's for sale; POST /plan, /cancel,
+                         #   /resume, /checkout, /checkout/finish, /portal-session),
+                         #   with USAGE_API_TOKEN as a Bearer token
 SOCIALFETCH_API_KEY=...  # optional — or add it in Settings → Data source (sfk_...)
 SOCIALFETCH_BALANCE=hidden # optional — don't show the credit balance (someone
                          #   else pays); the sidebar shows this month's prospects

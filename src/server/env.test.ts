@@ -15,6 +15,7 @@ const KEYS = [
   'SOCIALFETCH_BALANCE',
   'VERIFICATION_HEALTH_CHECKS',
   'PASSWORD_LOGIN',
+  'MANAGED_BILLING_URL',
 ] as const
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 
@@ -115,5 +116,14 @@ describe('PASSWORD_LOGIN', () => {
     expect(env.signIn.passwordLogin()).toBe(false)
     process.env.PASSWORD_LOGIN = 'on'
     expect(env.signIn.passwordLogin()).toBe(true)
+  })
+})
+
+describe('billing by the host', () => {
+  it('is off unless the host gives an address, which loses any trailing slash', () => {
+    delete process.env.MANAGED_BILLING_URL
+    expect(env.managedBillingUrl()).toBeUndefined()
+    process.env.MANAGED_BILLING_URL = 'https://services.example/v1/billing/acme/'
+    expect(env.managedBillingUrl()).toBe('https://services.example/v1/billing/acme')
   })
 })

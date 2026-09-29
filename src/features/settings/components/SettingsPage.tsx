@@ -14,6 +14,7 @@ import { TeamTab } from './TeamTab'
 import { ContactFieldsTab } from './ContactFieldsTab'
 import { ApiKeysTab } from './ApiKeysTab'
 import { PipelineSettings } from '../../sales/components/PipelineSettings'
+import { BillingTab } from './BillingTab'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
@@ -42,11 +43,12 @@ function groupsOf(sections: readonly Section[]) {
  * opening with a line on what it's for. Status dots and the Overview show
  * what's set up and what needs attention.
  */
-export function SettingsPage({ initialSection }: { initialSection?: SettingsSection }) {
+export function SettingsPage({ initialSection, checkoutSession }: { initialSection?: SettingsSection; checkoutSession?: string }) {
   const [active, setActive] = useState<SettingsSection>(initialSection ?? 'overview')
   const queryClient = useQueryClient()
-  const { statuses, isLoading, managed } = useSettingsStatus()
-  const visible = managed ? SETTINGS_SECTIONS.filter((s) => !MANAGED_HIDDEN.has(s.id)) : SETTINGS_SECTIONS
+  const { statuses, isLoading, managed, billingManaged } = useSettingsStatus()
+  // Plan and billing only when the host bills for this workspace.
+  const visible = SETTINGS_SECTIONS.filter((s) => !(managed && MANAGED_HIDDEN.has(s.id)) && (s.id !== 'billing' || billingManaged))
   const GROUPS = groupsOf(visible)
   const hiddenPage = managed && MANAGED_HIDDEN.has(active)
 
@@ -146,6 +148,7 @@ export function SettingsPage({ initialSection }: { initialSection?: SettingsSect
           {active === 'pipelines' && <PipelineSettings />}
           {active === 'copilot' && <CopilotTab />}
           {active === 'mcp' && <McpTab />}
+          {active === 'billing' && billingManaged && <BillingTab checkoutSession={checkoutSession} />}
           {active === 'team' && <TeamTab />}
           {active === 'fields' && <ContactFieldsTab />}
           {active === 'api' && <ApiKeysTab />}

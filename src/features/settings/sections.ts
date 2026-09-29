@@ -12,6 +12,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'pipelines', group: 'Sales', label: 'Pipelines', intro: 'The stages your deals move through. Add a pipeline for each kind of deal, like new business or renewals.' },
   { id: 'copilot', group: 'AI', label: 'Copilot', intro: 'Your own Anthropic or OpenAI API key, which the in-app copilot runs on.' },
   { id: 'mcp', group: 'AI', label: 'Connect AI apps', intro: 'Let Claude, ChatGPT, Cursor and other AI apps work with your data through MCP.' },
+  { id: 'billing', group: 'Workspace', label: 'Plan and billing', intro: 'Your monthly plan, changing or cancelling it, and your payment method and invoices.' },
   { id: 'team', group: 'Workspace', label: 'Team and login', intro: 'Who can sign in, and your own password.' },
   { id: 'fields', group: 'Workspace', label: 'Contact fields', intro: 'Extra fields stored on contacts, for forms, surveys and personalisation.' },
   { id: 'api', group: 'Workspace', label: 'Signup forms and API', intro: 'Keys that let your website add subscribers through the signup API.' },
