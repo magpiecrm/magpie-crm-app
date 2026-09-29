@@ -27,6 +27,7 @@ import { env } from '../env'
 import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
+import { createSearchPool, searchPoolKey, type HeldHits } from './searchPool'
 import type {
   CompanyFilters,
   CompanyRef,
@@ -47,6 +48,12 @@ const MAX_ATTEMPTS = 3
 const MAX_TITLES = 5
 // SocialFetch's documented maximum for `start`.
 const MAX_START = 999
+/**
+ * What every new people-search request asks for, SocialFetch's maximum: a
+ * request costs 3 credits whatever it returns, so the people a page doesn't
+ * use are held (searchPool.ts) for its next page or top-up.
+ */
+const FETCH_SIZE = 50
 /**
  * Company ids one people search takes in `currentCompany`, comma-separated.
  * Checked against the live API (2026-09-28): two companies searched together
@@ -485,6 +492,7 @@ function envKey(): string {
 export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () => string = envKey): CompanySource & PeopleSource {
   const get = <T>(path: string, params: Record<string, string | number | undefined>) =>
     request<T>(path, params, fetchImpl, getApiKey())
+  const pool = createSearchPool()
   return {
     async searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
       // Industry, size and country are filtered by SocialFetch itself where it
@@ -601,29 +609,68 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const companyIds = filters.companyRefs?.filter(numericId).slice(0, MAX_COMPANIES_PER_SEARCH).join(',') || null
 
 
-      const settled = await Promise.allSettled(
-        active.map((title) => {
-          const position = prior?.[title]
-          const start = position?.startsWith('start:') ? Number(position.slice(6)) : undefined
-          const sized = position?.match(/^c(\d+):(.+)$/s)
-          const cursor = start !== undefined ? undefined : sized ? sized[2] : position
-          // A cursor only works with the page size it was made with.
-          const count = sized ? Number(sized[1]) : pageSize
-          // Titles go in `keyword`: the `title` parameter returns no results.
-          const keyword = [title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
-          return get<any>('/v2/linkedin/people/search', {
-            keyword: keyword || undefined,
-            geoEntityId: geoEntityId ?? undefined,
-            industry: industry.length ? industry.join(',') : undefined,
-            currentCompany: companyId ?? companyIds ?? undefined,
-            count,
-            start,
-            cursor,
-          }).then((res) => ({ title, res, start: start ?? 0, count }))
-        }),
-      )
+      /** Reads a response's people (allowed fields only), keeping each unreadable record's place as null. */
+      const readPeople = (res: any, asked: number): Array<PersonResult | null> => {
+        const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
+        console.log(
+          `[SocialFetch] people/search returned ${raw.length} of ${asked} (status=${res.data?.lookupStatus ?? '?'}, reported=${num(res.data?.reportedTotal) ?? '?'}, more=${res.data?.page?.hasMore ? 'yes' : 'no'})`,
+        )
+        const bad = raw.find((r) => !mapPerson(r))
+        if (bad) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(bad)}`)
+        return raw.map(mapPerson)
+      }
 
-      const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => (s as PromiseFulfilledResult<any>).value)
+      /**
+       * One title's people for this page, and where that title carries on. By
+       * offset, each request asks for FETCH_SIZE and the people this page
+       * doesn't use are held for the next; a SocialFetch cursor (from before
+       * offsets) can't resume part-way, so nothing is held for one.
+       */
+      const fetchTitle = async (title: string, position: string | undefined) => {
+        // Titles go in `keyword`: the `title` parameter returns no results.
+        const keyword = [title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
+        const params = {
+          keyword: keyword || undefined,
+          geoEntityId: geoEntityId ?? undefined,
+          industry: industry.length ? industry.join(',') : undefined,
+          currentCompany: companyId ?? companyIds ?? undefined,
+        }
+        if (position && !position.startsWith('start:')) {
+          // A cursor only works with the page size it was made with.
+          const sized = position.match(/^c(\d+):(.+)$/s)
+          const count = sized ? Number(sized[1]) : pageSize
+          const res = await get<any>('/v2/linkedin/people/search', { ...params, count, cursor: sized ? sized[2] : position })
+          const cursor = res.data?.page?.hasMore ? str(res.data.page.nextCursor) : null
+          return { title, people: readPeople(res, count), next: cursor ? `c${count}:${cursor}` : null, reportedTotal: num(res.data?.reportedTotal), requests: 1 }
+        }
+        const start = position ? Number(position.slice(6)) || 0 : 0
+        let hits: HeldHits | null = pool.take(searchPoolKey(params, start))
+        let requests = 0
+        if (!hits) {
+          const res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
+          requests = 1
+          const page = res.data?.page
+          const people = readPeople(res, FETCH_SIZE)
+          hits = {
+            people,
+            hasMore: Boolean(page?.hasMore),
+            end: (num(page?.start) ?? start) + (num(page?.returnedCount) ?? people.length),
+            reportedTotal: num(res.data?.reportedTotal),
+            at: Date.now(),
+          }
+        }
+        const used = hits.people.slice(0, pageSize).map((p) => p && { ...p })
+        const rest = hits.people.slice(pageSize)
+        // Part-way through held people, the offset is their place; after the last, SocialFetch's own.
+        const nextStart = rest.length ? start + used.length : Math.max(hits.end, start + used.length)
+        pool.put(searchPoolKey(params, nextStart), { ...hits, people: rest })
+        const more = used.length > 0 && (rest.length > 0 || hits.hasMore) && nextStart <= MAX_START
+        return { title, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests }
+      }
+
+      const settled = await Promise.allSettled(active.map((title) => fetchTitle(title, prior?.[title])))
+
+      const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => (s as PromiseFulfilledResult<Awaited<ReturnType<typeof fetchTitle>>>).value)
       const failed = settled.filter((s) => s.status === 'rejected') as PromiseRejectedResult[]
       if (ok.length === 0 && failed.length > 0) throw failed[0].reason
       if (failed.length > 0) {
@@ -637,31 +684,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       let wrongCompany = 0
       let unreadable = 0
 
-      for (const { title, res, start, count } of ok) {
-        const page = res.data?.page
-        if (page?.hasMore) {
-          const cursor = str(page.nextCursor)
-          const returned = num(page.returnedCount) ?? (Array.isArray(res.data?.people) ? res.data.people.length : 0)
-          const nextStart = (num(page.start) ?? start) + returned
-          // Offsets work with any page size, so a short top-up page or a
-          // bigger "Load more" can follow on; prefer them when SocialFetch
-          // pages by offset.
-          const offsetPaged = page.kind === 'offset' || num(page.start) !== null
-          if (offsetPaged && returned > 0 && nextStart <= MAX_START) nextCursors[title] = `start:${nextStart}`
-          else if (cursor) nextCursors[title] = `c${count}:${cursor}`
-          else if (returned > 0 && nextStart <= MAX_START) nextCursors[title] = `start:${nextStart}`
-        }
-        const total = num(res.data?.reportedTotal)
+      for (const { title, people: found, next, reportedTotal: total } of ok) {
+        if (next) nextCursors[title] = next
         if (total !== null) reportedTotal = Math.max(reportedTotal ?? 0, total)
-
-        const rawPeople: any[] = Array.isArray(res.data?.people) ? res.data.people : []
-        console.log(
-          `[SocialFetch] people/search returned ${rawPeople.length} of ${count} (status=${res.data?.lookupStatus ?? '?'}, reported=${total ?? '?'}, more=${page?.hasMore ? 'yes' : 'no'})`,
-        )
-        for (const raw of rawPeople) {
-          const person = mapPerson(raw)
+        for (const person of found) {
           if (!person) {
-            if (unreadable++ === 0) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(raw)}`)
+            unreadable++
             continue
           }
           if (seen.has(person.profileUrl)) continue
@@ -726,7 +754,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         details.push(`${people_(hidden)} didn't match your seniority or country filters and ${hidden === 1 ? 'is' : 'are'} hidden.`)
       }
 
-      return { items: filtered, nextCursor: encodeCursor(nextCursors), reportedTotal, warnings, details }
+      return { items: filtered, nextCursor: encodeCursor(nextCursors), reportedTotal, warnings, details, requests: ok.reduce((n, t) => n + t.requests, 0) }
     },
 
     async getPerson(profileRef: string): Promise<PersonResult | null> {

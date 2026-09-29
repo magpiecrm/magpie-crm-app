@@ -436,7 +436,7 @@ async function companyFirstPage(
     }
   }
   const companies = new Map(s.batch)
-  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [] }, companies, orgSearches, found }
+  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found }
 
   const page = await source.searchPeople(null, {
     titles: filters.titles,
@@ -675,6 +675,8 @@ export async function searchPeople(
   let nextCursor: string | null = null
   let reportedTotal: number | null = null
   let searches = 0
+  // Paid people-search requests: a page served from held results (searchPool.ts) costs none.
+  let requests = 0
   let lookupError: string | undefined
   let lookedUp = 0
   const paidFor = new Set<string>()
@@ -697,6 +699,7 @@ export async function searchPeople(
         page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
       }
       searches++
+      requests += page.requests ?? 1
       // The first search's notes describe the whole query; later top-ups would repeat them.
       if (searches === 1) {
         reportedTotal = page.reportedTotal
@@ -736,7 +739,7 @@ export async function searchPeople(
   // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
   recordUsage({
-    searches: searches + orgSearches,
+    searches: requests + orgSearches,
     prospects: usable(),
     prospectCredits: prospectCredits(credits),
     searchProfiles: lookedUp,
@@ -788,8 +791,8 @@ export async function searchPeople(
     details.push(`${plural(tally.wrongCompany, "person doesn't", "people don't")} currently work at ${company.name} and ${tally.wrongCompany === 1 ? 'was' : 'were'} left out.`)
   }
 
-  if (searches > planned) {
-    details.push(`Some results were left out, so ${plural(searches - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
+  if (requests > planned) {
+    details.push(`Some results were left out, so ${plural(requests - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
     warnings.push(`Your plan has ${plural(Math.floor(left), 'search credit', 'search credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)

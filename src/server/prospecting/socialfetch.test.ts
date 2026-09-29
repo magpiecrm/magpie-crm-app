@@ -180,11 +180,12 @@ describe('searchPeople', () => {
     location,
   })
 
-  it('sends titles as the keyword, never the title parameter', async () => {
+  it('sends titles as the keyword, never the title parameter, asking for 50 whatever the page size', async () => {
     const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
     await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Business Analyst'], keyword: 'fintech', count: 5 })
     expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst fintech')
-    expect(f.calls[0].searchParams.get('count')).toBe('5')
+    // A request costs 3 credits whatever it returns; the people not used are held.
+    expect(f.calls[0].searchParams.get('count')).toBe('50')
     expect(f.calls[0].searchParams.has('title')).toBe(false)
     expect(f.calls[0].searchParams.has('currentCompany')).toBe(false)
   })
@@ -264,7 +265,7 @@ describe('searchPeople', () => {
     expect(page.details!.some((w) => /isn't in the supported country list/.test(w))).toBe(true)
   })
 
-  it('pages by offset when SocialFetch gives no cursor', async () => {
+  it('pages by offset, carrying on from where SocialFetch says the page ended', async () => {
     const f = fakeFetch([
       envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 25 } }),
       envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { kind: 'offset', hasMore: false, start: 25, returnedCount: 1 } }),
@@ -279,31 +280,60 @@ describe('searchPeople', () => {
     expect(second.nextCursor).toBeNull()
   })
 
-  // A page that's topped up with fewer results, or followed by a bigger "Load
-  // more", changes the page size between requests.
-  it('follows an offset-paged search by offset, so the page size can change between requests', async () => {
-    const f = fakeFetch([
-      envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 5, nextCursor: 'opaque-1' } }),
-      envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { kind: 'offset', hasMore: false, start: 5, returnedCount: 2 } }),
-    ])
-    const source = createSocialFetchSource(f.impl)
-    const first = await source.searchPeople(null, { titles: ['BA'], count: 5 })
-    await source.searchPeople(null, { titles: ['BA'], count: 2, cursor: first.nextCursor! })
-    expect(f.calls[1].searchParams.get('start')).toBe('5')
-    expect(f.calls[1].searchParams.get('count')).toBe('2')
-    expect(f.calls[1].searchParams.has('cursor')).toBe(false)
+  it('carries on a SocialFetch cursor from an older search with the page size it was made with', async () => {
+    const f = fakeFetch([envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { hasMore: false } })])
+    const cursor = Buffer.from(JSON.stringify({ BA: 'c5:opaque-1' })).toString('base64url')
+    await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], count: 2, cursor })
+    expect(f.calls[0].searchParams.get('cursor')).toBe('opaque-1')
+    expect(f.calls[0].searchParams.get('count')).toBe('5')
   })
 
-  it('reuses a SocialFetch cursor only with the page size it was made with', async () => {
-    const f = fakeFetch([
-      envelope({ people: [searchHit('p1', 'P', 'One', 'BA', 'London')], page: { hasMore: true, nextCursor: 'opaque-1' } }),
-      envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { hasMore: false } }),
-    ])
-    const source = createSocialFetchSource(f.impl)
-    const first = await source.searchPeople(null, { titles: ['BA'], count: 5 })
-    await source.searchPeople(null, { titles: ['BA'], count: 2, cursor: first.nextCursor! })
-    expect(f.calls[1].searchParams.get('cursor')).toBe('opaque-1')
-    expect(f.calls[1].searchParams.get('count')).toBe('5')
+  describe('holds the people a page does not use', () => {
+    const fifty = () =>
+      envelope({
+        people: Array.from({ length: 50 }, (_, i) => searchHit(`p${i}`, `P${i}`, 'X', 'BA', 'London')),
+        page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 50 },
+      })
+
+    it('serves the next page and top-ups from them without another request, then carries on after them', async () => {
+      const f = fakeFetch([fifty(), envelope({ people: [searchHit('q', 'Q', 'X', 'BA', 'London')], page: { kind: 'offset', hasMore: false, start: 50, returnedCount: 1 } })])
+      const source = createSocialFetchSource(f.impl)
+      const first = await source.searchPeople(null, { titles: ['BA'], count: 25 })
+      expect(first.items.map((p) => p.firstName)).toEqual(Array.from({ length: 25 }, (_, i) => `P${i}`))
+      expect(first.requests).toBe(1)
+
+      // A top-up of 3, then the rest of the page: no request.
+      const topUp = await source.searchPeople(null, { titles: ['BA'], count: 3, cursor: first.nextCursor! })
+      expect(topUp.items.map((p) => p.firstName)).toEqual(['P25', 'P26', 'P27'])
+      expect(topUp.requests).toBe(0)
+      const rest = await source.searchPeople(null, { titles: ['BA'], count: 25, cursor: topUp.nextCursor! })
+      expect(rest.items).toHaveLength(22)
+      expect(rest.items[0].firstName).toBe('P28')
+      expect(f.calls).toHaveLength(1)
+
+      // Once they're used up, SocialFetch is asked again from where they ended.
+      const next = await source.searchPeople(null, { titles: ['BA'], count: 25, cursor: rest.nextCursor! })
+      expect(f.calls).toHaveLength(2)
+      expect(f.calls[1].searchParams.get('start')).toBe('50')
+      expect(next.items.map((p) => p.firstName)).toEqual(['Q'])
+      expect(next.nextCursor).toBeNull()
+    })
+
+    it('asks again from the same place when they are no longer held (a restart), skipping nobody', async () => {
+      const f = fakeFetch([fifty(), envelope({ people: [], page: { kind: 'offset', hasMore: false, start: 25, returnedCount: 0 } })])
+      const first = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], count: 25 })
+      // A new source has an empty pool, as after a restart.
+      await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], count: 25, cursor: first.nextCursor! })
+      expect(f.calls[1].searchParams.get('start')).toBe('25')
+    })
+
+    it("doesn't serve them to a search with different filters", async () => {
+      const f = fakeFetch([fifty(), envelope({ people: [], page: { hasMore: false } })])
+      const source = createSocialFetchSource(f.impl)
+      await source.searchPeople(null, { titles: ['BA'], count: 25 })
+      await source.searchPeople(null, { titles: ['BA'], count: 25, country: 'UK' })
+      expect(f.calls).toHaveLength(2)
+    })
   })
 
   it('with a chosen company, searches by its id and only ties people to it when their headline names it', async () => {
@@ -340,10 +370,10 @@ describe('searchPeople', () => {
     expect(first.nextCursor).not.toBeNull()
 
     const second = await source.searchPeople(null, { titles: ['CMO', 'Head of Marketing'], cursor: first.nextCursor! })
-    // Only the title with pages left is re-queried, with its own cursor.
+    // Only the title with pages left is re-queried, from its own place.
     expect(f.calls).toHaveLength(3)
     expect(f.calls[2].searchParams.get('keyword')).toBe('CMO')
-    expect(f.calls[2].searchParams.get('cursor')).toBe('cmo-2')
+    expect(f.calls[2].searchParams.get('start')).toBe('1')
     expect(second.items[0].firstName).toBe('Pat')
     expect(second.nextCursor).toBeNull()
   })

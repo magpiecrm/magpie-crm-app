@@ -166,6 +166,8 @@ export interface Page<T> {
    * run by its host, where they're the host's business.
    */
   details?: string[]
+  /** Paid search requests the page took; people held from an earlier request (searchPool.ts) cost none. Unset means one. */
+  requests?: number
 }
 
 export interface CompanySource {

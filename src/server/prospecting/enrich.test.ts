@@ -246,6 +246,14 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
   })
 })
 
+describe('searchPeople counts only paid search requests', () => {
+  it('records no search request for a page served from people already held', async () => {
+    searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(hit('ana')), requests: 0 }))
+    await searchPeople({ titles: ['Business Analyst'] })
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searches: 0 }))
+  })
+})
+
 describe('searchPeople catch-all marking', () => {
   const now = new Date().toISOString()
 

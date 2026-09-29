@@ -26,9 +26,11 @@ key), with the app's actions as tools.
     is the only place contacts get created from search results; `suppression.ts` holds the
     HMAC-hashed opt-out list. Search results are never persisted, and only
     non-personal data (companies, domains, patterns, catch-all) is cached
-    globally — keep it that way. The one exception is `profileCache.ts`:
-    profile lookups held in server memory for 24h (size-capped, never on
-    disk) so a person isn't paid for twice. API keys and base URLs come from
+    globally — keep it that way. The two exceptions, both in server memory
+    only (size-capped, never on disk): `profileCache.ts` holds profile
+    lookups for 24h so a person isn't paid for twice, and `searchPool.ts`
+    holds the search hits a page didn't use for 1h, so the next page or
+    top-up doesn't pay for another request. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview
