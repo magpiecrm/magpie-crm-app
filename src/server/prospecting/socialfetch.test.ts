@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, meterCredits, sameCompanyName, titleFromHeadline } from './socialfetch'
+import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, meterCredits, sameCompanyName, titleFromHeadline, titleMatcher } from './socialfetch'
 
 // No network: every test drives the connector through a fake fetch that
 // records requests and replays canned SocialFetch envelopes.
@@ -47,6 +47,22 @@ beforeEach(() => {
 })
 afterEach(() => {
   delete process.env.SOCIALFETCH_API_KEY
+})
+
+describe('titleMatcher', () => {
+  it('finds the title in any part of a headline, before "at <company>", in any word order', () => {
+    const fits = titleMatcher('Sales Manager')
+    expect(['Regional Sales Manager', 'Sales & Account Manager at Acme', 'Helping teams | Sales Manager at X', 'Manager, Sales'].map(fits)).toEqual([true, true, true, true])
+    expect(['Key Account Manager', 'Manager at Salesforce', 'Partner', '', null].map(fits)).toEqual([false, false, false, false, false])
+  })
+
+  it('treats a title and its usual abbreviation as the same, and short words as whole words', () => {
+    expect(['CFO - Siena Partnership', 'Chief Financial Officer', 'Interim CFO | Advisor'].map(titleMatcher('CFO'))).toEqual([true, true, true])
+    expect(titleMatcher('CFO')('Helping CFOs scale')).toBe(false)
+    expect(titleMatcher('Chief Financial Officer')('CFO at Acme')).toBe(true)
+    expect(titleMatcher('VP Sales')('Vice President, Sales EMEA')).toBe(true)
+    expect(titleMatcher('Head of Sales')('Head of Presales')).toBe(false)
+  })
 })
 
 describe('mapping', () => {
@@ -288,6 +304,37 @@ describe('searchPeople', () => {
     expect(f.calls[0].searchParams.get('count')).toBe('5')
   })
 
+  it('sends a one-word title as the title filter, and a longer one as the keyword', async () => {
+    const f = fakeFetch([
+      envelope({ people: [], page: { hasMore: false } }),
+      envelope({ people: [], page: { hasMore: false } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    await source.searchPeople(null, { titles: ['CFO'], keyword: 'fintech' })
+    expect([f.calls[0].searchParams.get('title'), f.calls[0].searchParams.get('keyword')]).toEqual(['CFO', 'fintech'])
+    await source.searchPeople(null, { titles: ['Head of Sales'] })
+    expect([f.calls[1].searchParams.get('title'), f.calls[1].searchParams.get('keyword')]).toEqual([null, 'Head of Sales'])
+  })
+
+  // Inside a few small companies, people search returns everyone there,
+  // whatever their job (seen on a live search for Sales Manager, 2026-09-29).
+  it("leaves out people whose headline doesn't name the title searched for, before any profile is paid for", async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('a', 'A', 'One', 'Regional Sales Manager at Acme', 'London'),
+          searchHit('b', 'B', 'Two', 'Key Account Manager - Futurelink', 'London'),
+          searchHit('c', 'C', 'Three', 'Partner', 'London'),
+          searchHit('d', 'D', 'Four', 'Helping teams grow | Sales & Account Manager', 'London'),
+        ],
+        page: { kind: 'offset', hasMore: false, start: 0, returnedCount: 4 },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales Manager'], companyRefs: ['1', '2'] })
+    expect(page.items.map((p) => p.firstName)).toEqual(['A', 'D'])
+    expect(page.details).toContain("2 people returned by the search don't have the job title in their headline and were left out, before any profile was paid for.")
+  })
+
   describe('holds the people a page does not use', () => {
     const fifty = () =>
       envelope({
@@ -360,9 +407,9 @@ describe('searchPeople', () => {
 
   it('runs one request per title and dedupes people across them', async () => {
     const f = fakeFetch([
-      envelope({ people: [rawPerson()], page: { hasMore: true, nextCursor: 'cmo-2' } }),
-      envelope({ people: [rawPerson()], page: { hasMore: false } }),
-      envelope({ people: [rawPerson({ handle: 'p2', profileUrl: 'https://www.linkedin.com/in/p2', firstName: 'Pat' })], page: { hasMore: false } }),
+      envelope({ people: [rawPerson({ headline: 'CMO | Head of Marketing' })], page: { hasMore: true, nextCursor: 'cmo-2' } }),
+      envelope({ people: [rawPerson({ headline: 'CMO | Head of Marketing' })], page: { hasMore: false } }),
+      envelope({ people: [rawPerson({ handle: 'p2', profileUrl: 'https://www.linkedin.com/in/p2', firstName: 'Pat', headline: 'Interim CMO' })], page: { hasMore: false } }),
     ])
     const source = createSocialFetchSource(f.impl)
     const first = await source.searchPeople(null, { titles: ['CMO', 'Head of Marketing'] })
@@ -372,7 +419,7 @@ describe('searchPeople', () => {
     const second = await source.searchPeople(null, { titles: ['CMO', 'Head of Marketing'], cursor: first.nextCursor! })
     // Only the title with pages left is re-queried, from its own place.
     expect(f.calls).toHaveLength(3)
-    expect(f.calls[2].searchParams.get('keyword')).toBe('CMO')
+    expect(f.calls[2].searchParams.get('title')).toBe('CMO')
     expect(f.calls[2].searchParams.get('start')).toBe('1')
     expect(second.items[0].firstName).toBe('Pat')
     expect(second.nextCursor).toBeNull()
@@ -553,7 +600,8 @@ describe('searchPeople by industry, and company search filters', () => {
     const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
     await createSocialFetchSource(f.impl).searchPeople({ ref: '630969', name: 'Motion Software' }, { titles: ['Marketing'] })
     expect(f.calls[0].searchParams.get('currentCompany')).toBe('630969')
-    expect(f.calls[0].searchParams.get('keyword')).toBe('Marketing')
+    expect(f.calls[0].searchParams.get('title')).toBe('Marketing')
+    expect(f.calls[0].searchParams.has('keyword')).toBe(false)
   })
 
   it('uses filters on company search itself instead of hiding results afterwards', async () => {

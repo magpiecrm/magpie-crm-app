@@ -27,7 +27,7 @@ import { env } from '../env'
 import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
-import { createSearchPool, searchPoolKey, type HeldHits } from './searchPool'
+import { createSearchPool, searchPoolKey, type HeldHits, type Hit } from './searchPool'
 import type {
   CompanyFilters,
   CompanyRef,
@@ -367,6 +367,64 @@ function sameEmployer(a: any, b: any): boolean {
   return name(a) !== '' && name(a) === name(b)
 }
 
+// --- job title matching ------------------------------------------------------
+// People search matches its keyword by relevance, not as a filter: inside a
+// few small companies it returns everyone there, whatever their job. So each
+// hit's headline is checked for the title searched for before its profile is
+// paid for (confirmed against the live API, 2026-09-29).
+
+const TITLE_FILLER = new Set(['of', 'and', 'the', 'for', 'in', 'a', 'an', 'to', '&', '-', '/', '+'])
+
+/** Titles and their usual abbreviations: either one finds the other. */
+const SAME_TITLE: Array<[string, string]> = [
+  ['ceo', 'chief executive officer'],
+  ['cfo', 'chief financial officer'],
+  ['coo', 'chief operating officer'],
+  ['cto', 'chief technology officer'],
+  ['cmo', 'chief marketing officer'],
+  ['cio', 'chief information officer'],
+  ['cro', 'chief revenue officer'],
+  ['cpo', 'chief product officer'],
+  ['chro', 'chief human resources officer'],
+  ['ciso', 'chief information security officer'],
+  ['svp', 'senior vice president'],
+  ['evp', 'executive vice president'],
+  ['vp', 'vice president'],
+  ['md', 'managing director'],
+  ['hr', 'human resources'],
+  ['bdm', 'business development manager'],
+]
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Whether a headline names the job title searched for: every word of it (or
+ * of its usual abbreviation or long form) in one part of the headline,
+ * before any " at <company>". "Sales Manager" fits "Regional Sales Manager"
+ * and "Sales & Account Manager at Acme", not "Key Account Manager"; a word of
+ * four letters or fewer must stand alone, so "CFO" doesn't fit "Helping CFOs".
+ */
+export function titleMatcher(title: string): (headline: string | null | undefined) => boolean {
+  const base = norm(title).replace(/\s+/g, ' ')
+  const forms = new Set([base])
+  for (const [short, long] of SAME_TITLE) {
+    const s = new RegExp(`\\b${short}\\b`)
+    if (s.test(base)) forms.add(base.replace(s, long))
+    if (base.includes(long)) forms.add(base.replace(long, short))
+  }
+  const patterns = [...forms].map((form) =>
+    form
+      .split(' ')
+      .filter((w) => w && !TITLE_FILLER.has(w))
+      .map((w) => new RegExp(w.length <= 4 ? `\\b${escapeRegExp(w)}\\b` : `\\b${escapeRegExp(w)}`, 'i')),
+  )
+  return (headline) => {
+    if (!headline) return false
+    const roles = headline.split(/\s*[|•·]\s*/).map((part) => part.split(/\s+(?:at|@)\s+|@/i)[0])
+    return patterns.some((words) => words.length > 0 && roles.some((role) => words.every((w) => w.test(role))))
+  }
+}
+
 /** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
 export function titleFromHeadline(headline: string | null): string | null {
   if (!headline) return null
@@ -609,15 +667,22 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const companyIds = filters.companyRefs?.filter(numericId).slice(0, MAX_COMPANIES_PER_SEARCH).join(',') || null
 
 
-      /** Reads a response's people (allowed fields only), keeping each unreadable record's place as null. */
-      const readPeople = (res: any, asked: number): Array<PersonResult | null> => {
+      /**
+       * Reads a response's people (allowed fields only), in place: null for an
+       * unreadable record, 'off-title' for someone whose headline doesn't name
+       * the title searched for (titleMatcher), so no profile is paid for them.
+       */
+      const readPeople = (res: any, asked: number, fitsTitle: ((headline: string | null) => boolean) | null): Hit[] => {
         const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
           `[SocialFetch] people/search returned ${raw.length} of ${asked} (status=${res.data?.lookupStatus ?? '?'}, reported=${num(res.data?.reportedTotal) ?? '?'}, more=${res.data?.page?.hasMore ? 'yes' : 'no'})`,
         )
         const bad = raw.find((r) => !mapPerson(r))
         if (bad) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(bad)}`)
-        return raw.map(mapPerson)
+        return raw.map((r) => {
+          const person = mapPerson(r)
+          return person && fitsTitle && !fitsTitle(str(r?.headline)) ? 'off-title' : person
+        })
       }
 
       /**
@@ -627,9 +692,14 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
        * offsets) can't resume part-way, so nothing is held for one.
        */
       const fetchTitle = async (title: string, position: string | undefined) => {
-        // Titles go in `keyword`: the `title` parameter returns no results.
-        const keyword = [title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
+        // A one-word title (CFO, Founder) goes in `title`, which matches it
+        // exactly; `title` returns nothing for more than one word, so those go
+        // in `keyword` (checked against live API, 2026-09-29).
+        const oneWord = Boolean(title) && !/\s/.test(title)
+        const keyword = [oneWord ? null : title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
+        const fitsTitle = title ? titleMatcher(title) : null
         const params = {
+          title: oneWord ? title : undefined,
           keyword: keyword || undefined,
           geoEntityId: geoEntityId ?? undefined,
           industry: industry.length ? industry.join(',') : undefined,
@@ -641,7 +711,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const count = sized ? Number(sized[1]) : pageSize
           const res = await get<any>('/v2/linkedin/people/search', { ...params, count, cursor: sized ? sized[2] : position })
           const cursor = res.data?.page?.hasMore ? str(res.data.page.nextCursor) : null
-          return { title, people: readPeople(res, count), next: cursor ? `c${count}:${cursor}` : null, reportedTotal: num(res.data?.reportedTotal), requests: 1 }
+          return { title, people: readPeople(res, count, fitsTitle), next: cursor ? `c${count}:${cursor}` : null, reportedTotal: num(res.data?.reportedTotal), requests: 1 }
         }
         const start = position ? Number(position.slice(6)) || 0 : 0
         let hits: HeldHits | null = pool.take(searchPoolKey(params, start))
@@ -650,7 +720,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
           requests = 1
           const page = res.data?.page
-          const people = readPeople(res, FETCH_SIZE)
+          const people = readPeople(res, FETCH_SIZE, fitsTitle)
           hits = {
             people,
             hasMore: Boolean(page?.hasMore),
@@ -659,7 +729,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             at: Date.now(),
           }
         }
-        const used = hits.people.slice(0, pageSize).map((p) => p && { ...p })
+        const used = hits.people.slice(0, pageSize).map((p) => (p && p !== 'off-title' ? { ...p } : p))
         const rest = hits.people.slice(pageSize)
         // Part-way through held people, the offset is their place; after the last, SocialFetch's own.
         const nextStart = rest.length ? start + used.length : Math.max(hits.end, start + used.length)
@@ -683,6 +753,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const seen = new Set<string>()
       let wrongCompany = 0
       let unreadable = 0
+      let offTitle = 0
 
       for (const { title, people: found, next, reportedTotal: total } of ok) {
         if (next) nextCursors[title] = next
@@ -690,6 +761,10 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         for (const person of found) {
           if (!person) {
             unreadable++
+            continue
+          }
+          if (person === 'off-title') {
+            offTitle++
             continue
           }
           if (seen.has(person.profileUrl)) continue
@@ -721,6 +796,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       if (unreadable > 0) {
         details.push(
           `${people_(unreadable)} returned by the search ${unreadable === 1 ? 'was' : 'were'} missing a name or profile link and ${unreadable === 1 ? 'was' : 'were'} skipped.`,
+        )
+      }
+      if (offTitle > 0) {
+        details.push(
+          `${people_(offTitle)} returned by the search ${offTitle === 1 ? "doesn't" : "don't"} have the job title in their headline and ${offTitle === 1 ? 'was' : 'were'} left out, before any profile was paid for.`,
         )
       }
       if (wrongCompany > 0) {

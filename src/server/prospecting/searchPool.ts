@@ -12,9 +12,12 @@ import type { PersonResult } from './types'
 
 const HOUR = 3_600_000
 
+/** A search hit: the person, null for a record that couldn't be read, or 'off-title' for someone whose headline doesn't name the job searched for. Each keeps its place in the offsets. */
+export type Hit = PersonResult | null | 'off-title'
+
 export interface HeldHits {
-  /** The hits in search order; null for a record that couldn't be read (it still takes its place in the offsets). */
-  people: Array<PersonResult | null>
+  /** The hits in search order. */
+  people: Hit[]
   /** SocialFetch has more after these. */
   hasMore: boolean
   /** SocialFetch's own offset after these, where the search carries on once they're all used. */
