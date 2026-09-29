@@ -9,7 +9,7 @@ import { FIELD_CLASS } from '../../features/sales/forms'
 import { usePipelines } from '../../features/sales/usePipelines'
 import { formatMoney, type DealView } from '../../features/sales/types'
 import { openStages } from '../../features/sales/utils'
-import { PipelineBoard } from '../../features/sales/components/PipelineBoard'
+import { PipelineBoard, STAGE_COLUMN_WIDTH } from '../../features/sales/components/PipelineBoard'
 import { DealForm } from '../../features/sales/components/DealForm'
 import { useCurrentUserEmail } from '../../features/sales/components/useSalesLookups'
 
@@ -79,7 +79,7 @@ function PipelinePage() {
   const loading = loadingPipelines || (!!pipeline && loadingDeals)
 
   return (
-    <div className="p-4 lg:p-8 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="min-w-0">
           <h1 className="text-2xl font-display text-foreground mb-1">Pipeline</h1>
@@ -186,8 +186,8 @@ function PipelinePage() {
 function BoardSkeleton() {
   return (
     <div className="flex gap-3 overflow-hidden">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="w-[17rem] shrink-0 rounded-xl border border-border bg-muted/40 p-3 space-y-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className={`${STAGE_COLUMN_WIDTH} rounded-xl border border-border bg-muted/40 p-3 space-y-3`}>
           <div className="h-4 w-24 bg-muted animate-pulse rounded" />
           <div className="h-3 w-16 bg-muted animate-pulse rounded" />
           {Array.from({ length: 3 - (i % 2) }).map((_, j) => (

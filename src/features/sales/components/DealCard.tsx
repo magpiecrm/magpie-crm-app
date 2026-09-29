@@ -14,7 +14,7 @@ function DealCardBody({ deal, onMenu }: { deal: DealView; onMenu?: () => void })
     <>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground truncate">{deal.name}</p>
+          <p className="text-sm font-semibold text-foreground line-clamp-2 break-words" title={deal.name}>{deal.name}</p>
           {deal.company_name && <p className="text-xs text-muted-foreground truncate">{deal.company_name}</p>}
         </div>
         {onMenu && (

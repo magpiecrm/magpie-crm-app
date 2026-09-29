@@ -91,7 +91,7 @@ function DealsPage() {
   const filtered = !!(search.pipeline || search.owner || search.q)
 
   return (
-    <div className="p-4 lg:p-8 max-w-7xl mx-auto">
+    <div className="p-4 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-display text-foreground mb-1">Deals</h1>

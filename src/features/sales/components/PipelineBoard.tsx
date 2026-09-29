@@ -29,6 +29,13 @@ import { DealCardOverlay, SortableDealCard } from './DealCard'
 import { LostReasonDialog } from './LostReasonDialog'
 import { useRefreshSales } from './useSalesLookups'
 
+/**
+ * A stage column's width. Phones: a fixed width, swiped one at a time.
+ * Wider screens: the columns share the width, never narrower than 11rem (five stages and Won/Lost fit from a 1440px screen), and
+ * the board scrolls sideways only when there are too many to fit.
+ */
+export const STAGE_COLUMN_WIDTH = 'w-[17rem] flex-none sm:w-auto sm:flex-1 sm:min-w-[11rem]'
+
 /** Mouse and pen drag straight away; touch is left to TouchSensor's long press, so a swipe still scrolls. */
 class MouseAndPenSensor extends PointerSensor {
   static activators = [
@@ -240,7 +247,7 @@ export function PipelineBoard({
             const cards = columns[stage.id]!.map((id) => dealById.get(id)).filter((d): d is DealView => !!d)
             return <StageColumn key={stage.id} stage={stage} deals={cards} onMenu={setMenuFor} />
           })}
-          <div className="w-40 shrink-0 flex flex-col gap-3 snap-start">
+          <div className="w-36 shrink-0 flex flex-col gap-3 snap-start">
             {won && <ClosedZone stage={won} deals={closedDeals(won)} pipelineId={pipeline.id} />}
             {lost && <ClosedZone stage={lost} deals={closedDeals(lost)} pipelineId={pipeline.id} />}
           </div>
@@ -298,7 +305,7 @@ function StageColumn({ stage, deals, onMenu }: { stage: PipelineStage; deals: De
   return (
     <section
       aria-label={stage.name}
-      className={`w-[17rem] shrink-0 snap-start flex flex-col rounded-xl border bg-muted/40 transition-colors ${isOver ? 'border-accent/50' : 'border-border'}`}
+      className={`${STAGE_COLUMN_WIDTH} snap-start flex flex-col rounded-xl border bg-muted/40 transition-colors ${isOver ? 'border-accent/50' : 'border-border'}`}
     >
       <header className="px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
