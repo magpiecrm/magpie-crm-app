@@ -102,6 +102,12 @@ export interface DbSchema {
     sender_id: number | null
     status: string
     unsubscribe_enabled: boolean
+    /**
+     * Adds the hidden open-tracking image. The sender needs recipients'
+     * consent for it (PECR). Missing on campaigns from before the setting,
+     * which tracked opens.
+     */
+    track_opens?: boolean
     created_at: string
     sent_at: string | null
     /** When a 'scheduled' campaign sends (ISO); the email scheduler sends it once due. */
@@ -708,6 +714,18 @@ class JsonDb {
 
   campaignScheduledAt(id: number): string | null {
     return this.data.campaigns.find((c) => c.id === id)?.scheduled_at ?? null
+  }
+
+  /** Whether a campaign adds the open-tracking image (campaigns from before the setting do). */
+  campaignTracksOpens(id: number): boolean {
+    return this.data.campaigns.find((c) => c.id === id)?.track_opens !== false
+  }
+
+  setCampaignTrackOpens(id: number, on: boolean) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign || campaign.track_opens === on) return
+    campaign.track_opens = on
+    this.save()
   }
 
   /** Schedules a campaign for `at` (ISO), or with null takes it off the schedule. */

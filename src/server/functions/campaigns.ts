@@ -72,6 +72,7 @@ export const createCampaignFn = createServerFn({ method: 'POST' })
     htmlContent?: string;
     recipients?: { listIds?: number[] };
     unsubscribeEnabled?: boolean;
+    trackOpens?: boolean;
   }) => d)
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
@@ -154,6 +155,7 @@ export const updateCampaignFn = createServerFn({ method: 'POST' })
     recipients?: { listIds: number[] };
     scheduledAt?: string;
     unsubscribeEnabled?: boolean;
+    trackOpens?: boolean;
   }) => d)
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')

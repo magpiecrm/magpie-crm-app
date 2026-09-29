@@ -308,6 +308,7 @@ export async function getCampaigns() {
       previewText: c.previewText,
       status: c.status,
       unsubscribeEnabled: c.unsubscribeEnabled,
+      trackOpens: db.campaignTracksOpens(c.id),
       createdAt: c.createdAt,
       sentAt: c.sentAt,
       scheduledAt: db.campaignScheduledAt(c.id),
@@ -351,6 +352,7 @@ export async function getCampaign(id: number) {
     htmlContent: c.htmlContent,
     status: c.status,
     unsubscribeEnabled: c.unsubscribeEnabled,
+    trackOpens: db.campaignTracksOpens(c.id),
     createdAt: c.createdAt,
     sentAt: c.sentAt,
     sentDate: c.sentAt, // Alias for backward compatibility
@@ -379,6 +381,8 @@ export async function createCampaign(payload: {
   htmlContent?: string
   recipients?: { listIds?: number[] }
   unsubscribeEnabled?: boolean
+  /** On unless turned off, as with other email tools; the sender needs consent for it. */
+  trackOpens?: boolean
 }) {
   // Find or insert sender
   let senderId = payload.sender?.id || null
@@ -410,6 +414,7 @@ export async function createCampaign(payload: {
   )
 
   const id = (db.query('SELECT last_insert_rowid() as id').get() as { id: number }).id
+  db.setCampaignTrackOpens(id, payload.trackOpens !== false)
   return { id }
 }
 
@@ -426,6 +431,8 @@ export async function duplicateCampaign(id: number) {
     },
     htmlContent: campaign.htmlContent || '',
     recipients: campaign.recipients,
+    unsubscribeEnabled: campaign.unsubscribeEnabled,
+    trackOpens: campaign.trackOpens,
   })
 }
 
@@ -438,6 +445,7 @@ export async function updateCampaign(id: number, payload: {
   recipients?: { listIds: number[] }
   scheduledAt?: string
   unsubscribeEnabled?: boolean
+  trackOpens?: boolean
 }) {
   const existing = await getCampaign(id)
   if (existing.status === 'sent') {
@@ -483,6 +491,7 @@ export async function updateCampaign(id: number, payload: {
      WHERE id = ?`,
     [name, subject, previewText, htmlContent, listId, senderId, status, unsubscribeEnabled, id]
   )
+  if (payload.trackOpens !== undefined) db.setCampaignTrackOpens(id, payload.trackOpens)
   // Sent by the email scheduler once due (emailScheduler.ts).
   if (scheduledAt) db.setCampaignSchedule(id, scheduledAt)
 
@@ -603,6 +612,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   const appUrl = await getAppUrl()
   // When the host runs sending, every campaign carries an unsubscribe link.
   const unsubscribeEnabled = campaign.unsubscribeEnabled !== false || env.sendingManaged()
+  // The open-tracking image, only when the campaign has it on (the sender's consent to get).
+  const trackOpens = db.campaignTracksOpens(id)
 
   // Survey blocks link to a survey; sending links to a draft or deleted one
   // would give every recipient a "not found" page.
@@ -656,17 +667,17 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
         personalizedHtml = injectPreviewText(personalizedHtml, personalizedPreview)
       }
 
-      // Add tracking pixel using encrypted token
-      const openToken = encryptToken({ email, campaignId: id })
-      const pixelUrl = `${appUrl}/api/track/open?t=${encodeURIComponent(openToken)}`
-      const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`
-    
-      // Inject tracking pixel inside <body> if present, otherwise append it
-      const bodyCloseRegex = /<\/body>/i
-      if (bodyCloseRegex.test(personalizedHtml)) {
-        personalizedHtml = personalizedHtml.replace(bodyCloseRegex, (match: string) => `${trackingPixel}${match}`)
-      } else {
-        personalizedHtml += trackingPixel
+      // The open-tracking image, with an encrypted token, inside <body> if present, otherwise appended.
+      if (trackOpens) {
+        const openToken = encryptToken({ email, campaignId: id })
+        const pixelUrl = `${appUrl}/api/track/open?t=${encodeURIComponent(openToken)}`
+        const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`
+        const bodyCloseRegex = /<\/body>/i
+        if (bodyCloseRegex.test(personalizedHtml)) {
+          personalizedHtml = personalizedHtml.replace(bodyCloseRegex, (match: string) => `${trackingPixel}${match}`)
+        } else {
+          personalizedHtml += trackingPixel
+        }
       }
 
       // Append unsubscribe link using encrypted token

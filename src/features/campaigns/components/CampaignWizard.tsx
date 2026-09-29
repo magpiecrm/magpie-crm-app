@@ -8,6 +8,7 @@ import { PreviewTestModal } from '../../../components/PreviewTestModal'
 import { ScheduleDrawer } from './ScheduleDrawer'
 import { Button } from '../../../components/ui/Button'
 import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
+import { Switch } from '../../../components/ui/Switch'
 import { TemplatePicker } from '../../templates/components/TemplatePicker'
 import { extractDesign } from '../../email-builder/utils/design'
 
@@ -55,6 +56,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
     htmlContent: DEFAULT_HTML_TEMPLATE,
     selectedListId: null as number | null,
     unsubscribeEnabled: true,
+    trackOpens: true,
   })
   
   const [isEditingName, setIsEditingName] = useState(false)
@@ -115,6 +117,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
         htmlContent: campaignToEdit.htmlContent || '',
         selectedListId: campaignToEdit.recipients?.listIds?.[0] || null,
         unsubscribeEnabled: campaignToEdit.unsubscribeEnabled !== false,
+        trackOpens: campaignToEdit.trackOpens !== false,
       }
       setFormData(data)
       setTempName(campaignToEdit.name || '')
@@ -141,6 +144,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
               htmlContent: data.htmlContent,
               recipients: { listIds: data.selectedListId ? [data.selectedListId] : [] },
               unsubscribeEnabled: data.unsubscribeEnabled,
+              trackOpens: data.trackOpens,
             }
           })
         : createCampaignFn({ 
@@ -156,6 +160,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
               htmlContent: data.htmlContent,
               recipients: { listIds: data.selectedListId ? [data.selectedListId] : [] },
               unsubscribeEnabled: data.unsubscribeEnabled,
+              trackOpens: data.trackOpens,
             } 
           }),
     onSuccess: () => {
@@ -726,34 +731,23 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           triggerLabel="Edit design"
         >
           <div className="space-y-4 pt-1">
-            {/* Unsubscribe Toggle Switch */}
-            <div className="flex items-center justify-between p-4 bg-muted/15 border border-border rounded-xl mb-4">
-              <div>
-                <h4 className="font-semibold text-foreground text-sm">Include Unsubscribe Link</h4>
-                <p className="text-xs text-muted-foreground">
-                  {unsubscribeLocked
-                    ? 'Always on: every campaign has an unsubscribe link, and mail apps show their own Unsubscribe button.'
-                    : 'Add a personalized link at the bottom of the email for recipients to unsubscribe.'}
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={unsubscribeLocked || formData.unsubscribeEnabled}
-                aria-label="Include unsubscribe link"
-                disabled={unsubscribeLocked}
-                onClick={() => setFormData({ ...formData, unsubscribeEnabled: !formData.unsubscribeEnabled })}
-                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:cursor-not-allowed disabled:opacity-70 ${
-                  unsubscribeLocked || formData.unsubscribeEnabled ? 'bg-accent' : 'bg-muted'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                    unsubscribeLocked || formData.unsubscribeEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
+            <CampaignSetting
+              title="Include Unsubscribe Link"
+              description={
+                unsubscribeLocked
+                  ? 'Always on: every campaign has an unsubscribe link, and mail apps show their own Unsubscribe button.'
+                  : 'Add a personalized link at the bottom of the email for recipients to unsubscribe.'
+              }
+              checked={unsubscribeLocked || formData.unsubscribeEnabled}
+              disabled={unsubscribeLocked}
+              onChange={(on) => setFormData({ ...formData, unsubscribeEnabled: on })}
+            />
+            <CampaignSetting
+              title="Track opens"
+              description="Adds a hidden image that records when each person opens the email. In the UK and EU you need recipients' consent for this: people who signed up and agreed to it, yes; people found through prospect search, no. Clicks, bounces and unsubscribes are recorded either way."
+              checked={formData.trackOpens}
+              onChange={(on) => setFormData({ ...formData, trackOpens: on })}
+            />
 
             {!isCampaignSent && (
               <div className="space-y-2">
@@ -837,6 +831,31 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
         />
       )}
 
+    </div>
+  )
+}
+
+/** One on/off campaign setting: what it does, and its switch. */
+function CampaignSetting({
+  title,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  title: string
+  description: string
+  checked: boolean
+  disabled?: boolean
+  onChange: (on: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 p-4 bg-muted/15 border border-border rounded-xl mb-4">
+      <div>
+        <h4 className="font-semibold text-foreground text-sm">{title}</h4>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      <Switch checked={checked} onChange={onChange} label={title} disabled={disabled} />
     </div>
   )
 }

@@ -69,6 +69,8 @@ export const campaignTools = [
       lists: z.array(listRef).optional()
         .describe('Recipient lists. Required unless the campaign is a placeholder.'),
       unsubscribeEnabled: z.boolean().optional(),
+      trackOpens: z.boolean().optional()
+        .describe("Add a hidden image that records when each person opens the email (on unless false). In the UK and EU the sender needs recipients' consent for it (PECR/ePrivacy): turn it off for people found through prospect search or anyone who hasn't agreed."),
     },
     target: 'server',
     handler: async (args) => {
@@ -82,6 +84,7 @@ export const campaignTools = [
         htmlContent: args.htmlContent ?? '',
         recipients: { listIds },
         unsubscribeEnabled: args.unsubscribeEnabled,
+        trackOpens: args.trackOpens,
       })
     },
   }),
@@ -99,6 +102,8 @@ export const campaignTools = [
       htmlContent: z.string().optional(),
       lists: z.array(listRef).optional(),
       unsubscribeEnabled: z.boolean().optional(),
+      trackOpens: z.boolean().optional()
+        .describe("Add a hidden image that records when each person opens the email (on unless false). In the UK and EU the sender needs recipients' consent for it (PECR/ePrivacy): turn it off for people found through prospect search or anyone who hasn't agreed."),
     },
     target: 'server',
     handler: async ({ id, lists, ...rest }, ctx) => {

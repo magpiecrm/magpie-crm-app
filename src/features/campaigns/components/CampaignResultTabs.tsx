@@ -16,6 +16,8 @@ interface TabProps {
   activity: CampaignActivity | undefined
   sentAt: string | null
   hasResults: boolean
+  /** The campaign carried the open-tracking image (a setting on each campaign). */
+  tracksOpens: boolean
 }
 
 function Tiles({ title, tiles, hasResults }: { title: string; tiles: Array<[string, string]>; hasResults: boolean }) {
@@ -102,7 +104,15 @@ export function DeliverabilityTab({ totals: t, activity, hasResults }: TabProps)
   )
 }
 
-export function OpensTab({ totals: t, activity, sentAt, hasResults }: TabProps) {
+export function OpensTab({ totals: t, activity, sentAt, hasResults, tracksOpens }: TabProps) {
+  if (!tracksOpens) {
+    return (
+      <div className="space-y-4">
+        <h2 className="text-lg font-bold text-foreground">Opens details</h2>
+        <Note>Open tracking was off for this campaign, so opens aren't recorded. Clicks, bounces and unsubscribes are.</Note>
+      </div>
+    )
+  }
   return (
     <div className="space-y-8">
       <Tiles
@@ -137,7 +147,7 @@ export function OpensTab({ totals: t, activity, sentAt, hasResults }: TabProps) 
   )
 }
 
-export function ClicksTab({ totals: t, activity, sentAt, hasResults }: TabProps) {
+export function ClicksTab({ totals: t, activity, sentAt, hasResults, tracksOpens }: TabProps) {
   const [link, setLink] = useState<string | null>(null)
   const people = useRef<HTMLDivElement>(null)
   return (
@@ -149,7 +159,7 @@ export function ClicksTab({ totals: t, activity, sentAt, hasResults }: TabProps)
           ['Clicked', t.clicked.toLocaleString()],
           ['Click-through rate', percent(t.clicked, t.delivered)],
           ['Total clicks', t.totalClicks.toLocaleString()],
-          ['Click-to-open rate', percent(t.clicked, t.opened)],
+          ['Click-to-open rate', tracksOpens ? percent(t.clicked, t.opened) : 'Not tracked'],
         ]}
       />
       {activity ? (

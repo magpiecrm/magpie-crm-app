@@ -21,6 +21,7 @@ const state: {
   hold: any
   stops?: Record<string, { reason: string; at: string }>
   bounces?: Array<{ email: string; type: string; campaignId?: string }>
+  trackOpens?: boolean
 } = { contacts: [], list_contacts: [], runs: [], html: '<p>Hi</p>', surveys: [], allowance: null, suppression: [], unsubscribeEnabled: undefined, status: 'draft', alreadySent: [], released: 0, hold: null }
 
 vi.mock('./db', () => ({
@@ -63,6 +64,7 @@ vi.mock('./db', () => ({
     transaction: (fn: () => void) => fn,
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
     campaignScheduledAt: () => null,
+    campaignTracksOpens: () => state.trackOpens !== false,
     campaignRecipientEmails: () => new Set(state.alreadySent),
     getGuessHold: () => state.hold,
     setGuessHold: (_id: number, hold: any) => { state.hold = hold },
@@ -109,6 +111,7 @@ beforeEach(() => {
   state.alreadySent = []
   state.released = 0
   state.hold = null
+  state.trackOpens = undefined
   delete process.env.SENDING_MANAGED
   // Avoids the getRequest() fallback for the tracking base URL.
   process.env.PUBLIC_URL = 'https://example.test'
@@ -432,5 +435,30 @@ describe('unverified prospected addresses', () => {
     expect(state.runs.some((r) => r.sql.includes("status = 'sent'"))).toBe(true)
     expect(state.hold.status).toBe('released')
     await expect(emailService.sendCampaign(1, { releaseGuesses: true })).rejects.toThrow(/nobody held back/)
+  })
+})
+
+describe('sendCampaign open tracking', () => {
+  const sendOne = async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    listOf({ email: 'bob@other.test', status: 'subscribed' })
+    await emailService.sendCampaign(1)
+    return vi.mocked(sendMail).mock.calls[0][0]
+  }
+
+  it('adds the open-tracking image by default', async () => {
+    state.html = '<html><body><p>Hi</p></body></html>'
+    const msg = await sendOne()
+    expect(msg.html).toContain('<img src="https://example.test/api/track/open?t=tok" width="1" height="1"')
+    expect(msg.html.indexOf('/api/track/open')).toBeLessThan(msg.html.indexOf('</body>'))
+  })
+
+  it('leaves it out when the campaign has open tracking off, and still tracks clicks', async () => {
+    state.trackOpens = false
+    state.html = '<p>Hi <a href="https://acme.com">there</a></p>'
+    const msg = await sendOne()
+    expect(msg.html).not.toContain('/api/track/open')
+    expect(msg.html).toContain('/api/track/click?t=')
   })
 })

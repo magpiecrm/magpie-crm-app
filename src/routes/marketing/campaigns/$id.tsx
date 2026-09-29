@@ -103,7 +103,8 @@ function CampaignDetailPage() {
   const isSending = campaign.status === 'sending'
   const totals = campaignTotals(campaign.statistics?.globalStats)
   const formattedDate = when(campaign.sentAt || campaign.createdAt)
-  const tabProps = { totals, activity, sentAt: campaign.sentAt, hasResults }
+  const tracksOpens = campaign.trackOpens !== false
+  const tabProps = { totals, activity, sentAt: campaign.sentAt, hasResults, tracksOpens }
 
   const recipientLists = (campaign.recipients?.listIds || []).map((listId: number) => {
     const found = listsData?.lists?.find((l: any) => l.id === listId)
@@ -312,7 +313,7 @@ function CampaignDetailPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Opens</span>
-                      <span className="text-3xl font-extrabold text-foreground">{hasResults ? totals.opened.toLocaleString() : '-'}</span>
+                      <span className="text-3xl font-extrabold text-foreground">{!tracksOpens ? 'Off' : hasResults ? totals.opened.toLocaleString() : '-'}</span>
                     </div>
                     <button onClick={() => setActiveTab('opens')} className="text-xs font-bold text-accent hover:underline flex items-center gap-1">
                       View <ExternalLink className="w-3 h-3" />
@@ -320,7 +321,7 @@ function CampaignDetailPage() {
                   </div>
                   <div className="pt-3 border-t border-border/60">
                     <span className="text-[11px] text-muted-foreground block">Open rate</span>
-                    <span className="text-sm font-bold text-foreground">{hasResults ? percent(totals.opened, totals.delivered) : '-'}</span>
+                    <span className="text-sm font-bold text-foreground">{!tracksOpens ? 'Not tracked' : hasResults ? percent(totals.opened, totals.delivered) : '-'}</span>
                   </div>
                 </div>
 
