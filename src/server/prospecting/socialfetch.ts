@@ -434,15 +434,17 @@ function matchesCountry(value: string | null, wanted?: string) {
 }
 
 /** Company names compared loosely: "Acme Ltd" and "ACME" are the same employer. */
+/** A company name without punctuation or suffixes like Ltd and Group: "The Acme Group Ltd." -> "acme". */
+export const companyKey = (s: string) =>
+  norm(s)
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\b(ltd|limited|llc|inc|plc|gmbh|corp|corporation|co|group|holdings|the)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
 export function sameCompanyName(a: string, b: string): boolean {
-  const clean = (s: string) =>
-    norm(s)
-      .replace(/[^a-z0-9 ]/g, ' ')
-      .replace(/\b(ltd|limited|llc|inc|plc|gmbh|corp|corporation|co|group|holdings|the)\b/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-  const ca = clean(a)
-  const cb = clean(b)
+  const ca = companyKey(a)
+  const cb = companyKey(b)
   return Boolean(ca && cb && (ca === cb || ca.startsWith(`${cb} `) || cb.startsWith(`${ca} `)))
 }
 

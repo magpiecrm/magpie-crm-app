@@ -43,7 +43,7 @@ vi.mock('../db', () => ({
     upsertProspectCompanies: () => {},
     getProspectingSettings: () => prospectingSettings,
     getUnverifiable: () => unverifiable,
-    data: { get contacts() { return contacts } },
+    data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies } },
     getSearchPosition: (key: string) => positions.get(key) ?? null,
     setSearchPosition: (key: string, cursor: string | null) => (cursor ? positions.set(key, cursor) : positions.delete(key)),
   },
@@ -51,6 +51,12 @@ vi.mock('../db', () => ({
 const positions = new Map<string, string>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
+let prospectCompanies: Array<{ ref: string; name: string; domain: string | null }> = []
+const recordUsage = vi.fn()
+vi.mock('../usage', async (original) => {
+  const actual: any = await original()
+  return { ...actual, recordUsage: (...args: any[]) => (recordUsage(...args), actual.recordUsage(...args)) }
+})
 
 const { searchPeople, searchCompanies } = await import('./search')
 const { hashesFor, emailHash, profileHash } = await import('./suppression')
@@ -73,6 +79,8 @@ beforeEach(() => {
   unverifiable = []
   disclosures = []
   contacts = []
+  prospectCompanies = []
+  recordUsage.mockClear()
   positions.clear()
 })
 
@@ -128,7 +136,8 @@ describe('searchPeople profile lookups', () => {
 
   it('hides people who turn out to work somewhere other than the chosen company', async () => {
     searchPage = pageOf(hit('ana'), hit('ben'))
-    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
+    // A company known only by its page name is searched by name, so where people work is checked.
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'acme-ltd', name: 'Acme' } })
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(res.warnings).toContain("1 person doesn't currently work at Acme and was left out.")
   })
@@ -153,6 +162,87 @@ describe('searchPeople profile lookups', () => {
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(getPerson).toHaveBeenCalledTimes(1)
     expect(getPerson).toHaveBeenCalledWith('https://www.linkedin.com/in/ben')
+  })
+})
+
+describe('searchPeople pays for no profile it can tell is wasted', () => {
+  const now = new Date().toISOString()
+
+  it('inside one company searched by its LinkedIn id, takes everyone as working there, with no profile lookups', async () => {
+    searchPage = pageOf(hit('ana'), { ...hit('ben', 'Head of Sales at Acme'), company: 'Acme', companyRef: '7' })
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
+    expect(getPerson).not.toHaveBeenCalled()
+    expect(res.items.map((p) => [p.firstName, p.title, p.company, p.companyRef, p.companyDomain])).toEqual([
+      ['ana', 'Business Analyst', 'Acme', '7', 'acme.com'],
+      ['ben', 'Head of Sales at Acme', 'Acme', '7', 'acme.com'],
+    ])
+    // Headline titles, so not marked as checked against the profile.
+    expect(res.refined).toEqual([])
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchProfiles: 0, searchNoLookup: 2, prospects: 2 }))
+  })
+
+  it('still leaves out existing contacts found inside the company, for free', async () => {
+    contacts = [{ email: 'ana@acme.com', job_title: 'BA', company: 'Acme', first_name: 'ana', last_name: 'Smith' }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '7', name: 'Acme' } })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(getPerson).not.toHaveBeenCalled()
+  })
+
+  it('in a companies-first search, takes people whose headline names one of the companies, and looks up the rest', async () => {
+    companyPage = { items: [{ ref: '42', name: 'Barclays', domain: 'barclays.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' }], nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf({ ...hit('eve', 'Analyst at Barclays UK'), company: 'Barclays UK' }, hit('ana'))
+    const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+    expect(getPerson).toHaveBeenCalledTimes(1)
+    expect(getPerson).toHaveBeenCalledWith('https://www.linkedin.com/in/ana')
+    expect(res.items.map((p) => [p.firstName, p.companyRef])).toEqual([
+      ['eve', '42'],
+      ['ana', '42'],
+    ])
+  })
+
+  it("leaves out, before paying for them, people whose headline says they've left their job", async () => {
+    searchPage = pageOf(hit('fay', 'Former CFO'), hit('gus', 'Ex-Googler, now Head of Sales'), hit('ana'), hit('hal', 'Open to Work'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/gus', 'https://www.linkedin.com/in/ana'])
+    expect(res.items.map((p) => p.firstName)).toEqual(['gus', 'ana'])
+    expect(res.warnings).toContain('2 people were left out because their headlines say they have left their job (e.g. "Former …"), and no profile lookup was paid for.')
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchSkippedNotWorking: 2, searchProfiles: 2 }))
+  })
+
+  it("leaves out, before paying for them, people whose headline names a company where nothing can be verified, only while they're hidden", async () => {
+    prospectCompanies = [{ ref: '7', name: 'Acme Ltd', domain: 'acme.com' }]
+    emailDomains = { 'acme.com': { catch_all: true, catch_all_checked_at: now, accepts_mail: true } }
+    searchPage = pageOf({ ...hit('ben', 'Analyst at Acme'), company: 'Acme' }, hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ana'])
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchSkippedUnverifiable: 1 }))
+
+    prospectingSettings = { hide_unverifiable: false }
+    getPerson.mockClear()
+    await searchPeople({ titles: ['Business Analyst'], fromStart: true })
+    expect(getPerson).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves out, before paying for them, contacts with the same name at the company their headline names', async () => {
+    contacts = [{ email: 'ben@acme.com', job_title: 'BA', company: 'Acme Ltd', first_name: 'ben', last_name: 'Smith' }]
+    searchPage = pageOf({ ...hit('ben', 'Analyst at Acme'), company: 'Acme' }, hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ana'])
+    expect(res.warnings.join(' ')).toContain("1 person was left out because they're already in your contacts.")
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchSkippedContact: 1, searchPaidInContacts: 0 }))
+  })
+
+  it('counts the profiles paid for and why any of them were left out', async () => {
+    emailDomains = { 'acme.com': { catch_all: true, catch_all_checked_at: now, accepts_mail: true } }
+    contacts = [{ email: 'cat@x.test', job_title: '', company: 'Cat Consulting', first_name: 'cat', last_name: 'Smith' }]
+    searchPage = pageOf(hit('ana'), hit('ben'), hit('cat'))
+    await searchPeople({ titles: ['Business Analyst'] })
+    // Ben's profile shows Acme, which accepts every address (hidden); Cat is a contact.
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ searchProfiles: 3, searchPaidUnverifiable: 1, searchPaidInContacts: 1, searchPaidWrongCompany: 0, prospects: 1 }),
+    )
   })
 })
 
@@ -489,7 +579,7 @@ describe('searchPeople stops early when its filters throw away nearly everyone p
       ...pageOf(...Array.from({ length: 12 }, (_, i) => hit(`p${i}`))),
       nextCursor: 'more',
     }))
-    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: '999', name: 'Initech' } })
+    const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'initech', name: 'Initech' } })
     expect(searchPeopleMock).toHaveBeenCalledTimes(1)
     expect(res.items).toEqual([])
     expect(res.warnings).toContain(

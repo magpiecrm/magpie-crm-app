@@ -8,7 +8,7 @@ import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { companyKey, meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -190,14 +190,101 @@ function markPreviouslySeen(items: PersonResult[], db: Db): number {
 const nameKey = (first: string | null | undefined, last: string | null | undefined, domain: string) =>
   `${(first ?? '').trim().toLowerCase()}|${(last ?? '').trim().toLowerCase()}|${domain.toLowerCase()}`
 
-/** Whether a person is already a contact: same first and last name, with an email at their company's domain. */
+/**
+ * Whether a person is already a contact: same first and last name, with an
+ * email at their company's domain or the same company name.
+ */
 function contactMatcher(db: Db): (p: PersonResult) => boolean {
   const keys = new Set<string>()
   for (const c of db.data.contacts) {
+    if (!c.first_name || !c.last_name) continue
     const domain = c.email.split('@')[1]
-    if (domain && c.first_name && c.last_name) keys.add(nameKey(c.first_name, c.last_name, domain))
+    if (domain) keys.add(nameKey(c.first_name, c.last_name, domain))
+    if (c.company && companyKey(c.company)) keys.add(nameKey(c.first_name, c.last_name, `@${companyKey(c.company)}`))
   }
-  return (p) => Boolean(p.companyDomain) && keys.has(nameKey(p.firstName, p.lastName, p.companyDomain!.replace(/^www\./, '')))
+  return (p) =>
+    (Boolean(p.companyDomain) && keys.has(nameKey(p.firstName, p.lastName, p.companyDomain!.replace(/^www\./, '')))) ||
+    (Boolean(p.company && companyKey(p.company)) && keys.has(nameKey(p.firstName, p.lastName, `@${companyKey(p.company)}`)))
+}
+
+/**
+ * A headline's title saying they've left their job: "Former CFO", "Ex-Head
+ * of Sales", "Retired", "Open to work". Not "Ex-Googler, now …".
+ */
+const NOT_WORKING = /^(?:(?:ex[-\s]|former\b|formerly\b|retired\b)(?!.*(?:\bnow\b|,|\/))|open to work\b)/i
+
+/**
+ * Leaves out, before their profile is paid for, people the search hit already
+ * shows aren't worth one: a headline saying they've left their job, an
+ * existing contact (same name, and the headline's company or its domain),
+ * and, while unverifiable people are hidden, anyone whose headline names a
+ * company already known to accept every address or take no email. Only the
+ * headline and the company cache are used (never a lookup), so an out-of-date
+ * headline can leave out someone who has since moved somewhere verifiable.
+ * Returns the profile URLs left out.
+ */
+async function skipBeforeLookup(
+  people: PersonResult[],
+  db: Db,
+  opts: { hideUnverifiable: boolean; includeContacts: boolean; tally: Tally },
+): Promise<Set<string>> {
+  const skip = new Set<string>()
+  for (const p of people) {
+    if (NOT_WORKING.test(p.title.trim())) {
+      skip.add(p.profileUrl)
+      opts.tally.skippedNotWorking++
+    }
+  }
+  // The headline's company, when the cache knows exactly one domain by that name.
+  const domains = new Map<string, Set<string | null>>()
+  for (const c of db.data.prospect_companies ?? []) {
+    const key = companyKey(c.name)
+    if (!key) continue
+    if (!domains.has(key)) domains.set(key, new Set())
+    domains.get(key)!.add(c.domain?.replace(/^www\./, '') ?? null)
+  }
+  const domainOf = (p: PersonResult): string | null => {
+    if (p.companyDomain) return p.companyDomain
+    const found = p.company ? domains.get(companyKey(p.company)) : undefined
+    return found?.size === 1 ? [...found][0] : null
+  }
+  const rest = people.filter((p) => !skip.has(p.profileUrl))
+
+  if (!opts.includeContacts) {
+    const isContact = contactMatcher(db)
+    for (const p of rest) {
+      if (isContact({ ...p, companyDomain: domainOf(p) })) {
+        skip.add(p.profileUrl)
+        opts.tally.skippedContact++
+        opts.tally.inContacts++
+      }
+    }
+  }
+
+  if (opts.hideUnverifiable) {
+    const now = Date.now()
+    const worthIt = await formatConfirmedAt(db)
+    const unknown: Array<{ p: PersonResult; domain: string }> = []
+    for (const p of rest) {
+      const domain = domainOf(p)
+      if (skip.has(p.profileUrl) || !domain || worthIt(domain)) continue
+      const known = (d: string) => db.getEmailDomain(d)
+      if (isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now)) {
+        skip.add(p.profileUrl)
+        opts.tally.skippedUnverifiable++
+      } else {
+        unknown.push({ p, domain })
+      }
+    }
+    // In a hosted copy, also companies another copy there has found out about.
+    const shared = await sharedCatchAll(unknown.map(({ domain }) => ({ ref: null, domain })))
+    unknown.forEach(({ p }, i) => {
+      if (!shared[i]) return
+      skip.add(p.profileUrl)
+      opts.tally.skippedUnverifiable++
+    })
+  }
+  return skip
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -247,6 +334,14 @@ interface Tally {
   wrongCompany: number
   /** Left out before their profile lookup: remembered from a lookup that couldn't verify them. */
   remembered: number
+  /** Of `inContacts`, those whose profile had been paid for. */
+  paidInContacts: number
+  /** Left out before their profile lookup, from the search hit (skipBeforeLookup). */
+  skippedUnverifiable: number
+  skippedNotWorking: number
+  skippedContact: number
+  /** Taken as working at the company searched, with no profile lookup (knownEmployer). */
+  noLookup: number
 }
 
 type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies'>>
@@ -373,7 +468,7 @@ async function processBatch(
   includeContacts = false,
   /** Companies-first: the companies this page searched inside (ref → name). */
   companySet?: Map<string, string>,
-): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: number }> {
+): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[] }> {
   let items = people
   for (const person of items) {
     person.companyDomain ??= person.companyRef ? db.getProspectCompany(person.companyRef)?.domain ?? null : null
@@ -414,7 +509,37 @@ async function processBatch(
     items = items.filter((p) => p.previously !== 'saved')
     tally.inContacts += saved
   }
-  const toLookUp = items.filter((p) => p.previously !== 'saved')
+
+  // Inside one company searched by its LinkedIn id, SocialFetch's company
+  // filter already says where everyone works (anyone whose headline names
+  // another employer was left out), so no profile is paid for to find out:
+  // the title comes from the headline, and someone who has since left shows
+  // up until a Reveal finds no address for them. In a companies-first search
+  // the same goes for anyone whose headline names one of the companies.
+  const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
+    if (p.previously === 'saved' || p.profileChecked) return null
+    if (company && /^\d+$/.test(company.ref)) return company
+    if (companySet?.size && p.company) {
+      for (const [ref, name] of companySet) if (sameCompanyName(p.company, name)) return { ref, name }
+    }
+    return null
+  }
+  const noLookup = new Set<string>()
+  items = items.map((p) => {
+    const at = knownEmployer(p)
+    if (!at) return p
+    noLookup.add(p.profileUrl)
+    return { ...p, company: at.name, companyRef: at.ref, companyDomain: db.getProspectCompany(at.ref)?.domain ?? null }
+  })
+  tally.noLookup += noLookup.size
+
+  const skipped = await skipBeforeLookup(
+    items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl)),
+    db,
+    { hideUnverifiable, includeContacts, tally },
+  )
+  if (skipped.size) items = items.filter((p) => !skipped.has(p.profileUrl))
+  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl))
 
   const refined: string[] = []
   let lookupError: string | undefined
@@ -440,12 +565,14 @@ async function processBatch(
     }
   }
 
-  // Contacts added another way (imported, a form) only show up once the
-  // profile gives their employer: the same name at the same company domain.
-  if (!includeContacts && refined.length > 0) {
+  // Contacts added another way (imported, a form) only show up once their
+  // employer is known: the same name at the same company.
+  if (!includeContacts && (refined.length > 0 || noLookup.size > 0)) {
     const isContact = contactMatcher(db)
-    const fresh = items.filter((p) => !(refined.includes(p.profileUrl) && isContact(p)))
-    tally.inContacts += items.length - fresh.length
+    const fresh = items.filter((p) => !((refined.includes(p.profileUrl) || noLookup.has(p.profileUrl)) && isContact(p)))
+    const dropped = items.filter((p) => !fresh.includes(p))
+    tally.inContacts += dropped.length
+    tally.paidInContacts += dropped.filter((p) => refined.includes(p.profileUrl)).length
     items = fresh
   }
 
@@ -483,7 +610,7 @@ async function processBatch(
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
 
-  return { items, refined, lookupError, lookedUp: toLookUp.length }
+  return { items, refined, lookupError, lookedUp: toLookUp.map((p) => p.profileUrl) }
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -533,7 +660,10 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = { noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, remembered: 0 }
+  const tally: Tally = {
+    noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, remembered: 0,
+    paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, noLookup: 0,
+  }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
 
@@ -547,6 +677,7 @@ export async function searchPeople(
   let searches = 0
   let lookupError: string | undefined
   let lookedUp = 0
+  const paidFor = new Set<string>()
   let wasteful = false
   let orgSearches = 0
   let companiesFound = 0
@@ -579,7 +710,8 @@ export async function searchPeople(
       const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
       items.push(...batch.items)
       refined.push(...batch.refined)
-      lookedUp += batch.lookedUp
+      lookedUp += batch.lookedUp.length
+      batch.lookedUp.forEach((url) => paidFor.add(url))
       if (batch.lookupError) {
         lookupError = batch.lookupError
         break
@@ -603,7 +735,19 @@ export async function searchPeople(
 
   // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
-  recordUsage({ searches: searches + orgSearches, prospects: usable(), prospectCredits: prospectCredits(credits) })
+  recordUsage({
+    searches: searches + orgSearches,
+    prospects: usable(),
+    prospectCredits: prospectCredits(credits),
+    searchProfiles: lookedUp,
+    searchPaidWrongCompany: tally.wrongCompany,
+    searchPaidInContacts: tally.paidInContacts,
+    searchPaidUnverifiable: items.filter((p) => hidden(p) && paidFor.has(p.profileUrl)).length,
+    searchSkippedUnverifiable: tally.skippedUnverifiable,
+    searchSkippedContact: tally.skippedContact,
+    searchSkippedNotWorking: tally.skippedNotWorking,
+    searchNoLookup: tally.noLookup,
+  })
   if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
   }
@@ -618,6 +762,19 @@ export async function searchPeople(
   if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
+  }
+  if (tally.skippedNotWorking > 0) {
+    details.push(
+      `${plural(tally.skippedNotWorking, 'person was', 'people were')} left out because ${tally.skippedNotWorking === 1 ? 'their headline says they have' : 'their headlines say they have'} left their job (e.g. "Former …"), and no profile lookup was paid for.`,
+    )
+  }
+  if (tally.skippedUnverifiable > 0) {
+    details.push(
+      `${plural(tally.skippedUnverifiable, 'person was', 'people were')} left out because ${tally.skippedUnverifiable === 1 ? 'their headline names a company' : 'their headlines name companies'} where no email can be verified, and no profile lookup was paid for.`,
+    )
+  }
+  if (tally.noLookup > 0 && company) {
+    details.push(`LinkedIn's company filter says these people work at ${company.name}, so their titles come from their headlines and no profiles were paid for.`)
   }
   if (tally.inContacts > 0) {
     details.push(

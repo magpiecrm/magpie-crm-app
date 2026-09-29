@@ -24,6 +24,26 @@ const USAGE_COUNTERS = [
    * this is what a plan's prospect allowance counts.
    */
   'prospectCredits',
+  /**
+   * Where search credits go (search yield): profiles looked up during search
+   * (3 credits each), and of those, people then left out because they turned
+   * out to work elsewhere, to be a contact already, or (hidden while
+   * verified-only is on) to be at a company where no email can be verified.
+   */
+  'searchProfiles',
+  'searchPaidWrongCompany',
+  'searchPaidInContacts',
+  'searchPaidUnverifiable',
+  /**
+   * People left out before their profile was paid for, from what the search
+   * hit already says: a company known to be unverifiable, an existing
+   * contact, or a headline saying they've left ("Former …").
+   */
+  'searchSkippedUnverifiable',
+  'searchSkippedContact',
+  'searchSkippedNotWorking',
+  /** People shown without a profile lookup: found inside the one company searched, which says where they work. */
+  'searchNoLookup',
   /** Email lookups run, by Reveal or when saving prospects. */
   'emailLookups',
   /** Addresses handed over: revealed, or saved as a new contact. */
