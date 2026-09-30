@@ -415,6 +415,15 @@ export async function findEmailCounted(...args: Parameters<typeof findEmail>): P
   }
 }
 
+/**
+ * A company's mail domain checked ahead of any lookup: whether it takes
+ * email and whether it accepts every address (one or two checks from our
+ * verification servers, or none while the last verdict stands), kept for the
+ * lookups that follow. Prospect search uses it to leave out companies where
+ * nothing can be verified before searching people there.
+ */
+export const probeDomain = (domain: string, deps: FinderDeps) => prepareDomain(domain.toLowerCase().trim(), deps)
+
 export async function findEmail(
   person: { firstName: string; lastName: string },
   rawDomain: string,

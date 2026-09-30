@@ -25,7 +25,24 @@ let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 let companyPage: any
 const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
-vi.mock('./runtime', () => ({ getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }) }))
+// Checks of companies' mail servers (screenCompanies): which domains accept every address.
+let catchAllDomains = new Set<string>()
+vi.mock('./runtime', () => ({
+  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }),
+  getFinderDeps: async () => ({
+    getDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
+    updateDomain: (d: string, patch: any) => {
+      emailDomains[d] = { ...{ catch_all: null, catch_all_checked_at: null, accepts_mail: null }, ...emailDomains[d], ...patch }
+      return { domain: d, ...emailDomains[d] }
+    },
+    resolveMx: async () => ['mx.example'],
+    verifier: {
+      acquire: async () => ({ proxy: null, report: () => {} }),
+      check: async (email: string) => ({ reachability: catchAllDomains.has(email.split('@')[1]) ? 'safe' : 'invalid', isCatchAll: null, outcome: 'ok' }),
+    },
+    now: () => Date.now(),
+  }),
+}))
 let suppressedHashes = new Set<string>()
 let allowance: any = null
 let prospectingSettings: { hide_unverifiable?: boolean } | null = null
@@ -80,6 +97,7 @@ beforeEach(() => {
   disclosures = []
   contacts = []
   prospectCompanies = []
+  catchAllDomains = new Set()
   recordUsage.mockClear()
   positions.clear()
 })
@@ -661,6 +679,36 @@ describe('searchPeople with a company size finds companies first', () => {
     // Ana works at Barclays (42), one of them. Cat's profile shows a company that isn't: left out.
     expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
     expect(res.nextCursor).toBeNull()
+  })
+
+  it("leaves out companies where nothing can be verified before searching people there, from what's known and a check of their mail server", async () => {
+    const now = new Date().toISOString()
+    // Acme is known to accept every address; Globex turns out to on a check; Initech has no website.
+    emailDomains = { 'acme.example': { catch_all: true, catch_all_checked_at: now, accepts_mail: true } }
+    catchAllDomains = new Set(['globex.example'])
+    companyPage = {
+      items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null), org('77', 'Globex', null), { ...org('88', 'Initech', null), domain: null }],
+      nextCursor: null, reportedTotal: null, warnings: [],
+    }
+    searchPage = pageOf(hit('ana'))
+    searchPeopleMock.mockClear()
+    const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
+    expect(((searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { companyRefs: string[] }).companyRefs).toEqual(['42'])
+    expect(res.warnings).toContain(
+      'Left out 2 companies whose mail servers accept every address or take no email and 1 company with no website, where no email can be verified, before searching for people there.',
+    )
+    // Kept for the lookups that follow.
+    expect(emailDomains['globex.example'].catch_all).toBe(true)
+  })
+
+  it('searches them all while unverifiable people are shown', async () => {
+    prospectingSettings = { hide_unverifiable: false }
+    emailDomains = { 'acme.example': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null)], nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf(hit('ana'))
+    searchPeopleMock.mockClear()
+    await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
+    expect(((searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { companyRefs: string[] }).companyRefs).toEqual(['42', '7'])
   })
 
   it('carries on with the next companies on Load more', async () => {

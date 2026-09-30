@@ -383,6 +383,72 @@ function decodeState(cursor: string | undefined): CompanyFirstState {
   return { term: 0, pending: [], batch: [] }
 }
 
+/** How long a companies-first search waits for its companies' mail servers to be checked (screenCompanies). */
+const SCREEN_MS = 8_000
+
+/**
+ * Companies found by size, without those where no email can be verified,
+ * before anyone there is searched for (and their profiles paid for): no
+ * website, a domain that takes no email, or a mail server that accepts every
+ * address (from the company cache, the host's shared list, or a check from
+ * our verification servers). Checks not answered within SCREEN_MS leave the
+ * company in, and their answers are kept for later. A company whose email
+ * format is confirmed stays in: its guesses are handed over.
+ */
+async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ keep: CompanyResult[]; unverifiable: number; noDomain: number }> {
+  const worthIt = await formatConfirmedAt(db)
+  const now = Date.now()
+  const known = (d: string) => db.getEmailDomain(d)
+  const out: Set<string> = new Set()
+  let unverifiable = 0
+  let noDomain = 0
+  const unknown: Array<{ ref: string; domain: string }> = []
+  for (const c of companies) {
+    const domain = (c.domain ?? db.getProspectCompany(c.ref)?.domain ?? '').toLowerCase().replace(/^www\./, '')
+    if (!domain) {
+      out.add(c.ref)
+      noDomain++
+    } else if (worthIt(domain)) {
+      continue
+    } else if (isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now)) {
+      out.add(c.ref)
+      unverifiable++
+    } else {
+      unknown.push({ ref: c.ref, domain })
+    }
+  }
+  // In a hosted copy, companies another copy there has found out about.
+  const shared = await sharedCatchAll(unknown.map(({ ref, domain }) => ({ ref, domain })))
+  const toCheck = unknown.filter((u, i) => {
+    if (!shared[i]) return true
+    out.add(u.ref)
+    unverifiable++
+    return false
+  })
+  if (toCheck.length) {
+    const { getFinderDeps } = await import('./runtime')
+    const { probeDomain } = await import('./emailFinder')
+    const deps = await getFinderDeps()
+    const answered = new Map<string, boolean>()
+    const checks = Promise.allSettled(
+      toCheck.map(async ({ domain }) => {
+        const rec = await probeDomain(domain, deps)
+        answered.set(domain, rec.accepts_mail === false || rec.catch_all === true)
+      }),
+    )
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([checks, new Promise((r) => (timer = setTimeout(r, SCREEN_MS)))])
+    clearTimeout(timer)
+    for (const u of toCheck) {
+      if (answered.get(u.domain) && !worthIt(u.domain)) {
+        out.add(u.ref)
+        unverifiable++
+      }
+    }
+  }
+  return { keep: companies.filter((c) => !out.has(c.ref)), unverifiable, noDomain }
+}
+
 /** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
 function companyTerms(filters: PeopleFilters): Array<{ keyword: string; industry?: string }> {
   const keyword = filters.keyword?.trim()
@@ -403,6 +469,8 @@ async function companyFirstPage(
   filters: PeopleFilters,
   cursor: string | undefined,
   count: number,
+  /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
+  screened?: { unverifiable: number; noDomain: number },
 ): Promise<{ page: Page<PersonResult>; companies: Map<string, string>; orgSearches: number; found: number }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
@@ -426,8 +494,14 @@ async function companyFirstPage(
       res.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount, slug: slugFromCompanyUrl(c.linkedinUrl) })),
     )
     // SocialFetch barely narrows companies by country, so their head office is checked here.
-    const fits = res.items.filter((c) => /^\d+$/.test(c.ref) && (!wantCountry || !c.country || canonicalCountry(c.country) === wantCountry))
+    let fits = res.items.filter((c) => /^\d+$/.test(c.ref) && (!wantCountry || !c.country || canonicalCountry(c.country) === wantCountry))
     found += fits.length
+    if (screened) {
+      const r = await screenCompanies(fits, db)
+      fits = r.keep
+      screened.unverifiable += r.unverifiable
+      screened.noDomain += r.noDomain
+    }
     s = {
       ...s,
       pending: fits.map((c) => [c.ref, c.name] as [string, string]),
@@ -685,6 +759,8 @@ export async function searchPeople(
   let companiesFound = 0
   // Set when the data source failed partway: the page keeps what it had found.
   let interrupted = false
+  // Companies left out before searching people there (screenCompanies).
+  const screened = { unverifiable: 0, noDomain: 0 }
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
@@ -693,7 +769,7 @@ export async function searchPeople(
       let companySet: Map<string, string> | undefined
       try {
         if (companyFirst) {
-          const r = await companyFirstPage(source, db, filters, cursor, count)
+          const r = await companyFirstPage(source, db, filters, cursor, count, hideUnverifiable ? screened : undefined)
           page = r.page
           companySet = r.companies
           orgSearches += r.orgSearches
@@ -766,6 +842,13 @@ export async function searchPeople(
   })
   if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
+  }
+  if (screened.unverifiable || screened.noDomain) {
+    const parts = [
+      screened.unverifiable && `${plural(screened.unverifiable, 'company whose mail server accepts every address or takes no email', 'companies whose mail servers accept every address or take no email')}`,
+      screened.noDomain && `${plural(screened.noDomain, 'company with no website', 'companies with no website')}`,
+    ].filter(Boolean)
+    details.push(`Left out ${parts.join(' and ')}, where no email can be verified, before searching for people there.`)
   }
 
   if (lookupError) details.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)
