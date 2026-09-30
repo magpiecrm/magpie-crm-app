@@ -7,6 +7,7 @@ import { deleteCompanyFn, getCompanyFn, setContactCompanyFn, updateCompanyFn } f
 import { Avatar } from '../../../components/ui/Avatar'
 import { Badge } from '../../../components/ui/Badge'
 import { ActivityTimeline } from '../../../features/sales/components/ActivityTimeline'
+import { FollowUpButton } from '../../../features/sales/components/TaskParts'
 import { CompanyAbout, CompanyHeader, type CompanyChanges } from '../../../features/sales/components/CompanyHeader'
 import { useInvalidateSales, usePipelines } from '../../../features/sales/usePipelines'
 import { formatMoney, type DealStatus, type DealView } from '../../../features/sales/types'
@@ -120,7 +121,7 @@ function CompanyPage() {
               <CompanyAbout notes={company.notes} onSave={(notes) => save({ notes })} />
             </div>
           </Section>
-          <Section title="Activity">
+          <Section title="Activity" action={<FollowUpButton on={{ companyId: id }} name={company.name} onAdded={() => void refetch()} />}>
             <div className="p-5">
               <ActivityTimeline activities={activities} on={{ companyId: id }} onChanged={() => void refetch()} />
             </div>

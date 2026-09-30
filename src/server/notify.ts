@@ -10,6 +10,7 @@ const DEFAULT_URLS: Record<NotificationType, string> = {
   campaign_failed: '/marketing/campaigns',
   survey_response: '/marketing/surveys',
   verifier_alert: '/settings?tab=prospecting',
+  task_due: '/sales/tasks',
 }
 
 /**

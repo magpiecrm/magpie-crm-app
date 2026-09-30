@@ -191,6 +191,45 @@ export const addNoteFn = createServerFn({ method: 'POST' })
     return sales.addNote(on, body, actor)
   })
 
+/* ------------------------------------------------------------- tasks */
+
+const on = { dealId: id.optional(), companyId: id.optional(), contactEmail: email.optional() }
+const dueAt = z.string().datetime({ offset: true }).nullable()
+
+export const tasksFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { dealId?: string; companyId?: string; contactEmail?: string } | undefined) => z.object(on).parse(d ?? {}))
+  .handler(async ({ data }) => {
+    const { sales } = await signedIn()
+    return sales.listTasks(data)
+  })
+
+export const addTaskFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { body: string; dueAt: string | null; dealId?: string; companyId?: string; contactEmail?: string }) =>
+    z.object({ ...on, body: z.string().trim().min(1).max(2_000), dueAt }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sales, actor } = await signedIn()
+    return sales.addTask(data, actor)
+  })
+
+export const updateTaskFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; body?: string; dueAt?: string | null; done?: boolean }) =>
+    z.object({ id, body: z.string().trim().min(1).max(2_000).optional(), dueAt: dueAt.optional(), done: z.boolean().optional() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sales } = await signedIn()
+    const { id: taskId, ...patch } = data
+    return sales.updateTask(taskId, patch)
+  })
+
+export const deleteTaskFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
+  .handler(async ({ data }) => {
+    const { sales } = await signedIn()
+    sales.deleteTask(data.id)
+    return { success: true }
+  })
+
 export const deleteNoteFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
   .handler(async ({ data }) => {

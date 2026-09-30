@@ -21,6 +21,7 @@ import { Button } from '../../../components/ui/Button'
 import { formatCustomValue } from '../contactFields'
 import { ContactSurveysTab } from './ContactSurveysTab'
 import { ContactHistoryTab } from './ContactHistoryTab'
+import { FollowUpButton, RecordTasks } from '../../sales/components/TaskParts'
 interface ContactDetailsProps {
   email: string
   onClose: () => void
@@ -153,6 +154,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
           <button className="px-3.5 py-2 border border-border rounded-xl text-xs font-bold text-foreground bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-1.5 cursor-pointer">
             <Phone className="w-3.5 h-3.5" /> Call
           </button>
+          <FollowUpButton on={{ contactEmail: contact.email }} name={fullName} />
         </div>
       </div>
 
@@ -183,6 +185,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
           
           {activeTab === 'overview' && (
             <>
+              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Tasks</h3>
+                <RecordTasks on={{ contactEmail: contact.email }} />
+              </div>
+
               {/* Campaign Stats Overview Grid */}
               <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Email campaigns</h3>

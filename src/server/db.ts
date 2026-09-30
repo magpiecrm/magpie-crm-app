@@ -53,7 +53,7 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due'
 
 type ContactRecord = DbSchema['contacts'][number]
 export type RecipientRecord = DbSchema['campaign_recipients'][number]
@@ -1248,6 +1248,11 @@ class JsonDb {
       this.data.contacts = this.data.contacts.filter(c => c.email.toLowerCase().trim() !== email)
       this.data.list_contacts = this.data.list_contacts.filter(lc => lc.contact_email.toLowerCase().trim() !== email)
       this.data.campaign_recipients = this.data.campaign_recipients.filter(cr => cr.contact_email.toLowerCase().trim() !== email)
+      // Notes and tasks about only them go too; a deal's or company's keep, without them.
+      if (this.data.activities) {
+        this.data.activities = this.data.activities.filter(a => !(a.contact_email === email && !a.deal_id && !a.company_id))
+        for (const a of this.data.activities) if (a.contact_email === email) a.contact_email = null
+      }
       this.save()
     } else if (cleanSql.startsWith('PRAGMA')) {
       // Ignore

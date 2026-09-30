@@ -6,6 +6,7 @@ import { db } from '../db'
 import * as companies from './companies'
 import * as deals from './deals'
 import * as pipelines from './pipelines'
+import * as tasks from './tasks'
 
 /** Groups new contacts into companies and makes the first pipeline, saving only if that changed anything. */
 function ready() {
@@ -56,6 +57,14 @@ export const sales = {
   deleteDeal: (id: string) => write((data) => deals.deleteDeal(data, id)),
   addNote: (on: Parameters<typeof deals.addNote>[1], body: string, actor: string | null) => write((data) => deals.addNote(data, on, body, actor)),
   deleteNote: (id: string) => write((data) => deals.deleteNote(data, id)),
+
+  // Tasks
+  listTasks: (on?: Parameters<typeof tasks.listTasks>[1]) => read((data) => tasks.listTasks(data, on)),
+  addTask: (input: tasks.TaskInput, actor: string | null) => write((data) => tasks.taskView(data, tasks.addTask(data, input, actor))),
+  updateTask: (id: string, patch: Parameters<typeof tasks.updateTask>[2]) => write((data) => tasks.taskView(data, tasks.updateTask(data, id, patch))),
+  deleteTask: (id: string) => write((data) => tasks.deleteTask(data, id)),
+  /** Open tasks now due whose reminder hasn't gone out, marked as reminded. */
+  takeDueReminders: () => write((data) => tasks.takeDueReminders(data)),
 
   /** The people who can own a deal. */
   owners: () => db.getUsers().map((u) => u.email),

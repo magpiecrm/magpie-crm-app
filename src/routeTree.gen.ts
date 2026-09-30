@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CollectionIndexRouteImport } from './routes/collection/index'
+import { Route as SalesTasksRouteImport } from './routes/sales/tasks'
 import { Route as SalesPipelineRouteImport } from './routes/sales/pipeline'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
 import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templates'
@@ -80,6 +81,11 @@ const IndexRoute = IndexRouteImport.update({
 const CollectionIndexRoute = CollectionIndexRouteImport.update({
   id: '/collection/',
   path: '/collection/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesTasksRoute = SalesTasksRouteImport.update({
+  id: '/sales/tasks',
+  path: '/sales/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SalesPipelineRoute = SalesPipelineRouteImport.update({
@@ -345,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
   '/sales/pipeline': typeof SalesPipelineRoute
+  '/sales/tasks': typeof SalesTasksRoute
   '/collection/': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -395,6 +402,7 @@ export interface FileRoutesByTo {
   '/auth/link': typeof AuthLinkRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/sales/pipeline': typeof SalesPipelineRoute
+  '/sales/tasks': typeof SalesTasksRoute
   '/collection': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -450,6 +458,7 @@ export interface FileRoutesById {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/s/$surveyId': typeof SSurveyIdRoute
   '/sales/pipeline': typeof SalesPipelineRoute
+  '/sales/tasks': typeof SalesTasksRoute
   '/collection/': typeof CollectionIndexRoute
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
@@ -506,6 +515,7 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/s/$surveyId'
     | '/sales/pipeline'
+    | '/sales/tasks'
     | '/collection/'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -556,6 +566,7 @@ export interface FileRouteTypes {
     | '/auth/link'
     | '/s/$surveyId'
     | '/sales/pipeline'
+    | '/sales/tasks'
     | '/collection'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -610,6 +621,7 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/s/$surveyId'
     | '/sales/pipeline'
+    | '/sales/tasks'
     | '/collection/'
     | '/api/copilot/permission'
     | '/api/copilot/stream'
@@ -665,6 +677,7 @@ export interface RootRouteChildren {
   MarketingTemplatesRoute: typeof MarketingTemplatesRouteWithChildren
   SSurveyIdRoute: typeof SSurveyIdRoute
   SalesPipelineRoute: typeof SalesPipelineRoute
+  SalesTasksRoute: typeof SalesTasksRoute
   CollectionIndexRoute: typeof CollectionIndexRoute
   ApiCopilotPermissionRoute: typeof ApiCopilotPermissionRoute
   ApiCopilotStreamRoute: typeof ApiCopilotStreamRoute
@@ -720,6 +733,13 @@ declare module '@tanstack/react-router' {
       path: '/collection'
       fullPath: '/collection/'
       preLoaderRoute: typeof CollectionIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/tasks': {
+      id: '/sales/tasks'
+      path: '/sales/tasks'
+      fullPath: '/sales/tasks'
+      preLoaderRoute: typeof SalesTasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sales/pipeline': {
@@ -1148,6 +1168,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingTemplatesRoute: MarketingTemplatesRouteWithChildren,
   SSurveyIdRoute: SSurveyIdRoute,
   SalesPipelineRoute: SalesPipelineRoute,
+  SalesTasksRoute: SalesTasksRoute,
   CollectionIndexRoute: CollectionIndexRoute,
   ApiCopilotPermissionRoute: ApiCopilotPermissionRoute,
   ApiCopilotStreamRoute: ApiCopilotStreamRoute,

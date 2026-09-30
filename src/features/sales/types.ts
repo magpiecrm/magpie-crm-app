@@ -81,9 +81,10 @@ export interface Activity {
   /** `stage_change`: the stage names at the time. */
   from_stage?: string
   to_stage?: string
-  /** `task`: when it's due, and when it was done. */
+  /** `task`: when it's due, when it was done, and when its reminder went out (tasks.ts). */
   due_at?: string | null
   done_at?: string | null
+  reminded_at?: string | null
   /** The user who did it, when a person did. */
   created_by: string | null
   created_at: string

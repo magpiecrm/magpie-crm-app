@@ -1,9 +1,10 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks } from 'lucide-react'
 import { markSignedOut } from '../../utils/auth'
-import { getUsageFn, logoutFn } from '../../server/functions'
+import { getUsageFn, logoutFn, tasksFn } from '../../server/functions'
+import { dueBucket } from '../../features/sales/tasks'
 import { AllowanceMeter } from '../../features/settings/components/AllowanceMeter'
 import { MagpieWordmark } from '../ui/MagpieLogo'
 
@@ -30,6 +31,7 @@ const navItems = [
     items: [
       { label: 'Pipeline', to: '/sales/pipeline', icon: Kanban },
       { label: 'Deals', to: '/sales/deals', icon: Handshake },
+      { label: 'Tasks', to: '/sales/tasks', icon: ListChecks },
     ],
   },
   {
@@ -84,6 +86,9 @@ export function Sidebar({
   // A hosting plan's allowances, when there are any, take this panel's place.
   const { data: usage } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60000 })
   const hasAllowance = Boolean(usage?.allowance?.items.length)
+  // Open tasks due today or overdue, as a count beside Tasks.
+  const { data: tasks } = useQuery({ queryKey: queryKeys.sales.tasks({}), queryFn: () => tasksFn({ data: {} }), refetchInterval: 60000 })
+  const tasksDue = (tasks ?? []).filter((t) => !t.done_at && ['overdue', 'today'].includes(dueBucket(t.due_at))).length
 
   return (
     <aside
@@ -134,6 +139,11 @@ export function Sidebar({
                     >
                       <item.icon className="w-4 h-4" />
                       {item.label}
+                      {item.to === '/sales/tasks' && tasksDue > 0 && (
+                        <span className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-[11px] font-semibold tabular-nums text-accent-foreground" aria-label={`${tasksDue} due`}>
+                          {tasksDue}
+                        </span>
+                      )}
                     </Link>
                   )}
                 </li>

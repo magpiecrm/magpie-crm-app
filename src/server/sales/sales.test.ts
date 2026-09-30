@@ -175,3 +175,69 @@ describe('deals', () => {
     expect(sales.listDeals({ q: 'thornton' }).map((d) => d.name)).toEqual(['Renewal'])
   })
 })
+
+describe('tasks', () => {
+  const inHours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString()
+
+  it('lists open tasks soonest due first, then recently done ones, each with what it is about', () => {
+    db.mutate((d) => d.contacts.push(contact('ava@larkspur.example', 'Larkspur', 'Ava', 'Stone')))
+    const deal = sales.createDeal({ name: 'Larkspur pilot' }, 'me@acme.test')
+    const later = sales.addTask({ body: 'Send the contract', dueAt: inHours(48), dealId: deal.id }, 'me@acme.test')
+    const whenever = sales.addTask({ body: 'Tidy the list', dueAt: null }, null)
+    const soon = sales.addTask({ body: 'Follow up with Ava Stone', dueAt: inHours(1), contactEmail: 'AVA@larkspur.example' }, 'me@acme.test')
+    const done = sales.addTask({ body: 'Book the demo', dueAt: inHours(-5) }, null)
+    sales.updateTask(done.id, { done: true })
+
+    expect(sales.listTasks().map((t) => t.body)).toEqual(['Follow up with Ava Stone', 'Send the contract', 'Tidy the list', 'Book the demo'])
+    expect(sales.listTasks({ dealId: deal.id }).map((t) => t.id)).toEqual([later.id])
+    expect(sales.listTasks({ contactEmail: 'ava@larkspur.example' })[0]).toMatchObject({
+      id: soon.id,
+      contact_name: 'Ava Stone',
+      link: '/marketing/contacts?contact=ava%40larkspur.example',
+    })
+    expect(later).toMatchObject({ deal_name: 'Larkspur pilot', link: `/sales/deals/${deal.id}` })
+    expect(whenever.link).toBe('/sales/tasks')
+    // A deal's tasks are in its timeline too.
+    expect(sales.getDeal(deal.id).activities.some((a) => a.id === later.id)).toBe(true)
+  })
+
+  it('refuses an empty task, a bad date, or a record that does not exist', () => {
+    expect(() => sales.addTask({ body: '  ', dueAt: null }, null)).toThrow(/needs doing/)
+    expect(() => sales.addTask({ body: 'x', dueAt: 'soon' }, null)).toThrow(/isn't a date/)
+    expect(() => sales.addTask({ body: 'x', dueAt: null, dealId: 'nope' }, null)).toThrow(/Deal not found/)
+    expect(() => sales.addTask({ body: 'x', dueAt: null, contactEmail: 'who@nowhere.example' }, null)).toThrow(/Contact not found/)
+  })
+
+  it('reminds once when a task falls due, and again after it is moved', () => {
+    const task = sales.addTask({ body: 'Call Sam', dueAt: inHours(-0.1) }, null)
+    sales.addTask({ body: 'Not yet', dueAt: inHours(3) }, null)
+    const finished = sales.addTask({ body: 'Already done', dueAt: inHours(-1) }, null)
+    sales.updateTask(finished.id, { done: true })
+
+    expect(sales.takeDueReminders().map((t) => t.body)).toEqual(['Call Sam'])
+    expect(sales.takeDueReminders()).toEqual([])
+
+    sales.updateTask(task.id, { dueAt: inHours(-0.05) })
+    expect(sales.takeDueReminders().map((t) => t.id)).toEqual([task.id])
+  })
+
+  it('ticks off, unticks and deletes a task', () => {
+    const task = sales.addTask({ body: 'Chase the invoice', dueAt: null }, null)
+    expect(sales.updateTask(task.id, { done: true }).done_at).toBeTruthy()
+    expect(sales.updateTask(task.id, { done: false }).done_at).toBeNull()
+    sales.deleteTask(task.id)
+    expect(sales.listTasks()).toEqual([])
+    expect(() => sales.deleteTask(task.id)).toThrow(/Task not found/)
+  })
+})
+
+describe('deleting a contact', () => {
+  it('deletes the notes and tasks only about them, and unlinks them from a deal\'s', () => {
+    db.mutate((d) => d.contacts.push(contact('ava@larkspur.example', 'Larkspur', 'Ava', 'Stone')))
+    const deal = sales.createDeal({ name: 'Pilot' }, null)
+    sales.addTask({ body: 'Follow up with Ava Stone', dueAt: null, contactEmail: 'ava@larkspur.example' }, null)
+    const onDeal = sales.addTask({ body: 'Send Ava the terms', dueAt: null, dealId: deal.id, contactEmail: 'ava@larkspur.example' }, null)
+    db.prepare('DELETE FROM contacts WHERE email = ?').run('ava@larkspur.example')
+    expect(sales.listTasks().map((t) => [t.id, t.contact_email])).toEqual([[onDeal.id, null]])
+  })
+})

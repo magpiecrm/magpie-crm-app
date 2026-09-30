@@ -30,6 +30,9 @@ import { ContactDetails } from '../../../features/contacts/components/ContactDet
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
 
 export const Route = createFileRoute('/marketing/contacts/')({
+  // ?contact=<email> opens that contact (links from tasks and their reminders).
+  validateSearch: (search: Record<string, unknown>): { contact?: string } =>
+    typeof search.contact === 'string' && search.contact ? { contact: search.contact } : {},
   component: ContactsPage,
 })
 
@@ -76,7 +79,8 @@ function SubscriptionBadge({ status }: { status?: string }) {
 function ContactsPage() {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedContactEmail, setSelectedContactEmail] = useState<string | null>(null)
+  const { contact: linkedContact } = Route.useSearch()
+  const [selectedContactEmail, setSelectedContactEmail] = useState<string | null>(linkedContact ?? null)
   const [selectedListId, setSelectedListId] = useState<number | null>(null)
   const [showListDropdown, setShowListDropdown] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)

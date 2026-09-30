@@ -78,6 +78,7 @@ export function startEmailScheduler() {
 
   g.__emailSchedulerInterval = setInterval(async () => {
     sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err))
+    remindDueTasks().catch((err) => console.error('[EmailScheduler] Task reminders failed:', err))
     const due = db.getDuePendingEmails()
     for (const e of due) {
       // Unsubscribed or bounced since they signed up: not sent.
@@ -117,4 +118,14 @@ export function startEmailScheduler() {
   pollBounces().catch((err) => console.error('[BouncePoller] Poll failed:', err))
 
   console.log('[EmailScheduler] Started — checking every 60s (bounce poll every 5m)')
+}
+
+/** A reminder (in-app, and a push to subscribed devices) for each task now due, once. */
+async function remindDueTasks() {
+  const { sales } = await import('./sales')
+  const { notify } = await import('./notify')
+  for (const task of sales.takeDueReminders()) {
+    const about = task.deal_name ?? task.contact_name ?? task.company_name
+    notify('task_due', `Due now: ${task.body}${about ? ` (${about})` : ''}`, { url: task.link, contactEmail: task.contact_email ?? undefined })
+  }
 }

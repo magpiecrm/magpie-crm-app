@@ -6,6 +6,7 @@ import { getDealFn } from '../../../server/functions'
 import { usePipelines } from '../../../features/sales/usePipelines'
 import { formatDay } from '../../../features/sales/utils'
 import { ActivityTimeline } from '../../../features/sales/components/ActivityTimeline'
+import { FollowUpButton } from '../../../features/sales/components/TaskParts'
 import { useCurrentUserEmail, useRefreshSales } from '../../../features/sales/components/useSalesLookups'
 import {
   CloseDateField,
@@ -106,7 +107,10 @@ function DealPage() {
           <PeoplePanel deal={deal} />
         </div>
         <section className="lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:row-span-2 bg-card border border-border rounded-xl p-5 sm:p-6">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Activity</h2>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h2 className="text-sm font-semibold text-foreground">Activity</h2>
+            <FollowUpButton on={{ dealId: deal.id }} name={deal.contacts[0]?.name ?? deal.company_name ?? deal.name} onAdded={() => refresh(deal.id)} />
+          </div>
           <ActivityTimeline activities={activities} on={{ dealId: deal.id }} onChanged={() => refresh(deal.id)} />
         </section>
         <div className="lg:col-start-3 lg:row-start-2">
