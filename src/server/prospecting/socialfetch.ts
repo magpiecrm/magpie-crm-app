@@ -9,11 +9,13 @@
 //   GET /v2/linkedin/profiles              handle                             3 credits
 //   GET /v1/balance                        (free)
 //
-// Confirmed against the live API (2026-09-25): people search matches on
-// `keyword`; adding `title` returns zero results, so job titles are sent as
-// keywords. Search hits carry only name, profile URL, headline and a free-text
-// `location` (no positions, employer or structured country), and page by
-// offset (`start`) rather than cursor.
+// Confirmed against the live API: people search matches `keyword` by
+// relevance, not as a filter, so job titles go in `title`, which filters on
+// the title in each person's headline (free text; SocialFetch fixed
+// multi-word titles on 2026-09-30, taking them with underscores until their
+// release). Search hits carry only name, profile URL, headline and a
+// free-text `location` (no positions, employer or structured country), and
+// page by offset (`start`) rather than cursor.
 //
 // The docs give no value formats; these were checked against the live API
 // (2026-09-28): `currentCompany` takes numeric company ids, several
@@ -551,6 +553,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
   const get = <T>(path: string, params: Record<string, string | number | undefined>) =>
     request<T>(path, params, fetchImpl, getApiKey())
   const pool = createSearchPool()
+  // How a multi-word title's words are joined in `title`: underscores work
+  // today, spaces once SocialFetch's fix is out. Until a multi-word search has
+  // found someone, one that finds nobody is tried once the other way, and
+  // whichever works is kept.
+  let titleJoiner: '_' | ' ' = '_'
+  let joinerConfirmed = false
   return {
     async searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
       // Industry, size and country are filtered by SocialFetch itself where it
@@ -692,14 +700,13 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
        * offsets) can't resume part-way, so nothing is held for one.
        */
       const fetchTitle = async (title: string, position: string | undefined) => {
-        // A one-word title (CFO, Founder) goes in `title`, which matches it
-        // exactly; `title` returns nothing for more than one word, so those go
-        // in `keyword` (checked against live API, 2026-09-29).
-        const oneWord = Boolean(title) && !/\s/.test(title)
-        const keyword = [oneWord ? null : title, filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
+        // The title goes in `title`, which filters; `keyword` only ranks.
+        const keyword = [filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
         const fitsTitle = title ? titleMatcher(title) : null
+        const multiWord = /\s/.test(title)
+        const titleParam = (joiner: string) => (title ? title.replace(/\s+/g, joiner) : undefined)
         const params = {
-          title: oneWord ? title : undefined,
+          title: titleParam(titleJoiner),
           keyword: keyword || undefined,
           geoEntityId: geoEntityId ?? undefined,
           industry: industry.length ? industry.join(',') : undefined,
@@ -717,8 +724,23 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         let hits: HeldHits | null = pool.take(searchPoolKey(params, start))
         let requests = 0
         if (!hits) {
-          const res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
+          let res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
           requests = 1
+          const found = (r: any) => (Array.isArray(r.data?.people) ? r.data.people.length : 0)
+          if (multiWord && !joinerConfirmed && start === 0) {
+            if (found(res) > 0) joinerConfirmed = true
+            else {
+              const other = titleJoiner === '_' ? ' ' : '_'
+              const retry = await get<any>('/v2/linkedin/people/search', { ...params, title: titleParam(other), count: FETCH_SIZE })
+              requests = 2
+              if (found(retry) > 0) {
+                titleJoiner = other
+                joinerConfirmed = true
+                params.title = titleParam(other)
+                res = retry
+              }
+            }
+          }
           const page = res.data?.page
           const people = readPeople(res, FETCH_SIZE, fitsTitle)
           hits = {

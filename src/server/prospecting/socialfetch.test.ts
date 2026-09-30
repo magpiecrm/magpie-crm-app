@@ -196,13 +196,13 @@ describe('searchPeople', () => {
     location,
   })
 
-  it('sends titles as the keyword, never the title parameter, asking for 50 whatever the page size', async () => {
-    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
+  it('sends the title as the title filter (words joined by underscores) and the keyword apart, asking for 50 whatever the page size', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [searchHit('a', 'A', 'One', 'Business Analyst', 'London')], page: { hasMore: false } })])
     await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Business Analyst'], keyword: 'fintech', count: 5 })
-    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst fintech')
+    expect(f.calls[0].searchParams.get('title')).toBe('Business_Analyst')
+    expect(f.calls[0].searchParams.get('keyword')).toBe('fintech')
     // A request costs 3 credits whatever it returns; the people not used are held.
     expect(f.calls[0].searchParams.get('count')).toBe('50')
-    expect(f.calls[0].searchParams.has('title')).toBe(false)
     expect(f.calls[0].searchParams.has('currentCompany')).toBe(false)
   })
 
@@ -304,16 +304,22 @@ describe('searchPeople', () => {
     expect(f.calls[0].searchParams.get('count')).toBe('5')
   })
 
-  it('sends a one-word title as the title filter, and a longer one as the keyword', async () => {
+  it('tries a multi-word title the other way once if it finds nobody, and keeps whichever works', async () => {
+    const hit = searchHit('a', 'A', 'One', 'Head of Sales', 'London')
     const f = fakeFetch([
       envelope({ people: [], page: { hasMore: false } }),
+      envelope({ people: [hit], page: { hasMore: false } }),
       envelope({ people: [], page: { hasMore: false } }),
     ])
     const source = createSocialFetchSource(f.impl)
-    await source.searchPeople(null, { titles: ['CFO'], keyword: 'fintech' })
-    expect([f.calls[0].searchParams.get('title'), f.calls[0].searchParams.get('keyword')]).toEqual(['CFO', 'fintech'])
-    await source.searchPeople(null, { titles: ['Head of Sales'] })
-    expect([f.calls[1].searchParams.get('title'), f.calls[1].searchParams.get('keyword')]).toEqual([null, 'Head of Sales'])
+    const page = await source.searchPeople(null, { titles: ['Head of Sales'] })
+    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Head_of_Sales', 'Head of Sales'])
+    expect(page.items).toHaveLength(1)
+    expect(page.requests).toBe(2)
+    // Spaces worked, so they're used from now on, and an empty result isn't retried.
+    await source.searchPeople(null, { titles: ['Sales Manager'] })
+    expect(f.calls[2].searchParams.get('title')).toBe('Sales Manager')
+    expect(f.calls).toHaveLength(3)
   })
 
   // Inside a few small companies, people search returns everyone there,
@@ -395,7 +401,8 @@ describe('searchPeople', () => {
       }),
     ])
     const page = await createSocialFetchSource(f.impl).searchPeople({ ref: '1234', name: 'Acme' }, { titles: ['Business Analyst'] })
-    expect(f.calls[0].searchParams.get('keyword')).toBe('Business Analyst')
+    expect(f.calls[0].searchParams.get('title')).toBe('Business_Analyst')
+    expect(f.calls[0].searchParams.has('keyword')).toBe(false)
     expect(f.calls[0].searchParams.get('currentCompany')).toBe('1234')
     expect(page.items.map((p) => [p.firstName, p.companyRef])).toEqual([
       ['In', '1234'],
@@ -592,7 +599,7 @@ describe('searchPeople by industry, and company search filters', () => {
 
   it("sends the industries as LinkedIn's codes", async () => {
     const f = fakeFetch([envelope({ lookupStatus: 'found', people: [], page: { hasMore: false } })])
-    await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Marketing Manager'], industries: ['Software Development', 'Financial Services', 'Not an industry'] })
+    await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Marketing'], industries: ['Software Development', 'Financial Services', 'Not an industry'] })
     expect(f.calls[0].searchParams.get('industry')).toBe('4,43')
   })
 
