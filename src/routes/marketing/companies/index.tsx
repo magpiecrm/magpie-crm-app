@@ -11,6 +11,7 @@ import type { ExportColumn } from '../../../utils/export'
 import { CompanyForm } from '../../../features/sales/components/CompanyForm'
 import { formatMoney, type CompanyView } from '../../../features/sales/types'
 import { shortDate } from '../../../features/sales/forms'
+import { Select } from '../../../components/ui/Select'
 
 export const Route = createFileRoute('/marketing/companies/')({
   component: CompaniesPage,
@@ -106,14 +107,14 @@ function CompaniesPage() {
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               Sort by
-              <select
+              <Select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as Sort)}
                 className="px-3 py-2 border border-border rounded-xl text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 <option value="updated">Recently updated</option>
                 <option value="name">Name</option>
-              </select>
+              </Select>
             </label>
           </div>
 

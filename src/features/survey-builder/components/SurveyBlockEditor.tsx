@@ -6,6 +6,7 @@ import { ImageUrlField } from '../../email-builder/components/ImageUrlField'
 import type { ContactFieldMapping, QuestionConfig, QuestionType, SurveyBlock } from '../types'
 import { BUILTIN_CONTACT_FIELDS, CHOICE_TYPES, SURVEY_BLOCK_TYPES, isQuestionType } from '../types'
 import { compatibleFieldTypes } from '../logic/answers'
+import { Select } from '../../../components/ui/Select'
 
 export const inputClass =
   'w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -177,21 +178,21 @@ function QuestionTypeFields({
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <label className={labelClass}>Out of</label>
-            <select value={scale.max} onChange={e => updateQuestion({ scale: { ...scale, min: 1, max: Number(e.target.value) } })} className={inputClass}>
+            <Select value={scale.max} onChange={e => updateQuestion({ scale: { ...scale, min: 1, max: Number(e.target.value) } })} className={inputClass}>
               {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                 <option key={n} value={n}>
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-1">
             <label className={labelClass}>Icon</label>
-            <select value={scale.icon} onChange={e => updateQuestion({ scale: { ...scale, icon: e.target.value as 'star' } })} className={inputClass}>
+            <Select value={scale.icon} onChange={e => updateQuestion({ scale: { ...scale, icon: e.target.value as 'star' } })} className={inputClass}>
               <option value="star">Stars</option>
               <option value="heart">Hearts</option>
               <option value="number">Numbers</option>
-            </select>
+            </Select>
           </div>
         </div>
       )
@@ -205,20 +206,20 @@ function QuestionTypeFields({
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <label className={labelClass}>From</label>
-                <select value={scale.min} onChange={e => updateQuestion({ scale: { ...scale, min: Number(e.target.value) } })} className={inputClass}>
+                <Select value={scale.min} onChange={e => updateQuestion({ scale: { ...scale, min: Number(e.target.value) } })} className={inputClass}>
                   <option value={0}>0</option>
                   <option value={1}>1</option>
-                </select>
+                </Select>
               </div>
               <div className="space-y-1">
                 <label className={labelClass}>To</label>
-                <select value={scale.max} onChange={e => updateQuestion({ scale: { ...scale, max: Number(e.target.value) } })} className={inputClass}>
+                <Select value={scale.max} onChange={e => updateQuestion({ scale: { ...scale, max: Number(e.target.value) } })} className={inputClass}>
                   {[3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                     <option key={n} value={n}>
                       {n}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
           )}
@@ -312,7 +313,7 @@ function ContactMappingControl({
   return (
     <div className="space-y-2 pt-2">
       <span className={sectionLabelClass}>Save to contact</span>
-      <select
+      <Select
         value={mapTo?.field ?? ''}
         onChange={e => onChange(e.target.value ? { field: e.target.value as ContactFieldMapping['field'], overwrite: mapTo?.overwrite ?? 'if_empty' } : undefined)}
         className={inputClass}
@@ -336,16 +337,16 @@ function ContactMappingControl({
             ))}
           </optgroup>
         )}
-      </select>
+      </Select>
       {mapTo && (
-        <select
+        <Select
           value={mapTo.overwrite}
           onChange={e => onChange({ ...mapTo, overwrite: e.target.value as ContactFieldMapping['overwrite'] })}
           className={inputClass}
         >
           <option value="if_empty">Only if the contact's field is empty</option>
           <option value="always">Always overwrite with the latest answer</option>
-        </select>
+        </Select>
       )}
       <p className="text-[10px] text-muted-foreground leading-snug">
         Answers are written to the respondent's profile. Add custom fields in Settings → Contact fields.
@@ -369,14 +370,14 @@ function ContentFields({ block, update }: { block: SurveyBlock; update: (u: Part
             <NumberField label="Font size" value={block.style?.fontSize} onChange={fontSize => update({ style: { fontSize } })} />
             <div className="space-y-1">
               <label className={labelClass}>Weight</label>
-              <select
+              <Select
                 value={block.style?.fontWeight ?? (block.type === 'heading' ? 'bold' : 'normal')}
                 onChange={e => update({ style: { fontWeight: e.target.value as 'bold' } })}
                 className={inputClass}
               >
                 <option value="normal">Normal</option>
                 <option value="bold">Bold</option>
-              </select>
+              </Select>
             </div>
           </div>
           <ColorField label="Text colour" value={block.style?.color} onChange={color => update({ style: { color } })} />
@@ -393,13 +394,13 @@ function ContentFields({ block, update }: { block: SurveyBlock; update: (u: Part
           </div>
           <div className="space-y-2">
             <label className={labelClass}>Width</label>
-            <select value={block.width ?? '100%'} onChange={e => update({ width: e.target.value })} className={inputClass}>
+            <Select value={block.width ?? '100%'} onChange={e => update({ width: e.target.value })} className={inputClass}>
               {['25%', '50%', '75%', '100%'].map(w => (
                 <option key={w} value={w}>
                   {w}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <AlignField value={block.align} onChange={align => update({ align })} />
         </div>

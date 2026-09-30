@@ -7,6 +7,7 @@ import { getFormsFn, createFormFn, updateFormFn, deleteFormFn, getSendersFn } fr
 import { listsFn, createListFn } from '../../../server/functions'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Badge } from '../../../components/ui/Badge'
+import { Select } from '../../../components/ui/Select'
 
 export const Route = createFileRoute('/marketing/forms/')({
   component: FormsPage,
@@ -258,14 +259,14 @@ function FormBuilder({
               ) : (
                 <div>
                   <label className="block text-xs text-muted-foreground mb-1">Contact List</label>
-                  <select
+                  <Select
                     className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                     value={form.list_id}
                     onChange={e => setForm(f => ({ ...f, list_id: Number(e.target.value) }))}
                   >
                     <option value="">Choose a list...</option>
                     {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
+                  </Select>
                   <button
                     type="button"
                     onClick={() => setIsCreatingList(true)}
@@ -368,7 +369,7 @@ function FormBuilder({
               </div>
               <div>
                 <label className="block text-xs text-muted-foreground mb-1">Send from</label>
-                <select
+                <Select
                   className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
                   value={form.sender_id ?? ''}
                   onChange={e => setForm(f => ({ ...f, sender_id: e.target.value ? Number(e.target.value) : null }))}
@@ -377,7 +378,7 @@ function FormBuilder({
                   {senders.map(s => (
                     <option key={s.id} value={s.id}>{s.name} &lt;{s.email}&gt;</option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div>

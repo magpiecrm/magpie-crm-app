@@ -10,6 +10,7 @@ import { FIELD_CLASS } from '../forms'
 import { formatDay } from '../utils'
 import { useRefreshSales } from './useSalesLookups'
 import type { DealView, ProposalSummary } from '../types'
+import { Select } from '../../../components/ui/Select'
 
 const PANEL = 'bg-card border border-border rounded-xl p-5'
 
@@ -204,14 +205,14 @@ function NewProposalDialog({ deal, onClose }: { deal: DealView; onClose: () => v
           {option('layout', 'Proposal layout', 'Summary, scope, price and next steps, filled in from this deal.')}
           {option('template', 'A saved template', templates.length ? 'One of your email templates.' : "You haven't saved any templates yet.", !templates.length)}
           {start === 'template' && (
-            <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} aria-label="Template" className={FIELD_CLASS}>
+            <Select value={templateId} onChange={(e) => setTemplateId(e.target.value)} aria-label="Template" className={FIELD_CLASS}>
               <option value="">Choose a template…</option>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
           {option('blank', 'Blank', 'An empty page.')}
         </fieldset>

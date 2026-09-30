@@ -3,6 +3,7 @@ import { queryKeys } from '../../../queryKeys'
 import { listsFn } from '../../../server/functions'
 import type { SurveySettings } from '../types'
 import { Toggle, inputClass, labelClass, sectionLabelClass } from './SurveyBlockEditor'
+import { Select } from '../../../components/ui/Select'
 
 interface SurveySettingsPanelProps {
   settings: SurveySettings
@@ -29,7 +30,7 @@ export function SurveySettingsPanel({ settings, setSettings }: SurveySettingsPan
         {settings.identifyContacts && (
           <div className="space-y-1">
             <label className={labelClass}>Add new respondents to list</label>
-            <select
+            <Select
               value={settings.listId ?? ''}
               onChange={e => setSettings({ listId: e.target.value ? Number(e.target.value) : null })}
               className={inputClass}
@@ -40,7 +41,7 @@ export function SurveySettingsPanel({ settings, setSettings }: SurveySettingsPan
                   {l.name}
                 </option>
               ))}
-            </select>
+            </Select>
             <p className="text-[10px] text-muted-foreground leading-snug">
               With a list, unknown respondents become subscribed contacts on it (like Forms). Without one, only existing contacts are
               updated.

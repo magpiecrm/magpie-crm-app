@@ -6,6 +6,7 @@ import { queryKeys } from '../../../queryKeys'
 import { getSurveyFn, getSurveysFn } from '../../../server/functions'
 import { surveyEmailSnapshot } from '../../survey-builder/utils/emailSnippet'
 import type { EmailBlock } from '../types'
+import { Select } from '../../../components/ui/Select'
 
 const inputClass = 'w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs'
 const labelClass = 'block text-xs text-muted-foreground font-semibold'
@@ -43,7 +44,7 @@ export function SurveyBlockFields({ block, update }: { block: EmailBlock; update
     <div className="space-y-4">
       <div className="space-y-2">
         <label className={labelClass}>Survey</label>
-        <select value={block.surveyId ?? ''} onChange={e => loadSnapshot(e.target.value)} className={inputClass}>
+        <Select value={block.surveyId ?? ''} onChange={e => loadSnapshot(e.target.value)} className={inputClass}>
           <option value="">Choose a survey…</option>
           {surveys.map(s => (
             <option key={s.id} value={s.id}>
@@ -51,7 +52,7 @@ export function SurveyBlockFields({ block, update }: { block: EmailBlock; update
               {s.status !== 'published' ? ` (${s.status})` : ''}
             </option>
           ))}
-        </select>
+        </Select>
         {selected && selected.status !== 'published' && (
           <p className="text-[11px] text-amber-600 dark:text-amber-400">
             Publish this survey before sending the campaign — the send is blocked otherwise. Test emails work with drafts.

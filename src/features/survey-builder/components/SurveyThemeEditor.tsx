@@ -2,6 +2,7 @@ import type { SurveyTheme } from '../types'
 import { EMAIL_FONT_STACKS } from '../../email-builder/utils/html'
 import { ImageUrlField } from '../../email-builder/components/ImageUrlField'
 import { ColorField, NumberField, Toggle, inputClass, labelClass, sectionLabelClass } from './SurveyBlockEditor'
+import { Select } from '../../../components/ui/Select'
 
 interface SurveyThemeEditorProps {
   theme: SurveyTheme
@@ -52,14 +53,14 @@ export function SurveyThemeEditor({ theme, setTheme }: SurveyThemeEditorProps) {
         <span className={sectionLabelClass}>Typography</span>
         <div className="space-y-1">
           <label className={labelClass}>Font</label>
-          <select value={theme.fontFamily} onChange={e => setTheme({ fontFamily: e.target.value })} className={inputClass}>
+          <Select value={theme.fontFamily} onChange={e => setTheme({ fontFamily: e.target.value })} className={inputClass}>
             {!EMAIL_FONT_STACKS.some(f => f.value === theme.fontFamily) && <option value={theme.fontFamily}>{theme.fontFamily}</option>}
             {EMAIL_FONT_STACKS.map(f => (
               <option key={f.value} value={f.value}>
                 {f.label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <NumberField label="Line height" value={theme.lineHeight} onChange={v => setTheme({ lineHeight: v ?? 1.5 })} />
       </div>

@@ -22,6 +22,7 @@ import { answerToDisplay } from '../../../../features/survey-builder/logic/answe
 import { SurveyStatusBadge } from '../../../../features/surveys/components/SurveyStatusBadge'
 import { SharePanel } from '../../../../features/surveys/components/SharePanel'
 import { BarList, Distribution, NpsSplit, npsBand } from '../../../../features/surveys/components/charts'
+import { Select } from '../../../../components/ui/Select'
 
 export const Route = createFileRoute('/marketing/surveys/$surveyId/')({
   component: SurveyResultsPage,
@@ -284,19 +285,19 @@ function ResponsesTab({ survey }: { survey: Survey }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <select value={status} onChange={e => setStatus(e.target.value as typeof status)} className={selectClass}>
+        <Select value={status} onChange={e => setStatus(e.target.value as typeof status)} className={selectClass}>
           <option value="">All statuses</option>
           <option value="completed">Completed</option>
           <option value="partial">Partial</option>
-        </select>
-        <select value={source} onChange={e => setSource(e.target.value)} className={selectClass}>
+        </Select>
+        <Select value={source} onChange={e => setSource(e.target.value)} className={selectClass}>
           <option value="">All sources</option>
           {Object.entries(SOURCE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>
               {v}
             </option>
           ))}
-        </select>
+        </Select>
         <span className="text-sm text-muted-foreground">{responses.length} response(s)</span>
         <div className="ml-auto">
           <ExportMenu filename={`survey-${survey.name}`} rows={responses} columns={columns} sheetName="Responses" />

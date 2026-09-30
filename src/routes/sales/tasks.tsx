@@ -7,6 +7,7 @@ import { FIELD_CLASS } from '../../features/sales/forms'
 import { dueBucket, type DueBucket } from '../../features/sales/tasks'
 import { TaskComposer, TaskRow } from '../../features/sales/components/TaskParts'
 import { useCurrentUserEmail } from '../../features/sales/components/useSalesLookups'
+import { Select } from '../../components/ui/Select'
 
 export const Route = createFileRoute('/sales/tasks')({
   component: TasksPage,
@@ -42,10 +43,10 @@ function TasksPage() {
           </p>
         </div>
         {team && (
-          <select value={whose} onChange={(e) => setWhose(e.target.value as 'mine' | 'all')} aria-label="Whose tasks" className={`${FIELD_CLASS} sm:w-44`}>
+          <Select value={whose} onChange={(e) => setWhose(e.target.value as 'mine' | 'all')} aria-label="Whose tasks" className={`${FIELD_CLASS} sm:w-44`}>
             <option value="all">Everyone's tasks</option>
             <option value="mine">My tasks</option>
-          </select>
+          </Select>
         )}
       </div>
 

@@ -11,6 +11,7 @@ import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
 import { Switch } from '../../../components/ui/Switch'
 import { TemplatePicker } from '../../templates/components/TemplatePicker'
 import { extractDesign } from '../../email-builder/utils/design'
+import { Select } from '../../../components/ui/Select'
 
 interface CampaignWizardProps {
   onClose: () => void
@@ -339,7 +340,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
               <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Sender Profile</label>
               {senders.length > 0 ? (
                 <div className="space-y-3">
-                  <select 
+                  <Select 
                     className="w-full px-4 py-3 bg-muted/40 border border-border rounded-xl text-foreground focus:ring-1 focus:ring-accent focus:border-transparent outline-none transition-all font-medium"
                     value={formData.senderEmail}
                     onChange={(e) => {
@@ -357,7 +358,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
                     {senders.map((s: any) => (
                       <option key={s.id} value={s.email} className="bg-card text-foreground">{s.name} ({s.email})</option>
                     ))}
-                  </select>
+                  </Select>
                   {formData.senderEmail.match(/@(gmail|yahoo|outlook|hotmail|aol|icloud)\./i) && (
                     <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/25 flex gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />

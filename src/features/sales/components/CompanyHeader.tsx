@@ -3,6 +3,7 @@ import { Building2, Pencil, Trash2 } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { FIELD_CLASS, parseHeadcount } from '../forms'
 import type { Company } from '../types'
+import { Select } from '../../../components/ui/Select'
 
 export type CompanyChanges = Partial<Pick<Company, 'name' | 'domain' | 'industry' | 'headcount' | 'owner' | 'notes'>>
 
@@ -197,7 +198,7 @@ export function CompanyHeader({
           />
         </Field>
         <Field label="Owner">
-          <select
+          <Select
             aria-label="Owner"
             value={company.owner ?? ''}
             onChange={(e) => {
@@ -212,7 +213,7 @@ export function CompanyHeader({
                 {o}
               </option>
             ))}
-          </select>
+          </Select>
           {ownerError && <p className="text-xs text-destructive mt-1 font-normal">{ownerError}</p>}
         </Field>
       </div>

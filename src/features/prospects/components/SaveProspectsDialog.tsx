@@ -8,6 +8,7 @@ import { createListFn, listsFn, prospectingStatusFn, prospectJobFn, saveProspect
 import type { PersonResult } from '../../../server/prospecting/types'
 import { EmailStatusBadge } from './EmailStatusBadge'
 import type { ProspectJob, SaveStatus } from '../../../server/prospecting/save'
+import { Select } from '../../../components/ui/Select'
 
 const OUTCOME_LABEL: Record<SaveStatus, string> = {
   pending: 'Queued',
@@ -135,7 +136,7 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
             ) : (
               <div>
                 <label className="block text-xs font-semibold text-muted-foreground mb-1.5">List</label>
-                <select
+                <Select
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md-s focus:ring-1 focus:ring-accent focus:border-transparent outline-none"
                   value={listId}
                   onChange={(e) => setListId(e.target.value ? Number(e.target.value) : '')}
@@ -144,7 +145,7 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
                   {lists.map((list) => (
                     <option key={list.id} value={list.id}>{list.name}</option>
                   ))}
-                </select>
+                </Select>
                 <button
                   type="button"
                   onClick={() => setNewListName('')}

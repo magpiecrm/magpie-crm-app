@@ -10,6 +10,7 @@ import { openStages, poundsToPence } from '../utils'
 import { CompanyPicker } from './CompanyPicker'
 import { ContactPicker } from './ContactPicker'
 import { useCurrentUserEmail, useRefreshSales } from './useSalesLookups'
+import { Select } from '../../../components/ui/Select'
 
 export interface DealFormInitial {
   pipelineId?: string
@@ -148,26 +149,26 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
               <label htmlFor="deal-pipeline" className={LABEL}>
                 Pipeline
               </label>
-              <select id="deal-pipeline" value={pipeline?.id ?? ''} onChange={(e) => setPipelineId(e.target.value)} className={FIELD_CLASS}>
+              <Select id="deal-pipeline" value={pipeline?.id ?? ''} onChange={(e) => setPipelineId(e.target.value)} className={FIELD_CLASS}>
                 {pipelines.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
           <div>
             <label htmlFor="deal-stage" className={LABEL}>
               Stage
             </label>
-            <select id="deal-stage" value={stageId} onChange={(e) => setStageId(e.target.value)} className={FIELD_CLASS}>
+            <Select id="deal-stage" value={stageId} onChange={(e) => setStageId(e.target.value)} className={FIELD_CLASS}>
               {stages.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
 
@@ -185,7 +186,7 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
           <label htmlFor="deal-owner" className={LABEL}>
             Owner
           </label>
-          <select
+          <Select
             id="deal-owner"
             value={ownerValue}
             onChange={(e) => setOwner(e.target.value || null)}
@@ -197,7 +198,7 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
                 {o === me ? `${o} (you)` : o}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       </div>
 

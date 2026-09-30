@@ -7,6 +7,7 @@ import type { LintIssue } from '../logic/lint'
 import { scaleRange } from '../logic/validate'
 import type { Dispatch } from './SurveyBlockEditor'
 import { inputClass, labelClass, sectionLabelClass } from './SurveyBlockEditor'
+import { Select } from '../../../components/ui/Select'
 
 const OP_LABELS: Record<ConditionOp, string> = {
   answered: 'is answered',
@@ -91,7 +92,7 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
     dispatch('survey.setPageLogic', { pageId: page.id, rules: nextRules, defaultNext })
 
   const targetSelect = (value: PageTarget | undefined, onChange: (t: PageTarget) => void) => (
-    <select value={targetValue(value)} onChange={e => onChange(parseTarget(e.target.value))} className={inputClass}>
+    <Select value={targetValue(value)} onChange={e => onChange(parseTarget(e.target.value))} className={inputClass}>
       <option value="next">{laterPages.length ? 'Next page' : 'End (submit)'}</option>
       {laterPages.map(p => (
         <option key={p.id} value={`page:${p.id}`}>
@@ -99,7 +100,7 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
         </option>
       ))}
       <option value="end">End survey</option>
-    </select>
+    </Select>
   )
 
   return (
@@ -187,7 +188,7 @@ function RuleRow({
   return (
     <div className="space-y-1.5 pb-3 border-b border-border/50">
       {header}
-      <select
+      <Select
         value={when.questionId}
         onChange={e => {
           const q = questions.find(x => x.id === e.target.value)!
@@ -202,8 +203,8 @@ function RuleRow({
             {q.question?.title || 'Untitled question'}
           </option>
         ))}
-      </select>
-      <select
+      </Select>
+      <Select
         value={when.op}
         onChange={e => {
           const op = e.target.value as ConditionOp
@@ -216,7 +217,7 @@ function RuleRow({
             {OP_LABELS[op]}
           </option>
         ))}
-      </select>
+      </Select>
       {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
       <label className={labelClass}>Then</label>
       {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
@@ -235,21 +236,21 @@ function ValueInput({
 }) {
   if (question.question?.options?.length) {
     return (
-      <select value={String(value ?? '')} onChange={e => onChange(e.target.value)} className={inputClass}>
+      <Select value={String(value ?? '')} onChange={e => onChange(e.target.value)} className={inputClass}>
         {question.question.options.map(o => (
           <option key={o.id} value={o.id}>
             {o.label}
           </option>
         ))}
-      </select>
+      </Select>
     )
   }
   if (question.type === 'yes_no') {
     return (
-      <select value={String(value)} onChange={e => onChange(e.target.value === 'true')} className={inputClass}>
+      <Select value={String(value)} onChange={e => onChange(e.target.value === 'true')} className={inputClass}>
         <option value="true">Yes</option>
         <option value="false">No</option>
-      </select>
+      </Select>
     )
   }
   return <input type="number" value={typeof value === 'number' ? value : ''} onChange={e => onChange(Number(e.target.value))} className={inputClass} />

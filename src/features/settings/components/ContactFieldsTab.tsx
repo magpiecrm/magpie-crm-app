@@ -10,6 +10,7 @@ import {
 } from '../../../server/functions'
 import type { ContactFieldDef, ContactFieldType } from '../../contacts/contactFields'
 import { CONTACT_FIELD_TYPES, slugifyFieldKey, validateFieldKey } from '../../contacts/contactFields'
+import { Select } from '../../../components/ui/Select'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -105,13 +106,13 @@ export function ContactFieldsTab() {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">Type</span>
-            <select className={INPUT_CLASS} value={type} onChange={e => setType(e.target.value as ContactFieldType)}>
+            <Select className={INPUT_CLASS} value={type} onChange={e => setType(e.target.value as ContactFieldType)}>
               {CONTACT_FIELD_TYPES.map(t => (
                 <option key={t} value={t}>
                   {TYPE_LABELS[t]}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           {hasOptions(type) && (
             <label className="flex flex-col gap-1 text-sm">

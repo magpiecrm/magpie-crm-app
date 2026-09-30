@@ -14,6 +14,7 @@ import { sumValue } from '../../../features/sales/utils'
 import { DealForm } from '../../../features/sales/components/DealForm'
 import { DEAL_EXPORT_COLUMNS, DealsTable } from '../../../features/sales/components/DealsTable'
 import { useCurrentUserEmail } from '../../../features/sales/components/useSalesLookups'
+import { Select } from '../../../components/ui/Select'
 
 type StatusFilter = 'open' | 'won' | 'lost' | 'all'
 
@@ -137,16 +138,16 @@ function DealsPage() {
         </div>
         <div className="flex gap-3">
           {pipelines.length > 1 && (
-            <select value={search.pipeline ?? ''} onChange={(e) => setSearch({ pipeline: e.target.value || undefined })} aria-label="Pipeline" className={`${FIELD_CLASS} flex-1 md:flex-none md:w-48`}>
+            <Select value={search.pipeline ?? ''} onChange={(e) => setSearch({ pipeline: e.target.value || undefined })} aria-label="Pipeline" className={`${FIELD_CLASS} flex-1 md:flex-none md:w-48`}>
               <option value="">All pipelines</option>
               {pipelines.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Select>
           )}
-          <select value={search.owner ?? ''} onChange={(e) => setSearch({ owner: e.target.value || undefined })} aria-label="Owner" className={`${FIELD_CLASS} flex-1 md:flex-none md:w-56`}>
+          <Select value={search.owner ?? ''} onChange={(e) => setSearch({ owner: e.target.value || undefined })} aria-label="Owner" className={`${FIELD_CLASS} flex-1 md:flex-none md:w-56`}>
             <option value="">All owners</option>
             <option value="me">Me</option>
             {owners
@@ -156,7 +157,7 @@ function DealsPage() {
                   {o}
                 </option>
               ))}
-          </select>
+          </Select>
         </div>
         {!loading && (
           <p className="text-sm text-muted-foreground md:ml-auto tabular-nums">

@@ -3,6 +3,7 @@ import type { EmailBlock, GlobalStyle } from '../types'
 import { AltTextControl, ItemListEditor, LinkListEditor, PaddingControl, SocialListEditor, SummaryRowEditor } from './BlockEditorControls'
 import { ImageUrlField } from './ImageUrlField'
 import { SurveyBlockFields } from './SurveyBlockFields'
+import { Select } from '../../../components/ui/Select'
 
 interface BlockEditorProps {
   selectedBlock: EmailBlock
@@ -20,7 +21,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
       {/* Converting to or from a survey block would strand its survey link, so it has no type picker. */}
       {selectedBlock.type !== 'survey' && <div className="space-y-2">
         <label className="block text-xs text-muted-foreground font-semibold">Block Type</label>
-        <select
+        <Select
           value={selectedBlock.type}
           onChange={(e) => {
             const newType = e.target.value as EmailBlock['type']
@@ -98,7 +99,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
           <option value="navigation">Navigation Bar</option>
           <option value="footer">Footer</option>
           <option value="section">Section / Card</option>
-        </select>
+        </Select>
       </div>}
 
       {selectedBlock.type === 'title' && (
@@ -173,7 +174,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
             </div>
             <div className="space-y-1.5">
               <label className="block text-xs text-muted-foreground font-semibold">Font Family</label>
-              <select
+              <Select
                 value={selectedBlock.style?.fontFamily ?? ''}
                 onChange={(e) => updateBlockContent(selectedBlock.id, { style: { ...selectedBlock.style, fontFamily: e.target.value || undefined } })}
                 className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
@@ -185,7 +186,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
                 <option value="Georgia, serif">Georgia</option>
                 <option value="'Playfair Display', serif">Playfair Display</option>
                 <option value="'Courier New', monospace">Monospace</option>
-              </select>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <label className="block text-xs text-muted-foreground font-semibold">Text color</label>
@@ -340,7 +341,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
             </div>
             <div className="space-y-1.5">
               <label className="block text-xs text-muted-foreground font-semibold">Font Family</label>
-              <select
+              <Select
                 value={selectedBlock.style?.fontFamily ?? ''}
                 onChange={(e) => updateBlockContent(selectedBlock.id, { style: { ...selectedBlock.style, fontFamily: e.target.value || undefined } })}
                 className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
@@ -352,7 +353,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
                 <option value="Georgia, serif">Georgia</option>
                 <option value="'Playfair Display', serif">Playfair Display</option>
                 <option value="'Courier New', monospace">Monospace</option>
-              </select>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <label className="block text-xs text-muted-foreground font-semibold">Text color</label>
@@ -553,7 +554,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
         <div className="space-y-3">
           <div className="space-y-2">
             <label className="block text-xs text-muted-foreground font-semibold">Contact field</label>
-            <select
+            <Select
               value={selectedBlock.content}
               onChange={(e) => updateBlockContent(selectedBlock.id, { content: e.target.value })}
               className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
@@ -562,7 +563,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
               <option value="contact.LASTNAME">contact.LASTNAME</option>
               <option value="contact.EMAIL">contact.EMAIL</option>
               <option value="contact.COMPANY">contact.COMPANY</option>
-            </select>
+            </Select>
             <p className="text-[10px] text-muted-foreground mt-1">This will render dynamically as a contact attribute tag when sending the newsletter.</p>
           </div>
         </div>

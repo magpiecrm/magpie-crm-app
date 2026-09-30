@@ -17,6 +17,7 @@ import { CompanyPicker } from './CompanyPicker'
 import { ContactSearch } from './ContactPicker'
 import { LostReasonDialog } from './LostReasonDialog'
 import { useRefreshSales } from './useSalesLookups'
+import { Select } from '../../../components/ui/Select'
 
 type DealChanges = Parameters<typeof updateDealFn>[0]['data']['changes']
 
@@ -126,7 +127,7 @@ export function StageControl({ deal, pipelines, activities }: { deal: DealView; 
       <div className="flex items-center gap-2 min-w-0 text-sm">
         <span className="text-muted-foreground shrink-0 max-w-[12rem] truncate">{deal.pipeline_name}</span>
         <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-        <select
+        <Select
           aria-label="Stage"
           value={`${deal.pipeline_id}:${deal.stage_id}`}
           disabled={move.isPending}
@@ -153,7 +154,7 @@ export function StageControl({ deal, pipelines, activities }: { deal: DealView; 
               ))
             ),
           )}
-        </select>
+        </Select>
       </div>
       <div className="flex items-center gap-2 sm:ml-auto">
         {deal.status === 'open' ? (
@@ -254,14 +255,14 @@ export function OwnerField({ deal, owners, me }: { deal: DealView; owners: strin
       <label htmlFor="deal-owner" className={LABEL}>
         Owner
       </label>
-      <select id="deal-owner" value={deal.owner ?? ''} disabled={save.isPending} onChange={(e) => save.mutate({ owner: e.target.value || null })} className={FIELD_CLASS}>
+      <Select id="deal-owner" value={deal.owner ?? ''} disabled={save.isPending} onChange={(e) => save.mutate({ owner: e.target.value || null })} className={FIELD_CLASS}>
         <option value="">No owner</option>
         {options.map((o) => (
           <option key={o} value={o}>
             {o === me ? `${o} (you)` : o}
           </option>
         ))}
-      </select>
+      </Select>
       <ErrorText error={save.error} />
     </div>
   )

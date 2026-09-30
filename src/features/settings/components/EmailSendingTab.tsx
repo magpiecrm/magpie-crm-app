@@ -10,6 +10,7 @@ import {
 import type { ProviderDescriptor, ProviderField } from '../../../server/providers/types'
 import { ManagedSending } from './ManagedSending'
 import { SettingsBlock } from './SettingsBlock'
+import { Select } from '../../../components/ui/Select'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -144,7 +145,7 @@ export function EmailSendingTab() {
         </label>
 
         {field.type === 'select' ? (
-          <select
+          <Select
             value={state.value}
             onChange={(e) => handleFieldChange(field.key, e.target.value)}
             className={INPUT_CLASS}
@@ -154,7 +155,7 @@ export function EmailSendingTab() {
                 {opt.label}
               </option>
             ))}
-          </select>
+          </Select>
         ) : field.type === 'secret' ? (
           <div className="relative flex items-center">
             <input
@@ -246,7 +247,7 @@ export function EmailSendingTab() {
       <SettingsBlock title="Sending provider">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-foreground">Default provider</label>
-          <select
+          <Select
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
             className={INPUT_CLASS}
@@ -256,7 +257,7 @@ export function EmailSendingTab() {
                 {p.label}
               </option>
             ))}
-          </select>
+          </Select>
           {descriptor && (
             <span className="text-xs text-muted-foreground">
               {descriptor.summary}{' '}

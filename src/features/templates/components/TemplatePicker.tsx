@@ -4,6 +4,7 @@ import { getTemplatesFn } from '../../../server/functions'
 import { STARTER_TEMPLATES } from '../../email-builder/templates/starters'
 import { compileHTML } from '../../email-builder/utils/compiler'
 import { DEFAULT_GLOBAL_STYLE } from '../../email-builder/utils/design'
+import { Select } from '../../../components/ui/Select'
 
 /**
  * A dropdown of saved templates and built-in starters. Picking one hands the
@@ -28,7 +29,7 @@ export function TemplatePicker({ onPick }: { onPick: (html: string, name: string
   }
 
   return (
-    <select
+    <Select
       value=""
       onChange={e => handleChange(e.target.value)}
       className="w-full px-3 py-2 bg-muted/40 border border-border text-foreground rounded-xl text-sm focus:ring-1 focus:ring-accent outline-none cursor-pointer"
@@ -52,6 +53,6 @@ export function TemplatePicker({ onPick }: { onPick: (html: string, name: string
           </option>
         ))}
       </optgroup>
-    </select>
+    </Select>
   )
 }

@@ -1,5 +1,6 @@
 import type { GlobalStyle } from '../types'
 import { EMAIL_FONT_STACKS } from '../utils/html'
+import { Select } from '../../../components/ui/Select'
 
 interface GlobalStyleEditorProps {
   globalStyle: GlobalStyle
@@ -184,7 +185,7 @@ export function GlobalStyleEditor({ globalStyle, setGlobalStyle }: GlobalStyleEd
 
         <div className="space-y-2">
           <label className="block text-xs text-muted-foreground font-semibold">Line height</label>
-          <select 
+          <Select 
             value={globalStyle.lineHeight} 
             onChange={(e) => setGlobalStyle({ ...globalStyle, lineHeight: parseFloat(e.target.value) })}
             className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
@@ -192,12 +193,12 @@ export function GlobalStyleEditor({ globalStyle, setGlobalStyle }: GlobalStyleEd
             <option value="1.2">Compact (1.2)</option>
             <option value="1.5">Standard (1.5)</option>
             <option value="1.8">Loose (1.8)</option>
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-2">
           <label className="block text-xs text-muted-foreground font-semibold font-sans">Font Family</label>
-          <select 
+          <Select 
             value={globalStyle.fontFamily}
             onChange={(e) => setGlobalStyle({ ...globalStyle, fontFamily: e.target.value })}
             className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
@@ -205,7 +206,7 @@ export function GlobalStyleEditor({ globalStyle, setGlobalStyle }: GlobalStyleEd
             {EMAIL_FONT_STACKS.map(stack => (
               <option key={stack.value} value={stack.value}>{stack.label}</option>
             ))}
-          </select>
+          </Select>
           <p className="text-[10px] text-muted-foreground/70 leading-snug">
             Only fonts installed on the reader's machine render. Every option here ends in a face Outlook and Gmail both have.
           </p>

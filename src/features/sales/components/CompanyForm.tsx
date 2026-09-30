@@ -7,6 +7,7 @@ import { queryKeys } from '../../../queryKeys'
 import { usePipelines } from '../usePipelines'
 import type { Company } from '../types'
 import { FIELD_CLASS, parseHeadcount } from '../forms'
+import { Select } from '../../../components/ui/Select'
 
 /**
  * A dialog for adding a company by hand. Most companies are made from
@@ -98,14 +99,14 @@ export function CompanyForm({
         </div>
         <label className="block space-y-1.5">
           <span className="text-xs font-semibold text-muted-foreground">Owner</span>
-          <select value={owner} onChange={(e) => setOwner(e.target.value)} className={FIELD_CLASS}>
+          <Select value={owner} onChange={(e) => setOwner(e.target.value)} className={FIELD_CLASS}>
             <option value="">No owner</option>
             {(sales?.owners ?? []).map((o) => (
               <option key={o} value={o}>
                 {o}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
         {create.error && <p className="text-xs text-destructive">{create.error.message}</p>}
         <div className="flex justify-end gap-2 pt-2">

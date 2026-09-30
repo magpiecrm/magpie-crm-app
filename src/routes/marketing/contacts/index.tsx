@@ -28,6 +28,7 @@ import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { ContactDetails } from '../../../features/contacts/components/ContactDetails'
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
+import { Select } from '../../../components/ui/Select'
 
 export const Route = createFileRoute('/marketing/contacts/')({
   // ?contact=<email> opens that contact (links from tasks and their reminders).
@@ -369,7 +370,7 @@ function ContactsPage() {
             {/* DOUBLE_OPT-IN */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Double_opt-in</label>
-              <select
+              <Select
                 value={doubleOptIn}
                 onChange={(e) => setDoubleOptIn(e.target.value)}
                 className="w-full px-4 py-2.5 border border-border rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
@@ -377,13 +378,13 @@ function ContactsPage() {
                 <option value="">Select an option</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
-              </select>
+              </Select>
             </div>
 
             {/* OPT_IN */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Opt_in</label>
-              <select
+              <Select
                 value={optIn}
                 onChange={(e) => setOptIn(e.target.value)}
                 className="w-full px-4 py-2.5 border border-border rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
@@ -391,7 +392,7 @@ function ContactsPage() {
                 <option value="">Select an option</option>
                 <option value="yes">Yes</option>
                 <option value="no">No</option>
-              </select>
+              </Select>
             </div>
 
             {/* LISTS Selection */}

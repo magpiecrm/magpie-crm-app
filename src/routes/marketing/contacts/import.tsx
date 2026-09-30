@@ -16,6 +16,7 @@ import {
   Upload, 
   AlertCircle
 } from 'lucide-react'
+import { Select } from '../../../components/ui/Select'
 
 export const Route = createFileRoute('/marketing/contacts/import')({
   component: ImportContactsPage,
@@ -575,7 +576,7 @@ function ImportContactsPage() {
                           Column {colIdx + 1}
                         </span>
                         
-                        <select
+                        <Select
                           value={mappings[colIdx] || 'skip'}
                           onChange={(e) => {
                             const val = e.target.value
@@ -604,7 +605,7 @@ function ImportContactsPage() {
                           <option value="lastName">Last Name</option>
                           <option value="company">Company</option>
                           <option value="jobTitle">Job Title</option>
-                        </select>
+                        </Select>
                       </div>
                     </th>
                   ))}
@@ -645,7 +646,7 @@ function ImportContactsPage() {
             {/* Destination list select */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-muted-foreground block">Select target contact list</label>
-              <select
+              <Select
                 value={targetListId}
                 onChange={(e) => setTargetListId(e.target.value ? Number(e.target.value) : '')}
                 className="w-full md:w-80 px-4 py-2.5 rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent text-sm"
@@ -654,7 +655,7 @@ function ImportContactsPage() {
                 {lists.map((l: any) => (
                   <option key={l.id} value={l.id}>{l.name} (ID: {l.id})</option>
                 ))}
-              </select>
+              </Select>
             </div>
 
             <div className="flex gap-3 pt-2">

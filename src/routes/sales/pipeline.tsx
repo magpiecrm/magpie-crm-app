@@ -12,6 +12,7 @@ import { openStages } from '../../features/sales/utils'
 import { PipelineBoard, STAGE_COLUMN_WIDTH } from '../../features/sales/components/PipelineBoard'
 import { DealForm } from '../../features/sales/components/DealForm'
 import { useCurrentUserEmail } from '../../features/sales/components/useSalesLookups'
+import { Select } from '../../components/ui/Select'
 
 interface PipelineSearch {
   /** Which pipeline to show; the first when missing. */
@@ -137,7 +138,7 @@ function PipelinePage() {
             className={`${FIELD_CLASS} pl-9`}
           />
         </div>
-        <select value={owner} onChange={(e) => setOwner(e.target.value)} aria-label="Owner" className={`${FIELD_CLASS} sm:w-56`}>
+        <Select value={owner} onChange={(e) => setOwner(e.target.value)} aria-label="Owner" className={`${FIELD_CLASS} sm:w-56`}>
           <option value="">All owners</option>
           <option value="me">Me</option>
           {owners
@@ -147,7 +148,7 @@ function PipelinePage() {
                 {o}
               </option>
             ))}
-        </select>
+        </Select>
       </div>
 
       {pipelinesError ? (

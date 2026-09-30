@@ -15,6 +15,7 @@ import { ContactFieldsTab } from './ContactFieldsTab'
 import { ApiKeysTab } from './ApiKeysTab'
 import { PipelineSettings } from '../../sales/components/PipelineSettings'
 import { BillingTab } from './BillingTab'
+import { Select } from '../../../components/ui/Select'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
@@ -76,7 +77,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         {/* Narrow screens: one dropdown instead of a menu column. */}
         <label className="lg:hidden flex flex-col gap-1.5">
           <span className="text-xs font-semibold text-muted-foreground">Page</span>
-          <select
+          <Select
             value={active}
             onChange={(e) => open(e.target.value as SettingsSection)}
             className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
@@ -92,7 +93,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                 group.sections.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)
               ),
             )}
-          </select>
+          </Select>
         </label>
 
         {/* Wide screens: the title and menu stay where they start while the page scrolls. */}

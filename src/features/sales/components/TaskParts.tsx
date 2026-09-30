@@ -7,6 +7,7 @@ import { Button } from '../../../components/ui/Button'
 import { queryKeys } from '../../../queryKeys'
 import { daysFromNow, dueBucket, dueLabel, FOLLOW_UPS, fromLocalInput } from '../tasks'
 import type { Activity } from '../types'
+import { Select } from '../../../components/ui/Select'
 
 /** What a task is about: at most one of each. */
 export type TaskOn = { dealId?: string; companyId?: string; contactEmail?: string }
@@ -112,7 +113,7 @@ export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: 
         <label className="text-xs text-muted-foreground" htmlFor="task-when">
           Due
         </label>
-        <select
+        <Select
           id="task-when"
           value={when}
           onChange={(e) => setWhen(e.target.value)}
@@ -125,7 +126,7 @@ export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: 
           ))}
           <option value="custom">Pick a date…</option>
           <option value="none">No due date</option>
-        </select>
+        </Select>
         {when === 'custom' && (
           <input
             type="datetime-local"

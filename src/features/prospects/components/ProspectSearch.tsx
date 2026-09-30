@@ -51,6 +51,7 @@ import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, SENIORITY_LABEL, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
+import { Select } from '../../../components/ui/Select'
 
 type Mode = 'companies' | 'people'
 
@@ -694,7 +695,7 @@ export function ProspectSearch() {
 
       {(personas as Persona[]).length > 0 && (
         <FilterAccordion label="Apply persona" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.personas} onToggle={() => toggleSection('personas')}>
-          <select
+          <Select
             className={inputClass}
             value=""
             onChange={(e) => {
@@ -704,7 +705,7 @@ export function ProspectSearch() {
           >
             <option value="">Choose a persona…</option>
             {(personas as Persona[]).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          </Select>
           <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Fills titles, seniority and country.</p>
         </FilterAccordion>
       )}
@@ -730,14 +731,14 @@ export function ProspectSearch() {
           <label htmlFor="people-page-size" className="text-[11px] font-semibold text-foreground">
             Results per page
           </label>
-          <select
+          <Select
             id="people-page-size"
             value={peopleForm.count}
             onChange={(e) => setPeopleForm({ ...peopleForm, count: Number(e.target.value) })}
             className="px-2 py-1 text-xs bg-background border border-border rounded focus:ring-1 focus:ring-accent outline-none"
           >
             {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
+          </Select>
         </div>
       )}
       {mode === 'people' && !hosted && (
