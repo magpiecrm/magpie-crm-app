@@ -85,19 +85,19 @@ beforeEach(() => {
 })
 
 describe('searchPeople with a plan allowance', () => {
-  it('asks for no more people than the plan has search credits for', async () => {
+  it('asks for no more people than the plan has prospect credits for', async () => {
     allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 98.6 } }
     searchPage = pageOf(hit('ana'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
     expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 1 })
-    expect(res.warnings).toContain('Your plan has 1 search credit left this month, so this page asks for at most about that many people. Upgrade to get more.')
+    expect(res.warnings).toContain('Your plan has 1 prospect credit left this month, so this page asks for at most about that many people. Upgrade to get more.')
   })
 
   it('stops before searching when none are left', async () => {
     allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 100 } }
     const calls = searchPeopleMock.mock.calls.length
-    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow(/used all 100 search credits/)
+    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow(/used all 100 prospect credits/)
     expect(searchPeopleMock.mock.calls.length).toBe(calls)
   })
 })

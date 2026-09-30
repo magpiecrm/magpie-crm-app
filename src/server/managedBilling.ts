@@ -23,7 +23,7 @@ export interface CatalogueKind {
   steps: number[]
   /** Price per unit, in thousandths of a penny. */
   unitMillipence: number
-  /** At most this share of another kind (reveals: 30% of search credits). */
+  /** At most this share of another kind (reveals: 30% of prospect credits). */
   maxShareOf?: { kind: PlanKind; share: number }
 }
 

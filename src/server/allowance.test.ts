@@ -71,6 +71,21 @@ describe('allowances', () => {
     expect(() => requireAllowance('emailsSent', 1)).toThrow("You've used all 1,000 emails in your plan this month. Upgrade to get more.")
   })
 
+  it('with a reveal rate, draws reveals from prospect credits instead of an allowance of their own', () => {
+    setAllowance({ ...period, prospects: 20, reveals: 500, revealCredits: 2 })
+    // No separate reveals allowance, even if one is sent.
+    expect(getAllowance()!.limits.reveals).toBeUndefined()
+    recordUsage({ prospectCredits: 10.5 })
+    expect(remaining('reveals')).toBe(4) // 9.5 credits left, 2 each
+    recordUsage({ emailsFound: 3 })
+    expect(remaining('prospects')).toBe(3.5)
+    expect(getAllowance()!.used.reveals).toBe(3)
+    expect(() => requireAllowance('reveals')).not.toThrow()
+    recordUsage({ emailsFound: 1 })
+    expect(remaining('reveals')).toBe(0)
+    expect(() => requireAllowance('reveals')).toThrow('Revealing an email uses 2 prospect credits, and your plan has 1 left this month. Upgrade to get more.')
+  })
+
   it("pauses sending when the host says so, whatever's left, and leaves the rest alone", () => {
     setAllowance({ ...period, prospects: 100, emailsSent: 10000, sendingPaused: true })
     expect(remaining('emailsSent')).toBe(0)

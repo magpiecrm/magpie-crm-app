@@ -42,7 +42,7 @@ describe('public MCP server', () => {
     expect(byName.get('getLists')?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     expect(byName.get('deleteCampaign')?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true })
     // Paid searches say so.
-    expect(byName.get('searchPeople')?.description).toMatch(/Uses search credits/)
+    expect(byName.get('searchPeople')?.description).toMatch(/Uses prospect credits/)
     expect(byName.get('searchPeople')?.annotations?.openWorldHint).toBe(true)
     expect(byName.get('getLists')?.description).not.toMatch(/credits/)
   })
@@ -50,7 +50,7 @@ describe('public MCP server', () => {
   it('explains credits, and building emails from blocks with the block reference, in its instructions', async () => {
     const client = await connect()
     const instructions = client.getInstructions() ?? ''
-    expect(instructions).toMatch(/search credits/)
+    expect(instructions).toMatch(/prospect credits/)
     expect(instructions).toMatch(/Build emails from blocks, never hand-written HTML/)
     expect(instructions).toMatch(/## Email block model/)
     expect(instructions).toMatch(/## Survey model/)

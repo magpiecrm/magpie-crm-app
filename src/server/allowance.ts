@@ -7,17 +7,20 @@
 //   { "periodStart": "2026-10-15T00:00:00Z", "periodEnd": "…",
 //     "prospects": 500, "reveals": 1500, "emailsSent": 10000,
 //     "upgradeUrl": "https://…" }
+// or, for one pool of prospect credits that reveals draw on too,
+//   { …, "prospects": 2000, "revealCredits": 2, "emailsSent": 10000 }
 // A new periodStart starts the counts again from zero (unused allowance doesn't
 // roll over); the same periodStart with bigger numbers is an upgrade, keeping
 // what's been used. Each allowance stops only its own action: out of prospects,
-// search stops but reveals and sending still work.
+// search stops but sending still works (and so do reveals, unless they draw on
+// prospect credits).
 
 import { db } from './db'
 
 export const ALLOWANCE_KINDS = ['prospects', 'reveals', 'emailsSent'] as const
 
 /**
- * The `prospects` allowance is in search credits: what one person found
+ * The `prospects` allowance is in prospect credits: what one person found
  * costs at a full search page, a 25th of the 3-credit search plus their
  * 3-credit profile lookup. A search uses what it actually cost; filters that
  * leave people out, and top-up searches, use more per person shown, so in
@@ -26,7 +29,7 @@ export const ALLOWANCE_KINDS = ['prospects', 'reveals', 'emailsSent'] as const
  */
 const SOCIALFETCH_CREDITS_PER_PROSPECT = 3 / 25 + 3
 
-/** Search credits for what a search spent at SocialFetch, to the hundredth. */
+/** Prospect credits for what a search spent at SocialFetch, to the hundredth. */
 export const prospectCredits = (socialfetchCredits: number) => Math.round((socialfetchCredits / SOCIALFETCH_CREDITS_PER_PROSPECT) * 100) / 100
 export type AllowanceKind = (typeof ALLOWANCE_KINDS)[number]
 
@@ -40,15 +43,22 @@ export interface Allowance {
   upgradeUrl: string | null
   /** The host has paused this copy's sending (e.g. too many spam complaints); everything else works. */
   sendingPaused?: boolean
+  /**
+   * Set by a host that sells one pool of prospect credits: each email reveal
+   * uses this many of the `prospects` allowance, and there's no reveals
+   * allowance of its own.
+   */
+  revealCredits?: number
 }
 
 const WHAT: Record<AllowanceKind, [one: string, many: string]> = {
-  prospects: ['search credit', 'search credits'],
+  prospects: ['prospect credit', 'prospect credits'],
   reveals: ['email reveal', 'email reveals'],
   emailsSent: ['email', 'emails'],
 }
 
 const fmt = (n: number) => Math.floor(n).toLocaleString('en-GB')
+const plural = (n: number, one: string) => `${fmt(n)} ${n === 1 ? one : `${one}s`}`
 const noun = (kind: AllowanceKind, n: number) => WHAT[kind][n === 1 ? 0 : 1]
 
 /** Used when an action would go over its allowance; the message is for the user. */
@@ -69,7 +79,7 @@ export function getAllowance(): Allowance | null {
 
 /** Sets (or, with null, removes) the allowance for this billing period. */
 export function setAllowance(
-  input: { periodStart: string; periodEnd?: string | null; upgradeUrl?: string | null; sendingPaused?: boolean } &
+  input: { periodStart: string; periodEnd?: string | null; upgradeUrl?: string | null; sendingPaused?: boolean; revealCredits?: number | null } &
     Partial<Record<AllowanceKind, number | null>>,
 ): Allowance | null {
   const current = db.getAllowance()
@@ -86,7 +96,10 @@ export function setAllowance(
     used: samePeriod ? current!.used : { prospects: 0, reveals: 0, emailsSent: 0 },
     upgradeUrl: input.upgradeUrl ?? null,
     ...(input.sendingPaused ? { sendingPaused: true } : {}),
+    ...(input.revealCredits && input.revealCredits > 0 ? { revealCredits: input.revealCredits } : {}),
   }
+  // Reveals drawing on prospect credits have no limit of their own.
+  if (next.revealCredits) delete next.limits.reveals
   db.setAllowance(next)
   return next
 }
@@ -99,6 +112,7 @@ export function clearAllowance() {
 export function remaining(kind: AllowanceKind): number {
   const a = db.getAllowance()
   if (kind === 'emailsSent' && a?.sendingPaused) return 0
+  if (kind === 'reveals' && a?.revealCredits) return Math.floor(remaining('prospects') / a.revealCredits)
   const limit = a?.limits[kind]
   if (!a || limit === undefined) return Infinity
   return Math.max(0, limit - a.used[kind])
@@ -116,6 +130,17 @@ export function requireAllowance(kind: AllowanceKind, n = 1, action?: string) {
   if (kind === 'emailsSent' && a.sendingPaused) {
     throw new AllowanceError(kind, 'Sending is paused on this workspace by your hosting provider. Contact them to find out why.', null)
   }
+  if (kind === 'reveals' && a.revealCredits) {
+    const credits = remaining('prospects')
+    const each = a.revealCredits
+    throw new AllowanceError(
+      'prospects',
+      credits < each
+        ? `Revealing an email uses ${plural(each, 'prospect credit')}, and your plan has ${fmt(credits)} left this month. Upgrade to get more.`
+        : `${action ?? 'This'} needs ${fmt(n * each)} prospect credits (${plural(each, 'credit')} an email), but your plan has ${fmt(credits)} left this month. Upgrade to get more.`,
+      a.upgradeUrl,
+    )
+  }
   const limit = a.limits[kind]!
   const message =
     left === 0 || !action
@@ -132,5 +157,7 @@ export function countAgainstAllowance(deltas: Partial<Record<AllowanceKind, numb
     const n = deltas[kind]
     if (n) a.used[kind] += n
   }
+  // Reveals drawing on prospect credits use them too (and are still counted).
+  if (a.revealCredits && deltas.reveals) a.used.prospects += deltas.reveals * a.revealCredits
   // Saved with the usage counts a moment later (usage.ts flush).
 }

@@ -11,7 +11,7 @@ export function nearestStep(steps: number[], n: number): number {
   return steps.reduce((best, v, i) => (Math.abs(v - n) < Math.abs(steps[best] - n) ? i : best), 0)
 }
 
-/** The plan with any kind capped by its share of another (reveals: at most 30% of search credits), on a step. */
+/** The plan with any kind capped by its share of another (reveals: at most 30% of prospect credits), on a step. */
 export function capped(plan: Plan, kinds: CatalogueKind[]): Plan {
   const out = { ...plan }
   for (const kind of kinds) {

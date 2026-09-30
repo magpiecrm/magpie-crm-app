@@ -3,7 +3,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 
-const LABEL = { prospects: 'Search credits', reveals: 'Email reveals', emailsSent: 'Emails sent' } as const
+const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsSent: 'Emails sent' } as const
 
 /**
  * This period's allowances as bars, with an Upgrade button, when whoever
@@ -60,6 +60,12 @@ export function AllowanceMeter({ compact = false, showUpgrade = true }: { compac
           </div>
         )
       })}
+      {!compact && allowance.revealCredits && (
+        <p className="text-xs text-muted-foreground">
+          Searching uses prospect credits for what it costs, about 2 for each prospect found. A verified email uses{' '}
+          {allowance.revealCredits}.
+        </p>
+      )}
       {showUpgrade && allowance.upgradeUrl && (compact ? nearlyOut : true) && (
         <a
           href={allowance.upgradeUrl}

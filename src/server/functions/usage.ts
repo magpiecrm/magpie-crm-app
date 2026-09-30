@@ -15,6 +15,8 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
     periodEnd: a.periodEnd,
     upgradeUrl: billingManaged ? '/settings?tab=billing' : a.upgradeUrl,
     sendingPaused: Boolean(a.sendingPaused),
+    /** Prospect credits each email reveal uses, when reveals draw on them. */
+    revealCredits: a.revealCredits ?? null,
     // Prospect credits are counted to the hundredth; shown whole.
     items: ALLOWANCE_KINDS.flatMap((kind) => (a.limits[kind] === undefined ? [] : [{ kind, used: Math.round(a.used[kind]), limit: a.limits[kind]! }])),
   }

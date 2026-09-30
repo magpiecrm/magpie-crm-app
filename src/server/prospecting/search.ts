@@ -16,7 +16,7 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
-  // Browsing companies is searching too: it uses search credits for what it costs.
+  // Browsing companies is searching too: it uses prospect credits for what it costs.
   if (remaining('prospects') < 1) requireAllowance('prospects')
   const { result: page, credits } = await meterCredits(() => getSource().searchCompanies(filters))
   const { recordUsage } = await import('../usage')
@@ -640,13 +640,13 @@ export async function searchPeople(
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
   const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail)
-  // A plan's search credits: less than one left stops here, before anything is paid for.
+  // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
 
   // Results per page apply to each job title, as the search itself does. The
   // page offers them in 25s (PAGE_SIZES): full pages share each search's cost
-  // among the most people, which is what a search credit is priced on.
+  // among the most people, which is what a prospect credit is priced on.
   const titles = new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   const slots = Math.min(MAX_TITLES_SEARCHED, Math.max(1, titles))
   const perSlot = Math.min(PAGE_SIZES[PAGE_SIZES.length - 1], Math.max(1, filters.count ?? PAGE_SIZES[0]))
@@ -795,7 +795,7 @@ export async function searchPeople(
     details.push(`Some results were left out, so ${plural(requests - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
-    warnings.push(`Your plan has ${plural(Math.floor(left), 'search credit', 'search credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
+    warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
   }
   if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
   if (!lookupError && usable() < target && nextCursor && !wasteful) {
