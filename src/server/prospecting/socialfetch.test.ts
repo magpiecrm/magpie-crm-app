@@ -174,9 +174,28 @@ describe('searchCompanies', () => {
     expect(f.headers[0]['x-api-key']).toBe('sfk_test')
     expect(page.items.map((c) => c.name)).toEqual(['Acme', 'No Site'])
     expect(page.items[1].domain).toBeNull()
-    expect(page.nextCursor).toBe('c2')
+    // Carries on by offset, never with SocialFetch's own cursor.
+    expect(page.nextCursor).toBe('start:4')
     expect(page.reportedTotal).toBe(812)
     expect(page.details![0]).toMatch(/1 of 4 companies/)
+  })
+
+  // SocialFetch's cursor names the filters it was made with, and one saved
+  // from before its release on 2026-09-30 was refused ("Pagination cursor
+  // does not match this request").
+  it('asks for the next page by offset, reading the offset out of a SocialFetch cursor saved from before', async () => {
+    const f = fakeFetch([
+      envelope({ lookupStatus: 'found', organizations: orgs, page: { hasMore: true } }),
+      envelope({ lookupStatus: 'found', organizations: orgs, page: { hasMore: false } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    await source.searchCompanies({ keyword: 'acme', cursor: 'start:25' })
+    expect(f.calls[0].searchParams.get('start')).toBe('25')
+    expect(f.calls[0].searchParams.has('cursor')).toBe(false)
+    const old = Buffer.from(JSON.stringify({ v: 1, operation: 'live.search.organizations', next: { start: 50 } })).toString('base64url')
+    await source.searchCompanies({ keyword: 'acme', cursor: old })
+    expect(f.calls[1].searchParams.get('start')).toBe('50')
+    expect(f.calls[1].searchParams.has('cursor')).toBe(false)
   })
 })
 
@@ -296,12 +315,13 @@ describe('searchPeople', () => {
     expect(second.nextCursor).toBeNull()
   })
 
-  it('carries on a SocialFetch cursor from an older search with the page size it was made with', async () => {
+  it('carries on a SocialFetch cursor from an older search by the offset inside it', async () => {
     const f = fakeFetch([envelope({ people: [searchHit('p2', 'P', 'Two', 'BA', 'London')], page: { hasMore: false } })])
-    const cursor = Buffer.from(JSON.stringify({ BA: 'c5:opaque-1' })).toString('base64url')
+    const theirs = Buffer.from(JSON.stringify({ v: 1, next: { start: 30 } })).toString('base64url')
+    const cursor = Buffer.from(JSON.stringify({ BA: `c5:${theirs}` })).toString('base64url')
     await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['BA'], count: 2, cursor })
-    expect(f.calls[0].searchParams.get('cursor')).toBe('opaque-1')
-    expect(f.calls[0].searchParams.get('count')).toBe('5')
+    expect(f.calls[0].searchParams.get('start')).toBe('30')
+    expect(f.calls[0].searchParams.has('cursor')).toBe(false)
   })
 
   it('tries a multi-word title the other way once if it finds nobody, and keeps whichever works', async () => {

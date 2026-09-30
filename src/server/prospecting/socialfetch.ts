@@ -79,7 +79,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * Credits SocialFetch charged inside `fn` (and whatever it awaits), for work
- * that's paid for by what it actually cost: a plan's search credits
+ * that's paid for by what it actually cost: a plan's prospect credits
  * (search.ts). Concurrent searches each get their own count.
  */
 const meter = new AsyncLocalStorage<{ credits: number }>()
@@ -523,6 +523,26 @@ export function sameCompanyName(a: string, b: string): boolean {
 // rejects a cursor reused with a different page size ("Pagination cursor does
 // not match this request"), so the size it was made with travels with it.
 
+/**
+ * Where a page cursor carries on from. Pages are always asked for by offset
+ * (`start:N`): SocialFetch's own cursor names the exact filters it was made
+ * with and is refused ("Pagination cursor does not match this request") if a
+ * request differs at all, which saved positions from before its release on
+ * 2026-09-30 did. One from before is read for the offset inside it.
+ */
+export function startFrom(cursor: string | null | undefined): number {
+  if (!cursor) return 0
+  const own = cursor.match(/^start:(\d+)$/)
+  if (own) return Number(own[1])
+  const sized = cursor.match(/^c\d+:(.+)$/s)
+  try {
+    const n = Number(JSON.parse(Buffer.from(sized ? sized[1] : cursor, 'base64url').toString('utf8'))?.next?.start)
+    return Number.isInteger(n) && n > 0 ? n : 0
+  } catch {
+    return 0
+  }
+}
+
 function encodeCursor(map: Record<string, string>): string | null {
   return Object.keys(map).length ? Buffer.from(JSON.stringify(map)).toString('base64url') : null
 }
@@ -565,10 +585,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // can; each page is still checked after it comes back.
       const industry = filters.industry?.trim() ? industryCodes([filters.industry.trim()]) : []
       const geoEntityId = geoIdForCountry(filters.country)
+      const start = startFrom(filters.cursor)
       const res = await get<any>('/v2/linkedin/organizations/search', {
         keyword: filters.keyword,
         count: PAGE_SIZE,
-        cursor: filters.cursor,
+        start: start || undefined,
         industry: industry.length ? industry.join(',') : undefined,
         headcountRange: filters.headcount?.length ? filters.headcount.join(',') : undefined,
         geoEntityId: geoEntityId ?? undefined,
@@ -609,7 +630,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
       return {
         items,
-        nextCursor: res.data?.page?.hasMore ? str(res.data?.page?.nextCursor) : null,
+        nextCursor: (() => {
+          const page = res.data?.page
+          const next = (num(page?.start) ?? start) + (num(page?.returnedCount) ?? raw.length)
+          return page?.hasMore && raw.length > 0 && next <= MAX_START ? `start:${next}` : null
+        })(),
         reportedTotal: num(res.data?.reportedTotal),
         warnings,
         details,
@@ -694,10 +719,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
 
       /**
-       * One title's people for this page, and where that title carries on. By
-       * offset, each request asks for FETCH_SIZE and the people this page
-       * doesn't use are held for the next; a SocialFetch cursor (from before
-       * offsets) can't resume part-way, so nothing is held for one.
+       * One title's people for this page, and where that title carries on (an
+       * offset, startFrom). Each request asks for FETCH_SIZE, and the people
+       * this page doesn't use are held for the next.
        */
       const fetchTitle = async (title: string, position: string | undefined) => {
         // The title goes in `title`, which filters; `keyword` only ranks.
@@ -712,15 +736,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           industry: industry.length ? industry.join(',') : undefined,
           currentCompany: companyId ?? companyIds ?? undefined,
         }
-        if (position && !position.startsWith('start:')) {
-          // A cursor only works with the page size it was made with.
-          const sized = position.match(/^c(\d+):(.+)$/s)
-          const count = sized ? Number(sized[1]) : pageSize
-          const res = await get<any>('/v2/linkedin/people/search', { ...params, count, cursor: sized ? sized[2] : position })
-          const cursor = res.data?.page?.hasMore ? str(res.data.page.nextCursor) : null
-          return { title, people: readPeople(res, count, fitsTitle), next: cursor ? `c${count}:${cursor}` : null, reportedTotal: num(res.data?.reportedTotal), requests: 1 }
-        }
-        const start = position ? Number(position.slice(6)) || 0 : 0
+        const start = startFrom(position)
         let hits: HeldHits | null = pool.take(searchPoolKey(params, start))
         let requests = 0
         if (!hits) {
