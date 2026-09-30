@@ -82,7 +82,7 @@ function checkRefs(data: DbSchema, input: Partial<DealInput>) {
   if (input.expectedClose && !/^\d{4}-\d{2}-\d{2}$/.test(input.expectedClose)) throw new Error('The close date must be a date.')
 }
 
-function logActivity(data: DbSchema, entry: Omit<Activity, 'id' | 'created_at'>): Activity {
+export function logActivity(data: DbSchema, entry: Omit<Activity, 'id' | 'created_at'>): Activity {
   const activity: Activity = { ...entry, id: randomUUID(), created_at: now() }
   ;(data.activities ??= []).push(activity)
   return activity
@@ -199,6 +199,7 @@ export function deleteDeal(data: DbSchema, id: string) {
   if (!data.deals?.some((d) => d.id === id)) throw new Error('Deal not found')
   data.deals = data.deals.filter((d) => d.id !== id)
   data.activities = (data.activities ?? []).filter((a) => a.deal_id !== id)
+  if (data.proposals) data.proposals = data.proposals.filter((p) => p.deal_id !== id)
 }
 
 /** A note on a deal, a company or a contact. */

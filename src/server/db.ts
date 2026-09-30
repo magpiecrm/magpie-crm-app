@@ -4,7 +4,7 @@ import crypto from 'crypto'
 import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
-import type { Activity, Company, Deal, Pipeline } from '../features/sales/types'
+import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sales/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
@@ -53,7 +53,7 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted'
 
 type ContactRecord = DbSchema['contacts'][number]
 export type RecipientRecord = DbSchema['campaign_recipients'][number]
@@ -342,6 +342,7 @@ export interface DbSchema {
   pipelines?: Pipeline[]
   deals?: Deal[]
   activities?: Activity[]
+  proposals?: Proposal[]
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the

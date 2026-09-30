@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AlarmClock, ArrowRight, Plus, StickyNote, Trash2 } from 'lucide-react'
+import { AlarmClock, ArrowRight, FileText, Plus, StickyNote, Trash2 } from 'lucide-react'
 import { addNoteFn, deleteNoteFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
 import { TaskComposer, TaskRow } from './TaskParts'
@@ -9,7 +9,7 @@ import type { Activity } from '../types'
 const when = (iso: string) =>
   new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-const ICON = { note: StickyNote, created: Plus, stage_change: ArrowRight, task: AlarmClock } as const
+const ICON = { note: StickyNote, created: Plus, stage_change: ArrowRight, task: AlarmClock, proposal: FileText } as const
 
 /**
  * A deal's or company's history, newest first, with a box to add a note or a

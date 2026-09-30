@@ -11,6 +11,8 @@ const DEFAULT_URLS: Record<NotificationType, string> = {
   survey_response: '/marketing/surveys',
   verifier_alert: '/settings?tab=prospecting',
   task_due: '/sales/tasks',
+  proposal_viewed: '/sales/deals',
+  proposal_accepted: '/sales/deals',
 }
 
 /**

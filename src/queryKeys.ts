@@ -42,6 +42,8 @@ export const queryKeys = {
     deals: (filters?: unknown) => (filters === undefined ? (['sales', 'deals'] as const) : (['sales', 'deals', filters] as const)),
     deal: (id: string) => ['sales', 'deal', id] as const,
     /** Without filters, the prefix of every tasks list (the Tasks page, the sidebar count, a record's tasks). */
+    proposals: (dealId: string) => ['sales', 'proposals', dealId] as const,
+    proposal: (id: string) => ['sales', 'proposal', id] as const,
     tasks: (filters?: unknown) => (filters === undefined ? (['sales', 'tasks'] as const) : (['sales', 'tasks', filters] as const)),
   },
   surveys: {

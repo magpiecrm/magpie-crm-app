@@ -6,6 +6,7 @@ import { db } from '../db'
 import * as companies from './companies'
 import * as deals from './deals'
 import * as pipelines from './pipelines'
+import * as proposals from './proposals'
 import * as tasks from './tasks'
 
 /** Groups new contacts into companies and makes the first pipeline, saving only if that changed anything. */
@@ -65,6 +66,17 @@ export const sales = {
   deleteTask: (id: string) => write((data) => tasks.deleteTask(data, id)),
   /** Open tasks now due whose reminder hasn't gone out, marked as reminded. */
   takeDueReminders: () => write((data) => tasks.takeDueReminders(data)),
+
+  // Proposals
+  listProposals: (dealId: string, baseUrl: string) => read((data) => proposals.listProposals(data, dealId).map((p) => proposals.summary(p, baseUrl))),
+  getProposal: (id: string) => read((data) => proposals.getProposal(data, id)),
+  proposalByToken: (token: string) => read((data) => proposals.byToken(data, token)),
+  createProposal: (input: Parameters<typeof proposals.createProposal>[1], actor: string | null) => write((data) => proposals.createProposal(data, input, actor)),
+  updateProposal: (id: string, patch: Parameters<typeof proposals.updateProposal>[2]) => write((data) => proposals.updateProposal(data, id, patch)),
+  deleteProposal: (id: string) => write((data) => proposals.deleteProposal(data, id)),
+  markProposalSent: (id: string, actor: string | null, how: string) => write((data) => proposals.markSent(data, id, actor, how)),
+  recordProposalView: (token: string, by: Parameters<typeof proposals.recordView>[2]) => write((data) => proposals.recordView(data, token, by)),
+  acceptProposal: (token: string, name: string) => write((data) => proposals.acceptProposal(data, token, name)),
 
   /** The people who can own a deal. */
   owners: () => db.getUsers().map((u) => u.email),

@@ -7,6 +7,7 @@ import { usePipelines } from '../../../features/sales/usePipelines'
 import { formatDay } from '../../../features/sales/utils'
 import { ActivityTimeline } from '../../../features/sales/components/ActivityTimeline'
 import { FollowUpButton } from '../../../features/sales/components/TaskParts'
+import { ProposalsPanel } from '../../../features/sales/components/ProposalsPanel'
 import { useCurrentUserEmail, useRefreshSales } from '../../../features/sales/components/useSalesLookups'
 import {
   CloseDateField,
@@ -105,6 +106,7 @@ function DealPage() {
         <div className="space-y-6 lg:col-start-3 lg:row-start-1">
           <CompanyPanel deal={deal} />
           <PeoplePanel deal={deal} />
+          <ProposalsPanel deal={deal} />
         </div>
         <section className="lg:col-span-2 lg:col-start-1 lg:row-start-1 lg:row-span-2 bg-card border border-border rounded-xl p-5 sm:p-6">
           <div className="flex items-center justify-between gap-3 mb-4">

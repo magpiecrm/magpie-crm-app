@@ -68,7 +68,7 @@ export interface Deal {
   updated_at: string
 }
 
-type ActivityKind = 'note' | 'task' | 'created' | 'stage_change'
+type ActivityKind = 'note' | 'task' | 'created' | 'stage_change' | 'proposal'
 
 /** Something that happened to a deal, company or contact; notes and tasks are written by people. */
 export interface Activity {
@@ -109,3 +109,34 @@ export interface CompanyView extends Company {
 export function formatMoney(minor: number, currency: Deal['currency'] = 'GBP'): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency, maximumFractionDigits: minor % 100 === 0 ? 0 : 2 }).format(minor / 100)
 }
+
+/**
+ * A proposal for a deal: a page designed in the email builder, shared as a
+ * private link (/p/<token>) that shows when it's opened and can be accepted.
+ */
+export interface Proposal {
+  id: string
+  deal_id: string
+  /** The link's secret part. */
+  token: string
+  title: string
+  /** The builder's compiled HTML, with its design embedded. */
+  html: string
+  /** When it was first sent or its link copied; null while a draft. */
+  sent_at: string | null
+  /** Opens by people, not counting the team's own previews or scanners. */
+  views: number
+  first_viewed_at: string | null
+  last_viewed_at: string | null
+  /** Opens by link scanners and previewers (Slack, Outlook Safe Links and the like). */
+  bot_views: number
+  accepted_at: string | null
+  /** The name they typed to accept it. */
+  accepted_by: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** A proposal as the deal page lists it: without its HTML, with its link. */
+export type ProposalSummary = Omit<Proposal, 'html' | 'token'> & { url: string }
