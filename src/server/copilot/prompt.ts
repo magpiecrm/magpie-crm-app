@@ -121,12 +121,30 @@ export function renderSurveyReference(): string {
   return lines.join('\n')
 }
 
+/** The user's local date and time, for due dates ("tomorrow", "Friday"). UTC when their time zone isn't known. */
+export function localNow(timeZone?: string, now = new Date()): string {
+  const format = (tz: string) =>
+    now.toLocaleString('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'longOffset' })
+  try {
+    if (timeZone) return `${format(timeZone)} (${timeZone})`
+  } catch {
+    // Not a time zone Intl knows.
+  }
+  return `${format('UTC')} (UTC; the user's time zone isn't known)`
+}
+
 /** A short note about what the user is currently looking at. */
 function renderContext(state: CopilotClientState): string {
   const lines: string[] = ['## Current context', '']
   lines.push(`- Route: ${state.route ?? 'unknown'}`)
+  lines.push(`- Now: ${localNow(state.timeZone)}`)
   if (state.campaign) {
     lines.push(`- Open campaign: "${state.campaign.name}" (ID ${state.campaign.id})`)
+  }
+  if (state.route?.startsWith('/sales/proposals/')) {
+    lines.push(
+      "- The builder is open on a PROPOSAL, not an email: a web page the client opens from a private link, with a form to accept it added below the design. It needs no unsubscribe footer. Write it as a proposal: their situation, what you'll do, the price, next steps.",
+    )
   }
   if (state.builder) {
     lines.push(
@@ -209,6 +227,13 @@ and have no filesystem, shell, or network access beyond the tools listed below.
 - **Surveys:** start from listSurveyTemplates, keep them short, and look at the
   result with previewSurvey. Map answers to contact fields when the user wants
   the data on the contact's profile.
+- **Deals, tasks and proposals:** find a deal with getDeals. "Remind me to
+  follow up with Ava on Friday" is addTask (on the deal or contact, due Friday
+  9:00 their time); "what's overdue" is getTasks. A proposal is a page for a
+  deal that the client opens from a private link and accepts: createProposal
+  (the "layout" start fills it in from the deal), then help the user write it
+  in the builder, then shareProposal for the link or sendProposal to email it.
+  getProposals says whether it's been opened or accepted.
 - **Tool errors are recoverable.** If a call fails, read the message, correct the
   arguments, and try again rather than reporting failure to the user.
 - **Ask when it matters.** If a request is ambiguous in a way that changes who

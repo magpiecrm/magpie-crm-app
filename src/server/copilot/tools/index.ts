@@ -10,6 +10,7 @@ import { mediaTools } from './media'
 import { surveyTools } from './surveys'
 import { surveyBuilderTools } from './surveyBuilder'
 import { templateTools } from './templates'
+import { salesTools } from './sales'
 
 /**
  * Every tool the copilot can call. This array is the single source of truth:
@@ -29,6 +30,7 @@ export const COPILOT_TOOLS: CopilotTool<any>[] = [
   ...mediaTools,
   ...surveyTools,
   ...surveyBuilderTools,
+  ...salesTools,
 ]
 
 const byName = new Map(COPILOT_TOOLS.map(t => [t.name, t]))

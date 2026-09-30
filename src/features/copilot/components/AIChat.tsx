@@ -420,6 +420,11 @@ export function AIChat({
   const getClientState = useCallback((): CopilotClientState => {
     const state: CopilotClientState = {}
     if (pageContext) state.route = pageContext
+    try {
+      state.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    } catch {
+      // No Intl time zone support: the copilot works in UTC.
+    }
     if (campaignContext && campaignContext.id > 0) {
       state.campaign = {
         id: campaignContext.id,

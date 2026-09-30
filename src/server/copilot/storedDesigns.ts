@@ -1,8 +1,9 @@
 // The copilot's builder tools for outside AI apps (the public MCP server): the
 // same tools, names and schemas, run against a stored design instead of one
 // open in the browser. Each call names what it works on — a campaign or a
-// saved template for an email, a survey for a survey. The design is loaded,
-// the tool runs exactly as it does in the copilot, its changes go through the
+// saved template for an email, a proposal's page, a survey for a survey. The
+// design is loaded, the tool runs exactly as it does in the copilot, its
+// changes go through the
 // same reducer the builder uses, and the result is saved as a block design
 // the builder opens as normal (never as hand-written HTML).
 
@@ -39,12 +40,24 @@ async function emailDesign(html: string): Promise<BuilderDesign> {
   return { blocks: [{ id: 'imported_html', type: 'html', content: html } as any], globalStyle: DEFAULT_GLOBAL_STYLE }
 }
 
-async function loadEmail(campaignId: number | undefined, templateId: string | undefined): Promise<Loaded<BuilderDesign>> {
-  if ((campaignId === undefined) === (templateId === undefined)) {
-    throw new Error('Say which design to work on: give campaignId (from getCampaigns) or savedTemplateId (from getSavedTemplates), not both.')
+async function loadEmail(campaignId: number | undefined, templateId: string | undefined, proposalId?: string): Promise<Loaded<BuilderDesign>> {
+  if ([campaignId, templateId, proposalId].filter((x) => x !== undefined).length !== 1) {
+    throw new Error('Say which design to work on: give one of campaignId (from getCampaigns), savedTemplateId (from getSavedTemplates) or proposalId (from getProposals).')
   }
   const { compileDesign } = await import('../emailTemplates')
   const compile = (d: BuilderDesign) => compileDesign(d.blocks, d.globalStyle)
+
+  if (proposalId !== undefined) {
+    const { sales } = await import('../sales')
+    const proposal = sales.getProposal(proposalId)
+    const design = await emailDesign(proposal.html)
+    return {
+      design,
+      state: { builder: { ...design } as any },
+      readOnly: null,
+      save: async (d) => void sales.updateProposal(proposal.id, { html: compile(d) }),
+    }
+  }
 
   if (campaignId !== undefined) {
     const { getCampaign, updateCampaign } = await import('../emailService')
@@ -120,6 +133,7 @@ async function runOn<D>(
 const CAMPAIGN_OR_TEMPLATE = {
   campaignId: z.number().int().optional().describe('The campaign whose design to work on (from getCampaigns). Give this or templateId.'),
   savedTemplateId: z.string().optional().describe('The saved template whose design to work on (from getSavedTemplates). Give this or campaignId.'),
+  proposalId: z.string().optional().describe("A proposal's page (from getProposals), instead of an email. It's a web page, so it needs no unsubscribe link."),
 }
 const SURVEY = { surveyId: z.string().describe('The survey whose design to work on (from getSurveys).') }
 
@@ -135,11 +149,11 @@ function onStoredEmail(tool: CopilotTool<any>): CopilotTool<any> {
     ...tool,
     target: 'server',
     browserOnly: false,
-    description: `${tool.description} Here it works on the saved design of the campaign or template you name, and saves any change straight away.`,
+    description: `${tool.description} Here it works on the saved design of the campaign, template or proposal you name, and saves any change straight away.`,
     input: withTarget(tool, CAMPAIGN_OR_TEMPLATE),
     handler: async (all, outer) => {
-      const { campaignId, savedTemplateId, ...args } = all as { campaignId?: number; savedTemplateId?: string }
-      const loaded = await loadEmail(campaignId, savedTemplateId)
+      const { campaignId, savedTemplateId, proposalId, ...args } = all as { campaignId?: number; savedTemplateId?: string; proposalId?: string }
+      const loaded = await loadEmail(campaignId, savedTemplateId, proposalId)
       return runOn(tool, args, outer, loaded, (d, a) => applyBuilderAction(d, a), (d) => ({ ...loaded.state, builder: { blocks: d.blocks, globalStyle: d.globalStyle as any } }))
     },
   }

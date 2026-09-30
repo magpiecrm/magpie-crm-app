@@ -14,6 +14,8 @@ type ToolTarget = 'server' | 'client'
 export interface CopilotClientState {
   /** Route the user is on, e.g. `/marketing/campaigns/12`. */
   route?: string
+  /** The user's IANA time zone, e.g. `Europe/London`, for dates like a task's due time. */
+  timeZone?: string
   builder?: {
     blocks: unknown[]
     globalStyle: Record<string, unknown>

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const campaigns: Record<number, { id: number; name: string; subject: string; status: string; htmlContent: string }> = {}
 const templates: Record<string, { id: string; name: string; description: string; html: string; updated_at: string }> = {}
 const surveys: Record<string, any> = {}
+const proposals: Record<string, { id: string; html: string }> = {}
 
 vi.mock('../db', () => ({
   db: {
@@ -32,6 +33,15 @@ vi.mock('../emailTemplates', async (original) => ({
   },
   updateTemplate: (id: string, patch: { html?: string }) => Object.assign(templates[id], patch),
 }))
+vi.mock('../sales', () => ({
+  sales: {
+    getProposal: (id: string) => {
+      if (!proposals[id]) throw new Error('Proposal not found')
+      return proposals[id]
+    },
+    updateProposal: (id: string, patch: { html?: string }) => Object.assign(proposals[id], patch),
+  },
+}))
 vi.mock('../surveys', () => ({
   updateSurvey: (id: string, patch: { design?: unknown }) => Object.assign(surveys[id], patch.design ? { design: patch.design } : {}),
 }))
@@ -53,6 +63,7 @@ beforeEach(() => {
   for (const k of Object.keys(campaigns)) delete campaigns[Number(k)]
   for (const k of Object.keys(templates)) delete templates[k]
   for (const k of Object.keys(surveys)) delete surveys[k]
+  for (const k of Object.keys(proposals)) delete proposals[k]
   campaigns[1] = { id: 1, name: 'October news', subject: 'News', status: 'draft', htmlContent: '' }
 })
 
@@ -83,8 +94,15 @@ describe('builder tools on a stored design', () => {
     expect(extractDesign(templates.t1.html)!.blocks).toEqual([expect.objectContaining({ type: 'text', content: 'In the template' })])
   })
 
+  it("edits a proposal's page by proposalId", async () => {
+    proposals.pr1 = { id: 'pr1', html: '' }
+    await call('addBlock', { proposalId: 'pr1', block: { type: 'title', content: 'Our proposal' } })
+    expect(extractDesign(proposals.pr1.html)!.blocks).toEqual([expect.objectContaining({ type: 'title', content: 'Our proposal' })])
+    await expect(call('getBlocks', { proposalId: 'pr1', campaignId: 1 })).rejects.toThrow(/give one of/)
+  })
+
   it("asks which design when it isn't clear, and leaves a sent campaign alone", async () => {
-    await expect(call('getBlocks', {})).rejects.toThrow(/give campaignId .* or savedTemplateId/)
+    await expect(call('getBlocks', {})).rejects.toThrow(/give one of campaignId .* savedTemplateId .* proposalId/)
     campaigns[1] = { ...campaigns[1], status: 'sent', htmlContent: '' }
     await expect(call('addBlock', { campaignId: 1, block: { type: 'text', content: 'x' } })).rejects.toThrow(/has been sent.*duplicateCampaign/)
     expect(campaigns[1].htmlContent).toBe('')

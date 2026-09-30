@@ -39,28 +39,9 @@ export const createProposalFn = createServerFn({ method: 'POST' })
     z.object({ dealId: id, title, start: z.enum(['layout', 'blank', 'template']), templateId: id.optional() }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { sales, actor } = await signedIn()
-    let body = ''
-    if (data.start === 'template') {
-      if (!data.templateId) throw new Error('Choose a template.')
-      const { getTemplateOrThrow } = await import('../emailTemplates')
-      body = getTemplateOrThrow(data.templateId).html
-    } else if (data.start === 'layout') {
-      const { db } = await import('../db')
-      const { proposalHtml } = await import('../../features/sales/proposalLayout')
-      const { formatMoney } = await import('../../features/sales/types')
-      const { deal } = sales.getDeal(data.dealId)
-      const first = deal.contacts[0]
-      const firstName = first ? (db.getContact(first.email)?.first_name || null) : null
-      body = proposalHtml({
-        title: data.title,
-        client: deal.company_name ?? deal.name,
-        firstName,
-        price: deal.value > 0 ? formatMoney(deal.value, deal.currency) : null,
-        brand: db.getBrandKit(),
-      })
-    }
-    return sales.createProposal({ dealId: data.dealId, title: data.title, html: body }, actor)
+    const { actor } = await signedIn()
+    const { startProposal } = await import('../proposalActions')
+    return startProposal(data, actor)
   })
 
 export const updateProposalFn = createServerFn({ method: 'POST' })
@@ -84,11 +65,9 @@ export const deleteProposalFn = createServerFn({ method: 'POST' })
 export const shareProposalFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
   .handler(async ({ data }) => {
-    const { sales, actor, baseUrl } = await signedIn()
-    const { summary } = await import('../sales/proposals')
-    const already = sales.getProposal(data.id).sent_at
-    const { proposal, movedTo } = already ? { proposal: sales.getProposal(data.id), movedTo: null } : sales.markProposalSent(data.id, actor, 'Link shared')
-    return { url: summary(proposal, baseUrl).url, movedTo }
+    const { actor } = await signedIn()
+    const { shareProposal } = await import('../proposalActions')
+    return shareProposal(data.id, actor)
   })
 
 /** Emails its link to some of the deal's people, from the default sender, and marks it sent. */
@@ -104,27 +83,7 @@ export const sendProposalFn = createServerFn({ method: 'POST' })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { sales, actor, baseUrl } = await signedIn()
-    const { db } = await import('../db')
-    const { sendMail } = await import('../nodemailer')
-    const { summary } = await import('../sales/proposals')
-    const { proposalEmail } = await import('../proposalPage')
-    const p = sales.getProposal(data.id)
-    const url = summary(p, baseUrl).url
-    const html = proposalEmail(data.message, url, p.title, db.getBrandKit()?.primaryColor)
-    const sent: string[] = []
-    const skipped: Array<{ email: string; why: string }> = []
-    for (const to of [...new Set(data.to)]) {
-      // Not to someone who unsubscribed, complained or whose address bounced.
-      const status = db.getContact(to)?.status
-      const stop = db.emailStop(to)
-      if ((status && status !== 'subscribed') || stop) {
-        skipped.push({ email: to, why: stop?.reason === 'bounced' || status === 'bounced' ? 'their address bounced' : 'they unsubscribed' })
-        continue
-      }
-      await sendMail({ to, subject: data.subject, html })
-      sent.push(to)
-    }
-    const movedTo = sent.length ? sales.markProposalSent(data.id, actor, `Emailed to ${sent.join(', ')}`).movedTo : null
-    return { sent, skipped, movedTo }
+    const { actor } = await signedIn()
+    const { sendProposal } = await import('../proposalActions')
+    return sendProposal(data, actor)
   })
