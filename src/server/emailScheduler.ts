@@ -89,7 +89,7 @@ export function startEmailScheduler() {
         continue
       }
       try {
-        const unsubscribeUrl = `${getAppUrl()}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email }))}`
+        const unsubscribeUrl = `${await getAppUrl()}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email }))}`
         await sendMail({ to: e.contact_email, subject: e.subject, html: withUnsubscribeLink(e.html, unsubscribeUrl), from: e.from, unsubscribeUrl })
         db.markPendingEmailSent(e.id)
         console.log(`[EmailScheduler] Sent welcome email to ${e.contact_email}`)
