@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { automatedClicks, looksAutomated } from './clickFilter'
+import { automatedClicks, automatedOpens, looksAutomated } from './clickFilter'
 
 const sentAt = '2026-09-30T10:00:00.000Z'
 const at = (seconds: number) => new Date(Date.parse(sentAt) + seconds * 1000).toISOString()
@@ -35,5 +35,17 @@ describe('automatedClicks', () => {
 
   it('marks a click whose request said it was a scanner', () => {
     expect(automatedClicks([{ url: 'a', at: at(900), bot: true }], { sentAt })).toEqual([true])
+  })
+})
+
+describe('automatedOpens', () => {
+  it("marks loads as the email arrived, around the trap link, or by a script, but not a person's later on", () => {
+    const events = [{ at: at(3) }, { at: at(95) }, { at: at(700), bot: true as const }, { at: at(1800) }]
+    expect(automatedOpens(events, { sentAt, trappedAt: at(100) })).toEqual([true, true, true, false])
+  })
+
+  it("doesn't count Gmail's or Yahoo's image proxies as scanners", () => {
+    expect(looksAutomated('Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)')).toBe(false)
+    expect(looksAutomated('YahooMailProxy; https://help.yahoo.com/kb/yahoo-mail-proxy-SLN28749.html')).toBe(false)
   })
 })

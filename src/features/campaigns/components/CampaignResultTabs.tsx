@@ -127,8 +127,10 @@ export function OpensTab({ totals: t, activity, sentAt, hasResults, tracksOpens 
       />
       {hasResults && (
         <Note>
-          Opens count when the email's images load. Apple Mail loads them for people automatically, and some apps block them, so
-          treat opens as a guide. Someone who clicks counts as opened even if their images were off.
+          Opens count when the email's images load. Loads by email security scanners are left out
+          {t.automatedOpens > 0 ? ` (${t.automatedOpens.toLocaleString()} this time)` : ''}, but Apple Mail loads images for people
+          automatically and some apps block them, so treat opens as a guide. Someone who clicks counts as opened even if their
+          images were off.
         </Note>
       )}
       {activity ? (

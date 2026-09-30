@@ -1,4 +1,4 @@
-// Telling people's clicks from automated ones. Business mail is scanned as it
+// Telling people's clicks and opens from automated ones. Business mail is scanned as it
 // arrives (Microsoft Defender Safe Links, Mimecast, Proofpoint and the like):
 // the scanner follows every link in the email within seconds, which would
 // otherwise count as the recipient clicking. Seen on MagpieCRM's own
@@ -11,7 +11,11 @@
 //     which no person can see or click (emailService.ts adds it);
 //   - within BURST_MS of a click on a different link in the same email:
 //     people click one link at a time, scanners all of them at once.
-// Only the verdict is kept, never the user agent itself.
+// Opens are judged the same way, except for the burst rule. Mail apps that
+// load images for people (Gmail's and Yahoo's image proxies) aren't flagged,
+// and Apple Mail loading every image as it arrives can't be told apart from a
+// real open, so opens stay a guide. Only the verdict is kept, never the user
+// agent itself.
 
 export const TOO_SOON_MS = 10_000
 export const TRAP_WINDOW_MS = 60_000
@@ -44,5 +48,22 @@ export function automatedClicks(events: ClickEvent[], ctx: { sentAt?: string | n
     if (!Number.isNaN(sent) && at - sent < TOO_SOON_MS) return true
     if (!Number.isNaN(trapped) && Math.abs(at - trapped) <= TRAP_WINDOW_MS) return true
     return events.some((o, j) => j !== i && o.url !== e.url && Math.abs(time(o.at) - at) <= BURST_MS)
+  })
+}
+
+/** One time the email's images loaded (its open-tracking image). */
+export interface OpenEvent {
+  at: string
+  /** The request said it was a scanner or script. */
+  bot?: true
+}
+
+/** For each open, whether it was automated: a scanner or script, too soon after sending, or around the trap link. */
+export function automatedOpens(events: OpenEvent[], ctx: { sentAt?: string | null; trappedAt?: string | null }): boolean[] {
+  const sent = ctx.sentAt ? Date.parse(ctx.sentAt) : NaN
+  const trapped = ctx.trappedAt ? Date.parse(ctx.trappedAt) : NaN
+  return events.map((e) => {
+    const at = Date.parse(e.at)
+    return Boolean(e.bot) || (!Number.isNaN(sent) && at - sent < TOO_SOON_MS) || (!Number.isNaN(trapped) && Math.abs(at - trapped) <= TRAP_WINDOW_MS)
   })
 }

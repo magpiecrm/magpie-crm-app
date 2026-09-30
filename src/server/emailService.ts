@@ -943,6 +943,8 @@ export async function getCampaignStats(id: number) {
       totalClicks: rows.reduce((n, r) => n + clickCount(r), 0),
       /** Clicks from security scanners and scripts (clickFilter.ts), left out of every click figure. */
       automatedClicks: rows.reduce((n, r) => n + (r.bot_clicks ?? 0), 0),
+      /** Opens (image loads) from scanners and scripts, left out of every open figure. */
+      automatedOpens: rows.reduce((n, r) => n + (r.bot_opens ?? 0), 0),
       softBounces,
       hardBounces,
       unsubscribed,
@@ -984,6 +986,7 @@ export async function getCampaignActivity(id: number) {
       clickedAt: r.clicked_at ?? null,
       clicks: clickCount(r),
       automatedClicks: r.bot_clicks ?? 0,
+      automatedOpens: r.bot_opens ?? 0,
       links: Object.entries(r.links ?? {})
         .map(([url, clicks]) => ({ url, clicks }))
         .sort((a, b) => b.clicks - a.clicks),

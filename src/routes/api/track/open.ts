@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { db } from '../../../server/db'
 import { decryptToken } from '../../../server/crypto'
+import { looksAutomated } from '../../../server/clickFilter'
 
 export const Route = createFileRoute('/api/track/open')({
   server: {
@@ -16,7 +17,7 @@ export const Route = createFileRoute('/api/track/open')({
             if (email && campaignId) {
               const decodedEmail = email.toLowerCase().trim()
               const cid = typeof campaignId === 'number' ? campaignId : parseInt(campaignId, 10)
-              if (!isNaN(cid)) db.recordOpen(decodedEmail, cid)
+              if (!isNaN(cid)) db.recordOpen(decodedEmail, cid, { automated: looksAutomated(request.headers.get('user-agent')) })
             }
           }
         }

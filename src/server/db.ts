@@ -16,7 +16,7 @@ import type { UsageCounter } from './usage'
 import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
 import type { SuppressionKind } from './prospecting/suppressionHash'
-import { automatedClicks, type ClickEvent } from './clickFilter'
+import { automatedClicks, automatedOpens, type ClickEvent, type OpenEvent } from './clickFilter'
 
 export type EmailStopReason = 'unsubscribed' | 'complained' | 'bounced'
 
@@ -127,9 +127,15 @@ export interface DbSchema {
     clicked_at: string | null
     /** When it went out. Missing on rows from before this was recorded. */
     sent_at?: string | null
-    /** Every time the email's images loaded. */
+    /** Every time the email's images loaded for a person (clickFilter.ts); `opened_at` and `last_opened_at` are theirs. */
     opens?: number
     last_opened_at?: string | null
+    /** Loads judged automated (security scanners; clickFilter.ts), not in `opens`. */
+    bot_opens?: number
+    /** Recent image loads, to judge which were automated; at most MAX_CLICK_EVENTS. */
+    open_events?: OpenEvent[]
+    /** Opens from before open_events were kept (or folded out of them), counted as people's. */
+    opens_before?: { opens: number; first: string | null; last: string | null; bots: number }
     /** People's clicks (clickFilter.ts); `clicked_at` is the first of them. */
     clicks?: number
     /** People's clicks per link (URL → count), capped at MAX_LINKS_PER_RECIPIENT links. */
@@ -2044,20 +2050,53 @@ class JsonDb {
   }
 
   /**
-   * The email's tracking pixel loaded. Every load is counted; the status only
-   * moves forward (sent → opened), never back from clicked, unsubscribed or a
-   * bounce.
+   * The email's tracking pixel loaded. Whether a person or a scanner loaded
+   * it is judged over all its loads (clickFilter.ts); the status only moves
+   * forward (sent → opened) on people's opens, never back from clicked,
+   * unsubscribed or a bounce. `automated`: the request said it was a scanner.
    */
-  recordOpen(email: string, campaignId: number, at = new Date().toISOString()) {
+  recordOpen(email: string, campaignId: number, opts: { at?: string; automated?: boolean } = {}) {
     const record = this.recipientRecord(campaignId, email)
     if (!record || record.status === 'bounced_hard') return
-    // Rows from before counts were kept start from their first open or click.
-    record.clicks ??= record.clicked_at ? 1 : 0
-    record.opens = (record.opens ?? (record.opened_at ? 1 : 0)) + 1
-    record.opened_at ??= at
-    record.last_opened_at = at
-    if (record.status === 'sent' || record.status === 'bounced_soft') record.status = 'opened'
+    const events = this.openEvents(record)
+    events.push({ at: opts.at ?? new Date().toISOString(), ...(opts.automated ? { bot: true as const } : {}) })
+    if (events.length > MAX_CLICK_EVENTS) {
+      const automated = automatedOpens(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })[0]
+      const oldest = events.shift()!
+      const before = record.opens_before!
+      if (automated) before.bots += 1
+      else {
+        before.opens += 1
+        before.first ??= oldest.at
+        before.last = oldest.at > (before.last ?? '') ? oldest.at : before.last
+      }
+    }
+    this.judgeOpens(record)
     this.save()
+  }
+
+  /** The recipient's open events, starting them (and keeping any counts from before) on first use. */
+  private openEvents(record: RecipientRecord): OpenEvent[] {
+    if (!record.open_events) {
+      record.opens_before = { opens: record.opens ?? (record.opened_at ? 1 : 0), first: record.opened_at ?? null, last: record.last_opened_at ?? record.opened_at ?? null, bots: 0 }
+      record.open_events = []
+    }
+    return record.open_events
+  }
+
+  /** Sets the recipient's open counts, first and last open, and status from people's opens only. */
+  private judgeOpens(record: RecipientRecord) {
+    if (!record.open_events) return
+    const before = record.opens_before ?? { opens: 0, first: null, last: null, bots: 0 }
+    const automated = automatedOpens(record.open_events, { sentAt: record.sent_at, trappedAt: record.trapped_at })
+    const people = record.open_events.filter((_, i) => !automated[i]).map((e) => e.at)
+    record.opens = before.opens + people.length
+    record.bot_opens = before.bots + (record.open_events.length - people.length)
+    const times = [before.first, before.last, ...people].filter((t): t is string => Boolean(t)).sort()
+    record.opened_at = times[0] ?? null
+    record.last_opened_at = times.at(-1) ?? null
+    if (record.opened_at && (record.status === 'sent' || record.status === 'bounced_soft')) record.status = 'opened'
+    else if (!record.opened_at && record.status === 'opened') record.status = 'sent'
   }
 
   /**
@@ -2083,6 +2122,7 @@ class JsonDb {
     record.trapped_at ??= at
     this.clickEvents(record)
     this.judgeClicks(record)
+    this.judgeOpens(record)
     this.save()
   }
 

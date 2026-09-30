@@ -15,6 +15,8 @@ export interface CampaignTotals {
   totalClicks: number
   /** Clicks from security scanners, left out of the click figures. */
   automatedClicks: number
+  /** Opens (image loads) from security scanners, left out of the open figures. */
+  automatedOpens: number
   softBounces: number
   hardBounces: number
   unsubscribed: number
@@ -31,6 +33,7 @@ export function campaignTotals(globalStats: Record<string, number | undefined> =
     totalOpens: n(globalStats.totalOpens ?? globalStats.uniqueOpens),
     totalClicks: n(globalStats.totalClicks ?? globalStats.uniqueClicks),
     automatedClicks: n(globalStats.automatedClicks),
+    automatedOpens: n(globalStats.automatedOpens),
     softBounces: n(globalStats.softBounces),
     hardBounces: n(globalStats.hardBounces),
     unsubscribed: n(globalStats.unsubscribed ?? globalStats.unsubscriptions),

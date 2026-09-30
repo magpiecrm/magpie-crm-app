@@ -43,8 +43,8 @@ describe('campaign activity', () => {
   it('counts every open and click, and who clicked which link', async () => {
     const id = await sentCampaign(['a@x.test', 'b@x.test', 'c@x.test', 'd@x.test'])
 
-    db.recordOpen('a@x.test', id)
-    db.recordOpen('A@x.test ', id)
+    db.recordOpen('a@x.test', id, { at: later(50) })
+    db.recordOpen('A@x.test ', id, { at: later(200) })
     db.recordClick('a@x.test', id, 'https://acme.example/pricing', { at: later(60) })
     db.recordClick('a@x.test', id, 'https://acme.example/pricing', { at: later(300) })
     // Images off: a click with no open still counts as opened.
@@ -52,7 +52,7 @@ describe('campaign activity', () => {
     db.recordClick('b@x.test', id, 'https://acme.example/pricing', { at: later(400) })
     db.updateRecipientBounceStatus('c@x.test', 'hard', String(id))
     // A bounced address can't open; a stray pixel load changes nothing.
-    db.recordOpen('c@x.test', id)
+    db.recordOpen('c@x.test', id, { at: later(50) })
 
     const { globalStats: s } = await emailService.getCampaignStats(id)
     expect(s).toMatchObject({
@@ -109,6 +109,28 @@ describe('campaign activity', () => {
     expect(links).toEqual([{ url: 'https://acme.example/pricing', clicks: 1, people: 1 }])
   })
 
+  it("counts people's opens, not security scanners' image loads", async () => {
+    const id = await sentCampaign(['n@x.test', 'o@x.test', 'p@x.test', 'q@x.test'])
+    // Loaded as the email arrived: a scanner.
+    db.recordOpen('n@x.test', id, { at: later(2) })
+    // Loaded around when the trap link was followed, even if the trap comes second.
+    db.recordOpen('o@x.test', id, { at: later(45) })
+    db.recordTrap('o@x.test', id, later(50))
+    // The request said it was a script.
+    db.recordOpen('p@x.test', id, { at: later(900), automated: true })
+    // A person, later on, twice.
+    db.recordOpen('q@x.test', id, { at: later(1800) })
+    db.recordOpen('q@x.test', id, { at: later(3600) })
+
+    const { globalStats: s } = await emailService.getCampaignStats(id)
+    expect(s).toMatchObject({ uniqueOpens: 1, totalOpens: 2, automatedOpens: 3 })
+    const { recipients } = await emailService.getCampaignActivity(id)
+    for (const email of ['n@x.test', 'o@x.test', 'p@x.test']) {
+      expect(recipients.find((r) => r.email === email)).toMatchObject({ outcome: 'sent', opens: 0, openedAt: null })
+    }
+    expect(recipients.find((r) => r.email === 'q@x.test')).toMatchObject({ outcome: 'opened', opens: 2, automatedOpens: 0 })
+  })
+
   it('adds a hidden trap link to each email, which is not itself a tracked click', async () => {
     const { sendMail } = await import('./nodemailer')
     vi.mocked(sendMail).mockClear()
@@ -122,7 +144,7 @@ describe('campaign activity', () => {
 
   it('keeps unsubscribes and spam complaints apart', async () => {
     const id = await sentCampaign(['e@x.test', 'f@x.test'])
-    db.recordOpen('e@x.test', id)
+    db.recordOpen('e@x.test', id, { at: later(50) })
     db.markRecipientUnsubscribed('e@x.test', id)
     db.markComplained('f@x.test')
 
@@ -147,7 +169,7 @@ describe('campaign activity', () => {
     delete row.clicks
     const { globalStats: s } = await emailService.getCampaignStats(id)
     expect(s).toMatchObject({ uniqueOpens: 1, uniqueClicks: 1, totalOpens: 1, totalClicks: 1 })
-    db.recordOpen('g@x.test', id)
+    db.recordOpen('g@x.test', id, { at: later(50) })
     expect(db.data.campaign_recipients.find((r) => r.campaign_id === id)?.opens).toBe(2)
   })
 })
