@@ -683,20 +683,33 @@ export async function searchPeople(
   let wasteful = false
   let orgSearches = 0
   let companiesFound = 0
+  // Set when the data source failed partway: the page keeps what it had found.
+  let interrupted = false
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
       const count = Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots)))
       let page: Page<PersonResult>
       let companySet: Map<string, string> | undefined
-      if (companyFirst) {
-        const r = await companyFirstPage(source, db, filters, cursor, count)
-        page = r.page
-        companySet = r.companies
-        orgSearches += r.orgSearches
-        companiesFound += r.found
-      } else {
-        page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
+      try {
+        if (companyFirst) {
+          const r = await companyFirstPage(source, db, filters, cursor, count)
+          page = r.page
+          companySet = r.companies
+          orgSearches += r.orgSearches
+          companiesFound += r.found
+        } else {
+          page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
+        }
+      } catch (err) {
+        // SocialFetch failed partway (busy or down, after its own retries):
+        // keep the people found so far and what they cost, rather than
+        // failing the search. Load more carries on from the same place. With
+        // nobody found yet it fails as before, and costs the customer nothing.
+        if (items.length === 0) throw err
+        console.warn(`[Prospecting] Search stopped partway: ${(err as Error)?.message ?? err}`)
+        interrupted = true
+        break
       }
       searches++
       requests += page.requests ?? 1
@@ -798,7 +811,10 @@ export async function searchPeople(
     warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
   }
   if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
-  if (!lookupError && usable() < target && nextCursor && !wasteful) {
+  if (interrupted) {
+    // A warning: a hosted copy shows it too, as it says what to do.
+    warnings.push(`The people data source is busy right now, so this page stopped at ${usable()} of the ${target} asked for. Load more in a minute to carry on.`)
+  } else if (!lookupError && usable() < target && nextCursor && !wasteful) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
   } else if (!lookupError && usable() < target) {
     // A warning, not a detail: a hosted copy shows it too, as it says what to do.

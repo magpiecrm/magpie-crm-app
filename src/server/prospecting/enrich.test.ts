@@ -246,6 +246,31 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
   })
 })
 
+describe('searchPeople when the data source fails partway', () => {
+  it('keeps the people found so far, and what they cost, and carries on from the same place on Load more', async () => {
+    searchPeopleMock.mockClear()
+    searchPeopleMock
+      .mockImplementationOnce(async () => ({ ...pageOf(hit('ana')), nextCursor: 'c1' }))
+      .mockImplementationOnce(async () => {
+        throw new Error('SocialFetch is busy (503).')
+      })
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+    expect(res.nextCursor).toBe('c1')
+    expect(res.warnings).toContain('The people data source is busy right now, so this page stopped at 1 of the 25 asked for. Load more in a minute to carry on.')
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ prospects: 1, searchProfiles: 1 }))
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+  })
+
+  it('fails as before when it fails before finding anyone', async () => {
+    searchPeopleMock.mockImplementationOnce(async () => {
+      throw new Error('SocialFetch is busy (503).')
+    })
+    await expect(searchPeople({ titles: ['Business Analyst'] })).rejects.toThrow('busy')
+    expect(recordUsage).not.toHaveBeenCalled()
+  })
+})
+
 describe('searchPeople counts only paid search requests', () => {
   it('records no search request for a page served from people already held', async () => {
     searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(hit('ana')), requests: 0 }))
