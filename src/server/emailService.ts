@@ -725,6 +725,15 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
         return match.replace(`href="${p1}"`, `href="${trackUrl}"`)
       })
 
+      // A link no person can see or click, before </body>: security scanners
+      // follow every link, so following this one gives them away and their
+      // clicks aren't counted as the recipient's (clickFilter.ts).
+      const trapToken = encryptToken({ email, campaignId: id, trap: 1 })
+      const trapLink = `<a href="${appUrl}/api/track/click?t=${encodeURIComponent(trapToken)}" aria-hidden="true" tabindex="-1" style="display:none;font-size:0;line-height:0;max-height:0;overflow:hidden;mso-hide:all">&#8203;</a>`
+      personalizedHtml = /<\/body>/i.test(personalizedHtml)
+        ? personalizedHtml.replace(/<\/body>/i, (end: string) => `${trapLink}${end}`)
+        : personalizedHtml + trapLink
+
 
       try {
         await sendMail({
@@ -932,6 +941,8 @@ export async function getCampaignStats(id: number) {
       uniqueClicks: clicked,
       totalOpens: rows.reduce((n, r) => n + openCount(r), 0),
       totalClicks: rows.reduce((n, r) => n + clickCount(r), 0),
+      /** Clicks from security scanners and scripts (clickFilter.ts), left out of every click figure. */
+      automatedClicks: rows.reduce((n, r) => n + (r.bot_clicks ?? 0), 0),
       softBounces,
       hardBounces,
       unsubscribed,
@@ -972,6 +983,7 @@ export async function getCampaignActivity(id: number) {
       opens: openCount(r),
       clickedAt: r.clicked_at ?? null,
       clicks: clickCount(r),
+      automatedClicks: r.bot_clicks ?? 0,
       links: Object.entries(r.links ?? {})
         .map(([url, clicks]) => ({ url, clicks }))
         .sort((a, b) => b.clicks - a.clicks),

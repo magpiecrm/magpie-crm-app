@@ -13,6 +13,8 @@ export interface CampaignTotals {
   clicked: number
   totalOpens: number
   totalClicks: number
+  /** Clicks from security scanners, left out of the click figures. */
+  automatedClicks: number
   softBounces: number
   hardBounces: number
   unsubscribed: number
@@ -28,6 +30,7 @@ export function campaignTotals(globalStats: Record<string, number | undefined> =
     clicked: n(globalStats.uniqueClicks ?? globalStats.clickers),
     totalOpens: n(globalStats.totalOpens ?? globalStats.uniqueOpens),
     totalClicks: n(globalStats.totalClicks ?? globalStats.uniqueClicks),
+    automatedClicks: n(globalStats.automatedClicks),
     softBounces: n(globalStats.softBounces),
     hardBounces: n(globalStats.hardBounces),
     unsubscribed: n(globalStats.unsubscribed ?? globalStats.unsubscriptions),

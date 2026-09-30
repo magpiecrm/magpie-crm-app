@@ -16,6 +16,7 @@ import type { UsageCounter } from './usage'
 import type { Allowance } from './allowance'
 import type { SendingDomain } from './sendingDomains'
 import type { SuppressionKind } from './prospecting/suppressionHash'
+import { automatedClicks, type ClickEvent } from './clickFilter'
 
 export type EmailStopReason = 'unsubscribed' | 'complained' | 'bounced'
 
@@ -59,6 +60,8 @@ export type RecipientRecord = DbSchema['campaign_recipients'][number]
 
 /** Enough for any real email, and keeps one recipient's row from growing without end. */
 const MAX_LINKS_PER_RECIPIENT = 50
+/** Clicks kept per recipient to judge which were automated; older ones are folded into the totals. */
+const MAX_CLICK_EVENTS = 100
 
 /** How long a search's stopping point is kept, and how many are kept at most. */
 const SEARCH_POSITION_MS = 30 * 24 * 60 * 60_000
@@ -124,12 +127,21 @@ export interface DbSchema {
     clicked_at: string | null
     /** When it went out. Missing on rows from before this was recorded. */
     sent_at?: string | null
-    /** Every time the email's images loaded, and every tracked click. */
+    /** Every time the email's images loaded. */
     opens?: number
     last_opened_at?: string | null
+    /** People's clicks (clickFilter.ts); `clicked_at` is the first of them. */
     clicks?: number
-    /** Clicks per link (URL → count), capped at MAX_LINKS_PER_RECIPIENT links. */
+    /** People's clicks per link (URL → count), capped at MAX_LINKS_PER_RECIPIENT links. */
     links?: Record<string, number>
+    /** Clicks judged automated (security scanners; clickFilter.ts), not in `clicks`. */
+    bot_clicks?: number
+    /** Recent tracked clicks, to judge which were automated; at most MAX_CLICK_EVENTS. */
+    click_events?: ClickEvent[]
+    /** Clicks from before click_events were kept (or folded out of them), counted as people's. */
+    clicks_before?: { clicks: number; links: Record<string, number>; at: string | null; bots: number }
+    /** When the email's hidden trap link was followed: something automated read it. */
+    trapped_at?: string | null
     bounced_at?: string | null
     unsubscribed_at?: string | null
     /** Marked the email as spam. They are unsubscribed too. */
@@ -2049,22 +2061,74 @@ class JsonDb {
   }
 
   /**
-   * A tracked link in the email was clicked. Also counts as opened, since
-   * someone who clicks has read it even if their images were off.
+   * A tracked link in the email was clicked. Whether it was a person or an
+   * automated scanner is judged over all its clicks (clickFilter.ts), so a
+   * click counted as a person's can turn out to be a scanner's when the next
+   * one arrives. `automated`: the request said it was a scanner or script.
    */
-  recordClick(email: string, campaignId: number, url?: string, at = new Date().toISOString()) {
+  recordClick(email: string, campaignId: number, url?: string, opts: { at?: string; automated?: boolean } = {}) {
     const record = this.recipientRecord(campaignId, email)
     if (!record || record.status === 'bounced_hard') return
-    record.opens ??= record.opened_at ? 1 : 0
-    record.clicks = (record.clicks ?? (record.clicked_at ? 1 : 0)) + 1
-    record.clicked_at ??= at
-    record.opened_at ??= at
-    if (url) {
-      const links = (record.links ??= {})
-      if (url in links || Object.keys(links).length < MAX_LINKS_PER_RECIPIENT) links[url] = (links[url] ?? 0) + 1
-    }
-    if (['sent', 'opened', 'bounced_soft'].includes(record.status)) record.status = 'clicked'
+    const events = this.clickEvents(record)
+    events.push({ url: url ?? null, at: opts.at ?? new Date().toISOString(), ...(opts.automated ? { bot: true as const } : {}) })
+    if (events.length > MAX_CLICK_EVENTS) this.foldOldestClick(record)
+    this.judgeClicks(record)
     this.save()
+  }
+
+  /** The email's hidden trap link was followed: clicks around then were automated. */
+  recordTrap(email: string, campaignId: number, at = new Date().toISOString()) {
+    const record = this.recipientRecord(campaignId, email)
+    if (!record) return
+    record.trapped_at ??= at
+    this.clickEvents(record)
+    this.judgeClicks(record)
+    this.save()
+  }
+
+  /** The recipient's click events, starting them (and keeping any counts from before) on first use. */
+  private clickEvents(record: RecipientRecord): ClickEvent[] {
+    if (!record.click_events) {
+      record.opens ??= record.opened_at ? 1 : 0
+      record.clicks_before = { clicks: record.clicks ?? (record.clicked_at ? 1 : 0), links: { ...(record.links ?? {}) }, at: record.clicked_at ?? null, bots: 0 }
+      record.click_events = []
+    }
+    return record.click_events
+  }
+
+  /** Moves the oldest click event into the totals from before, as judged now. */
+  private foldOldestClick(record: RecipientRecord) {
+    const events = record.click_events!
+    const automated = automatedClicks(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })[0]
+    const oldest = events.shift()!
+    const before = record.clicks_before!
+    if (automated) before.bots += 1
+    else {
+      before.clicks += 1
+      before.at ??= oldest.at
+      if (oldest.url) before.links[oldest.url] = (before.links[oldest.url] ?? 0) + 1
+    }
+  }
+
+  /** Sets the recipient's click counts, first click and status from people's clicks only. */
+  private judgeClicks(record: RecipientRecord) {
+    const events = record.click_events ?? []
+    const before = record.clicks_before ?? { clicks: 0, links: {}, at: null, bots: 0 }
+    const automated = automatedClicks(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })
+    const people = events.filter((_, i) => !automated[i])
+    record.clicks = before.clicks + people.length
+    record.bot_clicks = before.bots + (events.length - people.length)
+    const links = { ...before.links }
+    for (const e of people) {
+      if (!e.url) continue
+      if (e.url in links || Object.keys(links).length < MAX_LINKS_PER_RECIPIENT) links[e.url] = (links[e.url] ?? 0) + 1
+    }
+    record.links = links
+    const first = [before.at, ...people.map((e) => e.at)].filter((t): t is string => Boolean(t)).sort()[0] ?? null
+    record.clicked_at = first
+    // The status only moves as far as people's clicks take it (never back from an unsubscribe or bounce).
+    if (first && ['sent', 'opened', 'bounced_soft'].includes(record.status)) record.status = 'clicked'
+    else if (!first && record.status === 'clicked') record.status = record.opened_at ? 'opened' : 'sent'
   }
 
   findUser(email: string) {

@@ -162,6 +162,15 @@ export function ClicksTab({ totals: t, activity, sentAt, hasResults, tracksOpens
           ['Click-to-open rate', tracksOpens ? percent(t.clicked, t.opened) : 'Not tracked'],
         ]}
       />
+      {hasResults && (
+        <Note>
+          Only people's clicks are counted. Many companies' email security scans every link as an email arrives, which isn't a
+          person clicking
+          {t.automatedClicks > 0
+            ? `: ${t.automatedClicks.toLocaleString()} ${t.automatedClicks === 1 ? 'click like that was' : 'clicks like that were'} left out.`
+            : '.'}
+        </Note>
+      )}
       {activity ? (
         <>
           <OverTime title="First clicks" activity={activity} sentAt={sentAt} series={['clicks']} />

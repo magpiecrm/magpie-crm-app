@@ -36,17 +36,20 @@ async function sentCampaign(emails: string[]) {
   return id
 }
 
+/** A time `seconds` after now: clicks by people come a while after the email was sent. */
+const later = (seconds: number) => new Date(Date.now() + seconds * 1000).toISOString()
+
 describe('campaign activity', () => {
   it('counts every open and click, and who clicked which link', async () => {
     const id = await sentCampaign(['a@x.test', 'b@x.test', 'c@x.test', 'd@x.test'])
 
     db.recordOpen('a@x.test', id)
     db.recordOpen('A@x.test ', id)
-    db.recordClick('a@x.test', id, 'https://acme.example/pricing')
-    db.recordClick('a@x.test', id, 'https://acme.example/pricing')
+    db.recordClick('a@x.test', id, 'https://acme.example/pricing', { at: later(60) })
+    db.recordClick('a@x.test', id, 'https://acme.example/pricing', { at: later(300) })
     // Images off: a click with no open still counts as opened.
-    db.recordClick('b@x.test', id, 'https://acme.example/demo')
-    db.recordClick('b@x.test', id, 'https://acme.example/pricing')
+    db.recordClick('b@x.test', id, 'https://acme.example/demo', { at: later(120) })
+    db.recordClick('b@x.test', id, 'https://acme.example/pricing', { at: later(400) })
     db.updateRecipientBounceStatus('c@x.test', 'hard', String(id))
     // A bounced address can't open; a stray pixel load changes nothing.
     db.recordOpen('c@x.test', id)
@@ -77,6 +80,44 @@ describe('campaign activity', () => {
       { url: 'https://acme.example/pricing', clicks: 3, people: 2 },
       { url: 'https://acme.example/demo', clicks: 1, people: 1 },
     ])
+  })
+
+  it("counts people's clicks, not security scanners'", async () => {
+    const id = await sentCampaign(['h@x.test', 'i@x.test', 'j@x.test', 'k@x.test', 'l@x.test'])
+    // Seconds after it was sent, every link at once: a scanner.
+    db.recordClick('h@x.test', id, 'https://acme.example/pricing', { at: later(3) })
+    db.recordClick('h@x.test', id, 'https://acme.example/demo', { at: later(3) })
+    // Around when the hidden trap link was followed.
+    db.recordTrap('i@x.test', id, later(30))
+    db.recordClick('i@x.test', id, 'https://acme.example/pricing', { at: later(40) })
+    // The request said it was a script.
+    db.recordClick('j@x.test', id, 'https://acme.example/pricing', { at: later(600), automated: true })
+    // Counted as a person's, until a click on another link a second later shows it was a scanner.
+    db.recordClick('k@x.test', id, 'https://acme.example/pricing', { at: later(90) })
+    expect((await emailService.getCampaignActivity(id)).recipients.find((r) => r.email === 'k@x.test')).toMatchObject({ outcome: 'clicked', clicks: 1 })
+    db.recordClick('k@x.test', id, 'https://acme.example/demo', { at: later(91) })
+    // A person, an hour later.
+    db.recordClick('l@x.test', id, 'https://acme.example/pricing', { at: later(3600) })
+
+    const { globalStats: s } = await emailService.getCampaignStats(id)
+    expect(s).toMatchObject({ uniqueClicks: 1, totalClicks: 1, automatedClicks: 6, uniqueOpens: 1 })
+    const { recipients, links } = await emailService.getCampaignActivity(id)
+    for (const email of ['h@x.test', 'i@x.test', 'j@x.test', 'k@x.test']) {
+      expect(recipients.find((r) => r.email === email)).toMatchObject({ outcome: 'sent', clicks: 0, clickedAt: null })
+    }
+    expect(recipients.find((r) => r.email === 'l@x.test')).toMatchObject({ outcome: 'clicked', clicks: 1, automatedClicks: 0 })
+    expect(links).toEqual([{ url: 'https://acme.example/pricing', clicks: 1, people: 1 }])
+  })
+
+  it('adds a hidden trap link to each email, which is not itself a tracked click', async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    await sentCampaign(['m@x.test'])
+    const html = vi.mocked(sendMail).mock.calls[0][0].html as string
+    const traps = html.match(/<a href="https:\/\/example\.test\/api\/track\/click\?t=[^"]+" aria-hidden="true" tabindex="-1" style="display:none[^"]*">&#8203;<\/a>/g)
+    expect(traps).toHaveLength(1)
+    // The visible link is tracked as usual.
+    expect(html.match(/api\/track\/click/g)).toHaveLength(2)
   })
 
   it('keeps unsubscribes and spam complaints apart', async () => {
