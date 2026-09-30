@@ -132,9 +132,13 @@ const DEFAULTS: RouterOptions = {
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 }
 
-/** A limit that won't clear by waiting a minute: the caller should say so, not retry. */
+/**
+ * A check that can't go ahead. `busy` (the per-minute pace) and `company_pace`
+ * (a company checked a lot in the last few minutes) clear by waiting, so the
+ * caller can try again (isPacing); the rest won't clear within a minute.
+ */
 export class VerificationLimitError extends Error {
-  constructor(message: string, readonly code: 'paused' | 'daily_cap' | 'domain_rejections' | 'benched' | 'busy' | 'refused') {
+  constructor(message: string, readonly code: 'paused' | 'daily_cap' | 'domain_rejections' | 'benched' | 'busy' | 'company_pace' | 'refused') {
     super(message)
     this.name = 'VerificationLimitError'
   }
@@ -277,12 +281,12 @@ export class ProxyRouter {
       }
 
       if (now >= deadline) {
-        throw new VerificationLimitError(
-          domainOk
-            ? 'Verification is at its per-minute limit. Try again in a minute.'
-            : `${target} has been checked a lot in the last few minutes; checks there are paced to avoid looking like harvesting. Try again in a minute.`,
-          'busy',
-        )
+        throw domainOk
+          ? new VerificationLimitError('Verification is at its per-minute limit. Try again in a minute.', 'busy')
+          : new VerificationLimitError(
+              `${target} has been checked a lot in the last few minutes; checks there are paced to avoid looking like harvesting. Try again in a minute.`,
+              'company_pace',
+            )
       }
       await this.opts.sleep(Math.min(1_000, Math.max(50, deadline - now)))
     }
@@ -482,3 +486,7 @@ export function familyFromMx(mxHosts: string[]): MailFamily {
 
 export const isGateway = (family: MailFamily | null | undefined) =>
   !!family && family !== 'google' && family !== 'microsoft' && family !== 'other'
+
+/** A check held back only by pacing, which waiting clears: worth trying again, and not a finished lookup. */
+export const isPacing = (err: unknown): err is VerificationLimitError =>
+  err instanceof VerificationLimitError && (err.code === 'busy' || err.code === 'company_pace')

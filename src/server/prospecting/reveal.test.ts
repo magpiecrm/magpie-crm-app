@@ -18,7 +18,8 @@ const fakeDb = {
 vi.mock('../db', () => ({ db: fakeDb }))
 // How each lookup ended, as counted for the hit rate.
 const lookups: string[] = []
-vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome) }))
+const limits: string[] = []
+vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome), recordLimit: (code: string) => limits.push(code) }))
 
 const { revealEmail } = await import('./reveal')
 const { hashesFor } = await import('./suppression')
@@ -171,13 +172,27 @@ describe('revealEmail', () => {
     const limited = { ...finder, verifier: { ...finder.verifier!, acquire: async () => { throw new VerificationLimitError("Today's verification limit is used up.", 'daily_cap') } } }
     await expect(revealEmail(jane, { source, finder: limited, db: fakeDb as any })).rejects.toThrow(/limit is used up/)
     expect(lookups).toEqual(['verified', 'noDomain', 'rejected', 'limit'])
+    expect(limits).toEqual(['daily_cap'])
+  })
+
+  it('waits out verification pacing: nothing checked, not counted as a lookup, and the page tries again', async () => {
+    lookups.length = 0
+    limits.length = 0
+    const paced = { ...finder, verifier: { ...finder.verifier!, acquire: async () => { throw new VerificationLimitError('Verification is at its per-minute limit. Try again in a minute.', 'busy') } } }
+    expect(await revealEmail(jane, { source, finder: paced, db: fakeDb as any })).toEqual({
+      status: 'waiting',
+      message: 'Verification is at its per-minute limit. Try again in a minute.',
+      retryInMs: 20_000,
+    })
+    expect(lookups).toEqual([])
+    expect(limits).toEqual(['busy'])
   })
 
   it("doesn't remember people a retry might verify", async () => {
     const silent: FinderDeps = { ...finder, verifier: { ...finder.verifier!, check: async () => ({ reachability: 'unknown' as const, isCatchAll: null, outcome: 'timeout' as const }) } }
     const res = await revealEmail(jane, { source, finder: silent, db: fakeDb as any })
     expect(res.status).toBe('unconfirmed')
-    expect(res.status !== 'found' && res.unverifiable).toBeFalsy()
+    expect(res.status !== 'found' && res.status !== 'waiting' && res.unverifiable).toBeFalsy()
     expect(state.unverifiable).toEqual([])
   })
 })

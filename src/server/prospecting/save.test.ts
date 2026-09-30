@@ -59,7 +59,7 @@ const fakeDb = {
 vi.mock('../db', () => ({ db: fakeDb }))
 // How each lookup ended, as counted for the hit rate.
 const lookups: string[] = []
-vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome) }))
+vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome), recordLimit: () => {} }))
 vi.mock('../emailService', () => ({
   deleteContacts: async (emails: string[]) => {
     state.contacts = state.contacts.filter((c) => !emails.includes(c.email))
@@ -67,6 +67,7 @@ vi.mock('../emailService', () => ({
   },
 }))
 
+const { VerificationLimitError } = await import('./proxyRouter')
 const { saveProspects } = await import('./save')
 const { processOptOut, hashesFor } = await import('./suppression')
 
@@ -345,6 +346,22 @@ describe('saveProspects', () => {
     expect(job.outcomes[0]).toMatchObject({ status: 'saved', emailStatus: 'verified' })
     expect(job.processed).toBe(1)
     // Counted once, when final: the greylisted first pass isn't a lookup outcome.
+    expect(lookups).toEqual(['verified'])
+  })
+
+  it('tries again at the end, instead of failing, when verification pacing held a lookup back', async () => {
+    const sleep = vi.fn(async () => {})
+    const f = finder({ 'jane.smith@acme.com': 'safe' })
+    let acquired = 0
+    f.verifier!.acquire = async () => {
+      // Paced out on the first pass, a slot on the retry.
+      if (acquired++ === 0) throw new VerificationLimitError('Verification is at its per-minute limit. Try again in a minute.', 'busy')
+      return { proxy: null, report: () => {} }
+    }
+    const job = await saveProspects(1, [person('Jane', 'Smith', { companyDomain: 'acme.com' })], { source, finder: f, db: fakeDb as any, sleep })
+    expect(sleep).toHaveBeenCalledTimes(1)
+    expect(job.outcomes[0]).toMatchObject({ status: 'saved', emailStatus: 'verified' })
+    // Waiting for a slot isn't a lookup outcome.
     expect(lookups).toEqual(['verified'])
   })
 

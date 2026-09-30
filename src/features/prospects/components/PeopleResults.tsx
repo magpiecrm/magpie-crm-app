@@ -150,6 +150,14 @@ function EmailCell({
       </span>
     )
   }
+  // Held back by verification pacing; tried again automatically (ProspectSearch).
+  if (state?.status === 'waiting') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Waiting for a verification slot…
+      </span>
+    )
+  }
   if (state?.status === 'found') {
     return (
       <div className="flex flex-col items-start gap-1">

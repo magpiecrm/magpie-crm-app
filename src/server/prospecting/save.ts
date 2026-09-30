@@ -10,6 +10,7 @@ import { refineFromProfile } from './refine'
 import crypto from 'crypto'
 import { domainForPerson } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
+import { isPacing } from './proxyRouter'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import { handsOver, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
@@ -155,7 +156,13 @@ async function processPerson(
       }
     }
     const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
-    found = await findEmailCounted(person, domain, deps.finder, { headcount })
+    try {
+      found = await findEmailCounted(person, domain, deps.finder, { headcount })
+    } catch (err) {
+      // Held back only by pacing: tried again at the end, like a greylisted check.
+      if (isPacing(err) && !final) return { ...base, status: 'retrying' }
+      throw err
+    }
     recordUsage({ emailLookups: 1 })
   }
   if (found.greylisted && !final) return { ...base, status: 'retrying' }

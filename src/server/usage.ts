@@ -44,6 +44,18 @@ const USAGE_COUNTERS = [
   'searchSkippedNotWorking',
   /** People shown without a profile lookup: found inside the one company searched, which says where they work. */
   'searchNoLookup',
+  /**
+   * Checks our own verification limits held back (recordLimit), by limit: the
+   * per-minute pace, a company checked a lot in the last few minutes (both
+   * wait and try again, so they aren't finished lookups), today's cap, paused
+   * or benched verification IPs, and a company that has rejected many guesses
+   * today.
+   */
+  'limitPace',
+  'limitCompanyPace',
+  'limitDailyCap',
+  'limitPaused',
+  'limitCompanyRejections',
   /** Email lookups run, by Reveal or when saving prospects. */
   'emailLookups',
   /** Addresses handed over: revealed, or saved as a new contact. */
@@ -89,6 +101,12 @@ function flush() {
 // The production server (serve.ts) calls this on shutdown, so counts still
 // waiting to be written aren't lost.
 g.__usageFlush = flush
+
+/** Counts a check our verification limits held back, by which limit. */
+export function recordLimit(code: string, now = new Date()) {
+  const counter = ({ busy: 'limitPace', company_pace: 'limitCompanyPace', daily_cap: 'limitDailyCap', paused: 'limitPaused', benched: 'limitPaused', domain_rejections: 'limitCompanyRejections' } as const)[code as 'busy']
+  if (counter) recordUsage({ [counter]: 1 }, now)
+}
 
 /** Counts how one email lookup ended. */
 export function recordLookup(outcome: LookupOutcome, now = new Date()) {

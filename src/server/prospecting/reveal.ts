@@ -15,9 +15,15 @@ import { handsOver, type CompanySource, type EmailStatus, type PersonResult } fr
 import { recordLookup, recordUsage } from '../usage'
 import { requireAllowance } from '../allowance'
 import { rememberIfUnverifiable } from './unverifiable'
+import { isPacing } from './proxyRouter'
+
+/** How soon the page tries a Reveal again that verification pacing held back. */
+export const PACING_RETRY_MS = 20_000
 
 export type RevealResult =
   | { status: 'found'; email: string; emailStatus: EmailStatus; domain: string; greylisted: boolean; note?: string }
+  /** Held back only by verification pacing: nothing was checked or used, and the page tries again in `retryInMs`. */
+  | { status: 'waiting'; message: string; retryInMs: number }
   | {
       /** `unconfirmed`: a likely address exists but wasn't verified, so it's withheld. */
       status: 'not_found' | 'no_domain' | 'unavailable' | 'unconfirmed'
@@ -64,7 +70,13 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return unavailable
 
   const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
-  const found = await findEmailCounted(person, domain, deps.finder, { headcount })
+  let found: Awaited<ReturnType<typeof findEmailCounted>>
+  try {
+    found = await findEmailCounted(person, domain, deps.finder, { headcount })
+  } catch (err) {
+    if (isPacing(err)) return { status: 'waiting', message: err.message, retryInMs: PACING_RETRY_MS }
+    throw err
+  }
   recordUsage({ emailLookups: 1 })
   recordLookup(found.outcome)
   if (!found.email) {

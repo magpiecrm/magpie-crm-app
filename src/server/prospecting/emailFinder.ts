@@ -26,6 +26,7 @@ import { generateCandidates, type Candidate } from './patterns'
 import {
   familyFromMx,
   isGateway,
+  isPacing,
   providerFromMx,
   refusedIp,
   VerificationLimitError,
@@ -35,7 +36,7 @@ import {
 } from './proxyRouter'
 import type { CheckResult } from './reacher'
 import type { EmailStatus, LookupOutcome } from './types'
-import { recordLookup } from '../usage'
+import { recordLimit, recordLookup } from '../usage'
 
 const DAY = 86_400_000
 /** A learned address format is re-checked after this long. */
@@ -397,15 +398,19 @@ function learnPattern(domain: string, pattern: string, deps: FinderDeps) {
 }
 
 /**
- * findEmail, counting a lookup stopped by a verification limit (daily cap,
- * pause, per-minute) as `limit` before the error goes on to the user. Other
- * outcomes are counted by the caller, once the result is final.
+ * findEmail, counting which verification limit stopped it (recordLimit) and,
+ * unless it was only pacing that the caller waits out (isPacing), the lookup
+ * as `limit`, before the error goes on. Other outcomes are counted by the
+ * caller, once the result is final.
  */
 export async function findEmailCounted(...args: Parameters<typeof findEmail>): Promise<FindResult> {
   try {
     return await findEmail(...args)
   } catch (err) {
-    if (err instanceof VerificationLimitError) recordLookup('limit')
+    if (err instanceof VerificationLimitError) {
+      recordLimit(err.code)
+      if (!isPacing(err)) recordLookup('limit')
+    }
     throw err
   }
 }

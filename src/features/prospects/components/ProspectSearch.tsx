@@ -132,6 +132,9 @@ const noRefetch = { staleTime: Infinity, gcTime: 30 * 60_000, refetchOnWindowFoc
 
 const NO_REVEALS: Map<string, RevealState> = new Map()
 
+/** How many times a Reveal held back by verification pacing is tried again (20 seconds apart) before giving up. */
+const MAX_REVEAL_WAITS = 6
+
 export function ProspectSearch() {
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<Mode>('people')
@@ -353,10 +356,22 @@ export function ProspectSearch() {
   })
   const setReveal = (url: string, state: RevealState) =>
     queryClient.setQueryData<Map<string, RevealState>>(queryKeys.prospects.reveals(), (prev) => new Map(prev).set(url, state))
-  const reveal = async (person: PersonResult) => {
-    setReveal(person.profileUrl, { status: 'loading' })
+  // A Reveal that verification pacing holds back ("waiting") is tried again by
+  // itself, a few times, before it says to try later.
+  const reveal = async (person: PersonResult, attempt = 0) => {
+    if (attempt === 0) setReveal(person.profileUrl, { status: 'loading' })
     try {
-      setReveal(person.profileUrl, await revealEmailFn({ data: { person } }))
+      const result = await revealEmailFn({ data: { person } })
+      if (result.status === 'waiting') {
+        if (attempt < MAX_REVEAL_WAITS) {
+          setReveal(person.profileUrl, result)
+          setTimeout(() => void reveal(person, attempt + 1), result.retryInMs)
+          return
+        }
+        setReveal(person.profileUrl, { status: 'error', message: result.message })
+      } else {
+        setReveal(person.profileUrl, result)
+      }
     } catch (err: any) {
       setReveal(person.profileUrl, { status: 'error', message: err?.message ?? 'Something went wrong' })
     }
