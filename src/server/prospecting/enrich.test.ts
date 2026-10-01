@@ -706,6 +706,17 @@ describe('searchPeople with a company size finds companies first', () => {
     )
   })
 
+  it("doesn't pay for the profile of someone whose headline names another employer", async () => {
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null)], nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf({ ...hit('ana'), company: 'Barclays' }, { ...hit('ben'), company: 'Globex Corp' }, hit('cat'))
+    const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
+    // Ana's headline names Barclays (no lookup), Ben's another company (left out), Cat's none (looked up).
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/cat'])
+    expect(res.items.map((p) => p.firstName)).not.toContain('ben')
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchSkippedOtherEmployer: 1 }))
+    expect(res.warnings.join(' ')).toMatch(/1 person was left out because their headline names an employer that isn't one of these companies/)
+  })
+
   it('searches them all while unverifiable people are shown', async () => {
     prospectingSettings = { hide_unverifiable: false }
     emailDomains = { 'acme.example': { catch_all: true, catch_all_checked_at: new Date().toISOString(), accepts_mail: true } }

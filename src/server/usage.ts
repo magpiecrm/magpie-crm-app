@@ -42,6 +42,8 @@ const USAGE_COUNTERS = [
   'searchSkippedUnverifiable',
   'searchSkippedContact',
   'searchSkippedNotWorking',
+  /** Companies first: their headline names an employer that isn't one of the companies searched (they've moved on). */
+  'searchSkippedOtherEmployer',
   /** People shown without a profile lookup: found inside the one company searched, which says where they work. */
   'searchNoLookup',
   /**

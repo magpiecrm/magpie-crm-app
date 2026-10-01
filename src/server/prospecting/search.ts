@@ -340,6 +340,8 @@ interface Tally {
   skippedUnverifiable: number
   skippedNotWorking: number
   skippedContact: number
+  /** Companies-first: left out before their profile lookup because their headline names an employer that isn't one of the companies searched. */
+  skippedOtherEmployer: number
   /** Taken as working at the company searched, with no profile lookup (knownEmployer). */
   noLookup: number
 }
@@ -613,6 +615,23 @@ async function processBatch(
   })
   tally.noLookup += noLookup.size
 
+  // In a companies-first search, SocialFetch's company filter also finds
+  // people who used to work at one of the companies: someone whose headline
+  // names another employer has moved on, so no profile is paid for to find
+  // that out (it was most of the profiles paid for in these searches).
+  if (companySet?.size) {
+    const names = [...companySet.values()]
+    const elsewhere = new Set(
+      items
+        .filter((p) => p.previously !== 'saved' && !p.profileChecked && !noLookup.has(p.profileUrl) && p.company.trim() && !names.some((n) => sameCompanyName(p.company, n)))
+        .map((p) => p.profileUrl),
+    )
+    if (elsewhere.size) {
+      tally.skippedOtherEmployer += elsewhere.size
+      items = items.filter((p) => !elsewhere.has(p.profileUrl))
+    }
+  }
+
   const skipped = await skipBeforeLookup(
     items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl)),
     db,
@@ -742,7 +761,7 @@ export async function searchPeople(
   const details: string[] = []
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, remembered: 0,
-    paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, noLookup: 0,
+    paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -844,6 +863,7 @@ export async function searchPeople(
     searchSkippedUnverifiable: tally.skippedUnverifiable,
     searchSkippedContact: tally.skippedContact,
     searchSkippedNotWorking: tally.skippedNotWorking,
+    searchSkippedOtherEmployer: tally.skippedOtherEmployer,
     searchNoLookup: tally.noLookup,
     searchOrgRequests: orgSearches,
     searchCompaniesFound: companiesFound,
@@ -873,6 +893,11 @@ export async function searchPeople(
   if (tally.skippedNotWorking > 0) {
     details.push(
       `${plural(tally.skippedNotWorking, 'person was', 'people were')} left out because ${tally.skippedNotWorking === 1 ? 'their headline says they have' : 'their headlines say they have'} left their job (e.g. "Former …"), and no profile lookup was paid for.`,
+    )
+  }
+  if (tally.skippedOtherEmployer > 0) {
+    details.push(
+      `${plural(tally.skippedOtherEmployer, 'person was', 'people were')} left out because ${tally.skippedOtherEmployer === 1 ? 'their headline names' : 'their headlines name'} an employer that isn't one of these companies (they've moved on), and no profile lookup was paid for.`,
     )
   }
   if (tally.skippedUnverifiable > 0) {
