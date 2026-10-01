@@ -1,11 +1,15 @@
 import { Link } from '@tanstack/react-router'
-import { CheckCircle2, ClipboardCheck, ClipboardList, FileText, History, MailOpen, MousePointerClick, Send } from 'lucide-react'
+import { CheckCircle2, ClipboardCheck, ClipboardList, FileText, History, MailOpen, MessageSquareReply, MousePointerClick, Send } from 'lucide-react'
 import type { ContactActivity } from '../../../server/contactActivity'
 
 const ICONS: Record<ContactActivity['type'], typeof Send> = {
   campaign_sent: Send,
   campaign_opened: MailOpen,
   campaign_clicked: MousePointerClick,
+  sequence_sent: Send,
+  sequence_opened: MailOpen,
+  sequence_clicked: MousePointerClick,
+  sequence_replied: MessageSquareReply,
   form_submitted: FileText,
   survey_started: ClipboardList,
   survey_completed: ClipboardCheck,

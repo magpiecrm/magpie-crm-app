@@ -4,7 +4,17 @@ import { answerToDisplay } from '../features/survey-builder/logic/answers'
 import { isQuestionType } from '../features/survey-builder/types'
 
 export interface ContactActivity {
-  type: 'campaign_sent' | 'campaign_opened' | 'campaign_clicked' | 'form_submitted' | 'survey_started' | 'survey_completed'
+  type:
+    | 'campaign_sent'
+    | 'campaign_opened'
+    | 'campaign_clicked'
+    | 'sequence_sent'
+    | 'sequence_opened'
+    | 'sequence_clicked'
+    | 'sequence_replied'
+    | 'form_submitted'
+    | 'survey_started'
+    | 'survey_completed'
   at: string
   label: string
   /** In-app link to the related record. */
@@ -45,6 +55,18 @@ export function contactActivity(email: string): ContactActivity[] {
 
   for (const r of db.data.campaign_recipients.filter(cr => cr.contact_email === normalized)) {
     const campaign = db.data.campaigns.find(c => c.id === r.campaign_id)
+    // A sequence email: shown as the sequence's, at when it went to them.
+    if (campaign?.sequence_id) {
+      const sequence = db.data.sequences?.find(s => s.id === campaign.sequence_id)
+      const step = sequence ? sequence.steps.findIndex(st => st.id === campaign.step_id) + 1 : 0
+      const name = `${sequence?.name ?? 'Deleted sequence'}${step ? `, email ${step}` : ''}`
+      const url = sequence ? `/sales/sequences/${sequence.id}` : undefined
+      if (r.sent_at) events.push({ type: 'sequence_sent', at: r.sent_at, label: `Sent "${name}"`, url })
+      if (r.opened_at) events.push({ type: 'sequence_opened', at: r.opened_at, label: `Opened "${name}"`, url })
+      if (r.clicked_at) events.push({ type: 'sequence_clicked', at: r.clicked_at, label: `Clicked a link in "${name}"`, url })
+      if (r.replied_at) events.push({ type: 'sequence_replied', at: r.replied_at, label: `Replied to "${name}"`, url })
+      continue
+    }
     const name = campaign?.name ?? `Campaign #${r.campaign_id}`
     const url = `/marketing/campaigns/${r.campaign_id}`
     if (campaign?.sent_at) events.push({ type: 'campaign_sent', at: campaign.sent_at, label: `Sent "${name}"`, url })

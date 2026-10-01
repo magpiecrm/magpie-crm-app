@@ -21,7 +21,8 @@ import {
   Trash2,
   BellOff,
   AlertTriangle,
-  HelpCircle
+  HelpCircle,
+  Repeat
 } from 'lucide-react'
 import { Avatar } from '../../../components/ui/Avatar'
 import { Pagination } from '../../../components/ui/Pagination'
@@ -29,6 +30,7 @@ import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { ContactDetails } from '../../../features/contacts/components/ContactDetails'
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
 import { Select } from '../../../components/ui/Select'
+import { EnrollDialog } from '../../../features/sequences/components/EnrollDialog'
 
 export const Route = createFileRoute('/marketing/contacts/')({
   // ?contact=<email> opens that contact (links from tasks and their reminders).
@@ -83,6 +85,7 @@ function ContactsPage() {
   const { contact: linkedContact } = Route.useSearch()
   const [selectedContactEmail, setSelectedContactEmail] = useState<string | null>(linkedContact ?? null)
   const [selectedListId, setSelectedListId] = useState<number | null>(null)
+  const [enrolling, setEnrolling] = useState(false)
   const [showListDropdown, setShowListDropdown] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
@@ -570,6 +573,16 @@ function ContactsPage() {
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+          {selectedEmails.length > 0 && (
+            <button
+              onClick={() => setEnrolling(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-accent/10 hover:bg-accent/15 text-accent border border-accent/20 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Repeat className="w-3.5 h-3.5" />
+              <span>Add to sequence ({selectedEmails.length})</span>
+            </button>
+          )}
+          {enrolling && <EnrollDialog emails={selectedEmails} onClose={() => setEnrolling(false)} />}
           {selectedEmails.length > 0 && (
             <button 
               onClick={() => {

@@ -45,6 +45,18 @@ export async function sendDueCampaigns(now = new Date()) {
   }
 }
 
+/** Sequence emails that are due (sequences/engine.ts); never two runs at once. */
+async function runDueSequences() {
+  if (g.__sequenceRunBusy) return
+  g.__sequenceRunBusy = true
+  try {
+    const { runSequences } = await import('./sequences/engine')
+    await runSequences()
+  } finally {
+    g.__sequenceRunBusy = false
+  }
+}
+
 /** Finishes campaigns the server stopped in the middle of sending; everyone they reached is skipped. */
 async function resumeInterruptedSends() {
   for (const id of db.campaignsLeftSending()) {
@@ -76,8 +88,12 @@ export function startEmailScheduler() {
     .catch((err) => console.error('[EmailScheduler] Resume failed:', err))
     .finally(() => sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err)))
 
+  // A sequence email claimed but not committed was cut off by a restart: taken as sent, never sent twice.
+  import('./sequences/engine').then(({ recoverClaims }) => recoverClaims()).catch((err) => console.error('[EmailScheduler] Sequence recovery failed:', err))
+
   g.__emailSchedulerInterval = setInterval(async () => {
     sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err))
+    runDueSequences().catch((err) => console.error('[EmailScheduler] Sequences failed:', err))
     remindDueTasks().catch((err) => console.error('[EmailScheduler] Task reminders failed:', err))
     const due = db.getDuePendingEmails()
     for (const e of due) {

@@ -73,8 +73,10 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
     const lists = dbData.lists.filter((l: any) => listEmails.includes(l.id))
 
     // Find campaigns sent to this contact
+    // Not sequence emails (their steps' hidden rows): those are under `sequences`.
+    const sequenceRows = new Set(dbData.campaigns.filter((c: any) => c.sequence_id).map((c: any) => c.id))
     const campaignRecipients = dbData.campaign_recipients.filter(
-      (cr: any) => cr.contact_email.toLowerCase() === data.email.toLowerCase()
+      (cr: any) => cr.contact_email.toLowerCase() === data.email.toLowerCase() && !sequenceRows.has(cr.campaign_id)
     )
 
     const campaigns = campaignRecipients.map((cr: any) => {
@@ -109,6 +111,7 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
       fieldDefs: db.getContactFields(),
       lists,
       campaigns,
+      sequences: (await import('../sequences')).sequences.forContact(contact.email),
       surveyResponses: contactSurveyResponses(contact.email),
       activity: contactActivity(contact.email),
     }

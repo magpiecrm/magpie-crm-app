@@ -1,7 +1,7 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Loader2, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks, Repeat } from 'lucide-react'
 import { markSignedOut } from '../../utils/auth'
 import { getUsageFn, logoutFn, tasksFn } from '../../server/functions'
 import { dueBucket } from '../../features/sales/tasks'
@@ -31,6 +31,7 @@ const navItems = [
     items: [
       { label: 'Pipeline', to: '/sales/pipeline', icon: Kanban },
       { label: 'Deals', to: '/sales/deals', icon: Handshake },
+      { label: 'Sequences', to: '/sales/sequences', icon: Repeat },
       { label: 'Tasks', to: '/sales/tasks', icon: ListChecks },
     ],
   },

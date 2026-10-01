@@ -13,6 +13,7 @@ const DEFAULT_URLS: Record<NotificationType, string> = {
   task_due: '/sales/tasks',
   proposal_viewed: '/sales/deals',
   proposal_accepted: '/sales/deals',
+  sequence_paused: '/sales/sequences',
 }
 
 /**

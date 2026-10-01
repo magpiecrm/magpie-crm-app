@@ -16,7 +16,8 @@ export const sendgridProvider: EmailProvider = {
         personalizations: [{ to: msg.to.map((email) => ({ email })) }],
         from: msg.fromName ? { email: msg.fromEmail, name: msg.fromName } : { email: msg.fromEmail },
         subject: msg.subject,
-        content: [{ type: 'text/html', value: msg.html }],
+        // text/plain must come first.
+        content: [...(msg.text ? [{ type: 'text/plain', value: msg.text }] : []), { type: 'text/html', value: msg.html }],
         headers: campaignHeaders(msg),
         // The app does its own click/open tracking; SendGrid's would rewrite
         // the /api/track/click URLs on top of ours and break the analytics.

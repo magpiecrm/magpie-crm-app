@@ -24,6 +24,12 @@ export interface SendMailOptions {
   campaignId?: number
   /** The recipient's unsubscribe link, sent as one-click List-Unsubscribe headers. */
   unsubscribeUrl?: string
+  /** The plain-text part; made from the HTML when missing. */
+  text?: string
+  /** Threading for a follow-up (OutboundMessage): our Message-ID, the one it replies to, and the thread's. */
+  messageId?: string
+  inReplyTo?: string
+  references?: string[]
 }
 
 function cleanHeader(val: string): string {
@@ -94,6 +100,10 @@ export async function sendMail(options: SendMailOptions) {
     html: options.html,
     campaignId: options.campaignId,
     ...(options.unsubscribeUrl ? { unsubscribeUrl: options.unsubscribeUrl } : {}),
+    ...(options.text !== undefined ? { text: options.text } : {}),
+    ...(options.messageId ? { messageId: cleanHeader(options.messageId) } : {}),
+    ...(options.inReplyTo ? { inReplyTo: cleanHeader(options.inReplyTo) } : {}),
+    ...(options.references?.length ? { references: options.references.map(cleanHeader).filter(Boolean) } : {}),
   }
 
   // Retry transient network failures — callers treat a throw as a bounce,

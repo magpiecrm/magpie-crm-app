@@ -5,6 +5,7 @@ import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
 import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sales/types'
+import type { Enrollment, Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
@@ -53,10 +54,18 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted' | 'sequence_paused'
 
 type ContactRecord = DbSchema['contacts'][number]
 export type RecipientRecord = DbSchema['campaign_recipients'][number]
+
+/**
+ * A recipient's latest email first: by when it went out, then by campaign.
+ * Sequence emails go out over weeks, so a step's row can be newer than a
+ * campaign with a higher id.
+ */
+const latestFirst = (a: RecipientRecord, b: RecipientRecord) =>
+  (b.sent_at ?? '').localeCompare(a.sent_at ?? '') || b.campaign_id - a.campaign_id
 
 /** Enough for any real email, and keeps one recipient's row from growing without end. */
 const MAX_LINKS_PER_RECIPIENT = 50
@@ -117,6 +126,13 @@ export interface DbSchema {
     scheduled_at?: string | null
     /** Unconfirmed prospected addresses held back after a first batch (guessedRecipients.ts). */
     guess_hold?: GuessHold | null
+    /**
+     * Set on the hidden row one sequence step's emails are recorded under
+     * (status 'sequence'): it keeps their tracking and results, and never
+     * shows or sends as a campaign.
+     */
+    sequence_id?: string
+    step_id?: string
   }>
   campaign_recipients: Array<{
     campaign_id: number
@@ -152,6 +168,8 @@ export interface DbSchema {
     unsubscribed_at?: string | null
     /** Marked the email as spam. They are unsubscribed too. */
     complained_at?: string | null
+    /** They replied to it (a sequence email). */
+    replied_at?: string | null
   }>
   users: Array<{
     email: string
@@ -343,6 +361,9 @@ export interface DbSchema {
   deals?: Deal[]
   activities?: Activity[]
   proposals?: Proposal[]
+  /** Sequences and who's enrolled in them (server/sequences/). */
+  sequences?: Sequence[]
+  sequence_enrollments?: Enrollment[]
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
@@ -778,7 +799,7 @@ class JsonDb {
    */
   claimCampaignForSending(id: number, opts: { resume?: boolean; release?: boolean } = {}): boolean {
     const campaign = this.data.campaigns.find((c) => c.id === id)
-    if (!campaign || (campaign.status === 'sent' && !opts.release)) return false
+    if (!campaign || campaign.sequence_id || (campaign.status === 'sent' && !opts.release)) return false
     if (campaign.status === 'sending' && !opts.resume) return false
     campaign.status = 'sending'
     this.save()
@@ -1249,6 +1270,7 @@ class JsonDb {
       this.data.contacts = this.data.contacts.filter(c => c.email.toLowerCase().trim() !== email)
       this.data.list_contacts = this.data.list_contacts.filter(lc => lc.contact_email.toLowerCase().trim() !== email)
       this.data.campaign_recipients = this.data.campaign_recipients.filter(cr => cr.contact_email.toLowerCase().trim() !== email)
+      if (this.data.sequence_enrollments) this.data.sequence_enrollments = this.data.sequence_enrollments.filter(e => e.contact_email !== email)
       // Notes and tasks about only them go too; a deal's or company's keep, without them.
       if (this.data.activities) {
         this.data.activities = this.data.activities.filter(a => !(a.contact_email === email && !a.deal_id && !a.company_id))
@@ -1353,8 +1375,8 @@ class JsonDb {
           return this.data.contacts.filter(c => emails.includes(c.email))
         }
         if (cleanSql.startsWith('SELECT c.id, c.name, c.subject, c.preview_text as previewText, c.status, c.created_at as createdAt, c.sent_at as sentAt, c.list_id as listId')) {
-          // getCampaigns()
-          return this.data.campaigns.map(c => {
+          // getCampaigns(): not sequence steps' hidden rows
+          return this.data.campaigns.filter(c => !c.sequence_id).map(c => {
             const sender = this.data.senders.find(s => s.id == c.sender_id)
             const list = this.data.lists.find(l => l.id == c.list_id)
             return {
@@ -1975,7 +1997,16 @@ class JsonDb {
     const stops = (this.data.email_stops ??= {})
     const key = this.stopKey(email)
     if (stops[key]?.reason === 'complained' && reason !== 'complained') return
-    stops[key] = { reason, at: new Date().toISOString() }
+    const at = new Date().toISOString()
+    stops[key] = { reason, at }
+    // Ends their sequences: nothing more goes to them.
+    const normalized = email.toLowerCase().trim()
+    for (const e of this.data.sequence_enrollments ?? []) {
+      if (e.contact_email !== normalized || (e.status !== 'active' && e.status !== 'paused')) continue
+      e.status = reason === 'bounced' ? 'bounced' : 'unsubscribed'
+      e.stop_reason = reason === 'bounced' ? 'Their address bounced' : reason === 'complained' ? 'Marked an email as spam' : 'Unsubscribed'
+      e.next_send_at = null
+    }
     this.save()
   }
 
@@ -2242,7 +2273,7 @@ class JsonDb {
       record = this.data.campaign_recipients.find(cr => cr.campaign_id === Number(campaignId) && cr.contact_email === normalizedEmail)
     } else {
       const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && ['sent', 'opened', 'clicked'].includes(cr.status))
-      records.sort((a, b) => b.campaign_id - a.campaign_id)
+      records.sort(latestFirst)
       record = records[0]
     }
     if (record) {
@@ -2275,7 +2306,7 @@ class JsonDb {
     } else {
       // Their latest email: a bounce can arrive after an automatic "open" (Apple Mail prefetches).
       const records = this.data.campaign_recipients.filter(cr => cr.contact_email === normalizedEmail && ['sent', 'opened', 'clicked', 'bounced_soft'].includes(cr.status))
-      records.sort((a, b) => b.campaign_id - a.campaign_id)
+      records.sort(latestFirst)
       record = records[0]
     }
     // A hard bounce is never turned back into a soft one.

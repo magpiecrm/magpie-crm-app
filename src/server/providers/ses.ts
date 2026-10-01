@@ -38,7 +38,7 @@ export const sesProvider: EmailProvider = {
       Content: {
         Simple: {
           Subject: { Data: msg.subject, Charset: 'UTF-8' },
-          Body: { Html: { Data: msg.html, Charset: 'UTF-8' } },
+          Body: { Html: { Data: msg.html, Charset: 'UTF-8' }, ...(msg.text ? { Text: { Data: msg.text, Charset: 'UTF-8' } } : {}) },
           ...(Object.keys(headers).length
             ? { Headers: Object.entries(headers).map(([Name, Value]) => ({ Name, Value })) }
             : {}),

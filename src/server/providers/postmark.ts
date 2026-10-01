@@ -1,12 +1,12 @@
 import { getDescriptor } from './descriptors'
-import { campaignHeaders, providerError } from './types'
+import { campaignHeaders, providerError, threadHeaders } from './types'
 import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
 
 export const postmarkProvider: EmailProvider = {
   descriptor: getDescriptor('postmark')!,
 
   async send(msg: OutboundMessage, creds: ProviderCredentials) {
-    const headers = campaignHeaders(msg)
+    const headers = { ...campaignHeaders(msg), ...threadHeaders(msg) }
 
     const response = await fetch('https://api.postmarkapp.com/email', {
       method: 'POST',
@@ -20,6 +20,7 @@ export const postmarkProvider: EmailProvider = {
         To: msg.to.join(', '),
         Subject: msg.subject,
         HtmlBody: msg.html,
+        ...(msg.text ? { TextBody: msg.text } : {}),
         // Marketing mail must go out on a broadcast stream; Postmark rejects
         // bulk sends on the default `outbound` transactional stream.
         MessageStream: creds.messageStream || 'broadcast',

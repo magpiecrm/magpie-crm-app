@@ -18,6 +18,7 @@ export const mailchimpProvider: EmailProvider = {
         key: creds.apiKey,
         message: {
           html: msg.html,
+          ...(msg.text ? { text: msg.text } : {}),
           subject: msg.subject,
           from_email: msg.fromEmail,
           from_name: msg.fromName || undefined,

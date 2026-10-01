@@ -22,6 +22,7 @@ import { formatCustomValue } from '../contactFields'
 import { ContactSurveysTab } from './ContactSurveysTab'
 import { ContactHistoryTab } from './ContactHistoryTab'
 import { FollowUpButton, RecordTasks } from '../../sales/components/TaskParts'
+import { ContactSequences } from '../../sequences/components/ContactSequences'
 interface ContactDetailsProps {
   email: string
   onClose: () => void
@@ -71,7 +72,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
     )
   }
 
-  const { contact, lists, campaigns, fieldDefs, surveyResponses, activity } = detailsData
+  const { contact, lists, campaigns, fieldDefs, surveyResponses, activity, sequences } = detailsData
   const firstName = contact.attributes?.FIRSTNAME || ''
   const lastName = contact.attributes?.LASTNAME || ''
   const fullName = `${firstName} ${lastName}`.trim() || contact.email
@@ -188,6 +189,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
               <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Tasks</h3>
                 <RecordTasks on={{ contactEmail: contact.email }} />
+              </div>
+
+              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Sequences</h3>
+                <ContactSequences email={contact.email} items={sequences ?? []} />
               </div>
 
               {/* Campaign Stats Overview Grid */}

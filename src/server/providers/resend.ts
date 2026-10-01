@@ -1,5 +1,5 @@
 import { getDescriptor } from './descriptors'
-import { campaignHeaders, providerError } from './types'
+import { campaignHeaders, providerError, threadHeaders } from './types'
 import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
 
 export const resendProvider: EmailProvider = {
@@ -17,7 +17,8 @@ export const resendProvider: EmailProvider = {
         to: msg.to,
         subject: msg.subject,
         html: msg.html,
-        headers: campaignHeaders(msg),
+        ...(msg.text ? { text: msg.text } : {}),
+        headers: { ...campaignHeaders(msg), ...threadHeaders(msg) },
       }),
     })
 

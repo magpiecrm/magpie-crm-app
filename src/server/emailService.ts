@@ -5,7 +5,7 @@ import { notify } from './notify'
 import { getAppUrl } from './appUrl'
 import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
-import { formatCustomValue } from '../features/contacts/contactFields'
+import { mergeContact } from './mergeTags'
 import { AllowanceError, requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
 import { env } from './env'
@@ -15,8 +15,6 @@ import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
 import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
 import { isUnknownRecipient } from './providers/types'
 
-/** `{{ contact.custom.<key> }}` — a custom contact field value. */
-const CUSTOM_FIELD_TAG = /\{\{\s*contact\.custom\.([a-z0-9_]+)\s*\}\}/gi
 
 /**
  * Make every `href` in a stored campaign absolute.
@@ -338,6 +336,10 @@ export async function getCampaign(id: number) {
     WHERE c.id = ?
   `).get(id) as any
 
+  // A sequence step's hidden row (its emails' tracking) isn't a campaign.
+  if (c && db.data.campaigns?.find((x) => x.id === c.id)?.sequence_id) {
+    throw new Error('Campaign not found')
+  }
   if (!c) {
     throw new Error('Campaign not found')
   }
@@ -507,6 +509,7 @@ export async function unscheduleCampaign(id: number) {
 }
 
 export async function deleteCampaign(id: number) {
+  if (db.data.campaigns?.find((c) => c.id === id)?.sequence_id) throw new Error('Campaign not found')
   db.run('DELETE FROM campaigns WHERE id = ?', [id])
   return { success: true }
 }
@@ -637,24 +640,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
       const lastName = contact.last_name || ''
       const company = contact.company || ''
 
-      const personalize = (text: string, isHtml: boolean) => {
-        const fn = isHtml ? escapeHtml(firstName) : firstName
-        const ln = isHtml ? escapeHtml(lastName) : lastName
-        const comp = isHtml ? escapeHtml(company) : company
-        const em = isHtml ? escapeHtml(email) : email
-
-        return text
-          .replace(/\{\{\s*contact\.first_name\s*\}\}/gi, fn)
-          .replace(/\{\{\s*contact\.last_name\s*\}\}/gi, ln)
-          .replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/gi, fn)
-          .replace(/\{\{\s*contact\.LASTNAME\s*\}\}/gi, ln)
-          .replace(/\{\{\s*contact\.COMPANY\s*\}\}/gi, comp)
-          .replace(/\{\{\s*contact\.EMAIL\s*\}\}/gi, em)
-          .replace(CUSTOM_FIELD_TAG, (_m: string, key: string) => {
-            const value = formatCustomValue(contact.custom?.[key])
-            return isHtml ? escapeHtml(value) : value
-          })
-      }
+      const personalize = (text: string, isHtml: boolean) =>
+        mergeContact(text, { email, first_name: firstName, last_name: lastName, company, custom: contact.custom }, { html: isHtml })
 
       // Personalize variables in subject (plain text - no HTML escape needed)
       let personalizedSubject = personalize(campaign.subject, false)
@@ -794,7 +781,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
  * Webhook providers push as they learn, so the wait itself is all there is.
  * After BOUNCE_WAIT_CAP_MS, yes regardless.
  */
-async function bouncesCaughtUp(releaseAt: string, now: Date): Promise<boolean> {
+export async function bouncesCaughtUp(releaseAt: string, now: Date): Promise<boolean> {
   if (now.getTime() - Date.parse(releaseAt) > BOUNCE_WAIT_CAP_MS) return true
   if (env.sendingManaged() && env.prospectingManaged()) {
     const answer = await refreshHostRules()
@@ -854,24 +841,8 @@ export async function sendTestEmail(payload: {
     const ln = contact.last_name || 'TestLastName'
     const comp = contact.company || 'TestCompany'
 
-    const personalize = (text: string, isHtml: boolean) => {
-      if (!text) return text
-      const eFn = isHtml ? escapeHtml(fn) : fn
-      const eLn = isHtml ? escapeHtml(ln) : ln
-      const eComp = isHtml ? escapeHtml(comp) : comp
-      
-      return text
-        .replace(/\{\{\s*contact\.first_name\s*\}\}/gi, eFn)
-        .replace(/\{\{\s*contact\.last_name\s*\}\}/gi, eLn)
-        .replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/gi, eFn)
-        .replace(/\{\{\s*contact\.LASTNAME\s*\}\}/gi, eLn)
-        .replace(/\{\{\s*contact\.COMPANY\s*\}\}/gi, eComp)
-        .replace(/\{\{\s*contact\.EMAIL\s*\}\}/gi, recipient)
-        .replace(CUSTOM_FIELD_TAG, (_m: string, key: string) => {
-          const value = formatCustomValue(contact.custom?.[key]) || `Test${key}`
-          return isHtml ? escapeHtml(value) : value
-        })
-    }
+    const personalize = (text: string, isHtml: boolean) =>
+      mergeContact(text, { email: recipient, first_name: fn, last_name: ln, company: comp, custom: contact.custom }, { html: isHtml, customFallback: (key) => `Test${key}` })
 
     const subject = personalize(payload.subject, false)
     let htmlWithVars = personalize(payload.htmlContent, true)

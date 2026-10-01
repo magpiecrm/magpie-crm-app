@@ -80,7 +80,10 @@ export const smtpProvider: EmailProvider = {
       to: msg.to.join(', '),
       subject: msg.subject,
       html: msg.html,
-      text: htmlToText(msg.html),
+      text: msg.text ?? htmlToText(msg.html),
+      ...(msg.messageId ? { messageId: msg.messageId } : {}),
+      ...(msg.inReplyTo ? { inReplyTo: msg.inReplyTo } : {}),
+      ...(msg.references?.length ? { references: msg.references } : {}),
     }
     const headers = campaignHeaders(msg)
     if (Object.keys(headers).length) mailOptions.headers = headers

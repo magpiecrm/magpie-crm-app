@@ -46,6 +46,11 @@ export const queryKeys = {
     proposal: (id: string) => ['sales', 'proposal', id] as const,
     tasks: (filters?: unknown) => (filters === undefined ? (['sales', 'tasks'] as const) : (['sales', 'tasks', filters] as const)),
   },
+  sequences: {
+    list: () => ['sequences'] as const,
+    sequence: (id: string) => ['sequences', id] as const,
+    enrollments: (id: string) => ['sequences', id, 'enrollments'] as const,
+  },
   surveys: {
     list: () => ['surveys'] as const,
     survey: (id: string) => ['surveys', id] as const,

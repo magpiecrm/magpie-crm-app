@@ -62,6 +62,18 @@ export interface OutboundMessage {
   campaignId?: number
   /** This recipient's unsubscribe link, for the List-Unsubscribe headers. */
   unsubscribeUrl?: string
+  /** The plain-text part; made from the HTML when missing. */
+  text?: string
+  /**
+   * Threading, for a follow-up in the same conversation (sequences): our own
+   * Message-ID (`<id@domain>`), the message it replies to, and the thread's
+   * earlier ones. The SMTP provider sends all three; HTTP providers that take
+   * custom headers get In-Reply-To and References (threadHeaders), and set
+   * their own Message-ID.
+   */
+  messageId?: string
+  inReplyTo?: string
+  references?: string[]
 }
 
 interface ProviderSendResult {
@@ -101,6 +113,14 @@ export function campaignHeaders(msg: OutboundMessage): Record<string, string> {
     ...(msg.unsubscribeUrl
       ? { 'List-Unsubscribe': `<${msg.unsubscribeUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
       : {}),
+  }
+}
+
+/** In-Reply-To and References for a follow-up, for providers that accept them as custom headers. */
+export function threadHeaders(msg: OutboundMessage): Record<string, string> {
+  return {
+    ...(msg.inReplyTo ? { 'In-Reply-To': msg.inReplyTo } : {}),
+    ...(msg.references?.length ? { References: msg.references.join(' ') } : {}),
   }
 }
 

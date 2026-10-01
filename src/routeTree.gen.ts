@@ -27,6 +27,7 @@ import { Route as ApiUnsubscribeRouteImport } from './routes/api/unsubscribe'
 import { Route as ApiSubscribeRouteImport } from './routes/api/subscribe'
 import { Route as ApiOptOutRouteImport } from './routes/api/opt-out'
 import { Route as ApiMcpRouteImport } from './routes/api/mcp'
+import { Route as SalesSequencesIndexRouteImport } from './routes/sales/sequences/index'
 import { Route as SalesDealsIndexRouteImport } from './routes/sales/deals/index'
 import { Route as MarketingTemplatesIndexRouteImport } from './routes/marketing/templates/index'
 import { Route as MarketingSurveysIndexRouteImport } from './routes/marketing/surveys/index'
@@ -39,6 +40,7 @@ import { Route as MarketingAnalyticsIndexRouteImport } from './routes/marketing/
 import { Route as CollectionProspectSearchIndexRouteImport } from './routes/collection/prospect-search/index'
 import { Route as CollectionPersonasIndexRouteImport } from './routes/collection/personas/index'
 import { Route as ApiUploadsIndexRouteImport } from './routes/api/uploads/index'
+import { Route as SalesSequencesIdRouteImport } from './routes/sales/sequences/$id'
 import { Route as SalesProposalsProposalIdRouteImport } from './routes/sales/proposals/$proposalId'
 import { Route as SalesDealsIdRouteImport } from './routes/sales/deals/$id'
 import { Route as MarketingListsListIdRouteImport } from './routes/marketing/lists/$listId'
@@ -155,6 +157,11 @@ const ApiMcpRoute = ApiMcpRouteImport.update({
   path: '/api/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalesSequencesIndexRoute = SalesSequencesIndexRouteImport.update({
+  id: '/sales/sequences/',
+  path: '/sales/sequences/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SalesDealsIndexRoute = SalesDealsIndexRouteImport.update({
   id: '/sales/deals/',
   path: '/sales/deals/',
@@ -214,6 +221,11 @@ const CollectionPersonasIndexRoute = CollectionPersonasIndexRouteImport.update({
 const ApiUploadsIndexRoute = ApiUploadsIndexRouteImport.update({
   id: '/api/uploads/',
   path: '/api/uploads/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesSequencesIdRoute = SalesSequencesIdRouteImport.update({
+  id: '/sales/sequences/$id',
+  path: '/sales/sequences/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SalesProposalsProposalIdRoute =
@@ -387,6 +399,7 @@ export interface FileRoutesByFullPath {
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
+  '/sales/sequences/$id': typeof SalesSequencesIdRoute
   '/api/uploads/': typeof ApiUploadsIndexRoute
   '/collection/personas/': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search/': typeof CollectionProspectSearchIndexRoute
@@ -399,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/marketing/surveys/': typeof MarketingSurveysIndexRoute
   '/marketing/templates/': typeof MarketingTemplatesIndexRoute
   '/sales/deals/': typeof SalesDealsIndexRoute
+  '/sales/sequences/': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -440,6 +454,7 @@ export interface FileRoutesByTo {
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
+  '/sales/sequences/$id': typeof SalesSequencesIdRoute
   '/api/uploads': typeof ApiUploadsIndexRoute
   '/collection/personas': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search': typeof CollectionProspectSearchIndexRoute
@@ -452,6 +467,7 @@ export interface FileRoutesByTo {
   '/marketing/surveys': typeof MarketingSurveysIndexRoute
   '/marketing/templates': typeof MarketingTemplatesIndexRoute
   '/sales/deals': typeof SalesDealsIndexRoute
+  '/sales/sequences': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -498,6 +514,7 @@ export interface FileRoutesById {
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
+  '/sales/sequences/$id': typeof SalesSequencesIdRoute
   '/api/uploads/': typeof ApiUploadsIndexRoute
   '/collection/personas/': typeof CollectionPersonasIndexRoute
   '/collection/prospect-search/': typeof CollectionProspectSearchIndexRoute
@@ -510,6 +527,7 @@ export interface FileRoutesById {
   '/marketing/surveys/': typeof MarketingSurveysIndexRoute
   '/marketing/templates/': typeof MarketingTemplatesIndexRoute
   '/sales/deals/': typeof SalesDealsIndexRoute
+  '/sales/sequences/': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
@@ -557,6 +575,7 @@ export interface FileRouteTypes {
     | '/marketing/lists/$listId'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
+    | '/sales/sequences/$id'
     | '/api/uploads/'
     | '/collection/personas/'
     | '/collection/prospect-search/'
@@ -569,6 +588,7 @@ export interface FileRouteTypes {
     | '/marketing/surveys/'
     | '/marketing/templates/'
     | '/sales/deals/'
+    | '/sales/sequences/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -610,6 +630,7 @@ export interface FileRouteTypes {
     | '/marketing/lists/$listId'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
+    | '/sales/sequences/$id'
     | '/api/uploads'
     | '/collection/personas'
     | '/collection/prospect-search'
@@ -622,6 +643,7 @@ export interface FileRouteTypes {
     | '/marketing/surveys'
     | '/marketing/templates'
     | '/sales/deals'
+    | '/sales/sequences'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -667,6 +689,7 @@ export interface FileRouteTypes {
     | '/marketing/lists/$listId'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
+    | '/sales/sequences/$id'
     | '/api/uploads/'
     | '/collection/personas/'
     | '/collection/prospect-search/'
@@ -679,6 +702,7 @@ export interface FileRouteTypes {
     | '/marketing/surveys/'
     | '/marketing/templates/'
     | '/sales/deals/'
+    | '/sales/sequences/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
     | '/marketing/surveys/$surveyId/edit'
@@ -720,6 +744,7 @@ export interface RootRouteChildren {
   MarketingListsListIdRoute: typeof MarketingListsListIdRoute
   SalesDealsIdRoute: typeof SalesDealsIdRoute
   SalesProposalsProposalIdRoute: typeof SalesProposalsProposalIdRoute
+  SalesSequencesIdRoute: typeof SalesSequencesIdRoute
   ApiUploadsIndexRoute: typeof ApiUploadsIndexRoute
   CollectionPersonasIndexRoute: typeof CollectionPersonasIndexRoute
   CollectionProspectSearchIndexRoute: typeof CollectionProspectSearchIndexRoute
@@ -728,6 +753,7 @@ export interface RootRouteChildren {
   MarketingCompaniesIndexRoute: typeof MarketingCompaniesIndexRoute
   MarketingListsIndexRoute: typeof MarketingListsIndexRoute
   SalesDealsIndexRoute: typeof SalesDealsIndexRoute
+  SalesSequencesIndexRoute: typeof SalesSequencesIndexRoute
   ApiSurveysSurveyIdTokenRoute: typeof ApiSurveysSurveyIdTokenRoute
   ApiWebhooksEmailProviderRoute: typeof ApiWebhooksEmailProviderRoute
 }
@@ -860,6 +886,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/sequences/': {
+      id: '/sales/sequences/'
+      path: '/sales/sequences'
+      fullPath: '/sales/sequences/'
+      preLoaderRoute: typeof SalesSequencesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sales/deals/': {
       id: '/sales/deals/'
       path: '/sales/deals'
@@ -942,6 +975,13 @@ declare module '@tanstack/react-router' {
       path: '/api/uploads'
       fullPath: '/api/uploads/'
       preLoaderRoute: typeof ApiUploadsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/sequences/$id': {
+      id: '/sales/sequences/$id'
+      path: '/sales/sequences/$id'
+      fullPath: '/sales/sequences/$id'
+      preLoaderRoute: typeof SalesSequencesIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sales/proposals/$proposalId': {
@@ -1227,6 +1267,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingListsListIdRoute: MarketingListsListIdRoute,
   SalesDealsIdRoute: SalesDealsIdRoute,
   SalesProposalsProposalIdRoute: SalesProposalsProposalIdRoute,
+  SalesSequencesIdRoute: SalesSequencesIdRoute,
   ApiUploadsIndexRoute: ApiUploadsIndexRoute,
   CollectionPersonasIndexRoute: CollectionPersonasIndexRoute,
   CollectionProspectSearchIndexRoute: CollectionProspectSearchIndexRoute,
@@ -1235,6 +1276,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingCompaniesIndexRoute: MarketingCompaniesIndexRoute,
   MarketingListsIndexRoute: MarketingListsIndexRoute,
   SalesDealsIndexRoute: SalesDealsIndexRoute,
+  SalesSequencesIndexRoute: SalesSequencesIndexRoute,
   ApiSurveysSurveyIdTokenRoute: ApiSurveysSurveyIdTokenRoute,
   ApiWebhooksEmailProviderRoute: ApiWebhooksEmailProviderRoute,
 }
