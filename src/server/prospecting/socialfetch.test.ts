@@ -180,6 +180,23 @@ describe('searchCompanies', () => {
     expect(page.details![0]).toMatch(/1 of 4 companies/)
   })
 
+  it('asks for 50 companies a request and shows 25 a page, holding the rest so the next page costs nothing', async () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({ liveOrganizationId: String(100 + i), name: `Co ${i}`, website: `https://co${i}.example` }))
+    const f = fakeFetch([envelope({ lookupStatus: 'found', organizations: many, page: { hasMore: true, start: 0, returnedCount: 50 } })])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchCompanies({ keyword: 'fintech' })
+    expect(f.calls[0].searchParams.get('count')).toBe('50')
+    expect(first.items.map((c) => c.ref)).toEqual(many.slice(0, 25).map((o) => o.liveOrganizationId))
+    expect(first.requests).toBe(1)
+    expect(first.nextCursor).toBe('start:25')
+    const second = await source.searchCompanies({ keyword: 'fintech', cursor: first.nextCursor! })
+    expect(f.calls).toHaveLength(1)
+    expect(second.requests).toBe(0)
+    expect(second.items.map((c) => c.ref)).toEqual(many.slice(25).map((o) => o.liveOrganizationId))
+    // After the held ones, SocialFetch's own offset.
+    expect(second.nextCursor).toBe('start:50')
+  })
+
   // SocialFetch's cursor names the filters it was made with, and one saved
   // from before its release on 2026-09-30 was refused ("Pagination cursor
   // does not match this request").

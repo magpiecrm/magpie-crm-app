@@ -683,7 +683,8 @@ describe('searchPeople with a company size finds companies first', () => {
 
   it("leaves out companies where nothing can be verified before searching people there, from what's known and a check of their mail server", async () => {
     const now = new Date().toISOString()
-    // Acme is known to accept every address; Globex turns out to on a check; Initech has no website.
+    // Acme is known to accept every address; Globex turns out to on a check. Initech's search hit has no
+    // website, as most of SocialFetch's don't, which says nothing about its mail: it's searched.
     emailDomains = { 'acme.example': { catch_all: true, catch_all_checked_at: now, accepts_mail: true } }
     catchAllDomains = new Set(['globex.example'])
     companyPage = {
@@ -693,12 +694,16 @@ describe('searchPeople with a company size finds companies first', () => {
     searchPage = pageOf(hit('ana'))
     searchPeopleMock.mockClear()
     const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
-    expect(((searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { companyRefs: string[] }).companyRefs).toEqual(['42'])
+    expect(((searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { companyRefs: string[] }).companyRefs).toEqual(['42', '88'])
     expect(res.warnings).toContain(
-      'Left out 2 companies whose mail servers accept every address or take no email and 1 company with no website, where no email can be verified, before searching for people there.',
+      'Left out 2 companies whose mail servers accept every address or take no email, where no email can be verified, before searching for people there.',
     )
     // Kept for the lookups that follow.
     expect(emailDomains['globex.example'].catch_all).toBe(true)
+    // Counted, for the admin portal's search yield.
+    expect(recordUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ searchOrgRequests: 1, searchCompaniesFound: 4, searchCompaniesUnverifiable: 2, searchCompaniesNoDomain: 1 }),
+    )
   })
 
   it('searches them all while unverifiable people are shown', async () => {

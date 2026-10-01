@@ -388,12 +388,18 @@ const SCREEN_MS = 8_000
 
 /**
  * Companies found by size, without those where no email can be verified,
- * before anyone there is searched for (and their profiles paid for): no
- * website, a domain that takes no email, or a mail server that accepts every
- * address (from the company cache, the host's shared list, or a check from
- * our verification servers). Checks not answered within SCREEN_MS leave the
+ * before anyone there is searched for (and their profiles paid for): a
+ * domain that takes no email, or a mail server that accepts every address
+ * (from the company cache, the host's shared list, or a check from our
+ * verification servers). Checks not answered within SCREEN_MS leave the
  * company in, and their answers are kept for later. A company whose email
  * format is confirmed stays in: its guesses are handed over.
+ *
+ * A company with no domain stays in too, counted as `noDomain`: SocialFetch's
+ * company search leaves the website out for most companies (about 3 in 4),
+ * which says nothing about whether they have one. Leaving them out (0.9.19)
+ * threw away most of every page, and paid for more company searches to
+ * refill it.
  */
 async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ keep: CompanyResult[]; unverifiable: number; noDomain: number }> {
   const worthIt = await formatConfirmedAt(db)
@@ -406,7 +412,6 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
   for (const c of companies) {
     const domain = (c.domain ?? db.getProspectCompany(c.ref)?.domain ?? '').toLowerCase().replace(/^www\./, '')
     if (!domain) {
-      out.add(c.ref)
       noDomain++
     } else if (worthIt(domain)) {
       continue
@@ -488,7 +493,8 @@ async function companyFirstPage(
     const term = terms[s.term]
     if (!term || !source.searchCompanies) break
     const res = await source.searchCompanies({ keyword: term.keyword, industry: term.industry, headcount: filters.companySizes, country: filters.country, cursor: s.orgCursor })
-    orgSearches++
+    // Held companies (from a request that brought more than a page) cost nothing.
+    orgSearches += res.requests ?? 1
     // Companies are non-personal, so they're cached for everyone (domains for reveals).
     db.upsertProspectCompanies(
       res.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount, slug: slugFromCompanyUrl(c.linkedinUrl) })),
@@ -839,16 +845,18 @@ export async function searchPeople(
     searchSkippedContact: tally.skippedContact,
     searchSkippedNotWorking: tally.skippedNotWorking,
     searchNoLookup: tally.noLookup,
+    searchOrgRequests: orgSearches,
+    searchCompaniesFound: companiesFound,
+    searchCompaniesUnverifiable: screened.unverifiable,
+    searchCompaniesNoDomain: screened.noDomain,
   })
   if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
   }
-  if (screened.unverifiable || screened.noDomain) {
-    const parts = [
-      screened.unverifiable && `${plural(screened.unverifiable, 'company whose mail server accepts every address or takes no email', 'companies whose mail servers accept every address or take no email')}`,
-      screened.noDomain && `${plural(screened.noDomain, 'company with no website', 'companies with no website')}`,
-    ].filter(Boolean)
-    details.push(`Left out ${parts.join(' and ')}, where no email can be verified, before searching for people there.`)
+  if (screened.unverifiable) {
+    details.push(
+      `Left out ${plural(screened.unverifiable, 'company whose mail server accepts every address or takes no email', 'companies whose mail servers accept every address or take no email')}, where no email can be verified, before searching for people there.`,
+    )
   }
 
   if (lookupError) details.push(`Couldn't look up profiles (${lookupError}), so titles and companies come from headlines.`)

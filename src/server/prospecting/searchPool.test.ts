@@ -3,13 +3,13 @@ import { createSearchPool, searchPoolKey } from './searchPool'
 import type { PersonResult } from './types'
 
 const person = (n: number) => ({ profileUrl: `https://www.linkedin.com/in/p${n}`, firstName: `P${n}` }) as PersonResult
-const hits = (at: number, n = 3) => ({ people: Array.from({ length: n }, (_, i) => person(i)), hasMore: true, end: n, reportedTotal: null, at })
+const hits = (at: number, n = 3) => ({ items: Array.from({ length: n }, (_, i) => person(i)), hasMore: true, end: n, reportedTotal: null, at })
 
 describe('search pool', () => {
   it('hands held people out once', () => {
     const pool = createSearchPool({ now: () => 0 })
     pool.put('k', hits(0))
-    expect(pool.take('k')?.people).toHaveLength(3)
+    expect(pool.take('k')?.items).toHaveLength(3)
     expect(pool.take('k')).toBeNull()
   })
 
@@ -19,7 +19,7 @@ describe('search pool', () => {
     pool.put('a', hits(0))
     now = 59 * 60_000
     const taken = pool.take('a')!
-    pool.put('b', { ...taken, people: taken.people.slice(1) })
+    pool.put('b', { ...taken, items: taken.items.slice(1) })
     now = 60 * 60_000
     expect(pool.take('b')).toBeNull()
   })

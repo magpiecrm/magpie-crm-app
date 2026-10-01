@@ -44,6 +44,8 @@ import type {
 
 const SOURCE = 'socialfetch' as const
 const PAGE_SIZE = 25
+/** Companies asked for per organization search: 3 credits whether it returns 1 or 50 (checked 2026-10-01). */
+const ORG_FETCH_SIZE = 50
 const TIMEOUT_MS = 25_000
 const MAX_ATTEMPTS = 3
 // Several titles become one request each (the API takes a single `title`).
@@ -573,6 +575,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
   const get = <T>(path: string, params: Record<string, string | number | undefined>) =>
     request<T>(path, params, fetchImpl, getApiKey())
   const pool = createSearchPool()
+  // Companies fetched beyond a page, for the next page of the same search (non-personal).
+  const orgPool = createSearchPool<CompanyResult | null>()
   // How a multi-word title's words are joined in `title`: underscores work
   // today, spaces once SocialFetch's fix is out. Until a multi-word search has
   // found someone, one that finds nobody is tried once the other way, and
@@ -586,20 +590,39 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const industry = filters.industry?.trim() ? industryCodes([filters.industry.trim()]) : []
       const geoEntityId = geoIdForCountry(filters.country)
       const start = startFrom(filters.cursor)
-      const res = await get<any>('/v2/linkedin/organizations/search', {
+      const params = {
         keyword: filters.keyword,
-        count: PAGE_SIZE,
-        start: start || undefined,
         industry: industry.length ? industry.join(',') : undefined,
         headcountRange: filters.headcount?.length ? filters.headcount.join(',') : undefined,
         geoEntityId: geoEntityId ?? undefined,
-      })
-      const raw: any[] = Array.isArray(res.data?.organizations) ? res.data.organizations : []
-      const mapped = raw.map(mapOrganization).filter((c): c is CompanyResult => c !== null)
-      if (mapped.length < raw.length) {
-        const bad = raw.find((o) => mapOrganization(o) === null)
-        console.warn(`[SocialFetch] ${raw.length - mapped.length}/${raw.length} organizations unreadable; fields: ${describeShape(bad)}`)
       }
+      // Each request asks for ORG_FETCH_SIZE (3 credits however many come
+      // back); a page shows PAGE_SIZE, and the rest are held for the next.
+      let held = orgPool.take(searchPoolKey(params, start))
+      let requests = 0
+      if (!held) {
+        const res = await get<any>('/v2/linkedin/organizations/search', { ...params, count: ORG_FETCH_SIZE, start: start || undefined })
+        requests = 1
+        const raw: any[] = Array.isArray(res.data?.organizations) ? res.data.organizations : []
+        // Unreadable records stay as null, so offsets still line up with SocialFetch's.
+        const read = raw.map(mapOrganization)
+        const bad = raw.find((_, i) => read[i] === null)
+        if (bad) console.warn(`[SocialFetch] ${read.filter((c) => c === null).length}/${raw.length} organizations unreadable; fields: ${describeShape(bad)}`)
+        const page = res.data?.page
+        held = {
+          items: read,
+          hasMore: Boolean(page?.hasMore) && raw.length > 0,
+          end: (num(page?.start) ?? start) + (num(page?.returnedCount) ?? raw.length),
+          reportedTotal: num(res.data?.reportedTotal),
+          at: Date.now(),
+        }
+      }
+      const pageHits = held.items.slice(0, PAGE_SIZE)
+      const rest = held.items.slice(PAGE_SIZE)
+      const nextStart = rest.length ? start + pageHits.length : held.end
+      orgPool.put(searchPoolKey(params, nextStart), { ...held, items: rest })
+      const more = rest.length > 0 || (held.hasMore && nextStart <= MAX_START)
+      const mapped = pageHits.filter((c): c is CompanyResult => c !== null)
 
       // What SocialFetch filtered isn't re-checked: search results often have
       // no headcount or country, and sub-industries have their own names.
@@ -630,14 +653,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
       return {
         items,
-        nextCursor: (() => {
-          const page = res.data?.page
-          const next = (num(page?.start) ?? start) + (num(page?.returnedCount) ?? raw.length)
-          return page?.hasMore && raw.length > 0 && next <= MAX_START ? `start:${next}` : null
-        })(),
-        reportedTotal: num(res.data?.reportedTotal),
+        nextCursor: more ? `start:${nextStart}` : null,
+        reportedTotal: held.reportedTotal,
         warnings,
         details,
+        requests,
       }
     },
 
@@ -760,18 +780,18 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const page = res.data?.page
           const people = readPeople(res, FETCH_SIZE, fitsTitle)
           hits = {
-            people,
+            items: people,
             hasMore: Boolean(page?.hasMore),
             end: (num(page?.start) ?? start) + (num(page?.returnedCount) ?? people.length),
             reportedTotal: num(res.data?.reportedTotal),
             at: Date.now(),
           }
         }
-        const used = hits.people.slice(0, pageSize).map((p) => (p && p !== 'off-title' ? { ...p } : p))
-        const rest = hits.people.slice(pageSize)
+        const used = hits.items.slice(0, pageSize).map((p) => (p && p !== 'off-title' ? { ...p } : p))
+        const rest = hits.items.slice(pageSize)
         // Part-way through held people, the offset is their place; after the last, SocialFetch's own.
         const nextStart = rest.length ? start + used.length : Math.max(hits.end, start + used.length)
-        pool.put(searchPoolKey(params, nextStart), { ...hits, people: rest })
+        pool.put(searchPoolKey(params, nextStart), { ...hits, items: rest })
         const more = used.length > 0 && (rest.length > 0 || hits.hasMore) && nextStart <= MAX_START
         return { title, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests }
       }

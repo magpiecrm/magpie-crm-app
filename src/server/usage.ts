@@ -45,6 +45,16 @@ const USAGE_COUNTERS = [
   /** People shown without a profile lookup: found inside the one company searched, which says where they work. */
   'searchNoLookup',
   /**
+   * Searches by company size (companies first): company searches paid for,
+   * companies found, and of those, ones left out before searching people
+   * there because no email can be verified (catch-all or no mail), and ones
+   * searched without a known domain (SocialFetch's search often omits it).
+   */
+  'searchOrgRequests',
+  'searchCompaniesFound',
+  'searchCompaniesUnverifiable',
+  'searchCompaniesNoDomain',
+  /**
    * Checks our own verification limits held back (recordLimit), by limit: the
    * per-minute pace, a company checked a lot in the last few minutes (both
    * wait and try again, so they aren't finished lookups), today's cap, paused
