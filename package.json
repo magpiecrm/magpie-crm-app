@@ -29,6 +29,7 @@
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
     "@tanstack/react-start": "latest",
+    "imapflow": "^1.7.8",
     "lucide-react": "^0.545.0",
     "nodemailer": "^9.0.1",
     "playwright-core": "^1.63.0",

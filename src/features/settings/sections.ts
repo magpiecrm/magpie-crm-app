@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'verification', group: 'Prospecting', label: 'Email verification', intro: 'How found email addresses are checked before they are shown or saved, and the health of the servers that check them.' },
   { id: 'sending', group: 'Email', label: 'Sending', intro: 'The service your campaigns are sent through, and the default address they come from.' },
   { id: 'senders', group: 'Email', label: 'Sender addresses', intro: 'The names and addresses you can send campaigns from.' },
+  { id: 'replies', group: 'Email', label: 'Reply detection', intro: "Connect each sender's inbox so a reply stops that person's sequence." },
   { id: 'pipelines', group: 'Sales', label: 'Pipelines', intro: 'The stages your deals move through. Add a pipeline for each kind of deal, like new business or renewals.' },
   { id: 'copilot', group: 'AI', label: 'Copilot', intro: 'Your own Anthropic or OpenAI API key, which the in-app copilot runs on.' },
   { id: 'mcp', group: 'AI', label: 'Connect AI apps', intro: 'Let Claude, ChatGPT, Cursor and other AI apps work with your data through MCP.' },

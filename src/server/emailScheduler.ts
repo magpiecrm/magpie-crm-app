@@ -45,6 +45,20 @@ export async function sendDueCampaigns(now = new Date()) {
   }
 }
 
+/** Reads connected inboxes for replies (mailboxes/); never two reads at once. */
+async function pollDueMailboxes() {
+  if (g.__mailboxPollBusy) return
+  g.__mailboxPollBusy = true
+  try {
+    const { pollMailboxes } = await import('./mailboxes')
+    await pollMailboxes()
+  } catch (err) {
+    console.error('[EmailScheduler] Reading inboxes failed:', err)
+  } finally {
+    g.__mailboxPollBusy = false
+  }
+}
+
 /** Sequence emails that are due (sequences/engine.ts); never two runs at once. */
 async function runDueSequences() {
   if (g.__sequenceRunBusy) return
@@ -87,6 +101,12 @@ export function startEmailScheduler() {
   resumeInterruptedSends()
     .catch((err) => console.error('[EmailScheduler] Resume failed:', err))
     .finally(() => sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err)))
+
+  // Senders' connected inboxes, read for replies to sequence emails (mailboxes/): every
+  // 3 minutes, and soon after starting, so follow-ups held for a fresh read aren't held long.
+  clearInterval(g.__mailboxPollInterval)
+  g.__mailboxPollInterval = setInterval(() => void pollDueMailboxes(), 3 * 60_000)
+  setTimeout(() => void pollDueMailboxes(), 30_000)
 
   // A sequence email claimed but not committed was cut off by a restart: taken as sent, never sent twice.
   import('./sequences/engine').then(({ recoverClaims }) => recoverClaims()).catch((err) => console.error('[EmailScheduler] Sequence recovery failed:', err))

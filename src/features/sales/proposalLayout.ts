@@ -18,7 +18,7 @@ export interface ProposalFacts {
   brand: { name?: string; logoUrl?: string; primaryColor?: string; fontFamily?: string } | null
 }
 
-export function proposalBlocks(f: ProposalFacts): EmailBlock[] {
+function proposalBlocks(f: ProposalFacts): EmailBlock[] {
   let n = 0
   const id = () => `pr_${Date.now().toString(36)}_${(n++).toString(36)}`
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -63,7 +63,7 @@ export function proposalBlocks(f: ProposalFacts): EmailBlock[] {
   return blocks
 }
 
-export function proposalStyle(brand: ProposalFacts['brand']): GlobalStyle {
+function proposalStyle(brand: ProposalFacts['brand']): GlobalStyle {
   return {
     ...DEFAULT_GLOBAL_STYLE,
     bodyWidth: 680,

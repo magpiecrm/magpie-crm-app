@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getSendersFn, updateSequenceFn } from '../../../server/functions'
+import { Link } from '@tanstack/react-router'
+import { getSendersFn, mailboxesFn, updateSequenceFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
 import { Switch } from '../../../components/ui/Switch'
 import { queryKeys } from '../../../queryKeys'
 import { FIELD_CLASS } from '../../sales/forms'
 import { WEEKDAYS } from './labels'
-import type { Sequence, SequenceSettings } from '../types'
+import type { MailboxView, Sequence, SequenceSettings } from '../types'
 
 /** Like FIELD_CLASS, but sized by its content, for fields inside a sentence. */
 const INLINE = 'px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40'
@@ -29,6 +30,7 @@ function timeZones(current: string): string[] {
 export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
   const queryClient = useQueryClient()
   const { data: senders = [] } = useQuery({ queryKey: queryKeys.email.senders(), queryFn: () => getSendersFn(), select: (r) => r.senders })
+  const { data: boxes = [] } = useQuery({ queryKey: queryKeys.sequences.mailboxes(), queryFn: () => mailboxesFn() })
   const [name, setName] = useState(sequence.name)
   const [senderId, setSenderId] = useState(sequence.sender_id ? String(sequence.sender_id) : '')
   const [s, setS] = useState<SequenceSettings>(sequence.settings)
@@ -77,6 +79,7 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
             </option>
           ))}
         </Select>
+        <ReplyDetection box={boxes.find((b) => String(b.sender_id) === senderId) ?? null} />
       </Field>
 
       <fieldset className="space-y-3">
@@ -176,6 +179,18 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
       </div>
     </form>
   )
+}
+
+/** Whether replies to this sender are noticed, with a way to set it up. */
+function ReplyDetection({ box }: { box: MailboxView | null }) {
+  const link = (
+    <Link to="/settings" search={{ tab: 'replies' }} className="text-accent hover:underline">
+      Settings → Reply detection
+    </Link>
+  )
+  if (!box) return <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Replies aren't detected for this sender: mark them by hand, or connect its inbox in {link}.</p>
+  if (box.status !== 'ok') return <p className="mt-1 text-xs text-destructive">Reply detection isn't working ({box.last_error}). Fix it in {link}.</p>
+  return <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">Replies are detected from {box.user}: a reply stops that person's emails.</p>
 }
 
 function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {

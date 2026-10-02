@@ -122,7 +122,7 @@ export function renderSurveyReference(): string {
 }
 
 /** The user's local date and time, for due dates ("tomorrow", "Friday"). UTC when their time zone isn't known. */
-export function localNow(timeZone?: string, now = new Date()): string {
+function localNow(timeZone?: string, now = new Date()): string {
   const format = (tz: string) =>
     now.toLocaleString('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'longOffset' })
   try {

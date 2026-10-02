@@ -14,7 +14,7 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/gi
 const UNSUB = /\{\{\s*unsubscribe\s*\}\}/gi
 
 /** The whole email as text, with `{{ unsubscribe }}` still in it. */
-export function composeText(body: string, settings: Pick<SequenceSettings, 'signature' | 'footer'>): string {
+function composeText(body: string, settings: Pick<SequenceSettings, 'signature' | 'footer'>): string {
   return [body.trim(), settings.signature.trim(), settings.footer.trim()].filter(Boolean).join('\n\n')
 }
 

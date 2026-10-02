@@ -54,7 +54,7 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted' | 'sequence_paused'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted' | 'sequence_paused' | 'sequence_reply'
 
 type ContactRecord = DbSchema['contacts'][number]
 export type RecipientRecord = DbSchema['campaign_recipients'][number]
@@ -364,6 +364,8 @@ export interface DbSchema {
   /** Sequences and who's enrolled in them (server/sequences/). */
   sequences?: Sequence[]
   sequence_enrollments?: Enrollment[]
+  /** Senders' inboxes, read for replies to sequence emails (server/mailboxes/). */
+  mailboxes?: MailboxRecord[]
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the
@@ -458,6 +460,36 @@ export interface GuessHold {
   max_bounce_rate?: number
   /** Hard bounces among the first batch, once looked at. */
   hard_bounces?: number
+}
+
+/**
+ * A sender's inbox, connected over IMAP so replies to sequence emails stop
+ * the sequence (server/mailboxes/). Only message headers are read, and
+ * nothing from a message is kept but whether it was a reply.
+ */
+export interface MailboxRecord {
+  id: string
+  sender_id: number
+  host: string
+  port: number
+  /** TLS from the start (993); otherwise STARTTLS. */
+  secure: boolean
+  user: string
+  /** The password (an app password, for Gmail), encrypted with CREDENTIALS_SECRET. */
+  secret: string
+  status: 'ok' | 'auth_failed' | 'error'
+  last_error: string | null
+  /** When it started failing (null while working). */
+  error_since: string | null
+  last_polled_at: string | null
+  /** The folder read: Gmail's All Mail, else INBOX. */
+  folder: string | null
+  uid_validity: string | null
+  /** The last message read. */
+  last_uid: number | null
+  replies_found: number
+  created_at: string
+  updated_at: string
 }
 
 export interface EmailDomainRecord {

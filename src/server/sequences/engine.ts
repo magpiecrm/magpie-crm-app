@@ -29,6 +29,14 @@ import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { renderStep } from './render'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
 
+/**
+ * With the sender's inbox connected, a follow-up only goes once it has been
+ * read this recently, so nobody gets one after replying; and a sequence
+ * pauses when the inbox has failed this long.
+ */
+const FRESH_INBOX_MS = 15 * 60_000
+const BROKEN_INBOX_MS = 60 * 60_000
+
 /** A failed send is tried again this much later, at most this many times. */
 const RETRY_MS = 30 * 60_000
 const MAX_ATTEMPTS = 3
@@ -133,7 +141,13 @@ async function guessAllowed(s: Sequence, now: Date): Promise<boolean> {
 function maybeResume(s: Sequence) {
   if (s.status !== 'paused' || !s.auto_paused) return
   const sender = db.data.senders.find((x) => x.id === s.sender_id)
-  const cleared = s.auto_paused === 'allowance' ? remaining('emailsSent') > 0 : !!sender && (!env.sendingManaged() || canSendFrom(sender.email))
+  const box = db.data.mailboxes?.find((m) => m.sender_id === s.sender_id)
+  const cleared =
+    s.auto_paused === 'allowance'
+      ? remaining('emailsSent') > 0
+      : s.auto_paused === 'reply_detection'
+        ? !box || box.status === 'ok'
+        : !!sender && (!env.sendingManaged() || canSendFrom(sender.email))
   if (!cleared) return
   db.mutate(() => {
     s.status = 'active'
@@ -162,7 +176,20 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     // Follow-ups first, then whoever's been waiting longest.
     .sort((a, b) => Number(b.next_step > 0) - Number(a.next_step > 0) || a.next_send_at!.localeCompare(b.next_send_at!))
 
+  // Replies are read from the sender's inbox, when it's connected.
+  const box = db.data.mailboxes?.find((m) => m.sender_id === s.sender_id)
+  if (box && box.status !== 'ok' && due.some((e) => e.next_step > 0)) {
+    const broken = box.status === 'auth_failed' || (box.error_since && now.getTime() - Date.parse(box.error_since) > BROKEN_INBOX_MS)
+    if (broken) {
+      pause(s, `Replies can't be read from ${box.user} (${box.last_error ?? 'error'}), so follow-ups would go to people who've replied. Fix it in Settings → Reply detection, or disconnect the inbox to send without it.`, 'reply_detection')
+      return false
+    }
+  }
+  const inboxCurrent = !box || (box.status === 'ok' && !!box.last_polled_at && now.getTime() - Date.parse(box.last_polled_at) <= FRESH_INBOX_MS)
+
   for (const e of due) {
+    // A follow-up waits until the inbox has been read for replies.
+    if (e.next_step > 0 && !inboxCurrent) continue
     const step = s.steps[e.next_step]
     if (!step) {
       end(e, 'finished', 'Sent every email')

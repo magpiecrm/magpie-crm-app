@@ -68,7 +68,7 @@ export interface Deal {
   updated_at: string
 }
 
-type ActivityKind = 'note' | 'task' | 'created' | 'stage_change' | 'proposal'
+type ActivityKind = 'note' | 'task' | 'created' | 'stage_change' | 'proposal' | 'email'
 
 /** Something that happened to a deal, company or contact; notes and tasks are written by people. */
 export interface Activity {

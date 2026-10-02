@@ -59,7 +59,7 @@ export interface Sequence {
   /** Why it paused itself (out of emails this month, sending domain not ready…); null when paused by hand. */
   paused_reason: string | null
   /** Paused itself for something that may clear (out of emails, sending domain not ready): resumes by itself once it has. */
-  auto_paused?: 'allowance' | 'sending_domain' | null
+  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | null
   steps: SequenceStep[]
   settings: SequenceSettings
   guess_gate: SequenceGuessGate | null
@@ -103,7 +103,7 @@ export interface Enrollment {
   enrolled_by: string | null
 }
 
-export const DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
+const DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
 
 export function defaultSettings(timeZone = 'Europe/London'): SequenceSettings {
   return {
@@ -143,4 +143,21 @@ export interface EnrollmentView extends Omit<Enrollment, 'claim'> {
   company: string | null
   /** The contact is an unconfirmed prospected address (guessedRecipients.ts). */
   guessed: boolean
+}
+
+/** A sender's connected inbox, as Settings shows it (never the password). */
+export interface MailboxView {
+  id: string
+  sender_id: number
+  sender: string
+  host: string
+  port: number
+  secure: boolean
+  user: string
+  status: 'ok' | 'auth_failed' | 'error'
+  last_error: string | null
+  error_since: string | null
+  last_polled_at: string | null
+  folder: string | null
+  replies_found: number
 }

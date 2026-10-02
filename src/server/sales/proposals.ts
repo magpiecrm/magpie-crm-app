@@ -15,7 +15,7 @@ const now = () => new Date().toISOString()
 /** A later open counts as a return visit (and notifies again) after this long. */
 export const RETURN_VISIT_MS = 60 * 60_000
 
-export const proposalPath = (token: string) => `/p/${token}`
+const proposalPath = (token: string) => `/p/${token}`
 
 export function summary(p: Proposal, baseUrl: string): ProposalSummary {
   const { html: _html, token, ...rest } = p

@@ -50,6 +50,7 @@ export const queryKeys = {
     list: () => ['sequences'] as const,
     sequence: (id: string) => ['sequences', id] as const,
     enrollments: (id: string) => ['sequences', id, 'enrollments'] as const,
+    mailboxes: () => ['mailboxes'] as const,
   },
   surveys: {
     list: () => ['surveys'] as const,

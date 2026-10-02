@@ -18,6 +18,8 @@ import {
 import { isUnconfirmedGuess } from '../prospecting/types'
 import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { dueAfter, firstSendable, isTimeZone, remapStep } from './schedule'
+import { logActivity } from '../sales/deals'
+import { notify } from '../notify'
 
 const now = () => new Date().toISOString()
 const normEmail = (e: string) => e.toLowerCase().trim()
@@ -388,4 +390,47 @@ export function markReplied(data: DbSchema, e: Enrollment, reply: NonNullable<En
   const last = e.sends.at(-1)
   const row = last && data.campaign_recipients.find((r) => r.campaign_id === last.campaign_id && r.contact_email === e.contact_email)
   if (row) row.replied_at ??= reply.at
+}
+
+/**
+ * A reply found in the sender's inbox (mailboxes/): stops their sequence,
+ * notes it on their open deal, and tells the user. A reply asking not to be
+ * emailed again ("stop", "unsubscribe") also unsubscribes them, as the
+ * link in the email would.
+ */
+export function replyReceived(enrollmentId: string, reply: { at: string; matched_by: 'thread' | 'from'; stop: boolean }) {
+  const done = db.mutate((data) => {
+    const e = data.sequence_enrollments?.find((x) => x.id === enrollmentId)
+    if (!e || e.status === 'replied') return null
+    markReplied(data, e, { at: reply.at, matched_by: reply.matched_by })
+    const s = data.sequences?.find((x) => x.id === e.sequence_id)
+    const c = data.contacts.find((x) => x.email === e.contact_email)
+    const who = [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || e.contact_email
+    const deal = data.deals?.find((d) => d.status === 'open' && d.contact_emails.includes(e.contact_email))
+    if (deal) {
+      logActivity(data, {
+        kind: 'email',
+        deal_id: deal.id,
+        company_id: deal.company_id,
+        contact_email: e.contact_email,
+        body: `${who} replied to "${s?.name ?? 'a sequence'}"${reply.stop ? ' asking not to be emailed again' : ''}`,
+        created_by: null,
+      })
+    }
+    return { e, who, sequence: s, lastCampaign: e.sends.at(-1)?.campaign_id }
+  })
+  if (!done) return
+  if (reply.stop) {
+    db.mutate((data) => {
+      const c = data.contacts.find((x) => x.email === done.e.contact_email)
+      if (c) c.status = 'unsubscribed'
+    })
+    db.stopEmail(done.e.contact_email, 'unsubscribed')
+    db.markRecipientUnsubscribed(done.e.contact_email, done.lastCampaign)
+  }
+  notify(
+    'sequence_reply',
+    `${done.who} replied to "${done.sequence?.name ?? 'a sequence'}"${reply.stop ? ' asking not to be emailed again, so they\'re unsubscribed' : ''}`,
+    { url: done.sequence ? `/sales/sequences/${done.sequence.id}?tab=people` : '/sales/sequences', contactEmail: done.e.contact_email },
+  )
 }
