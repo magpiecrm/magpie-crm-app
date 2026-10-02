@@ -426,6 +426,29 @@ describe('searchPeople', () => {
     })
   })
 
+  it('inside chosen companies, takes one named anywhere in a headline as where they work', async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('a', 'Ana', 'Lee', 'Founder, RIBUS', 'New York'),
+          searchHit('b', 'Ben', 'Lee', 'Co-Founder | Lava Beverages Inc', 'New York'),
+          searchHit('c', 'Cat', 'Lee', 'Founder & CEO', 'New York'),
+        ],
+        page: { hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, {
+      titles: ['Founder'],
+      companyRefs: ['11', '22'],
+      companyNames: { '11': 'RIBUS LLC', '22': 'Lava Beverages' },
+    })
+    expect(page.items.map((p) => [p.firstName, p.company, p.companyRef])).toEqual([
+      ['Ana', 'RIBUS LLC', '11'],
+      ['Ben', 'Lava Beverages', '22'],
+      ['Cat', '', null],
+    ])
+  })
+
   it('with a chosen company, searches by its id and only ties people to it when their headline names it', async () => {
     const f = fakeFetch([
       envelope({

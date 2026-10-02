@@ -140,6 +140,8 @@ export interface PeopleFilters {
    * found companies of the chosen size first. Set by search.ts, not the page.
    */
   companyRefs?: string[]
+  /** Those companies' names, by id, so a headline naming one ("Founder, Acme") says where someone works. */
+  companyNames?: Record<string, string>
   /**
    * Start at the top of the results. Otherwise a new search (no cursor) with
    * the same filters as an earlier one carries on from where that one stopped.

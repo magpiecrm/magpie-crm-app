@@ -725,6 +725,19 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
        * unreadable record, 'off-title' for someone whose headline doesn't name
        * the title searched for (titleMatcher), so no profile is paid for them.
        */
+      // Searching inside chosen companies: a headline that names one of them
+      // anywhere ("Founder, Acme", "Acme | Co-founder") says where they work,
+      // so no profile needs buying to find out. The longest name wins.
+      const named = Object.entries(filters.companyNames ?? {})
+        .map(([ref, name]) => ({ ref, name, key: companyKey(name) }))
+        .filter((c) => c.key.length >= 3)
+        .sort((a, b) => b.key.length - a.key.length)
+      const namedIn = (headline: string | null) => {
+        if (!headline || !named.length) return null
+        const h = ` ${companyKey(headline)} `
+        return named.find((c) => h.includes(` ${c.key} `)) ?? null
+      }
+
       const readPeople = (res: any, asked: number, fitsTitle: ((headline: string | null) => boolean) | null): Hit[] => {
         const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
@@ -734,7 +747,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         if (bad) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(bad)}`)
         return raw.map((r) => {
           const person = mapPerson(r)
-          return person && fitsTitle && !fitsTitle(str(r?.headline)) ? 'off-title' : person
+          if (person && fitsTitle && !fitsTitle(str(r?.headline))) return 'off-title'
+          const at = person && namedIn(str(r?.headline))
+          return at ? { ...person, company: at.name, companyRef: at.ref } : person
         })
       }
 

@@ -525,6 +525,7 @@ async function companyFirstPage(
     seniorities: filters.seniorities,
     country: filters.country,
     companyRefs: s.batch.map(([ref]) => ref),
+    companyNames: Object.fromEntries(s.batch),
     count,
     cursor: s.people,
   })
@@ -601,6 +602,7 @@ async function processBatch(
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
     if (p.previously === 'saved' || p.profileChecked) return null
     if (company && /^\d+$/.test(company.ref)) return company
+    if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
     if (companySet?.size && p.company) {
       for (const [ref, name] of companySet) if (sameCompanyName(p.company, name)) return { ref, name }
     }
