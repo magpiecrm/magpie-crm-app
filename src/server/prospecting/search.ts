@@ -478,7 +478,7 @@ async function companyFirstPage(
   count: number,
   /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
   screened?: { unverifiable: number; noDomain: number },
-): Promise<{ page: Page<PersonResult>; companies: Map<string, string>; orgSearches: number; found: number }> {
+): Promise<{ page: Page<PersonResult>; companies: Map<string, string>; orgSearches: number; found: number; orgTotal: number | null }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
   const terms = companyTerms(filters)
@@ -486,6 +486,7 @@ async function companyFirstPage(
   let s = decodeState(cursor)
   let orgSearches = 0
   let found = 0
+  let orgTotal: number | null = null
   // A few company pages at most, in case pages come back with none that fit.
   for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
     if (s.pending.length) {
@@ -497,6 +498,7 @@ async function companyFirstPage(
     const res = await source.searchCompanies({ keyword: term.keyword, industry: term.industry, headcount: filters.companySizes, country: filters.country, cursor: s.orgCursor })
     // Held companies (from a request that brought more than a page) cost nothing.
     orgSearches += res.requests ?? 1
+    if (res.reportedTotal !== null) orgTotal = Math.max(orgTotal ?? 0, res.reportedTotal)
     // Companies are non-personal, so they're cached for everyone (domains for reveals).
     db.upsertProspectCompanies(
       res.items.map((c) => ({ ref: c.ref, name: c.name, domain: c.domain, domain_source: 'socialfetch' as const, headcount: c.headcount, slug: slugFromCompanyUrl(c.linkedinUrl) })),
@@ -518,7 +520,7 @@ async function companyFirstPage(
     }
   }
   const companies = new Map(s.batch)
-  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found }
+  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal }
 
   const page = await source.searchPeople(null, {
     titles: filters.titles,
@@ -531,7 +533,7 @@ async function companyFirstPage(
   })
   const next: CompanyFirstState = page.nextCursor ? { ...s, people: page.nextCursor } : { ...s, batch: [], people: undefined }
   const more = next.batch.length > 0 || next.pending.length > 0 || next.orgCursor !== undefined || next.term < terms.length
-  return { page: { ...page, reportedTotal: null, nextCursor: more ? encodeState(next) : null }, companies, orgSearches, found }
+  return { page: { ...page, reportedTotal: null, nextCursor: more ? encodeState(next) : null }, companies, orgSearches, found, orgTotal }
 }
 
 /**
@@ -788,6 +790,8 @@ export async function searchPeople(
   let interrupted = false
   // Companies left out before searching people there (screenCompanies).
   const screened = { unverifiable: 0, noDomain: 0 }
+  // How many companies match the filters in all, as SocialFetch counts them (up to 1,000).
+  const org: { total: number | null } = { total: null }
   // What became of the people the searches returned, for the funnel log.
   const funnel = { hits: 0, offTitle: 0, filteredOut: 0, repeats: 0 }
   const { credits } = await meterCredits(async (spent) => {
@@ -803,6 +807,7 @@ export async function searchPeople(
           companySet = r.companies
           orgSearches += r.orgSearches
           companiesFound += r.found
+          if (r.orgTotal !== null) org.total = Math.max(org.total ?? 0, r.orgTotal)
         } else {
           page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
         }
@@ -874,6 +879,7 @@ export async function searchPeople(
       companiesFirst: companyFirst,
       orgSearches,
       companiesFound,
+      companiesInAll: org.total,
       companiesLeftOut: screened.unverifiable,
       peopleSearches: requests,
       hits: funnel.hits,
@@ -977,6 +983,15 @@ export async function searchPeople(
     warnings.push(`The people data source is busy right now, so this page stopped at ${usable()} of the ${target} asked for. Load more in a minute to carry on.`)
   } else if (!lookupError && usable() < target && nextCursor && !wasteful) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
+  } else if (!lookupError && usable() < target && companyFirst && !nextCursor && !wasteful) {
+    // The companies ran out: a small market, not a broken search. Say how small, and what widens it.
+    const size = org.total !== null && org.total < 1000 ? `${org.total.toLocaleString('en-GB')} ${org.total === 1 ? 'company matches' : 'companies match'}` : 'Every company matching'
+    const what = [filters.industries?.length ? filters.industries.join(', ') : null, filters.companySizes?.length ? `${filters.companySizes.join(', ')} staff` : null, filters.country || null]
+      .filter(Boolean)
+      .join(', ')
+    warnings.push(
+      `That's everyone at these companies: ${usable()} of the ${target} asked for. ${size} ${what ? `(${what}) ` : ''}in the data, and ${org.total !== null && org.total < 1000 ? 'all of them have' : 'they have all'} now been searched${saved ? ' (with your earlier searches)' : ''}. A wider industry, more company sizes or more job titles (Founders and owners adds Owner, CEO, Managing Director and President) will find more.`,
+    )
   } else if (!lookupError && usable() < target) {
     // A warning, not a detail: a hosted copy shows it too, as it says what to do.
     warnings.push(`That's everyone this search found: ${usable()} of the ${target} asked for. Broader job titles or fewer filters will find more.`)

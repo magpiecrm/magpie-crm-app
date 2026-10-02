@@ -706,6 +706,15 @@ describe('searchPeople with a company size finds companies first', () => {
     )
   })
 
+  it('says when every company matching the filters has been searched, and how many there are', async () => {
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom')], nextCursor: null, reportedTotal: 60, warnings: [] }
+    searchPage = pageOf({ ...hit('ana'), company: 'Barclays' })
+    const res = await searchPeople({ titles: ['Founder'], companySizes: ['1-10', '11-50'], industries: ['Banking'], country: 'United Kingdom' })
+    expect(res.warnings.join(' ')).toContain(
+      "That's everyone at these companies: 1 of the 25 asked for. 60 companies match (Banking, 1-10, 11-50 staff, United Kingdom) in the data, and all of them have now been searched.",
+    )
+  })
+
   it("doesn't pay for the profile of someone whose headline names another employer", async () => {
     companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null)], nextCursor: null, reportedTotal: null, warnings: [] }
     searchPage = pageOf({ ...hit('ana'), company: 'Barclays' }, { ...hit('ben'), company: 'Globex Corp' }, hit('cat'))

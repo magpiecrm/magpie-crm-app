@@ -136,6 +136,9 @@ const NO_REVEALS: Map<string, RevealState> = new Map()
 /** How many times a Reveal held back by verification pacing is tried again (20 seconds apart) before giving up. */
 const MAX_REVEAL_WAITS = 6
 
+/** "Founders and owners": what the person running a small company calls themselves. */
+const FOUNDER_TITLES = ['Founder', 'Owner', 'CEO', 'Managing Director', 'President']
+
 export function ProspectSearch() {
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<Mode>('people')
@@ -579,6 +582,21 @@ export function ProspectSearch() {
       <FilterAccordion label="Job titles" icon={<Briefcase className="w-4 h-4" />} isOpen={!!expanded.titles} onToggle={() => toggleSection('titles')} badgeCount={peopleForm.titles.length}>
         <TagInput label="Job titles" tags={peopleForm.titles} placeholder="e.g. Head of Marketing" onChange={(titles) => setPeopleForm({ ...peopleForm, titles })} suggestions={JOB_TITLES} />
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">{hosted ? 'Up to 5.' : 'Up to 5. Each title is a separate search (3 credits per page).'}</p>
+        {FOUNDER_TITLES.some((t) => !peopleForm.titles.includes(t)) && (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setPeopleForm({ ...peopleForm, titles: FOUNDER_TITLES })}
+              className="text-[11px] font-semibold text-accent hover:underline"
+            >
+              Founders and owners
+            </button>
+            <p className="text-[10px] text-muted-foreground leading-snug">
+              Small companies' founders often call themselves Owner, CEO, Managing Director or President: this searches all five
+              {peopleForm.titles.length ? ', in place of the titles above' : ''}.
+            </p>
+          </div>
+        )}
       </FilterAccordion>
 
       <FilterAccordion label="Seniority" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} badgeCount={peopleForm.seniorities.length}>

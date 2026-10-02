@@ -613,7 +613,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           items: read,
           hasMore: Boolean(page?.hasMore) && raw.length > 0,
           end: (num(page?.start) ?? start) + (num(page?.returnedCount) ?? raw.length),
-          reportedTotal: num(res.data?.reportedTotal),
+          // How many companies match in all (SocialFetch counts up to 1,000).
+          reportedTotal: num(res.data?.reportedTotal) ?? num(page?.total),
           at: Date.now(),
         }
       }
