@@ -168,6 +168,12 @@ export interface Page<T> {
   details?: string[]
   /** Paid search requests the page took; people held from an earlier request (searchPool.ts) cost none. Unset means one. */
   requests?: number
+  /**
+   * How many hits it had before its own filtering, and of those, how many
+   * were left out for the title (headline) and for seniority or country: for
+   * the search funnel log.
+   */
+  funnel?: { hits: number; offTitle: number; filteredOut: number }
 }
 
 export interface CompanySource {

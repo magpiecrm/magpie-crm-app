@@ -892,7 +892,15 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         details.push(`${people_(hidden)} didn't match your seniority or country filters and ${hidden === 1 ? 'is' : 'are'} hidden.`)
       }
 
-      return { items: filtered, nextCursor: encodeCursor(nextCursors), reportedTotal, warnings, details, requests: ok.reduce((n, t) => n + t.requests, 0) }
+      return {
+        items: filtered,
+        nextCursor: encodeCursor(nextCursors),
+        reportedTotal,
+        warnings,
+        details,
+        requests: ok.reduce((n, t) => n + t.requests, 0),
+        funnel: { hits: ok.reduce((n, t) => n + t.people.length, 0), offTitle, filteredOut: hidden },
+      }
     },
 
     async getPerson(profileRef: string): Promise<PersonResult | null> {

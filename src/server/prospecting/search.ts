@@ -786,6 +786,8 @@ export async function searchPeople(
   let interrupted = false
   // Companies left out before searching people there (screenCompanies).
   const screened = { unverifiable: 0, noDomain: 0 }
+  // What became of the people the searches returned, for the funnel log.
+  const funnel = { hits: 0, offTitle: 0, filteredOut: 0, repeats: 0 }
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
@@ -821,7 +823,11 @@ export async function searchPeople(
         details.push(...(page.details ?? []))
       }
       nextCursor = page.nextCursor
+      funnel.hits += page.funnel?.hits ?? page.items.length
+      funnel.offTitle += page.funnel?.offTitle ?? 0
+      funnel.filteredOut += page.funnel?.filteredOut ?? 0
       const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
+      funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
 
       const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
@@ -849,6 +855,43 @@ export async function searchPeople(
 
   // Where to carry on next time; at the end of the results, back to the top.
   if (!lookupError) db.setSearchPosition(positionKey, nextCursor)
+
+  // One line per search: where the people it returned went. Filters and counts only, nothing personal.
+  console.log(
+    `[Prospecting] Search funnel ${JSON.stringify({
+      filters: {
+        titles: filters.titles,
+        seniorities: filters.seniorities,
+        industries: filters.industries,
+        sizes: filters.companySizes,
+        country: filters.country,
+        keyword: filters.keyword || undefined,
+        company: company?.name,
+        page: filters.cursor ? 'more' : saved ? 'resumed' : 'first',
+      },
+      companiesFirst: companyFirst,
+      orgSearches,
+      companiesFound,
+      companiesLeftOut: screened.unverifiable,
+      peopleSearches: requests,
+      hits: funnel.hits,
+      offTitle: funnel.offTitle,
+      seniorityOrCountry: funnel.filteredOut,
+      repeats: funnel.repeats,
+      headlineLeft: tally.skippedNotWorking,
+      headlineOtherEmployer: tally.skippedOtherEmployer,
+      inContacts: tally.inContacts,
+      noSurname: tally.noSurname,
+      knownUnverifiable: tally.skippedUnverifiable,
+      noLookupNeeded: tally.noLookup,
+      profilesBought: lookedUp,
+      boughtWrongCompany: tally.wrongCompany,
+      boughtNoJob: tally.noJob,
+      hiddenUnverifiable: items.filter(hidden).length,
+      shown: usable(),
+      prospectCredits: Math.round(prospectCredits(credits) * 100) / 100,
+    })}`,
+  )
 
   // Charged for what the searches cost, not for how many people are shown.
   const { recordUsage } = await import('../usage')
