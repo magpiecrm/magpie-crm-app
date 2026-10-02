@@ -20,6 +20,8 @@ interface ScheduleDrawerProps {
     senderId: number | null
     htmlContent: string
     selectedListId: number | null
+    unsubscribeEnabled: boolean
+    trackOpens: boolean
   }
   onSendSuccess?: () => void
 }
@@ -79,7 +81,10 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
             id: campaignData.senderId || undefined
           },
           htmlContent: campaignData.htmlContent,
-          recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] }
+          recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] },
+          // The form's switches too: without them a change made just before sending was lost.
+          unsubscribeEnabled: campaignData.unsubscribeEnabled,
+          trackOpens: campaignData.trackOpens,
         }
       })
 
@@ -117,6 +122,8 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
           },
           htmlContent: campaignData.htmlContent,
           recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] },
+          unsubscribeEnabled: campaignData.unsubscribeEnabled,
+          trackOpens: campaignData.trackOpens,
           scheduledAt: scheduledAtIso
         }
       })
