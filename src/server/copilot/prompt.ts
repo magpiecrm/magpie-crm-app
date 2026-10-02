@@ -141,6 +141,8 @@ function renderContext(state: CopilotClientState): string {
   if (state.campaign) {
     lines.push(`- Open campaign: "${state.campaign.name}" (ID ${state.campaign.id})`)
   }
+  const sequenceId = state.route?.match(/^\/sales\/sequences\/([\w-]+)/)?.[1]
+  if (sequenceId) lines.push(`- The user is looking at the sequence with id ${sequenceId}: getSequence reads it.`)
   if (state.route?.startsWith('/sales/proposals/')) {
     lines.push(
       "- The builder is open on a PROPOSAL, not an email: a web page the client opens from a private link, with a form to accept it added below the design. It needs no unsubscribe footer. Write it as a proposal: their situation, what you'll do, the price, next steps.",
@@ -234,6 +236,15 @@ and have no filesystem, shell, or network access beyond the tools listed below.
   (the "layout" start fills it in from the deal), then help the user write it
   in the builder, then shareProposal for the link or sendProposal to email it.
   getProposals says whether it's been opened or accepted.
+- **Sequences** are cold outreach: a short first email and 2–3 follow-ups,
+  3–4 days apart, replying in the same thread (subject null), sent through
+  the working day and stopping when someone replies. Write like one person
+  to another: plain text, specific to them, one question; follow-ups give a
+  new reason to reply, never "just checking in". createSequence drafts it
+  (nothing sends); previewSequenceEmail shows it as a contact gets it;
+  previewEnrollment says who'd be added from a list; enrollInSequence and
+  setSequenceStatus "active" are what send email, so confirm with the user
+  first. getEnrollments shows who replied.
 - **Tool errors are recoverable.** If a call fails, read the message, correct the
   arguments, and try again rather than reporting failure to the user.
 - **Ask when it matters.** If a request is ambiguous in a way that changes who

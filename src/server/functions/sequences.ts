@@ -124,18 +124,7 @@ export const previewSequenceStepFn = createServerFn({ method: 'POST' })
     z.object({ id, stepIndex: z.number().int().min(0).max(9), subject: z.string().max(200).nullable(), body: z.string().max(10_000), contactEmail: email.optional() }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { sequences } = await signedIn()
-    const { db } = await import('../db')
-    const { renderStep } = await import('../sequences/render')
-    const { emptyMergeTags } = await import('../mergeTags')
-    const { sequence } = sequences.get(data.id)
-    const pick = data.contactEmail ? db.getContact(data.contactEmail) : null
-    const enrolled = db.data.sequence_enrollments?.find((e) => e.sequence_id === data.id)
-    const contact = pick ?? (enrolled ? db.getContact(enrolled.contact_email) : null) ?? { email: 'ava@example.com', first_name: 'Ava', last_name: 'Stone', company: 'Larkspur' }
-    // A follow-up without its own subject replies to the thread: "Re: <the first email's>".
-    const own = data.subject?.trim()
-    const threadSubject = sequence.steps.slice(0, data.stepIndex).reverse().find((s) => s.subject?.trim())?.subject ?? ''
-    const subject = own || (data.stepIndex > 0 ? `Re: ${threadSubject}` : '')
-    const r = renderStep({ subject, body: data.body, contact: contact as any, settings: sequence.settings, unsubscribeUrl: 'https://…/unsubscribe' })
-    return { subject: r.subject, text: r.text, contact: contact.email, empty: emptyMergeTags(`${subject}\n${data.body}`, contact as any) }
+    await signedIn()
+    const { previewStep } = await import('../sequences/preview')
+    return previewStep(data.id, data.stepIndex, data.subject, data.body, data.contactEmail)
   })

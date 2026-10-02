@@ -9,6 +9,7 @@ import type { PersonResult } from '../../../server/prospecting/types'
 import { EmailStatusBadge } from './EmailStatusBadge'
 import type { ProspectJob, SaveStatus } from '../../../server/prospecting/save'
 import { Select } from '../../../components/ui/Select'
+import { EnrollDialog } from '../../sequences/components/EnrollDialog'
 
 const OUTCOME_LABEL: Record<SaveStatus, string> = {
   pending: 'Queued',
@@ -90,6 +91,10 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
     save.reset()
     onClose(saved)
   }
+
+  // Who's now a contact with an address, for "Add to a sequence".
+  const savedEmails = finished ? current.outcomes.filter((o) => (o.status === 'saved' || o.status === 'already_saved') && o.email).map((o) => o.email!) : []
+  const [enrolling, setEnrolling] = useState(false)
 
   const counts = current?.outcomes.reduce<Partial<Record<SaveStatus, number>>>((acc, o) => {
     acc[o.status] = (acc[o.status] ?? 0) + 1
@@ -216,9 +221,15 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
               ))}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end gap-2 pt-2">
+              {savedEmails.length > 0 && (
+                <Button variant="secondary" onClick={() => setEnrolling(true)}>
+                  Add {savedEmails.length === 1 ? 'them' : `these ${savedEmails.length}`} to a sequence
+                </Button>
+              )}
               <Button onClick={close}>{finished ? 'Close' : 'Close (keeps running)'}</Button>
             </div>
+            {enrolling && <EnrollDialog emails={savedEmails} onClose={() => setEnrolling(false)} />}
           </>
         )}
       </div>

@@ -59,6 +59,21 @@ const TOOL_INVALIDATIONS: Record<string, Array<readonly unknown[]>> = {
   updateSavedTemplate: [queryKeys.templates.list()],
   duplicateSavedTemplate: [queryKeys.templates.list()],
   deleteSavedTemplate: [queryKeys.templates.list()],
+  // Tasks and proposals: every sales query (deals' timelines show them too).
+  addTask: [['sales']],
+  updateTask: [['sales']],
+  deleteTask: [['sales']],
+  createProposal: [['sales']],
+  renameProposal: [['sales']],
+  shareProposal: [['sales']],
+  sendProposal: [['sales']],
+  deleteProposal: [['sales']],
+  // Sequences: the list, each sequence and its people (all under ['sequences']).
+  createSequence: [queryKeys.sequences.list()],
+  updateSequence: [queryKeys.sequences.list()],
+  setSequenceStatus: [queryKeys.sequences.list()],
+  enrollInSequence: [queryKeys.sequences.list(), ['email', 'contact']],
+  updateEnrollments: [queryKeys.sequences.list(), ['email', 'contact']],
 }
 
 interface UseCopilotStreamOptions {
