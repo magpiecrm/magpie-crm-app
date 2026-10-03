@@ -547,7 +547,10 @@ describe('errors and retries', () => {
   // The 1-credit company page, by URL, when the page name is known.
   const companyPage = () => envelope({
     lookupStatus: 'found',
-    company: { id: '4777', name: 'NatWest', website: 'http://www.natwest.com', employeeRange: '10,001+ employees', industry: 'Banking' },
+    company: {
+      id: '4777', name: 'NatWest', companyUrl: 'https://uk.linkedin.com/company/natwest', website: 'http://www.natwest.com',
+      employeeRange: '10,001+ employees', industry: 'Banking', location: { city: 'Edinburgh', country: 'GB' },
+    },
     metrics: { employees: 7048 },
   })
 
@@ -559,6 +562,8 @@ describe('errors and retries', () => {
       domain: 'natwest.com',
       headcount: 7048,
       industry: 'Banking',
+      country: 'GB',
+      linkedinUrl: 'https://uk.linkedin.com/company/natwest',
     })
     expect(f.calls).toHaveLength(1)
     expect(f.calls[0].pathname).toBe('/v1/linkedin/companies')

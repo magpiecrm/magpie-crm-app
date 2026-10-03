@@ -370,7 +370,21 @@ interface CompanyFirstState {
   /** The companies being searched for people now, and that search's cursor. */
   batch: Array<[ref: string, name: string]>
   people?: string
+  /** Companies to search one at a time (a batch split up), with each one's cursor. */
+  singles?: Array<[ref: string, name: string, people?: string]>
 }
+
+/**
+ * Searching companies together needs a profile lookup (3 credits) for each
+ * person whose headline doesn't say which of them they work at; searching one
+ * company needs none, as everyone it returns works there, but costs a search
+ * (3 credits a job title) per company. Small companies mostly return nobody,
+ * so together is cheaper; companies with several people each are cheaper one
+ * at a time. A batch whose first page shows more people needing a lookup than
+ * one-at-a-time searches would cost is split before any profile is bought.
+ * Single-company search requests run at once: companies × job titles.
+ */
+const SINGLE_REQUESTS_AT_ONCE = 5
 
 const CF_PREFIX = 'cf1.'
 const encodeState = (s: CompanyFirstState) => CF_PREFIX + Buffer.from(JSON.stringify(s)).toString('base64url')
@@ -478,7 +492,17 @@ async function companyFirstPage(
   count: number,
   /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
   screened?: { unverifiable: number; noDomain: number },
-): Promise<{ page: Page<PersonResult>; companies: Map<string, string>; orgSearches: number; found: number; orgTotal: number | null }> {
+): Promise<{
+  page: Page<PersonResult>
+  companies: Map<string, string>
+  orgSearches: number
+  found: number
+  orgTotal: number | null
+  /** Where to carry on if this batch is split up instead (SINGLE_REQUESTS_AT_ONCE): set on a batch's first page. */
+  splitCursor: string | null
+  /** The batch has more people than this page (so more would need a lookup). */
+  batchHasMore: boolean
+}> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
   const terms = companyTerms(filters)
@@ -487,6 +511,50 @@ async function companyFirstPage(
   let orgSearches = 0
   let found = 0
   let orgTotal: number | null = null
+  const hasMore = (next: CompanyFirstState) =>
+    next.batch.length > 0 || next.pending.length > 0 || Boolean(next.singles?.length) || next.orgCursor !== undefined || next.term < terms.length
+
+  // Companies split from a batch: a few searched at once, each on its own, so
+  // everyone found is known to work there and no profile is looked up.
+  if (!s.batch.length && s.singles?.length) {
+    const titleCount = Math.max(1, Math.min(MAX_TITLES_SEARCHED, new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size))
+    const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / titleCount)))
+    const pages = await Promise.all(
+      now.map(([ref, name, people]) =>
+        source.searchPeople({ ref, name }, { titles: filters.titles, seniorities: filters.seniorities, country: filters.country, count, cursor: people }),
+      ),
+    )
+    const items: PersonResult[] = []
+    const funnel = { hits: 0, offTitle: 0, filteredOut: 0 }
+    const carryOn: NonNullable<CompanyFirstState['singles']> = []
+    pages.forEach((page, i) => {
+      const [ref, name] = now[i]
+      // Anyone whose headline names another employer was left out by the search.
+      for (const p of page.items) items.push({ ...p, company: name, companyRef: ref })
+      funnel.hits += page.funnel?.hits ?? page.items.length
+      funnel.offTitle += page.funnel?.offTitle ?? 0
+      funnel.filteredOut += page.funnel?.filteredOut ?? 0
+      if (page.nextCursor) carryOn.push([ref, name, page.nextCursor])
+    })
+    const next: CompanyFirstState = { ...s, singles: [...carryOn, ...s.singles.slice(now.length)] }
+    return {
+      page: {
+        items,
+        nextCursor: hasMore(next) ? encodeState(next) : null,
+        reportedTotal: null,
+        warnings: [],
+        details: [],
+        requests: pages.reduce((n, p) => n + (p.requests ?? 1), 0),
+        funnel,
+      },
+      companies: new Map(now.map(([ref, name]) => [ref, name])),
+      orgSearches: 0,
+      found: 0,
+      orgTotal: null,
+      splitCursor: null,
+      batchHasMore: false,
+    }
+  }
   // A few company pages at most, in case pages come back with none that fit.
   for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
     if (s.pending.length) {
@@ -520,7 +588,13 @@ async function companyFirstPage(
     }
   }
   const companies = new Map(s.batch)
-  if (!s.batch.length) return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal }
+  if (!s.batch.length) {
+    return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal, splitCursor: null, batchHasMore: false }
+  }
+  const splitCursor =
+    s.batch.length > 1 && !s.people
+      ? encodeState({ ...s, batch: [], people: undefined, singles: [...s.batch.map(([ref, name]) => [ref, name] as [string, string]), ...(s.singles ?? [])] })
+      : null
 
   const page = await source.searchPeople(null, {
     titles: filters.titles,
@@ -532,8 +606,15 @@ async function companyFirstPage(
     cursor: s.people,
   })
   const next: CompanyFirstState = page.nextCursor ? { ...s, people: page.nextCursor } : { ...s, batch: [], people: undefined }
-  const more = next.batch.length > 0 || next.pending.length > 0 || next.orgCursor !== undefined || next.term < terms.length
-  return { page: { ...page, reportedTotal: null, nextCursor: more ? encodeState(next) : null }, companies, orgSearches, found, orgTotal }
+  return {
+    page: { ...page, reportedTotal: null, nextCursor: hasMore(next) ? encodeState(next) : null },
+    companies,
+    orgSearches,
+    found,
+    orgTotal,
+    splitCursor,
+    batchHasMore: Boolean(page.nextCursor),
+  }
 }
 
 /**
@@ -553,7 +634,15 @@ async function processBatch(
   includeContacts = false,
   /** Companies-first: the companies this page searched inside (ref → name). */
   companySet?: Map<string, string>,
-): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[] }> {
+  /**
+   * Companies-first: given how many people need a profile lookup, whether to
+   * split the batch up instead (SINGLE_REQUESTS_AT_ONCE). The page then comes back
+   * empty, with nothing paid for and nothing counted: its people are found
+   * again by the searches of one company.
+   */
+  splitWhen?: (toLookUp: number) => boolean,
+): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[]; split?: boolean }> {
+  const counted = { ...tally }
   let items = people
   for (const person of items) {
     person.companyDomain ??= person.companyRef ? db.getProspectCompany(person.companyRef)?.domain ?? null : null
@@ -643,6 +732,10 @@ async function processBatch(
   )
   if (skipped.size) items = items.filter((p) => !skipped.has(p.profileUrl))
   const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl))
+  if (toLookUp.length && splitWhen?.(toLookUp.length)) {
+    Object.assign(tally, counted)
+    return { items: [], refined: [], lookedUp: [], split: true }
+  }
 
   const refined: string[] = []
   let lookupError: string | undefined
@@ -794,17 +887,28 @@ export async function searchPeople(
   const org: { total: number | null } = { total: null }
   // What became of the people the searches returned, for the funnel log.
   const funnel = { hits: 0, offTitle: 0, filteredOut: 0, repeats: 0 }
+  // Batches searched again one company at a time (SINGLE_REQUESTS_AT_ONCE), and how many companies they held.
+  const split = { batches: 0, companies: 0 }
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
       const count = Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots)))
       let page: Page<PersonResult>
       let companySet: Map<string, string> | undefined
+      let splitWhen: ((toLookUp: number) => boolean) | undefined
+      let splitCursor: string | null = null
       try {
         if (companyFirst) {
           const r = await companyFirstPage(source, db, filters, cursor, count, hideUnverifiable ? screened : undefined)
           page = r.page
           companySet = r.companies
+          splitCursor = r.splitCursor
+          if (splitCursor) {
+            // A batch with more people than this page is likely to need more lookups than it shows.
+            const batchSize = r.companies.size
+            const more = r.batchHasMore
+            splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * slots
+          }
           orgSearches += r.orgSearches
           companiesFound += r.found
           if (r.orgTotal !== null) org.total = Math.max(org.total ?? 0, r.orgTotal)
@@ -830,14 +934,22 @@ export async function searchPeople(
         details.push(...(page.details ?? []))
       }
       nextCursor = page.nextCursor
+      const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
+
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen)
+      if (batch.split && splitCursor) {
+        // Searched again one company at a time: its people come back from those searches.
+        split.batches++
+        split.companies += companySet?.size ?? 0
+        nextCursor = splitCursor
+        cursor = splitCursor
+        continue
+      }
       funnel.hits += page.funnel?.hits ?? page.items.length
       funnel.offTitle += page.funnel?.offTitle ?? 0
       funnel.filteredOut += page.funnel?.filteredOut ?? 0
-      const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
       funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
-
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
       items.push(...batch.items)
       refined.push(...batch.refined)
       lookedUp += batch.lookedUp.length
@@ -881,6 +993,8 @@ export async function searchPeople(
       companiesFound,
       companiesInAll: org.total,
       companiesLeftOut: screened.unverifiable,
+      batchesSplit: split.batches,
+      companiesSearchedAlone: split.companies,
       peopleSearches: requests,
       hits: funnel.hits,
       offTitle: funnel.offTitle,
@@ -923,6 +1037,11 @@ export async function searchPeople(
   })
   if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
+  }
+  if (split.companies) {
+    details.push(
+      `Searched ${plural(split.companies, 'company', 'companies')} one at a time: most people found there needed a profile lookup to tell which company they work at, and a search of one company needs none.`,
+    )
   }
   if (screened.unverifiable) {
     details.push(

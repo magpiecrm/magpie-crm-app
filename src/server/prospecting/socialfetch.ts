@@ -146,8 +146,10 @@ async function request<T>(
     console.warn(`[SocialFetch] ${path} ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS})`)
 
     // 429 is per-key limiting on free routes; 503 is saturation on paid ones
-    // and is not charged. 500/502 are not charged either (502 is SocialFetch's
-    // normalisation failure), so a retry costs nothing.
+    // and is not charged. 500/502 are not charged on the v2 routes (502 is
+    // SocialFetch's normalisation failure), so a retry costs nothing; the v1
+    // company page charges its 1 credit for a 502, but a retry is still
+    // cheaper than the 6-credit organization lookup it would fall back to.
     if ([429, 500, 502, 503].includes(res.status) && attempt < MAX_ATTEMPTS) {
       const retryAfter = Number(res.headers.get('retry-after'))
       await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : backoff(attempt))
@@ -295,8 +297,9 @@ function mapCompanyPage(d: any, ref: string): CompanyResult | null {
     industry: str(c?.industry),
     headcount: num(d?.metrics?.employees) ?? rangeFloor(c?.employeeRange),
     companyType: null,
-    country: null,
-    linkedinUrl: str(c?.url) ?? null,
+    // An ISO code ("GB"), as the organization lookup's hqCountryCode.
+    country: str(c?.location?.country),
+    linkedinUrl: str(c?.companyUrl) ?? str(c?.url) ?? null,
     source: SOURCE,
   }
 }

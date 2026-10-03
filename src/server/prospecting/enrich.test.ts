@@ -736,6 +736,41 @@ describe('searchPeople with a company size finds companies first', () => {
     expect(((searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { companyRefs: string[] }).companyRefs).toEqual(['42', '7'])
   })
 
+  it('searches a batch again one company at a time when most of its people would need a profile lookup', async () => {
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null), org('88', 'Initech', null)], nextCursor: null, reportedTotal: null, warnings: [] }
+    // Together, nobody's headline says which company: five lookups, against three single-company searches.
+    const together = pageOf(hit('p1'), hit('p2'), hit('p3'), hit('p4'), hit('p5'))
+    const alone: Record<string, PersonResult[]> = { '42': [hit('p1'), hit('p2')], '7': [hit('p3'), hit('p4')], '88': [hit('p5')] }
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation((async (company: { ref: string } | null) => (company ? pageOf(...alone[company.ref]) : structuredClone(together))) as any)
+    try {
+      const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
+      expect(getPerson).not.toHaveBeenCalled()
+      expect(searchPeopleMock.mock.calls.map((c) => ((c as unknown[])[0] as { ref: string } | null)?.ref ?? 'together')).toEqual(['together', '42', '7', '88'])
+      expect(res.items.map((p) => [p.firstName, p.companyRef, p.companyDomain])).toEqual([
+        ['p1', '42', 'barclays.com'],
+        ['p2', '42', 'barclays.com'],
+        ['p3', '7', 'acme.com'],
+        ['p4', '7', 'acme.com'],
+        ['p5', '88', null],
+      ])
+      expect(res.warnings.join(' ')).toContain('Searched 3 companies one at a time')
+      // Counted once each, as people found without a lookup.
+      expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchProfiles: 0, searchNoLookup: 5, prospects: 5 }))
+    } finally {
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    }
+  })
+
+  it('keeps a batch together when fewer of its people need a lookup than single searches would cost', async () => {
+    companyPage = { items: [org('42', 'Barclays', 'United Kingdom'), org('7', 'Acme', null), org('88', 'Initech', null)], nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf({ ...hit('ana'), company: 'Barclays' }, hit('cat'), hit('ben'))
+    searchPeopleMock.mockClear()
+    await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], industries: ['Banking'] })
+    expect(searchPeopleMock).toHaveBeenCalledTimes(1)
+    expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/cat', 'https://www.linkedin.com/in/ben'])
+  })
+
   it('carries on with the next companies on Load more', async () => {
     const many = Array.from({ length: 25 }, (_, i) => org(String(1000 + i), `Co${i}`, 'United Kingdom'))
     companyPage = { items: many, nextCursor: null, reportedTotal: null, warnings: [] }
