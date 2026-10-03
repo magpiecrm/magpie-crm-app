@@ -432,6 +432,62 @@ export function titleMatcher(title: string): (headline: string | null | undefine
   }
 }
 
+/** Words that make a role a leader's: "Head of", "VP", "Director" and the like. */
+const LEADER_WORDS = /\b(?:head|heads|vp|svp|evp|avp|vice[- ]president|director|chief)\b/i
+/** Words around a leadership title that don't change which department it leads. */
+const QUALIFIERS = /\b(?:global|senior|sr|regional|group|national|international|interim|deputy|assistant|associate|area)\b\.?/gi
+/** "X Director" titles that are a role of their own, not the leader of a department. */
+const NOT_A_DEPARTMENT = new Set(['managing', 'executive', 'non executive', 'non-executive', 'general', 'company', 'board', 'account', 'client', 'art', 'creative', 'technical'])
+
+/**
+ * The department a leadership title leads ("Head of Sales", "VP of Sales",
+ * "Sales Director", "Sales leaders" -> "Sales"), or null for any other
+ * title. People word these many ways and SocialFetch's title filter only
+ * matches the words given, in order ("VP Sales" misses "VP of Sales";
+ * checked 2026-10-03: 1 "Head of Sales" against 7 sales leaders among the
+ * "Sales" results at the same 20 companies), so the department is searched
+ * and its leaders kept (leaderMatcher).
+ */
+export function leadershipDepartment(title: string): string | null {
+  const t = title.replace(QUALIFIERS, ' ').replace(/[,–—]|\s-\s/g, ' ').replace(/\s+/g, ' ').trim()
+  const m = t.match(/^(?:head|vp|svp|evp|avp|vice president|director)\s+(?:of\s+)?(.+)$/i) ?? t.match(/^(.+?)\s+(?:director|head|leaders?|leadership)$/i)
+  const department = m?.[1]?.replace(/^the\s+/i, '').trim()
+  if (!department || department.split(' ').length > 3 || NOT_A_DEPARTMENT.has(department.toLowerCase()) || LEADER_WORDS.test(department)) return null
+  return department
+}
+
+/** Whether a headline has a leadership role in the department: "VP of Sales", "Sales Director", "Head of Sales & Partnerships". */
+export function leaderMatcher(department: string): (headline: string | null | undefined) => boolean {
+  const inDepartment = titleMatcher(department)
+  return (headline) => {
+    if (!headline) return false
+    const roles = headline.split(/\s*[|•·]\s*/).map((part) => part.split(/\s+(?:at|@)\s+|@/i)[0])
+    return roles.some((role) => LEADER_WORDS.test(role) && inDepartment(role))
+  }
+}
+
+/** What's searched for one job title: the title itself, or for a leadership title its department (leadershipDepartment). */
+interface TitleQuery {
+  /** Its cursor and held results go under this. */
+  key: string
+  search: string
+  fits: ((headline: string | null) => boolean) | null
+  /** The leadership titles searched as this department. */
+  leaders: string[]
+}
+
+function titleQueries(titles: string[]): TitleQuery[] {
+  const out = new Map<string, TitleQuery>()
+  for (const title of titles) {
+    const department = title ? leadershipDepartment(title) : null
+    const key = department ? `leaders:${norm(department)}` : title
+    const query = out.get(key) ?? { key, search: department ?? title, fits: department ? leaderMatcher(department) : title ? titleMatcher(title) : null, leaders: [] }
+    if (department) query.leaders.push(title)
+    out.set(key, query)
+  }
+  return [...out.values()]
+}
+
 /** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
 export function titleFromHeadline(headline: string | null): string | null {
   if (!headline) return null
@@ -715,7 +771,15 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const pageSize = Math.min(50, Math.max(1, Math.round(filters.count ?? PAGE_SIZE)))
       const prior = decodeCursor(filters.cursor)
       // On a follow-up page only titles with a cursor left are re-queried.
-      const active = prior ? slots.filter((t) => prior[t]) : slots
+      const queries = titleQueries(slots)
+      const active = prior ? queries.filter((q) => prior[q.key]) : queries
+      if (!filters.cursor) {
+        for (const q of queries.filter((q) => q.leaders.length)) {
+          details.push(
+            `For ${q.leaders.map((t) => `"${t}"`).join(' and ')}, searched "${q.search}" and kept its leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.`,
+          )
+        }
+      }
       const industry = industryCodes(filters.industries)
       // A chosen company with a LinkedIn id is searched by it; otherwise its
       // name goes in the keyword.
@@ -762,10 +826,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
        * offset, startFrom). Each request asks for FETCH_SIZE, and the people
        * this page doesn't use are held for the next.
        */
-      const fetchTitle = async (title: string, position: string | undefined) => {
+      const fetchTitle = async (query: TitleQuery, position: string | undefined) => {
+        const title = query.search
         // The title goes in `title`, which filters; `keyword` only ranks.
         const keyword = [filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
-        const fitsTitle = title ? titleMatcher(title) : null
+        const fitsTitle = query.fits
         const multiWord = /\s/.test(title)
         const titleParam = (joiner: string) => (title ? title.replace(/\s+/g, joiner) : undefined)
         const params = {
@@ -776,7 +841,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           currentCompany: companyId ?? companyIds ?? undefined,
         }
         const start = startFrom(position)
-        let hits: HeldHits | null = pool.take(searchPoolKey(params, start))
+        // Held results are read through the query's own title check, so the key says which.
+        const poolKey = (at: number) => searchPoolKey({ ...params, match: query.key }, at)
+        let hits: HeldHits | null = pool.take(poolKey(start))
         let requests = 0
         if (!hits) {
           let res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
@@ -810,12 +877,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         const rest = hits.items.slice(pageSize)
         // Part-way through held people, the offset is their place; after the last, SocialFetch's own.
         const nextStart = rest.length ? start + used.length : Math.max(hits.end, start + used.length)
-        pool.put(searchPoolKey(params, nextStart), { ...hits, items: rest })
+        pool.put(poolKey(nextStart), { ...hits, items: rest })
         const more = used.length > 0 && (rest.length > 0 || hits.hasMore) && nextStart <= MAX_START
-        return { title, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests }
+        return { title: query.key, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests }
       }
 
-      const settled = await Promise.allSettled(active.map((title) => fetchTitle(title, prior?.[title])))
+      const settled = await Promise.allSettled(active.map((q) => fetchTitle(q, prior?.[q.key])))
 
       const ok = settled.filter((s) => s.status === 'fulfilled').map((s) => (s as PromiseFulfilledResult<Awaited<ReturnType<typeof fetchTitle>>>).value)
       const failed = settled.filter((s) => s.status === 'rejected') as PromiseRejectedResult[]

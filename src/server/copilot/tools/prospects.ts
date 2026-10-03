@@ -129,7 +129,11 @@ export const prospectTools = [
     input: {
       companyRef: z.string().optional().describe('`ref` from searchCompanies.'),
       companyName: z.string().optional().describe('Required with companyRef.'),
-      titles: stringOrArray.optional().describe('Job title keywords, e.g. ["Head of Marketing", "CMO"]. Up to 5.'),
+      titles: stringOrArray
+        .optional()
+        .describe(
+          'Job title keywords, e.g. ["Head of Marketing", "CMO"]. Up to 5. A leadership title ("Head of Sales", "VP Sales", "Sales Director") or "Sales leaders" finds all of that department\'s Heads, VPs and Directors however they word it, in one search.',
+        ),
       seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
       country: z.string().optional(),
       keyword: z.string().optional(),

@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canonicalProfileUrl, createSocialFetchSource, domainFromWebsite, mapPerson, meterCredits, sameCompanyName, titleFromHeadline, titleMatcher } from './socialfetch'
+import {
+  canonicalProfileUrl,
+  createSocialFetchSource,
+  domainFromWebsite,
+  leaderMatcher,
+  leadershipDepartment,
+  mapPerson,
+  meterCredits,
+  sameCompanyName,
+  titleFromHeadline,
+  titleMatcher,
+} from './socialfetch'
 
 // No network: every test drives the connector through a fake fetch that
 // records requests and replays canned SocialFetch envelopes.
@@ -47,6 +58,27 @@ beforeEach(() => {
 })
 afterEach(() => {
   delete process.env.SOCIALFETCH_API_KEY
+})
+
+describe('leadership titles', () => {
+  it('finds the department a leadership title leads, however it is worded', () => {
+    const titles = ['Head of Sales', 'VP Sales', 'VP of Sales', 'Vice President, Sales', 'Sales Director', 'Senior Director of Sales', 'Global Head of Customer Success', 'Sales leaders', 'Marketing Leader']
+    expect(titles.map(leadershipDepartment)).toEqual(['Sales', 'Sales', 'Sales', 'Sales', 'Sales', 'Sales', 'Customer Success', 'Sales', 'Marketing'])
+  })
+
+  it('leaves other titles as they are, including directors who lead no department', () => {
+    expect(['Founder', 'CEO', 'Sales Manager', 'Director', 'VP', 'Managing Director', 'Account Director', 'Creative Director', 'Non-Executive Director'].map(leadershipDepartment)).toEqual(
+      Array(9).fill(null),
+    )
+  })
+
+  it("keeps the department's leaders, in any part of the headline", () => {
+    const fits = leaderMatcher('Sales')
+    expect(['VP of Sales at Acme', 'Sales Director, EMEA', 'Founder | Head of Sales & Partnerships', 'Vice President - Sales', 'Chief Sales Officer'].map(fits)).toEqual([true, true, true, true, true])
+    expect(['Sales Manager', 'Account Executive', 'Head of Presales', 'Director at Salesforce', 'Head of Marketing | Sales enthusiast', null].map(fits)).toEqual([
+      false, false, false, false, false, false,
+    ])
+  })
 })
 
 describe('titleMatcher', () => {
@@ -242,6 +274,28 @@ describe('searchPeople', () => {
     expect(f.calls[0].searchParams.has('currentCompany')).toBe(false)
   })
 
+  it('searches leadership titles as their department, once, and keeps its leaders', async () => {
+    const f = fakeFetch([
+      envelope({
+        lookupStatus: 'found',
+        people: [
+          searchHit('a', 'Ann', 'Lee', 'VP of Sales at Acme', 'Austin, Texas, United States'),
+          searchHit('b', 'Bo', 'Ray', 'Account Executive at Acme', 'Austin, Texas, United States'),
+          searchHit('c', 'Cy', 'Ng', 'Director of Sales | Mentor', 'Austin, Texas, United States'),
+        ],
+        page: { hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Head of Sales', 'VP Sales'], count: 25 })
+    expect(f.calls).toHaveLength(1)
+    expect(f.calls[0].searchParams.get('title')).toBe('Sales')
+    expect(page.items.map((p) => p.firstName)).toEqual(['Ann', 'Cy'])
+    expect(page.funnel).toMatchObject({ hits: 3, offTitle: 1 })
+    expect(page.details).toContain(
+      'For "Head of Sales" and "VP Sales", searched "Sales" and kept its leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
+    )
+  })
+
   it('maps real search hits: title and employer from the headline, country from the location label', async () => {
     const f = fakeFetch([
       envelope({
@@ -342,15 +396,15 @@ describe('searchPeople', () => {
   })
 
   it('tries a multi-word title the other way once if it finds nobody, and keeps whichever works', async () => {
-    const hit = searchHit('a', 'A', 'One', 'Head of Sales', 'London')
+    const hit = searchHit('a', 'A', 'One', 'Business Analyst', 'London')
     const f = fakeFetch([
       envelope({ people: [], page: { hasMore: false } }),
       envelope({ people: [hit], page: { hasMore: false } }),
       envelope({ people: [], page: { hasMore: false } }),
     ])
     const source = createSocialFetchSource(f.impl)
-    const page = await source.searchPeople(null, { titles: ['Head of Sales'] })
-    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Head_of_Sales', 'Head of Sales'])
+    const page = await source.searchPeople(null, { titles: ['Business Analyst'] })
+    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Business_Analyst', 'Business Analyst'])
     expect(page.items).toHaveLength(1)
     expect(page.requests).toBe(2)
     // Spaces worked, so they're used from now on, and an empty result isn't retried.

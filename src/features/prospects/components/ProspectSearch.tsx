@@ -138,6 +138,9 @@ const MAX_REVEAL_WAITS = 6
 
 /** "Founders and owners": what the person running a small company calls themselves. */
 const FOUNDER_TITLES = ['Founder', 'Owner', 'CEO', 'Managing Director', 'President']
+/** A department's leaders: the search finds its Heads of, VPs and Directors, however they word it. */
+const LEADER_TITLES = ['Sales', 'Marketing', 'Operations', 'Finance', 'Engineering'].map((department) => `${department} leaders`)
+const MAX_TITLES = 5
 
 export function ProspectSearch() {
   const queryClient = useQueryClient()
@@ -582,21 +585,35 @@ export function ProspectSearch() {
       <FilterAccordion label="Job titles" icon={<Briefcase className="w-4 h-4" />} isOpen={!!expanded.titles} onToggle={() => toggleSection('titles')} badgeCount={peopleForm.titles.length}>
         <TagInput label="Job titles" tags={peopleForm.titles} placeholder="e.g. Head of Marketing" onChange={(titles) => setPeopleForm({ ...peopleForm, titles })} suggestions={JOB_TITLES} />
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">{hosted ? 'Up to 5.' : 'Up to 5. Each title is a separate search (3 credits per page).'}</p>
-        {FOUNDER_TITLES.some((t) => !peopleForm.titles.includes(t)) && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setPeopleForm({ ...peopleForm, titles: FOUNDER_TITLES })}
-              className="text-[11px] font-semibold text-accent hover:underline"
-            >
-              Founders and owners
-            </button>
-            <p className="text-[10px] text-muted-foreground leading-snug">
-              Small companies' founders often call themselves Owner, CEO, Managing Director or President: this searches all five
-              {peopleForm.titles.length ? ', in place of the titles above' : ''}.
-            </p>
+        <div className="mt-2">
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+            {FOUNDER_TITLES.some((t) => !peopleForm.titles.includes(t)) && (
+              <button
+                type="button"
+                onClick={() => setPeopleForm({ ...peopleForm, titles: FOUNDER_TITLES })}
+                className="text-[11px] font-semibold text-accent hover:underline"
+              >
+                Founders and owners
+              </button>
+            )}
+            {LEADER_TITLES.filter((t) => !peopleForm.titles.includes(t)).map((t) => (
+              <button
+                key={t}
+                type="button"
+                disabled={peopleForm.titles.length >= MAX_TITLES}
+                onClick={() => setPeopleForm({ ...peopleForm, titles: [...peopleForm.titles, t] })}
+                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                {t}
+              </button>
+            ))}
           </div>
-        )}
+          <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
+            Founders and owners searches Founder, Owner, CEO, Managing Director and President
+            {peopleForm.titles.length ? ', in place of the titles above' : ''}. A department's leaders finds its Heads, VPs and Directors however
+            they word it, as does a title like "Head of Sales".
+          </p>
+        </div>
       </FilterAccordion>
 
       <FilterAccordion label="Seniority" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} badgeCount={peopleForm.seniorities.length}>
