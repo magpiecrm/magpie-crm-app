@@ -536,6 +536,23 @@ class JsonDb {
   constructor() {
     this.data = this.load()
     this.seedDefaultData()
+    this.rejudgeTrappedClicks()
+  }
+
+  /**
+   * Clicks on emails whose trap link was followed are judged again on start,
+   * so a rule added to clickFilter.ts (RESCAN_CLICKS) corrects counts already
+   * recorded. Saved only when a count changed.
+   */
+  private rejudgeTrappedClicks() {
+    let changed = false
+    for (const r of this.data.campaign_recipients ?? []) {
+      if (!r.trapped_at || !r.click_events?.length) continue
+      const was = `${r.clicks}/${r.bot_clicks}/${r.status}`
+      this.judgeClicks(r)
+      if (`${r.clicks}/${r.bot_clicks}/${r.status}` !== was) changed = true
+    }
+    if (changed) this.save()
   }
 
   transaction(fn: (...args: any[]) => any) {

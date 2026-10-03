@@ -33,6 +33,15 @@ describe('automatedClicks', () => {
     expect(automatedClicks(events, { sentAt, trappedAt: at(130) })).toEqual([true, false])
   })
 
+  it("marks a link's repeated clicks from a mailbox whose trap link was followed: its scanner re-checking it", () => {
+    const rechecks = [100, 4300, 4500, 9000].map((s) => ({ url: 'a', at: at(s) }))
+    expect(automatedClicks(rechecks, { sentAt, trappedAt: at(100) })).toEqual([true, true, true, true])
+    // A person behind the same scanner clicking once or twice still counts.
+    expect(automatedClicks([{ url: 'a', at: at(100) }, { url: 'a', at: at(4300) }, { url: 'a', at: at(9000) }], { sentAt, trappedAt: at(100) })).toEqual([true, false, false])
+    // Without a followed trap link, repeat clicks are a person's.
+    expect(automatedClicks(rechecks, { sentAt })).toEqual([false, false, false, false])
+  })
+
   it('marks a click whose request said it was a scanner', () => {
     expect(automatedClicks([{ url: 'a', at: at(900), bot: true }], { sentAt })).toEqual([true])
   })

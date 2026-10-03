@@ -10,7 +10,9 @@
 //   - within TRAP_WINDOW_MS of the email's hidden trap link being followed,
 //     which no person can see or click (emailService.ts adds it);
 //   - within BURST_MS of a click on a different link in the same email:
-//     people click one link at a time, scanners all of them at once.
+//     people click one link at a time, scanners all of them at once;
+//   - one of RESCAN_CLICKS or more on one link, once the trap link has been
+//     followed: the scanner in front of that mailbox re-checking it.
 // Opens are judged the same way, except for the burst rule. Mail apps that
 // load images for people (Gmail's and Yahoo's image proxies) aren't flagged,
 // and Apple Mail loading every image as it arrives can't be told apart from a
@@ -20,6 +22,13 @@
 export const TOO_SOON_MS = 10_000
 export const TRAP_WINDOW_MS = 60_000
 export const BURST_MS = 2_000
+/**
+ * Some scanners keep re-checking the links they found, hours apart, with a
+ * browser's user agent: seen on MagpieCRM's own campaigns (2026-10), one
+ * link "clicked" 30 times over seven hours from a mailbox whose trap link was
+ * followed. A person clicks a link once or twice.
+ */
+export const RESCAN_CLICKS = 3
 
 /** One tracked click on one recipient's email. */
 export interface ClickEvent {
@@ -42,13 +51,17 @@ export function automatedClicks(events: ClickEvent[], ctx: { sentAt?: string | n
   const time = (s: string) => Date.parse(s)
   const sent = ctx.sentAt ? time(ctx.sentAt) : NaN
   const trapped = ctx.trappedAt ? time(ctx.trappedAt) : NaN
-  return events.map((e, i) => {
+  const verdicts = events.map((e, i) => {
     const at = time(e.at)
     if (e.bot) return true
     if (!Number.isNaN(sent) && at - sent < TOO_SOON_MS) return true
     if (!Number.isNaN(trapped) && Math.abs(at - trapped) <= TRAP_WINDOW_MS) return true
     return events.some((o, j) => j !== i && o.url !== e.url && Math.abs(time(o.at) - at) <= BURST_MS)
   })
+  if (Number.isNaN(trapped)) return verdicts
+  const perLink = new Map<string | null, number>()
+  events.forEach((e, i) => !verdicts[i] && perLink.set(e.url, (perLink.get(e.url) ?? 0) + 1))
+  return verdicts.map((automated, i) => automated || (perLink.get(events[i].url) ?? 0) >= RESCAN_CLICKS)
 }
 
 /** One time the email's images loaded (its open-tracking image). */
