@@ -132,7 +132,7 @@ export const prospectTools = [
       titles: stringOrArray
         .optional()
         .describe(
-          'Job title keywords, e.g. ["Head of Marketing", "CMO"]. Up to 5. A leadership title ("Head of Sales", "VP Sales", "Sales Director") or "Sales leaders" finds all of that department\'s Heads, VPs and Directors however they word it, in one search.',
+          'Job title keywords, e.g. ["Head of Marketing", "CMO"]. Up to 5. A leadership title ("Head of Sales", "VP Sales", "Sales Director") or "Sales leaders" finds all of that department\'s Heads, VPs and Directors however they word it, in one search (sales leaders also include revenue leaders such as Chief Revenue Officers).',
         ),
       seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
       country: z.string().optional(),

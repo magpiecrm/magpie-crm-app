@@ -279,20 +279,40 @@ describe('searchPeople', () => {
       envelope({
         lookupStatus: 'found',
         people: [
-          searchHit('a', 'Ann', 'Lee', 'VP of Sales at Acme', 'Austin, Texas, United States'),
-          searchHit('b', 'Bo', 'Ray', 'Account Executive at Acme', 'Austin, Texas, United States'),
-          searchHit('c', 'Cy', 'Ng', 'Director of Sales | Mentor', 'Austin, Texas, United States'),
+          searchHit('a', 'Ann', 'Lee', 'VP of Marketing at Acme', 'Austin, Texas, United States'),
+          searchHit('b', 'Bo', 'Ray', 'Marketing Executive at Acme', 'Austin, Texas, United States'),
+          searchHit('c', 'Cy', 'Ng', 'Director of Marketing | Mentor', 'Austin, Texas, United States'),
         ],
         page: { hasMore: false },
       }),
     ])
-    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Head of Sales', 'VP Sales'], count: 25 })
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Head of Marketing', 'VP Marketing'], count: 25 })
     expect(f.calls).toHaveLength(1)
-    expect(f.calls[0].searchParams.get('title')).toBe('Sales')
+    expect(f.calls[0].searchParams.get('title')).toBe('Marketing')
     expect(page.items.map((p) => p.firstName)).toEqual(['Ann', 'Cy'])
     expect(page.funnel).toMatchObject({ hits: 3, offTitle: 1 })
     expect(page.details).toContain(
-      'For "Head of Sales" and "VP Sales", searched "Sales" and kept its leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
+      'For "Head of Marketing" and "VP Marketing", searched "Marketing" and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
+    )
+  })
+
+  it('searches sales leaders as "Sales" and "Revenue", where Chief Revenue Officers are', async () => {
+    const f = fakeFetch([
+      envelope({ lookupStatus: 'found', people: [searchHit('a', 'Ann', 'Lee', 'VP of Sales at Acme', 'Austin, Texas, United States')], page: { hasMore: false } }),
+      envelope({
+        lookupStatus: 'found',
+        people: [
+          searchHit('d', 'Di', 'Fox', 'Chief Revenue Officer | Advisor', 'Austin, Texas, United States'),
+          searchHit('e', 'Ed', 'Kim', 'Revenue Operations Analyst', 'Austin, Texas, United States'),
+        ],
+        page: { hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales leaders'], count: 25 })
+    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Sales', 'Revenue'])
+    expect(page.items.map((p) => p.firstName)).toEqual(['Ann', 'Di'])
+    expect(page.details).toContain(
+      'For "Sales leaders", searched "Sales" and "Revenue" and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
     )
   })
 

@@ -8,7 +8,7 @@ import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyKey, meterCredits, sameCompanyName, slugFromCompanyUrl } from './socialfetch'
+import { companyKey, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -378,7 +378,7 @@ interface CompanyFirstState {
  * Searching companies together needs a profile lookup (3 credits) for each
  * person whose headline doesn't say which of them they work at; searching one
  * company needs none, as everyone it returns works there, but costs a search
- * (3 credits a job title) per company. Small companies mostly return nobody,
+ * (3 credits a job title, searchesForTitles) per company. Small companies mostly return nobody,
  * so together is cheaper; companies with several people each are cheaper one
  * at a time. A batch whose first page shows more people needing a lookup than
  * one-at-a-time searches would cost is split before any profile is bought.
@@ -517,8 +517,7 @@ async function companyFirstPage(
   // Companies split from a batch: a few searched at once, each on its own, so
   // everyone found is known to work there and no profile is looked up.
   if (!s.batch.length && s.singles?.length) {
-    const titleCount = Math.max(1, Math.min(MAX_TITLES_SEARCHED, new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size))
-    const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / titleCount)))
+    const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / searchesForTitles(filters.titles))))
     const pages = await Promise.all(
       now.map(([ref, name, people]) =>
         source.searchPeople({ ref, name }, { titles: filters.titles, seniorities: filters.seniorities, country: filters.country, count, cursor: people }),
@@ -907,7 +906,7 @@ export async function searchPeople(
             // A batch with more people than this page is likely to need more lookups than it shows.
             const batchSize = r.companies.size
             const more = r.batchHasMore
-            splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * slots
+            splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * searchesForTitles(filters.titles)
           }
           orgSearches += r.orgSearches
           companiesFound += r.found

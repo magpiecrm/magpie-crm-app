@@ -466,6 +466,14 @@ export function leaderMatcher(department: string): (headline: string | null | un
   }
 }
 
+/**
+ * Departments whose leaders also go by another department's name, searched
+ * too. Checked 2026-10-03 at 60 US software companies: "Revenue" found 8
+ * leaders (Chief Revenue Officer, VP of Revenue) that "Sales" didn't, beside
+ * its 19; "CRO" on its own found none that either missed.
+ */
+const ALSO_LEADS: Record<string, string[]> = { sales: ['Revenue'] }
+
 /** What's searched for one job title: the title itself, or for a leadership title its department (leadershipDepartment). */
 interface TitleQuery {
   /** Its cursor and held results go under this. */
@@ -480,12 +488,24 @@ function titleQueries(titles: string[]): TitleQuery[] {
   const out = new Map<string, TitleQuery>()
   for (const title of titles) {
     const department = title ? leadershipDepartment(title) : null
-    const key = department ? `leaders:${norm(department)}` : title
-    const query = out.get(key) ?? { key, search: department ?? title, fits: department ? leaderMatcher(department) : title ? titleMatcher(title) : null, leaders: [] }
-    if (department) query.leaders.push(title)
-    out.set(key, query)
+    if (!department) {
+      if (!out.has(title)) out.set(title, { key: title, search: title, fits: title ? titleMatcher(title) : null, leaders: [] })
+      continue
+    }
+    for (const search of [department, ...(ALSO_LEADS[norm(department)] ?? [])]) {
+      const key = `leaders:${norm(search)}`
+      const query = out.get(key) ?? { key, search, fits: leaderMatcher(search), leaders: [] }
+      if (!query.leaders.includes(title)) query.leaders.push(title)
+      out.set(key, query)
+    }
   }
   return [...out.values()]
+}
+
+/** People-search requests one page takes for these job titles (titleQueries): several leadership titles can share one, and sales leaders take two. */
+export function searchesForTitles(titles: string[] | undefined): number {
+  const unique = [...new Set((titles ?? []).map((t) => t.trim()).filter(Boolean))].slice(0, MAX_TITLES)
+  return Math.max(1, titleQueries(unique).length)
 }
 
 /** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
@@ -774,9 +794,15 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const queries = titleQueries(slots)
       const active = prior ? queries.filter((q) => prior[q.key]) : queries
       if (!filters.cursor) {
+        // One note per set of leadership titles: "searched "Sales" and "Revenue"".
+        const searched = new Map<string, string[]>()
         for (const q of queries.filter((q) => q.leaders.length)) {
+          const asked = q.leaders.map((t) => `"${t}"`).join(' and ')
+          searched.set(asked, [...(searched.get(asked) ?? []), `"${q.search}"`])
+        }
+        for (const [asked, words] of searched) {
           details.push(
-            `For ${q.leaders.map((t) => `"${t}"`).join(' and ')}, searched "${q.search}" and kept its leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.`,
+            `For ${asked}, searched ${words.join(' and ')} and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.`,
           )
         }
       }
