@@ -58,6 +58,7 @@ import { Route as ApiUploadsFilenameRouteImport } from './routes/api/uploads/$fi
 import { Route as ApiTrackOpenRouteImport } from './routes/api/track/open'
 import { Route as ApiTrackClickRouteImport } from './routes/api/track/click'
 import { Route as ApiSurveySurveyIdRouteImport } from './routes/api/survey/$surveyId'
+import { Route as ApiProspectsSearchRouteImport } from './routes/api/prospects/search'
 import { Route as ApiFormSubmitFormIdRouteImport } from './routes/api/form-submit/$formId'
 import { Route as ApiCopilotStreamRouteImport } from './routes/api/copilot/stream'
 import { Route as ApiCopilotPermissionRouteImport } from './routes/api/copilot/permission'
@@ -315,6 +316,11 @@ const ApiSurveySurveyIdRoute = ApiSurveySurveyIdRouteImport.update({
   path: '/api/survey/$surveyId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiProspectsSearchRoute = ApiProspectsSearchRouteImport.update({
+  id: '/api/prospects/search',
+  path: '/api/prospects/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiFormSubmitFormIdRoute = ApiFormSubmitFormIdRouteImport.update({
   id: '/api/form-submit/$formId',
   path: '/api/form-submit/$formId',
@@ -382,6 +388,7 @@ export interface FileRoutesByFullPath {
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
+  '/api/prospects/search': typeof ApiProspectsSearchRoute
   '/api/survey/$surveyId': typeof ApiSurveySurveyIdRoute
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
@@ -437,6 +444,7 @@ export interface FileRoutesByTo {
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
+  '/api/prospects/search': typeof ApiProspectsSearchRoute
   '/api/survey/$surveyId': typeof ApiSurveySurveyIdRoute
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
@@ -497,6 +505,7 @@ export interface FileRoutesById {
   '/api/copilot/permission': typeof ApiCopilotPermissionRoute
   '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/form-submit/$formId': typeof ApiFormSubmitFormIdRoute
+  '/api/prospects/search': typeof ApiProspectsSearchRoute
   '/api/survey/$surveyId': typeof ApiSurveySurveyIdRoute
   '/api/track/click': typeof ApiTrackClickRoute
   '/api/track/open': typeof ApiTrackOpenRoute
@@ -558,6 +567,7 @@ export interface FileRouteTypes {
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
+    | '/api/prospects/search'
     | '/api/survey/$surveyId'
     | '/api/track/click'
     | '/api/track/open'
@@ -613,6 +623,7 @@ export interface FileRouteTypes {
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
+    | '/api/prospects/search'
     | '/api/survey/$surveyId'
     | '/api/track/click'
     | '/api/track/open'
@@ -672,6 +683,7 @@ export interface FileRouteTypes {
     | '/api/copilot/permission'
     | '/api/copilot/stream'
     | '/api/form-submit/$formId'
+    | '/api/prospects/search'
     | '/api/survey/$surveyId'
     | '/api/track/click'
     | '/api/track/open'
@@ -732,6 +744,7 @@ export interface RootRouteChildren {
   ApiCopilotPermissionRoute: typeof ApiCopilotPermissionRoute
   ApiCopilotStreamRoute: typeof ApiCopilotStreamRoute
   ApiFormSubmitFormIdRoute: typeof ApiFormSubmitFormIdRoute
+  ApiProspectsSearchRoute: typeof ApiProspectsSearchRoute
   ApiSurveySurveyIdRoute: typeof ApiSurveySurveyIdRoute
   ApiTrackClickRoute: typeof ApiTrackClickRoute
   ApiTrackOpenRoute: typeof ApiTrackOpenRoute
@@ -1103,6 +1116,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSurveySurveyIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/prospects/search': {
+      id: '/api/prospects/search'
+      path: '/api/prospects/search'
+      fullPath: '/api/prospects/search'
+      preLoaderRoute: typeof ApiProspectsSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/form-submit/$formId': {
       id: '/api/form-submit/$formId'
       path: '/api/form-submit/$formId'
@@ -1255,6 +1275,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCopilotPermissionRoute: ApiCopilotPermissionRoute,
   ApiCopilotStreamRoute: ApiCopilotStreamRoute,
   ApiFormSubmitFormIdRoute: ApiFormSubmitFormIdRoute,
+  ApiProspectsSearchRoute: ApiProspectsSearchRoute,
   ApiSurveySurveyIdRoute: ApiSurveySurveyIdRoute,
   ApiTrackClickRoute: ApiTrackClickRoute,
   ApiTrackOpenRoute: ApiTrackOpenRoute,

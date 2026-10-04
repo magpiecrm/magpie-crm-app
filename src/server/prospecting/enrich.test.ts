@@ -12,7 +12,7 @@ const profiles: Record<string, Partial<PersonResult>> = {
   // Profile with no current position.
   dan: { title: '', company: '', companyRef: null },
 }
-const getPerson = vi.fn(async (url: string): Promise<PersonResult | null> => {
+const defaultGetPerson = async (url: string): Promise<PersonResult | null> => {
   const handle = url.split('/in/')[1]
   const p = profiles[handle]
   if (!p) return null
@@ -20,7 +20,8 @@ const getPerson = vi.fn(async (url: string): Promise<PersonResult | null> => {
     profileUrl: url, firstName: handle, lastName: 'Smith', title: '', seniority: null, company: '', companyRef: null,
     companyDomain: null, country: 'United Kingdom', source: 'socialfetch', ...p,
   }
-})
+}
+const getPerson = vi.fn(defaultGetPerson)
 let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 let companyPage: any
@@ -537,11 +538,50 @@ describe('searchPeople fills the page', () => {
     const fullPage = async (_company: unknown, f: { count: number; cursor?: string }) =>
       withCursor(pageOf(...Array.from({ length: f.count }, (_, i) => ({ ...hit('ben'), profileUrl: `https://www.linkedin.com/in/ben-${f.cursor ?? 'a'}-${i}` }))), 'next')
     searchPeopleMock.mockImplementation(fullPage as unknown as () => Promise<Page<PersonResult>>)
-    const res = await searchPeople({ titles: ['Business Analyst'], count: 75 })
-    expect(searchPeopleMock.mock.calls.map((c: any[]) => c[1].count)).toEqual([50, 25])
-    expect(res.items).toHaveLength(75)
-    expect(res.warnings.join(' ')).not.toMatch(/more search page/)
-    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    try {
+      const res = await searchPeople({ titles: ['Business Analyst'], count: 75 })
+      expect(searchPeopleMock.mock.calls.map((c: any[]) => c[1].count)).toEqual([50, 25])
+      expect(res.items).toHaveLength(75)
+      expect(res.warnings.join(' ')).not.toMatch(/more search page/)
+    } finally {
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    }
+  })
+
+  it('hands over each batch of people as soon as it is ready, before the page is done', async () => {
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation((async (_c: unknown, f: { cursor?: string }) => (f.cursor ? pageOf(hit('cat')) : withCursor(pageOf(hit('ana')), 'p2'))) as any)
+    try {
+      const batches: string[][] = []
+      const res = await searchPeople({ titles: ['Business Analyst'], count: 25 }, { onPeople: (f) => batches.push(f.items.map((p) => p.firstName)) })
+      expect(batches).toEqual([['ana'], ['cat']])
+      expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'cat'])
+    } finally {
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    }
+  })
+
+  it("starts the next search page while this page's profiles are looked up, when the page can't be full without it", async () => {
+    searchPeopleMock.mockClear()
+    const order: string[] = []
+    getPerson.mockImplementation((async (url: string) => {
+      order.push(`lookup ${url.split('/in/')[1]}`)
+      await new Promise((r) => setTimeout(r, 20))
+      return null
+    }) as any)
+    searchPeopleMock.mockImplementation((async (_c: unknown, f: { cursor?: string }) => {
+      order.push(`search ${f.cursor ?? 'first'}`)
+      return f.cursor ? pageOf(hit('cat')) : withCursor(pageOf(hit('ana')), 'p2')
+    }) as any)
+    try {
+      const res = await searchPeople({ titles: ['Business Analyst'], count: 25 })
+      expect(order.slice(0, 3)).toEqual(['search first', 'search p2', 'lookup ana'])
+      expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'cat'])
+      expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+    } finally {
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+      getPerson.mockImplementation(defaultGetPerson)
+    }
   })
 
   it('does not top up when the first page is already full', async () => {
@@ -631,7 +671,9 @@ describe('searchPeople stops early when its filters throw away nearly everyone p
       nextCursor: 'more',
     }))
     const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'initech', name: 'Initech' } })
-    expect(searchPeopleMock).toHaveBeenCalledTimes(1)
+    // The next page was started early (its people are held for Load more), but no profile there was paid for.
+    expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+    expect(getPerson).toHaveBeenCalledTimes(12)
     expect(res.items).toEqual([])
     expect(res.warnings).toContain(
       'Working somewhere other than Initech left out 12 of the 12 people whose profiles were checked, so no more pages were searched, to save credits. Try other job titles. Load more carries on if you want to keep looking.',

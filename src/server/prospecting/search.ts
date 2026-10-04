@@ -107,7 +107,8 @@ async function formatConfirmedAt(db: Db): Promise<(domain: string) => boolean> {
   }
 }
 
-const ENRICH_CONCURRENCY = 3
+/** Profile lookups run at once: SocialFetch sets no rate limit, and each takes about 2 seconds. */
+const ENRICH_CONCURRENCY = 8
 
 type Db = typeof import('../db')['db']
 
@@ -399,8 +400,12 @@ function decodeState(cursor: string | undefined): CompanyFirstState {
   return { term: 0, pending: [], batch: [] }
 }
 
-/** How long a companies-first search waits for its companies' mail servers to be checked (screenCompanies). */
-const SCREEN_MS = 8_000
+/**
+ * How long a companies-first search waits for its companies' mail servers to
+ * be checked (screenCompanies). Checks still running carry on, and each batch
+ * leaves out companies found out about by then (withoutUnverifiable).
+ */
+const SCREEN_MS = 2_000
 
 /**
  * Companies found by size, without those where no email can be verified,
@@ -468,6 +473,23 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
     }
   }
   return { keep: companies.filter((c) => !out.has(c.ref)), unverifiable, noDomain }
+}
+
+/**
+ * Companies still to be searched, without those a mail-server check has since
+ * found take no verifiable email (cache only: the checks screenCompanies
+ * started carry on after it stops waiting).
+ */
+async function withoutUnverifiable(companies: Array<[ref: string, name: string]>, db: Db, screened: { unverifiable: number }): Promise<Array<[string, string]>> {
+  const worthIt = await formatConfirmedAt(db)
+  const now = Date.now()
+  const known = (d: string) => db.getEmailDomain(d)
+  const keep = companies.filter(([ref]) => {
+    const domain = (db.getProspectCompany(ref)?.domain ?? '').toLowerCase().replace(/^www\./, '')
+    return !domain || worthIt(domain) || !(isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now))
+  })
+  screened.unverifiable += companies.length - keep.length
+  return keep
 }
 
 /** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
@@ -557,8 +579,10 @@ async function companyFirstPage(
   // A few company pages at most, in case pages come back with none that fit.
   for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
     if (s.pending.length) {
-      s = { ...s, batch: s.pending.slice(0, MAX_COMPANIES_PER_SEARCH), pending: s.pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
-      break
+      const pending = screened ? await withoutUnverifiable(s.pending, db, screened) : s.pending
+      s = { ...s, batch: pending.slice(0, MAX_COMPANIES_PER_SEARCH), pending: pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
+      if (s.batch.length) break
+      continue
     }
     const term = terms[s.term]
     if (!term || !source.searchCompanies) break
@@ -822,6 +846,8 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 export async function searchPeople(
   input: PeopleFilters & { company?: { ref: string; name: string } | null },
+  /** Called with each batch's people as soon as they're ready, before the page is done (/api/prospects/search streams them). */
+  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void } = {},
 ): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
@@ -888,42 +914,78 @@ export async function searchPeople(
   const funnel = { hits: 0, offTitle: 0, filteredOut: 0, repeats: 0 }
   // Batches searched again one company at a time (SINGLE_REQUESTS_AT_ONCE), and how many companies they held.
   const split = { batches: 0, companies: 0 }
+  // One search page (a batch of companies, in a companies-first search), and what finding it took.
+  type Fetched = {
+    page: Page<PersonResult>
+    companySet?: Map<string, string>
+    splitCursor: string | null
+    batchHasMore: boolean
+    orgSearches: number
+    found: number
+    orgTotal: number | null
+    screened: { unverifiable: number; noDomain: number }
+  }
+  const fetchPage = async (at: string | undefined, count: number): Promise<Fetched> => {
+    const sc = { unverifiable: 0, noDomain: 0 }
+    if (!companyFirst) {
+      const page = await source.searchPeople(company ?? null, { ...filters, cursor: at, count })
+      return { page, splitCursor: null, batchHasMore: false, orgSearches: 0, found: 0, orgTotal: null, screened: sc }
+    }
+    const r = await companyFirstPage(source, db, filters, at, count, hideUnverifiable ? sc : undefined)
+    return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc }
+  }
+  // The next search page, started while this one's profiles are looked up
+  // (only when the page certainly needs it), and any started but not used:
+  // their credits are counted before the search ends, and their people are
+  // held (searchPool.ts) for Load more.
+  let ahead: { cursor: string; fetched: Promise<Fetched> } | null = null
+  const unused: Promise<unknown>[] = []
+  const dropAhead = () => {
+    if (!ahead) return
+    unused.push(ahead.fetched.then((r) => ((requests += r.page.requests ?? 1), (orgSearches += r.orgSearches)), () => {}))
+    ahead = null
+  }
+  // What a full page normally costs: its searches and a profile lookup per person.
+  const pageBudget = planned * 3 + target * 3
   const { credits } = await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
       const count = Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots)))
-      let page: Page<PersonResult>
-      let companySet: Map<string, string> | undefined
-      let splitWhen: ((toLookUp: number) => boolean) | undefined
-      let splitCursor: string | null = null
+      let r: Fetched
       try {
-        if (companyFirst) {
-          const r = await companyFirstPage(source, db, filters, cursor, count, hideUnverifiable ? screened : undefined)
-          page = r.page
-          companySet = r.companies
-          splitCursor = r.splitCursor
-          if (splitCursor) {
-            // A batch with more people than this page is likely to need more lookups than it shows.
-            const batchSize = r.companies.size
-            const more = r.batchHasMore
-            splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * searchesForTitles(filters.titles)
-          }
-          orgSearches += r.orgSearches
-          companiesFound += r.found
-          if (r.orgTotal !== null) org.total = Math.max(org.total ?? 0, r.orgTotal)
+        if (ahead && ahead.cursor === cursor) {
+          const { fetched } = ahead
+          ahead = null
+          r = await fetched
         } else {
-          page = await source.searchPeople(company ?? null, { ...filters, cursor, count })
+          dropAhead()
+          r = await fetchPage(cursor, count)
         }
       } catch (err) {
         // SocialFetch failed partway (busy or down, after its own retries):
         // keep the people found so far and what they cost, rather than
         // failing the search. Load more carries on from the same place. With
         // nobody found yet it fails as before, and costs the customer nothing.
+        dropAhead()
+        await Promise.allSettled(unused)
         if (items.length === 0) throw err
         console.warn(`[Prospecting] Search stopped partway: ${(err as Error)?.message ?? err}`)
         interrupted = true
         break
       }
+      const { page, companySet, splitCursor } = r
+      let splitWhen: ((toLookUp: number) => boolean) | undefined
+      if (splitCursor) {
+        // A batch with more people than this page is likely to need more lookups than it shows.
+        const batchSize = r.companySet?.size ?? 0
+        const more = r.batchHasMore
+        splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * searchesForTitles(filters.titles)
+      }
+      orgSearches += r.orgSearches
+      companiesFound += r.found
+      screened.unverifiable += r.screened.unverifiable
+      screened.noDomain += r.screened.noDomain
+      if (r.orgTotal !== null) org.total = Math.max(org.total ?? 0, r.orgTotal)
       searches++
       requests += page.requests ?? 1
       // The first search's notes describe the whole query; later top-ups would repeat them.
@@ -934,6 +996,21 @@ export async function searchPeople(
       }
       nextCursor = page.nextCursor
       const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
+
+      // Even with everyone here shown the page won't be full, so the next
+      // search page starts now rather than after these profiles are looked up.
+      const certain =
+        nextCursor &&
+        usable() + fresh.length < target &&
+        searches < planned + MAX_TOP_UPS &&
+        !(searches >= planned + TOP_UPS && spent() >= pageBudget) &&
+        prospectCredits(spent()) < left
+      if (certain) {
+        // Sized for what's still needed if everyone here is shown.
+        const fetched = fetchPage(nextCursor!, Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil((need - fresh.length) / slots))))
+        fetched.catch(() => {})
+        ahead = { cursor: nextCursor!, fetched }
+      }
 
       const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen)
       if (batch.split && splitCursor) {
@@ -951,6 +1028,7 @@ export async function searchPeople(
       fresh.forEach((p) => seen.add(p.profileUrl))
       items.push(...batch.items)
       refined.push(...batch.refined)
+      if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
       lookedUp += batch.lookedUp.length
       batch.lookedUp.forEach((url) => paidFor.add(url))
       if (batch.lookupError) {
@@ -962,13 +1040,13 @@ export async function searchPeople(
         wasteful = true
         break
       }
-      // What a full page normally costs: its searches and a profile lookup per person.
-      const pageBudget = planned * 3 + target * 3
       if (searches >= planned + TOP_UPS && spent() >= pageBudget) break
       // No top-up search once what's been spent uses up the credits left.
       if (prospectCredits(spent()) >= left) break
       cursor = nextCursor
     }
+    dropAhead()
+    await Promise.allSettled(unused)
   })
 
   // Where to carry on next time; at the end of the results, back to the top.

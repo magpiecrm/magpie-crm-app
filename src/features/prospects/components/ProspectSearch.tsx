@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
@@ -27,7 +27,6 @@ import {
   resolveCompanyFn,
   revealEmailFn,
   searchCompaniesFn,
-  searchPeopleFn,
   setCompanyDomainFn,
 } from '../../../server/functions'
 import {
@@ -51,6 +50,7 @@ import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, SENIORITY_LABEL, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
+import { streamPeopleSearch, type PeopleFound } from '../streamPeopleSearch'
 import { Select } from '../../../components/ui/Select'
 
 type Mode = 'companies' | 'people'
@@ -212,11 +212,17 @@ export function ProspectSearch() {
     ...noRefetch,
   })
 
+  // People found so far by the search page being fetched, shown before it finishes.
+  // Each fetch has its own id, so a search left behind can't add to a new one.
+  const [live, setLive] = useState<PeopleFound & { id: number }>({ id: 0, items: [], refined: [] })
+  const fetchId = useRef(0)
   const people = useInfiniteQuery({
     queryKey: queryKeys.prospects.people(peopleSearch),
-    queryFn: ({ pageParam }) =>
-      searchPeopleFn({
-        data: {
+    queryFn: ({ pageParam, signal }) => {
+      const id = ++fetchId.current
+      setLive({ id, items: [], refined: [] })
+      return streamPeopleSearch(
+        {
           company: peopleSearch!.company ? { ref: peopleSearch!.company.ref, name: peopleSearch!.company.name } : null,
           titles: peopleSearch!.titles,
           seniorities: peopleSearch!.seniorities,
@@ -230,8 +236,11 @@ export function ProspectSearch() {
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
+        (found) => setLive((prev) => (prev.id === id ? { id, items: [...prev.items, ...found.items], refined: [...prev.refined, ...found.refined] } : prev)),
+        signal,
         // What's left of a plan's allowance changed.
-      }).finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() })),
+      ).finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() }))
+    },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     enabled: peopleSearch !== null,
@@ -402,7 +411,11 @@ export function ProspectSearch() {
     })
 
   const companyItems = companies.data?.pages.flatMap((p) => p.items) ?? []
-  const allPeople = people.data?.pages.flatMap((p) => p.items) ?? []
+  // While a page is being searched, the people it has found so far follow the pages already done.
+  const searching = people.isFetching && live.id === fetchId.current ? live : null
+  const donePeople = people.data?.pages.flatMap((p) => p.items) ?? []
+  const doneUrls = new Set(donePeople.map((p) => p.profileUrl))
+  const allPeople = searching ? [...donePeople, ...searching.items.filter((p) => !doneUrls.has(p.profileUrl))] : donePeople
 
   // People at companies that accept every address can't get a verified
   // email, so while verified-only is on they're hidden (with a count and a
@@ -438,7 +451,7 @@ export function ProspectSearch() {
   const peopleItems = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople
   // Titles checked against profiles, by the search itself or the button.
   // Results whose title and company came from their profile (✓ in the table).
-  const refined = new Set(people.data?.pages.flatMap((p) => p.refined ?? []) ?? [])
+  const refined = new Set([...(people.data?.pages.flatMap((p) => p.refined ?? []) ?? []), ...(searching?.refined ?? [])])
 
   const toggleAllPeople = (select: boolean) =>
     setSelected((prev) => {
@@ -956,7 +969,7 @@ export function ProspectSearch() {
                 ? 'Search for companies by keyword, then open one to find people there.'
                 : 'Search for people by job title, seniority or keyword. Add a company to search inside just one.',
             )
-          ) : active.isLoading ? (
+          ) : active.isLoading && !(mode === 'people' && searching?.items.length) ? (
             <div className="px-6 py-16 flex justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
@@ -986,7 +999,14 @@ export function ProspectSearch() {
             />
           )}
 
-          {hasSearched && active.hasNextPage && !active.error && (
+          {mode === 'people' && searching && searching.items.length > 0 && (
+            <div className="px-6 py-3 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>Still searching: more people will appear here as they're found.</span>
+            </div>
+          )}
+
+          {hasSearched && active.hasNextPage && !active.error && !(mode === 'people' && searching?.items.length) && (
             <div className="p-4 flex justify-center">
               <Button variant="outline" size="sm" isLoading={active.isFetchingNextPage} onClick={() => active.fetchNextPage()}>
                 Load more

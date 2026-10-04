@@ -60,7 +60,8 @@ export const setCompanyDomainFn = createServerFn({ method: 'POST' })
     return { ref: data.ref, domain: data.domain, catchAll: companyIsCatchAll(data.domain, db) }
   })
 
-const peopleSearchInput = z.object({
+/** A people search's filters, as Prospect Search sends them (here and to /api/prospects/search, which streams). */
+export const peopleSearchInput = z.object({
   company: z.object({ ref: z.string().trim().min(1).max(200), name: z.string().trim().min(1).max(300) }).nullable().optional(),
   titles: z.array(z.string().trim().min(1).max(200)).max(10).optional(),
   seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
