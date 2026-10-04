@@ -47,11 +47,12 @@ const PAGE_SIZE = 25
 /** Companies asked for per organization search: 3 credits whether it returns 1 or 50 (checked 2026-10-01). */
 const ORG_FETCH_SIZE = 50
 /**
- * SocialFetch answers in 1-4 seconds; a request that hasn't answered in 12
- * has hung, and a retry answers in about 2 (seen on hq's searches,
- * 2026-10-04: two requests held a search 23 seconds each at the old 25).
+ * SocialFetch usually answers in 1-4 seconds but some evenings takes 10 or
+ * more. A request given up on is still charged (a hosted copy's relay
+ * finishes it), and its retry charged again: at 12 seconds (0.9.37) a
+ * search on hq paid for 12 requests twice. Waiting is cheaper than retrying.
  */
-const TIMEOUT_MS = 12_000
+const TIMEOUT_MS = 30_000
 const MAX_ATTEMPTS = 3
 // Several titles become one request each (the API takes a single `title`).
 const MAX_TITLES = 5
