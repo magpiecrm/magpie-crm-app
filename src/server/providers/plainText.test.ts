@@ -16,6 +16,13 @@ describe('plain-text version of an email', () => {
     )
   })
 
+  it("leaves out what's hidden from people: a preview line's padding and a hidden link", () => {
+    const html = `<body><div style="display: none; max-height: 0px; overflow: hidden; mso-hide: all;">Quick question${'&nbsp;&zwnj;'.repeat(20)}</div>
+      <p>Hi Jo</p><a href="https://t.example/click?t=trap" aria-hidden="true" tabindex="-1" style="display:none;mso-hide:all"></a>
+      <a href="https://t.example/click?t=old" style="display:none;font-size:0">&#8203;</a></body>`
+    expect(htmlToText(html)).toBe('Quick question\n\nHi Jo')
+  })
+
   it('handles plain text and empty HTML', () => {
     expect(htmlToText('Hi')).toBe('Hi')
     expect(htmlToText('')).toBe('')

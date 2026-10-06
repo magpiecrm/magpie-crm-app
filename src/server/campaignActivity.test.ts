@@ -136,8 +136,11 @@ describe('campaign activity', () => {
     vi.mocked(sendMail).mockClear()
     await sentCampaign(['m@x.test'])
     const html = vi.mocked(sendMail).mock.calls[0][0].html as string
-    const traps = html.match(/<a href="https:\/\/example\.test\/api\/track\/click\?t=[^"]+" aria-hidden="true" tabindex="-1" style="display:none[^"]*">&#8203;<\/a>/g)
+    const traps = html.match(/<a href="https:\/\/example\.test\/api\/track\/click\?t=[^"]+" aria-hidden="true" tabindex="-1" style="display:none;mso-hide:all"><\/a>/g)
     expect(traps).toHaveLength(1)
+    // Hidden by display alone, and not in the plain-text part.
+    const { htmlToText } = await import('./providers/plainText')
+    expect(htmlToText(html)).not.toContain('track/click?t=' + traps![0].match(/t=([^"]+)/)![1])
     // The visible link is tracked as usual.
     expect(html.match(/api\/track\/click/g)).toHaveLength(2)
   })

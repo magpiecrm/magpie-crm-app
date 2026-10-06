@@ -454,6 +454,15 @@ describe('sendCampaign open tracking', () => {
     expect(msg.html.indexOf('/api/track/open')).toBeLessThan(msg.html.indexOf('</body>'))
   })
 
+  it("sends the email without the builder's design data, and with nothing hidden by invisible-text tricks", async () => {
+    state.html = '<html><body>\n  <!-- BLOCKS_DATA: {"blocks":[{"content":"Hi {{ contact.first_name }}"}]} -->\n<!--[if mso]><p>Outlook</p><![endif]--><p>Hi</p></body></html>'
+    const msg = await sendOne()
+    expect(msg.html).not.toContain('BLOCKS_DATA')
+    // Outlook's conditional comments are part of the email and stay.
+    expect(msg.html).toContain('<!--[if mso]><p>Outlook</p><![endif]-->')
+    expect(msg.html).not.toMatch(/font-size:\s*[01](px)?[;"]|opacity:\s*0|color:\s*#fff/)
+  })
+
   it('leaves it out when the campaign has open tracking off, and still tracks clicks', async () => {
     state.trackOpens = false
     state.html = '<p>Hi <a href="https://acme.com">there</a></p>'

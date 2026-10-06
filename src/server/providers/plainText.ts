@@ -1,7 +1,8 @@
 // A plain-text version of an email's HTML, sent alongside it: mail with only
 // HTML scores worse with spam filters, and some people read text only.
 
-const ENTITIES: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'", copy: '©', reg: '®', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', middot: '·' }
+// zwnj and zwj pad an email's hidden preview line; they're nothing in text.
+const ENTITIES: Record<string, string> = { zwnj: '', zwj: '', nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", '#39': "'", copy: '©', reg: '®', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', middot: '·' }
 
 function decode(text: string): string {
   return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z0-9]+);/gi, (whole, name: string) => {
@@ -17,6 +18,8 @@ export function htmlToText(html: string): string {
   const text = html
     .replace(/<(head|style|script|title)\b[\s\S]*?<\/\1>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
+    // A link hidden from people (the scanner trap, emailService.ts) has no place in what they read.
+    .replace(/<a\b[^>]*\bstyle\s*=\s*["'][^"']*display\s*:\s*none[^"']*["'][^>]*>[\s\S]*?<\/a>/gi, '')
     // Links keep their address, unless the text already is it.
     .replace(/<a\b[^>]*?href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) => {
       const label = decode(inner.replace(/<[^>]+>/g, '')).trim()
@@ -31,6 +34,7 @@ export function htmlToText(html: string): string {
     .replace(/<hr\b[^>]*>/gi, '\n\n')
     .replace(/<[^>]+>/g, '')
   return decode(text)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/ /g, ' ')
     .split('\n')
     .map((line) => line.replace(/[ \t]+/g, ' ').trim())

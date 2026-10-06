@@ -46,12 +46,23 @@ function escapeHtml(str: string): string {
   });
 }
 
+/**
+ * The email builder keeps its design inside the HTML as a comment, to open
+ * it for editing again. It isn't part of the email: sent, it's kilobytes of
+ * hidden JSON repeating the text (and, once personalised, the recipient's
+ * unsubscribe link), which spam filters hold against the sender.
+ */
+export function withoutBuilderData(html: string): string {
+  return html.replace(/[ \t]*<!-- BLOCKS_DATA: [\s\S]*? -->\n?/g, '')
+}
+
 function injectPreviewText(html: string, previewText?: string): string {
   if (!previewText) return html
 
   const escapedPreview = escapeHtml(previewText)
   const padding = '&nbsp;&zwnj;'.repeat(100)
-  const preheader = `<div style="display: none; max-height: 0px; overflow: hidden; font-size: 1px; line-height: 1px; color: #fff; opacity: 0; mso-hide: all;">${escapedPreview}${padding}</div>`
+  // Hidden by display alone: white, 1px or transparent text is what spam filters look for as invisible text.
+  const preheader = `<div style="display: none; max-height: 0px; overflow: hidden; mso-hide: all;">${escapedPreview}${padding}</div>`
 
   const bodyRegex = /<body([^>]*)>/i
   if (bodyRegex.test(html)) {
@@ -647,7 +658,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
       let personalizedSubject = personalize(campaign.subject, false)
 
       // Personalize variables in HTML (escaped to prevent Stored XSS)
-      let personalizedHtml = personalize(campaign.htmlContent, true)
+      let personalizedHtml = personalize(withoutBuilderData(campaign.htmlContent), true)
 
       if (campaign.previewText) {
         const personalizedPreview = personalize(campaign.previewText, false)
@@ -658,7 +669,7 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
       if (trackOpens) {
         const openToken = encryptToken({ email, campaignId: id })
         const pixelUrl = `${appUrl}/api/track/open?t=${encodeURIComponent(openToken)}`
-        const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" style="display:none !important;" />`
+        const trackingPixel = `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" />`
         const bodyCloseRegex = /<\/body>/i
         if (bodyCloseRegex.test(personalizedHtml)) {
           personalizedHtml = personalizedHtml.replace(bodyCloseRegex, (match: string) => `${trackingPixel}${match}`)
@@ -714,9 +725,11 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
 
       // A link no person can see or click, before </body>: security scanners
       // follow every link, so following this one gives them away and their
-      // clicks aren't counted as the recipient's (clickFilter.ts).
+      // clicks aren't counted as the recipient's (clickFilter.ts). Hidden by
+      // display alone (zero-size text reads as invisible text to spam
+      // filters), and left out of the plain-text part (plainText.ts).
       const trapToken = encryptToken({ email, campaignId: id, trap: 1 })
-      const trapLink = `<a href="${appUrl}/api/track/click?t=${encodeURIComponent(trapToken)}" aria-hidden="true" tabindex="-1" style="display:none;font-size:0;line-height:0;max-height:0;overflow:hidden;mso-hide:all">&#8203;</a>`
+      const trapLink = `<a href="${appUrl}/api/track/click?t=${encodeURIComponent(trapToken)}" aria-hidden="true" tabindex="-1" style="display:none;mso-hide:all"></a>`
       personalizedHtml = /<\/body>/i.test(personalizedHtml)
         ? personalizedHtml.replace(/<\/body>/i, (end: string) => `${trapLink}${end}`)
         : personalizedHtml + trapLink
@@ -845,7 +858,7 @@ export async function sendTestEmail(payload: {
       mergeContact(text, { email: recipient, first_name: fn, last_name: ln, company: comp, custom: contact.custom }, { html: isHtml, customFallback: (key) => `Test${key}` })
 
     const subject = personalize(payload.subject, false)
-    let htmlWithVars = personalize(payload.htmlContent, true)
+    let htmlWithVars = personalize(withoutBuilderData(payload.htmlContent), true)
 
     // A test send has no campaign to unsubscribe from, but the token must still
     // go — left in place it ships as a literal `href="{{ unsubscribe }}"`, which
