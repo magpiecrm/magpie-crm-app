@@ -181,3 +181,17 @@ export const removeSendingDomainFn = createServerFn({ method: 'POST' })
     await removeSendingDomain(data.domain)
     return { success: true as const }
   })
+
+/**
+ * Where the host's mail server sends: today's sending limits for cold and
+ * opt-in email, and how each sending domain's email was received over the
+ * last week (sendingLimits.ts, sendingReputation.ts). `limits` is null where
+ * no daily limits apply.
+ */
+export const getSendingHealthFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  await requireAuth()
+  const { dailyLimits } = await import('../sendingLimits')
+  const { domainReputations, WINDOW_DAYS, MIN_SAMPLE } = await import('../sendingReputation')
+  return { limits: dailyLimits(), domains: domainReputations(), windowDays: WINDOW_DAYS, minSample: MIN_SAMPLE }
+})

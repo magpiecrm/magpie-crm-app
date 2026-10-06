@@ -100,6 +100,8 @@ function CampaignDetailPage() {
   const isSent = campaign.status === 'sent'
   const isSuspended = campaign.status === 'suspended'
   const isScheduled = campaign.status === 'scheduled' && Boolean(campaign.scheduledAt)
+  // Part-sent: the daily sending limit was reached, and the rest follow from `scheduledAt`.
+  const pacing = isScheduled ? campaign.dailyPacing : null
   const isSending = campaign.status === 'sending'
   const totals = campaignTotals(campaign.statistics?.globalStats)
   const formattedDate = when(campaign.sentAt || campaign.createdAt)
@@ -167,7 +169,9 @@ function CampaignDetailPage() {
                 {isSent
                   ? `Sent on ${formattedDate}`
                   : isScheduled
-                    ? `Scheduled for ${when(campaign.scheduledAt!)}`
+                    ? pacing
+                      ? `Sending over several days: ${pacing.sent} sent, ${pacing.left} to go`
+                      : `Scheduled for ${when(campaign.scheduledAt!)}`
                     : isSending
                       ? 'Sending now'
                       : `Created on ${formattedDate}`}
@@ -218,13 +222,21 @@ function CampaignDetailPage() {
             {isSending ? <Loader2 className="w-5 h-5 text-accent animate-spin shrink-0 mt-0.5" /> : isScheduled ? <CalendarClock className="w-5 h-5 text-accent shrink-0 mt-0.5" /> : <FilePen className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground">
-                {isSending ? 'Sending now' : isScheduled ? `Scheduled for ${when(campaign.scheduledAt!)}` : 'Not sent yet'}
+                {isSending
+                  ? 'Sending now'
+                  : isScheduled
+                    ? pacing
+                      ? `${pacing.sent} sent, ${pacing.left} to go: the next ones go out ${when(campaign.scheduledAt!)}`
+                      : `Scheduled for ${when(campaign.scheduledAt!)}`
+                    : 'Not sent yet'}
               </p>
               <p className="text-xs text-muted-foreground">
                 {isSending
                   ? 'Results appear here as soon as it has gone out.'
                   : isScheduled
-                    ? 'It sends on its own at that time. Results appear here once it has gone out.'
+                    ? pacing
+                      ? 'Your daily sending limit spreads this campaign over several days. It carries on by itself; Settings → Sending shows the limit and when it goes up.'
+                      : 'It sends on its own at that time. Results appear here once it has gone out.'
                     : 'This campaign is a draft. Send it, or schedule it from the editor.'}
               </p>
               {(sendNow.error || unschedule.error) && (

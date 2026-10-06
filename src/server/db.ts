@@ -127,6 +127,12 @@ export interface DbSchema {
     /** Unconfirmed prospected addresses held back after a first batch (guessedRecipients.ts). */
     guess_hold?: GuessHold | null
     /**
+     * Recipients still to come because the daily sending limit was reached
+     * (sendingLimits.ts): the campaign is back on the schedule for the next
+     * day, and this says so. Cleared once everyone has been sent to.
+     */
+    daily_pacing?: { left: number; sent: number } | null
+    /**
      * Set on the hidden row one sequence step's emails are recorded under
      * (status 'sequence'): it keeps their tracking and results, and never
      * shows or sends as a campaign.
@@ -352,6 +358,8 @@ export interface DbSchema {
    * never anyone found.
    */
   search_positions?: Record<string, { cursor: string; updated_at: string }>
+  /** Where this workspace is on its daily sending limits, per kind of mail (sendingLimits.ts). */
+  sending_ramp?: { cold?: { level: number; since: string }; optIn?: { level: number; since: string } }
   /**
    * Sales (server/sales/). `companies` is absent until contacts have first
    * been grouped into companies; pipelines get a default on first use.
@@ -801,6 +809,11 @@ class JsonDb {
   // is one synchronous step, so a scheduled send and a manual send can never
   // both start the same campaign.
 
+  /** How far a campaign has got when the daily sending limit is spreading it over days (see `daily_pacing`). */
+  campaignPacing(id: number): { left: number; sent: number } | null {
+    return this.data.campaigns.find((c) => c.id === id)?.daily_pacing ?? null
+  }
+
   campaignScheduledAt(id: number): string | null {
     return this.data.campaigns.find((c) => c.id === id)?.scheduled_at ?? null
   }
@@ -887,6 +900,23 @@ class JsonDb {
     const campaign = this.data.campaigns.find((c) => c.id === id)
     if (!campaign || campaign.status !== 'sending') return
     campaign.status = 'sent'
+    this.save()
+  }
+
+  /** Back on the schedule to carry on at `at`, having reached the daily sending limit with `left` still to send. */
+  paceCampaign(id: number, at: string, pacing: { left: number; sent: number }) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign) return
+    campaign.status = 'scheduled'
+    campaign.scheduled_at = at
+    campaign.daily_pacing = pacing
+    this.save()
+  }
+
+  clearCampaignPacing(id: number) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign?.daily_pacing) return
+    campaign.daily_pacing = null
     this.save()
   }
 

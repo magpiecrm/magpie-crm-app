@@ -34,6 +34,14 @@ interface HostAnswer {
   eventsPending: boolean
   /** This copy's share of the host's verification, to pace its checks to (runtime.ts). */
   checks: CheckShare | null
+  /** Daily sending limits the host has set for this copy itself, in place of the ramp (sendingLimits.ts). */
+  sendLimits: SendLimits | null
+}
+
+/** Emails a day of each kind; a kind left out follows the ramp. */
+export interface SendLimits {
+  cold?: number
+  optIn?: number
 }
 
 export interface CheckShare {
@@ -66,6 +74,18 @@ function checkShareFrom(c: any): CheckShare | null {
 
 const inRange = (v: unknown, min: number, max: number, fallback: number) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? v : fallback
+
+function sendLimitsFrom(l: any): SendLimits | null {
+  const limit = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1_000_000 ? Math.floor(v) : undefined)
+  const cold = limit(l?.cold)
+  const optIn = limit(l?.optIn)
+  return cold === undefined && optIn === undefined ? null : { ...(cold !== undefined ? { cold } : {}), ...(optIn !== undefined ? { optIn } : {}) }
+}
+
+/** Daily sending limits the host set for this copy, if any. */
+export function hostSendLimits(): SendLimits | null {
+  return env.sendingManaged() ? (g.__hostRules?.sendLimits ?? null) : null
+}
 
 export function prospectingRules(): ProspectingRules {
   return g.__hostRules?.rules ?? DEFAULT_RULES
@@ -107,6 +127,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       formatSharing: body?.formatSharing === true,
       eventsPending: body?.eventsPending === true,
       checks: checkShareFrom(body?.checks),
+      sendLimits: sendLimitsFrom(body?.sendLimits),
     }
     g.__hostRules = answer
     return answer

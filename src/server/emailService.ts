@@ -7,10 +7,12 @@ import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
 import { mergeContact } from './mergeTags'
 import { AllowanceError, requireAllowance } from './allowance'
+import { resumeAfterLimit, takeDailyShare } from './sendingLimits'
 import { requireSendingDomain } from './sendingDomains'
 import { env } from './env'
 import { optedOutAt, signedUpSince } from './prospecting/suppression'
 import { BOUNCE_WAIT_CAP_MS, firstBatchPassed, newHold, splitGuesses } from './guessedRecipients'
+import { isUnconfirmedGuess } from './prospecting/types'
 import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
 import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
 import { isUnknownRecipient } from './providers/types'
@@ -321,6 +323,7 @@ export async function getCampaigns() {
       createdAt: c.createdAt,
       sentAt: c.sentAt,
       scheduledAt: db.campaignScheduledAt(c.id),
+      dailyPacing: db.campaignPacing(c.id),
       recipients: { listIds: c.listId ? [c.listId] : [] },
       sender: { name: c.senderName, email: c.senderEmail },
       statistics: {
@@ -370,6 +373,7 @@ export async function getCampaign(id: number) {
     sentAt: c.sentAt,
     sentDate: c.sentAt, // Alias for backward compatibility
     scheduledAt: db.campaignScheduledAt(c.id),
+      dailyPacing: db.campaignPacing(c.id),
     /** Unverified recipients held back after a first batch, if any (guessedRecipients.ts). */
     guessHold: db.getGuessHold(c.id),
     recipients: { 
@@ -603,12 +607,15 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   // Anyone it already went to (a resumed send, or a second press of Send) is skipped.
   const alreadySent = db.campaignRecipientEmails(id)
   const rules = prospectingRules()
-  const { send: toSend, held, firstBatch, startHold } = splitGuesses(
+  const { send: wanted, held, firstBatch, startHold } = splitGuesses(
     contacts.filter((c) => !alreadySent.has(c.email)),
     hold,
     releasing,
     rules.firstBatch,
   )
+  // Through the host's mail server, only as many as today's sending limit has
+  // room for go now (sendingLimits.ts); the rest follow from tomorrow.
+  const { send: toSend, later } = takeDailyShare(wanted)
 
   // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
   requireAllowance('emailsSent', toSend.length, 'Sending this campaign')
@@ -642,7 +649,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   // Everything above passed: claim it. From here it's 'sending', which a
   // scheduled send and a manual one can't both do (db.claimCampaignForSending).
   if (!db.claimCampaignForSending(id, { resume: opts.resume, release: releasing })) throw new Error('This campaign is already being sent.')
-  if (startHold) db.setGuessHold(id, newHold(firstBatch, held.length, rules))
+  // The first batch is judged on those of it that went: today's limit may have left some for later.
+  if (startHold) db.setGuessHold(id, newHold(later.length ? toSend.filter(isUnconfirmedGuess).length : firstBatch, held.length, rules))
 
   try {
     for (const contact of toSend) {
@@ -768,23 +776,42 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
     throw err
   }
 
-  db.run("UPDATE campaigns SET status = 'sent', sent_at = ? WHERE id = ?", [releasing ? (campaign.sentAt ?? new Date().toISOString()) : new Date().toISOString(), id])
-  if (releasing) db.setGuessHold(id, { ...hold!, status: 'released' })
-
   const plural = (n: number) => `${n} recipient${n === 1 ? '' : 's'}`
+  if (later.length && !releasing) {
+    // Today's limit reached with people still to go: back on the schedule for
+    // tomorrow, when sending it again skips everyone it has reached.
+    const resumeAt = resumeAfterLimit()
+    db.paceCampaign(id, resumeAt, { left: later.length, sent: alreadySent.size + toSend.length })
+    notify(
+      'campaign_sent',
+      toSend.length
+        ? `"${campaign.name}" sent to ${plural(toSend.length)} today. The other ${later.length} follow from tomorrow, as your daily sending limit allows.`
+        : `"${campaign.name}" starts sending tomorrow: today's sending limit is used up.`,
+      { url: `/marketing/campaigns/${id}` },
+    )
+    return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length, later: later.length, resumeAt }
+  }
+
+  // Spread over days by the daily limit: the notice counts everyone it reached, not only today's.
+  const reached = db.campaignPacing(id) ? alreadySent.size + toSend.length : toSend.length
+  db.run("UPDATE campaigns SET status = 'sent', sent_at = ? WHERE id = ?", [releasing ? (campaign.sentAt ?? new Date().toISOString()) : new Date().toISOString(), id])
+  db.clearCampaignPacing(id)
+  // Held-back addresses the limit left for tomorrow stay held, and are looked at again then.
+  if (releasing) db.setGuessHold(id, later.length ? { ...hold!, held: later.length, release_at: resumeAfterLimit() } : { ...hold!, status: 'released' })
+
   notify(
     'campaign_sent',
     releasing
       ? `"${campaign.name}" finished sending to the ${plural(toSend.length)} held back`
-      : `"${campaign.name}" finished sending to ${plural(toSend.length)}` +
+      : `"${campaign.name}" finished sending to ${plural(reached)}` +
           (skippedOptOuts ? ` (${skippedOptOuts} skipped: they opted out, unsubscribed or bounced before)` : '') +
           (held.length
-            ? `. ${held.length} more with unverified addresses follow once the first ${firstBatch} show how many bounce`
+            ? `. ${held.length} more with unverified addresses follow once the first ${firstBatch || hold?.first_batch || 'few'} show how many bounce`
             : ''),
     { url: `/marketing/campaigns/${id}` },
   )
 
-  return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length }
+  return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length, later: releasing ? later.length : 0, resumeAt: null as string | null }
 }
 
 /**

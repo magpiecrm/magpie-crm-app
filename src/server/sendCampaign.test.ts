@@ -28,8 +28,10 @@ vi.mock('./db', () => ({
   db: {
     getAllowance: () => state.allowance,
     get data() {
-      return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression, campaign_recipients: [] }
+      return { contacts: state.contacts, list_contacts: state.list_contacts, suppression: state.suppression, campaign_recipients: [], campaigns: [], senders: [] }
     },
+    mutate: () => {},
+    getEmailDomain: () => null,
     getContact: (email: string) => state.contacts.find((c) => c.email === email) ?? null,
     emailStop: (email: string) => state.stops?.[email] ?? null,
     updateRecipientBounceStatus: (email: string, type: string, campaignId?: string) => void (state.bounces ??= []).push({ email, type, campaignId }),
@@ -64,11 +66,14 @@ vi.mock('./db', () => ({
     transaction: (fn: () => void) => fn,
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
     campaignScheduledAt: () => null,
+    campaignPacing: () => null,
     campaignTracksOpens: () => state.trackOpens !== false,
     campaignRecipientEmails: () => new Set(state.alreadySent),
     getGuessHold: () => state.hold,
     setGuessHold: (_id: number, hold: any) => { state.hold = hold },
     restoreSent: () => { state.status = 'sent' },
+    clearCampaignPacing: () => {},
+    paceCampaign: (_id: number, at: string, pacing: any) => { (state as any).paced = { at, ...pacing }; state.status = 'scheduled' },
     claimCampaignForSending: (_id: number, opts: { resume?: boolean; release?: boolean } = {}) => {
       if ((state.status === 'sent' && !opts.release) || (state.status === 'sending' && !opts.resume)) return false
       state.status = 'sending'
@@ -198,7 +203,7 @@ describe('sendCampaign happy path still works', () => {
 
     const res = await emailService.sendCampaign(1)
 
-    expect(res).toEqual({ success: true, sentCount: 1, skippedOptOuts: 0, heldBack: 0 })
+    expect(res).toEqual({ success: true, sentCount: 1, skippedOptOuts: 0, heldBack: 0, later: 0, resumeAt: null })
     // The unsubscribed contact must be skipped, not merely un-emailed.
     expect(sendMail).toHaveBeenCalledTimes(1)
     expect((sendMail as any).mock.calls[0][0].to).toBe('yes@b.com')

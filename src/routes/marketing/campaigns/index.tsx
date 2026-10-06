@@ -137,7 +137,9 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
               {isSent
                 ? `Sent on ${formattedDate}`
                 : isScheduled
-                  ? `Scheduled for ${formattedDate}`
+                  ? campaign.dailyPacing
+                    ? `${campaign.dailyPacing.sent} sent, ${campaign.dailyPacing.left} to go · next ${formattedDate}`
+                    : `Scheduled for ${formattedDate}`
                   : isSending
                     ? 'Sending now'
                     : `Created ${formattedDate}`}

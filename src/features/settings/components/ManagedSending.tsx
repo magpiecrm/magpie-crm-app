@@ -12,6 +12,7 @@ import {
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { SettingsBlock } from './SettingsBlock'
+import { SendingHealth } from './SendingHealth'
 
 const INPUT_CLASS =
   'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
@@ -183,6 +184,8 @@ export function ManagedSending() {
           Addresses on a subdomain, like <code className="font-mono">news.acme.com</code>, work too.
         </p>
       </SettingsBlock>
+
+      <SendingHealth />
 
       {anyReady && (
         <SettingsBlock title="Send a test">

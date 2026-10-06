@@ -26,6 +26,7 @@ import { isUnconfirmedGuess } from '../prospecting/types'
 import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
+import { dailyRoom } from '../sendingLimits'
 import { renderStep } from './render'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
 
@@ -187,6 +188,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
   }
   const inboxCurrent = !box || (box.status === 'ok' && !!box.last_polled_at && now.getTime() - Date.parse(box.last_polled_at) <= FRESH_INBOX_MS)
 
+  let room: ((email: string) => boolean) | undefined
   for (const e of due) {
     // A follow-up waits until the inbox has been read for replies.
     if (e.next_step > 0 && !inboxCurrent) continue
@@ -202,6 +204,8 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       continue
     }
     if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now))) continue
+    // Today's sending limit for this kind of contact is used up (sendingLimits.ts): they wait, others may still go.
+    if (!(room ??= dailyRoom(now))(e.contact_email)) continue
 
     try {
       requireAllowance('emailsSent', 1, 'Sending this sequence')

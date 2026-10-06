@@ -44,6 +44,14 @@ key), with the app's actions as tools.
     production this file lives on a mounted volume.
   - `emailService.ts` / `nodemailer.ts` — campaign send pipeline: reads from
     `db.ts` and sends through the configured provider (`providers/`).
+  - `sendingLimits.ts` / `sendingReputation.ts` — only where the host's mail
+    server sends (`SENDING_MANAGED`): daily limits for cold email (contacts
+    found by prospecting who haven't signed up or replied) and opt-in email,
+    which step up each week the email is received well. Reputation is judged
+    from the workspace's own counts (bounces, complaints, real opens by mail
+    provider). A campaign over today's limit goes back on the schedule for
+    the next day (`daily_pacing`); sequences wait. A host can set either
+    limit itself through `prospecting/hostRules.ts`.
   - `functions/` — `createServerFn` endpoints split by domain (`prospects`,
     `contacts`, `lists`, `campaigns`, `copilot`, and others). They are
     re-exported from `functions/index.ts`. Add new endpoints to the matching

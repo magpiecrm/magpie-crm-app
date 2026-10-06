@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -189,6 +189,8 @@ describe('held-back addresses in a hosted copy', () => {
     for (const k of KEYS) (original[k] === undefined ? delete process.env[k] : (process.env[k] = original[k]))
     vi.unstubAllGlobals()
   })
+  // Well up its daily sending limits (sendingLimits.ts), so these are about the hold alone.
+  beforeAll(() => db.mutate((d) => (d.sending_ramp = { cold: { level: 5, since: new Date().toISOString() }, optIn: { level: 5, since: new Date().toISOString() } })))
 
   it("wait until the host has passed on every bounce, however long the wait was set to", async () => {
     const emails = Array.from({ length: 60 }, (_, i) => `hosted${i}@acme.test`)
