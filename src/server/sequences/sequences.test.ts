@@ -186,7 +186,10 @@ describe('the engine', () => {
     for (const n of [1, 2, 3]) contact(`p${n}@larkspur.test`)
     const id = makeSequence({ cap: 2 })
     sequences.enroll(id, ['p1@larkspur.test', 'p2@larkspur.test', 'p3@larkspur.test'], {}, null)
-    const t0 = new Date('2026-10-07T09:00:00Z')
+    // A Wednesday mid-morning still to come whenever the tests run: enrolling makes people due from now.
+    const t0 = new Date()
+    t0.setUTCDate(t0.getUTCDate() + ((3 - t0.getUTCDay() + 7) % 7 || 7))
+    t0.setUTCHours(10, 0, 0, 0)
     expect(await runSequences(t0, () => 0)).toBe(1)
     // The next slot is at least a minute away.
     expect(await runSequences(new Date(t0.getTime() + 30_000), () => 0)).toBe(0)
@@ -194,7 +197,7 @@ describe('the engine', () => {
     // Two today: the cap.
     expect(await runSequences(new Date(t0.getTime() + 60 * MIN), () => 0)).toBe(0)
     // Tomorrow (a new day in London), the third.
-    expect(await runSequences(new Date('2026-10-08T09:00:00Z'), () => 0)).toBe(1)
+    expect(await runSequences(new Date(t0.getTime() + DAY), () => 0)).toBe(1)
     expect(new Set(sent.map((m) => m.to)).size).toBe(3)
   })
 
