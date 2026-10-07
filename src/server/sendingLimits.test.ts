@@ -218,6 +218,24 @@ describe('reputation', () => {
     expect(r.reasons[0].text).toBe("Only 4% of recipients at Google (Gmail) opened it (4 of 100), which usually means it's landing in spam there.")
   })
 
+  it('comes with a score out of 100 that never disagrees with the status', () => {
+    expect(judge(stats())).toMatchObject({ status: 'good', score: 100 })
+    expect(judge(stats({ sent: 12 })).score).toBeNull()
+    // Just short of a level is still good (80 or more); at it, under 80; at the poor level, under 50.
+    const bounced = (n: number) => judge(stats({ sent: 1000, hardBounces: n }))
+    expect(bounced(19)).toMatchObject({ status: 'good', score: 82 })
+    expect(bounced(20)).toMatchObject({ status: 'at_risk', score: 79 })
+    expect(bounced(49)).toMatchObject({ status: 'at_risk', score: 52 })
+    expect(bounced(50)).toMatchObject({ status: 'poor', score: 49 })
+    expect(bounced(150)).toMatchObject({ status: 'poor', score: 0 })
+    // The weakest signal sets it: Gmail's 4% opens, whatever Outlook's are.
+    const fewOpens = judge(stats({ opened: 32, byHost: { google: { tracked: 100, opened: 4 }, microsoft: { tracked: 80, opened: 25 }, other: { tracked: 20, opened: 3 } } }))
+    expect(fewOpens).toMatchObject({ status: 'at_risk', score: 65 })
+    // Opens and unsubscribes alone never make it poor.
+    expect(judge(stats({ opened: 0, byHost: { google: { tracked: 100, opened: 0 }, microsoft: { tracked: 80, opened: 0 }, other: { tracked: 20, opened: 0 } } })).score).toBe(55)
+    expect(judge(stats({ unsubscribes: 60 })).score).toBe(51)
+  })
+
   it('is worked out for each sending domain from what was sent', async () => {
     const emails = people('rep', 30)
     const id = await campaignFor(emails, emails)

@@ -15,6 +15,14 @@ const STATUS: Record<Status, { label: string; variant: 'success' | 'warning' | '
   unknown: { label: 'Not enough sent yet', variant: 'default' },
 }
 
+/** The score's colour follows its status. */
+const SCORE_CLASS: Record<Status, string> = {
+  good: 'text-emerald-700 dark:text-emerald-400',
+  at_risk: 'text-amber-700 dark:text-amber-400',
+  poor: 'text-destructive',
+  unknown: 'text-muted-foreground',
+}
+
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 const count = (n: number) => n.toLocaleString()
 const percent = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '0%')
@@ -27,6 +35,11 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-sm font-semibold text-foreground">{name}</span>
         <span className="text-xs text-muted-foreground">{about}</span>
+        {limit.score !== null && (
+          <span className={`text-xs font-semibold tabular-nums ${SCORE_CLASS[limit.status]}`} title="Reputation score for this kind of email, last 7 days">
+            Reputation {limit.score}%
+          </span>
+        )}
         <span className="ml-auto text-sm font-semibold text-foreground tabular-nums">
           {limit.limit === null ? 'No daily limit' : `${count(limit.sent)} of ${count(limit.limit)} sent in the last 24 hours`}
         </span>
@@ -73,7 +86,7 @@ export function SendingHealth() {
 
       <SettingsBlock
         title="How your email is received"
-        description={`From the last ${data.windowDays} days of sending. Opens leave out security scanners, and count only email sent with open tracking on.`}
+        description={`A score out of 100% for each domain you send from, from the last ${data.windowDays} days: 80% and over is good, 50% to 79% at risk, under 50% poor. It's set by the weakest of bounces, spam complaints, unsubscribes and opens. Opens leave out security scanners, and count only email sent with open tracking on.`}
       >
         {data.domains.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nothing sent in the last {data.windowDays} days.</p>
@@ -83,6 +96,11 @@ export function SendingHealth() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-semibold text-foreground">{d.domain}</span>
                 <Badge variant={STATUS[d.status].variant}>{STATUS[d.status].label}</Badge>
+                {d.score !== null && (
+                  <span className={`ml-auto text-2xl font-semibold tabular-nums leading-none ${SCORE_CLASS[d.status]}`} aria-label={`Reputation score ${d.score} out of 100`}>
+                    {d.score}%
+                  </span>
+                )}
               </div>
               <p className="text-xs text-muted-foreground tabular-nums">
                 {count(d.stats.sent)} sent · {count(d.stats.hardBounces)} bounced · {count(d.stats.complaints)} marked as spam ·{' '}

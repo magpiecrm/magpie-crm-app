@@ -7,6 +7,10 @@
 // A status is `good`, `at_risk` or `poor`, or `unknown` until MIN_SAMPLE
 // emails have gone out in the window. The daily sending limits
 // (sendingLimits.ts) grow only while it's good.
+//
+// With it goes a score out of 100, set by the weakest signal (`score`
+// below): 80 and over is good, 50 to 79 at risk, under 50 poor, so the
+// number and the status never disagree.
 
 import { db } from './db'
 import type { MailKind } from './sendingLimits'
@@ -48,8 +52,52 @@ export interface ReputationReason {
 
 export interface Reputation {
   status: ReputationStatus
+  /** Out of 100: 80+ good, 50-79 at risk, under 50 poor. Null until there's enough sent to judge. */
+  score: number | null
   stats: SendingStats
   reasons: ReputationReason[]
+}
+
+/**
+ * Points a rate takes off the score: up to 19 short of `atRisk`, 21 at it
+ * (so the score drops under 80 exactly where the status turns), 51 at `poor`
+ * (under 50), and everything at three times `poor`. Without a `poor` level
+ * it stops at 49: that signal alone never makes a reputation poor.
+ */
+function pointsOff(rate: number, atRisk: number, poor?: number): number {
+  if (rate <= 0) return 0
+  if (rate < atRisk) return (rate / atRisk) * 19
+  if (poor === undefined) return Math.min(49, 21 + ((rate - atRisk) / (atRisk * 2)) * 28)
+  if (rate < poor) return 21 + ((rate - atRisk) / (poor - atRisk)) * 28
+  return Math.min(100, 51 + ((rate - poor) / (poor * 2)) * 49)
+}
+
+/** Points low opens take off: none from GOOD_OPENS up, 21 at the at-risk level, 45 when nobody opens. */
+const GOOD_OPENS = 0.3
+function pointsOffOpens(rate: number): number {
+  const floor = THRESHOLDS.opens.at_risk
+  if (rate >= GOOD_OPENS) return 0
+  if (rate >= floor) return ((GOOD_OPENS - rate) / (GOOD_OPENS - floor)) * 19
+  return 21 + ((floor - rate) / floor) * 24
+}
+
+/**
+ * The score these numbers earn: 100 less the points its weakest signal
+ * takes off (bounces, complaints, unsubscribes, or opens overall or at one
+ * mail provider). The weakest alone, since one bad signal is what a mailbox
+ * provider acts on; good numbers elsewhere don't make up for it.
+ */
+export function score(stats: SendingStats): number | null {
+  if (stats.sent < MIN_SAMPLE) return null
+  const rate = (n: number) => n / stats.sent
+  const opens = [stats, ...Object.values(stats.byHost)].filter((s) => s.tracked >= MIN_SAMPLE).map((s) => pointsOffOpens(s.opened / s.tracked))
+  const worst = Math.max(
+    pointsOff(rate(stats.hardBounces), THRESHOLDS.bounce.at_risk, THRESHOLDS.bounce.poor),
+    pointsOff(rate(stats.complaints), THRESHOLDS.complaint.at_risk, THRESHOLDS.complaint.poor),
+    pointsOff(rate(stats.unsubscribes), THRESHOLDS.unsubscribe.at_risk),
+    ...opens,
+  )
+  return Math.max(0, Math.round(100 - worst))
 }
 
 const emptyStats = (): SendingStats => ({
@@ -72,7 +120,7 @@ export function mailHostOf(email: string): MailHost {
 
 /** The status these numbers earn, and why. */
 export function judge(stats: SendingStats): Reputation {
-  if (stats.sent < MIN_SAMPLE) return { status: 'unknown', stats, reasons: [] }
+  if (stats.sent < MIN_SAMPLE) return { status: 'unknown', score: null, stats, reasons: [] }
   const reasons: ReputationReason[] = []
   const rate = (n: number) => n / stats.sent
 
@@ -126,7 +174,7 @@ export function judge(stats: SendingStats): Reputation {
     })
   }
   const status = reasons.some((r) => r.level === 'poor') ? 'poor' : reasons.length ? 'at_risk' : 'good'
-  return { status, stats, reasons }
+  return { status, score: score(stats), stats, reasons }
 }
 
 /**

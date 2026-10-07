@@ -51,8 +51,9 @@ export interface DailyLimit {
   nextStepAt: string | null
   /** What it steps up to then. */
   nextLimit: number | null
-  /** How this kind of mail was received over the last week. */
+  /** How this kind of mail was received over the last week, and its score out of 100 (null with too little sent). */
   status: ReputationStatus
+  score: number | null
   /** Set by the host, rather than the ramp. */
   setByHost: boolean
 }
@@ -102,10 +103,10 @@ export function dailyLimits(now = new Date()): Record<MailKind, DailyLimit> | nu
   const stats = sendingStats(now).byKind
   const fromHost = hostSendLimits()
   const one = (kind: MailKind): DailyLimit => {
-    const { status } = judge(stats[kind])
+    const { status, score } = judge(stats[kind])
     const set = fromHost?.[kind]
     if (set !== undefined && set !== null) {
-      return { limit: set, sent: sent[kind], left: Math.max(0, set - sent[kind]), nextStepAt: null, nextLimit: null, status, setByHost: true }
+      return { limit: set, sent: sent[kind], left: Math.max(0, set - sent[kind]), nextStepAt: null, nextLimit: null, status, score, setByHost: true }
     }
     const state = rampState(kind, now)
     const limit = limitAt(kind, state.level)
@@ -117,6 +118,7 @@ export function dailyLimits(now = new Date()): Record<MailKind, DailyLimit> | nu
       nextStepAt: atTop ? null : new Date(Date.parse(state.since) + STEP_MS).toISOString(),
       nextLimit: atTop ? null : limitAt(kind, state.level + 1),
       status,
+      score,
       setByHost: false,
     }
   }

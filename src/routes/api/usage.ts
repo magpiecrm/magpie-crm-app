@@ -37,7 +37,7 @@ export const Route = createFileRoute('/api/usage')({
         const storage = db.storageStats()
         const { dailyLimits } = await import('../../server/sendingLimits')
         const { domainReputations } = await import('../../server/sendingReputation')
-        const sending = { limits: dailyLimits(), domains: domainReputations().map(({ domain, status, stats, reasons }) => ({ domain, status, stats, reasons: reasons.map((r) => r.text) })) }
+        const sending = { limits: dailyLimits(), domains: domainReputations().map(({ domain, status, score, stats, reasons }) => ({ domain, status, score, stats, reasons: reasons.map((r) => r.text) })) }
         const params = new URL(request.url).searchParams
         const from = params.get('from')
         const to = params.get('to')
