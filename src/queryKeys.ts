@@ -81,4 +81,6 @@ export const queryKeys = {
   notifications: {
     list: () => ['notifications'] as const,
   },
+  /** Who's signed in, for the sidebar's account row. */
+  account: () => ['account'] as const,
 } as const

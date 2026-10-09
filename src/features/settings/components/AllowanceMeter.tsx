@@ -23,9 +23,9 @@ export function AllowanceMeter({ compact = false, showUpgrade = true }: { compac
   return (
     <div className={`flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
       {!compact && (
-        <div className="flex items-baseline justify-between gap-2">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Your plan this month</h3>
-          {resets && <span className="text-xs text-muted-foreground">Resets {resets}</span>}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Your plan this month</h3>
+          {resets && <span className="text-xs text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
         </div>
       )}
       {allowance.sendingPaused && (
