@@ -13,8 +13,13 @@ import type { PersonResult } from './types'
 
 const HOUR = 3_600_000
 
-/** A search hit: the person, null for a record that couldn't be read, or 'off-title' for someone whose headline doesn't name the job searched for. Each keeps its place in the offsets. */
-export type Hit = PersonResult | null | 'off-title'
+/**
+ * A search hit: the person (with the parts of their headline that name the
+ * job searched for, which become the title shown), null for a record that
+ * couldn't be read, or 'off-title' for someone whose headline doesn't name
+ * the job. Each keeps its place in the offsets.
+ */
+export type Hit = (PersonResult & { roles?: string[] }) | null | 'off-title'
 
 export interface HeldHits<H = Hit> {
   /** The hits in search order. */

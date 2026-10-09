@@ -4,12 +4,14 @@ import {
   createSocialFetchSource,
   domainFromWebsite,
   leaderMatcher,
+  leaderRoles,
   leadershipDepartment,
   mapPerson,
   meterCredits,
   sameCompanyName,
   titleFromHeadline,
   titleMatcher,
+  titleRoles,
 } from './socialfetch'
 
 // No network: every test drives the connector through a fake fetch that
@@ -94,6 +96,56 @@ describe('titleMatcher', () => {
     expect(titleMatcher('Chief Financial Officer')('CFO at Acme')).toBe(true)
     expect(titleMatcher('VP Sales')('Vice President, Sales EMEA')).toBe(true)
     expect(titleMatcher('Head of Sales')('Head of Presales')).toBe(false)
+  })
+})
+
+describe('the title a result shows', () => {
+  const searchHit = (handle: string, headline: string) => ({
+    profileUrl: `https://www.linkedin.com/in/${handle}`,
+    firstName: 'Sam',
+    lastName: handle,
+    headline,
+    location: 'London',
+  })
+  const people = (hits: unknown[]) => envelope({ lookupStatus: 'found', people: hits, page: { hasMore: false } })
+
+  it('is the part of the headline that names the title, not what the headline opens with', () => {
+    expect(titleRoles('VP Sales')('Helping SaaS teams scale | VP Sales at Acme')).toEqual(['VP Sales'])
+    expect(titleRoles('CFO')('Chief Financial Officer at Acme • Board advisor')).toEqual(['Chief Financial Officer'])
+    expect(titleRoles('Sales Manager')('Sales Manager | Regional Sales Manager, EMEA')).toEqual(['Sales Manager', 'Regional Sales Manager, EMEA'])
+    expect(titleRoles('CFO')('Helping CFOs scale')).toEqual([])
+    expect(leaderRoles('Sales')('Founder | Head of Sales & Partnerships @ Acme')).toEqual(['Head of Sales & Partnerships'])
+    expect(leaderRoles('Sales')('Sales Manager')).toEqual([])
+  })
+
+  it('shows the matched part in a search, with its seniority', async () => {
+    const f = fakeFetch([people([searchHit('a', 'Helping SaaS teams scale | VP Sales at Acme'), searchHit('b', 'Ex-Google | Sales Director · Head of Sales, EMEA')])])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales leaders'] })
+    expect(page.items.map((p) => [p.title, p.seniority])).toEqual([
+      ['VP Sales', 'vp'],
+      ['Sales Director, Head of Sales, EMEA', 'head'],
+    ])
+  })
+
+  it('shows both when someone is found under two titles, once each', async () => {
+    const f = fakeFetch([
+      people([searchHit('a', 'Growth at Acme | CMO | Head of Marketing')]),
+      people([searchHit('a', 'Growth at Acme | CMO | Head of Marketing'), searchHit('b', 'CMO & Head of Marketing')]),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['CMO', 'Head of Marketing'] })
+    expect(page.items.map((p) => p.title)).toEqual(['CMO, Head of Marketing', 'CMO & Head of Marketing'])
+  })
+
+  it('stays the opening of the headline when no title was searched', async () => {
+    const f = fakeFetch([people([searchHit('a', 'Helping SaaS teams scale | VP Sales at Acme')])])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { keyword: 'saas' })
+    expect(page.items[0].title).toBe('Helping SaaS teams scale')
+  })
+
+  it("keeps the real job title when the record has one", async () => {
+    const f = fakeFetch([people([{ ...searchHit('a', 'Speaker | CFO'), currentPositions: [{ title: 'Group CFO', organizationName: 'Acme Ltd' }] }])])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['CFO'] })
+    expect(page.items[0].title).toBe('Group CFO')
   })
 })
 

@@ -410,14 +410,24 @@ const SAME_TITLE: Array<[string, string]> = [
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+/** A headline's roles: its parts between | • ·, each without its " at <company>". */
+function rolesIn(headline: string): string[] {
+  return headline
+    .split(/\s*[|•·]\s*/)
+    .map((part) => part.split(/\s+(?:at|@)\s+|@/i)[0].trim())
+    .filter(Boolean)
+}
+
 /**
- * Whether a headline names the job title searched for: every word of it (or
- * of its usual abbreviation or long form) in one part of the headline,
- * before any " at <company>". "Sales Manager" fits "Regional Sales Manager"
- * and "Sales & Account Manager at Acme", not "Key Account Manager"; a word of
+ * The parts of a headline that name the job title searched for: every word
+ * of it (or of its usual abbreviation or long form) in one part, before any
+ * " at <company>". "Sales Manager" fits "Regional Sales Manager" and
+ * "Sales & Account Manager at Acme", not "Key Account Manager"; a word of
  * four letters or fewer must stand alone, so "CFO" doesn't fit "Helping CFOs".
+ * The parts are what a result shows as the person's job title, rather than
+ * whatever their headline opens with.
  */
-export function titleMatcher(title: string): (headline: string | null | undefined) => boolean {
+export function titleRoles(title: string): (headline: string | null | undefined) => string[] {
   const base = norm(title).replace(/\s+/g, ' ')
   const forms = new Set([base])
   for (const [short, long] of SAME_TITLE) {
@@ -425,17 +435,21 @@ export function titleMatcher(title: string): (headline: string | null | undefine
     if (s.test(base)) forms.add(base.replace(s, long))
     if (base.includes(long)) forms.add(base.replace(long, short))
   }
-  const patterns = [...forms].map((form) =>
-    form
-      .split(' ')
-      .filter((w) => w && !TITLE_FILLER.has(w))
-      .map((w) => new RegExp(w.length <= 4 ? `\\b${escapeRegExp(w)}\\b` : `\\b${escapeRegExp(w)}`, 'i')),
-  )
-  return (headline) => {
-    if (!headline) return false
-    const roles = headline.split(/\s*[|•·]\s*/).map((part) => part.split(/\s+(?:at|@)\s+|@/i)[0])
-    return patterns.some((words) => words.length > 0 && roles.some((role) => words.every((w) => w.test(role))))
-  }
+  const patterns = [...forms]
+    .map((form) =>
+      form
+        .split(' ')
+        .filter((w) => w && !TITLE_FILLER.has(w))
+        .map((w) => new RegExp(w.length <= 4 ? `\\b${escapeRegExp(w)}\\b` : `\\b${escapeRegExp(w)}`, 'i')),
+    )
+    .filter((words) => words.length > 0)
+  return (headline) => (headline ? rolesIn(headline).filter((role) => patterns.some((words) => words.every((w) => w.test(role)))) : [])
+}
+
+/** Whether a headline names the job title searched for (titleRoles). */
+export function titleMatcher(title: string): (headline: string | null | undefined) => boolean {
+  const roles = titleRoles(title)
+  return (headline) => roles(headline).length > 0
 }
 
 /** Words that make a role a leader's: "Head of", "VP", "Director" and the like. */
@@ -462,14 +476,16 @@ export function leadershipDepartment(title: string): string | null {
   return department
 }
 
-/** Whether a headline has a leadership role in the department: "VP of Sales", "Sales Director", "Head of Sales & Partnerships". */
-export function leaderMatcher(department: string): (headline: string | null | undefined) => boolean {
+/** A headline's leadership roles in the department: "VP of Sales", "Sales Director", "Head of Sales & Partnerships". */
+export function leaderRoles(department: string): (headline: string | null | undefined) => string[] {
   const inDepartment = titleMatcher(department)
-  return (headline) => {
-    if (!headline) return false
-    const roles = headline.split(/\s*[|•·]\s*/).map((part) => part.split(/\s+(?:at|@)\s+|@/i)[0])
-    return roles.some((role) => LEADER_WORDS.test(role) && inDepartment(role))
-  }
+  return (headline) => (headline ? rolesIn(headline).filter((role) => LEADER_WORDS.test(role) && inDepartment(role)) : [])
+}
+
+/** Whether a headline has a leadership role in the department (leaderRoles). */
+export function leaderMatcher(department: string): (headline: string | null | undefined) => boolean {
+  const roles = leaderRoles(department)
+  return (headline) => roles(headline).length > 0
 }
 
 /**
@@ -485,7 +501,8 @@ interface TitleQuery {
   /** Its cursor and held results go under this. */
   key: string
   search: string
-  fits: ((headline: string | null) => boolean) | null
+  /** The parts of a headline that name it (titleRoles, leaderRoles); none means the person is left out. Null when no title was searched. */
+  roles: ((headline: string | null) => string[]) | null
   /** The leadership titles searched as this department. */
   leaders: string[]
 }
@@ -495,12 +512,12 @@ function titleQueries(titles: string[]): TitleQuery[] {
   for (const title of titles) {
     const department = title ? leadershipDepartment(title) : null
     if (!department) {
-      if (!out.has(title)) out.set(title, { key: title, search: title, fits: title ? titleMatcher(title) : null, leaders: [] })
+      if (!out.has(title)) out.set(title, { key: title, search: title, roles: title ? titleRoles(title) : null, leaders: [] })
       continue
     }
     for (const search of [department, ...(ALSO_LEADS[norm(department)] ?? [])]) {
       const key = `leaders:${norm(search)}`
-      const query = out.get(key) ?? { key, search, fits: leaderMatcher(search), leaders: [] }
+      const query = out.get(key) ?? { key, search, roles: leaderRoles(search), leaders: [] }
       if (!query.leaders.includes(title)) query.leaders.push(title)
       out.set(key, query)
     }
@@ -838,7 +855,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         return named.find((c) => h.includes(` ${c.key} `)) ?? null
       }
 
-      const readPeople = (res: any, asked: number, fitsTitle: ((headline: string | null) => boolean) | null): Hit[] => {
+      const readPeople = (res: any, asked: number, rolesFor: TitleQuery['roles']): Hit[] => {
         const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
           `[SocialFetch] people/search returned ${raw.length} of ${asked} (status=${res.data?.lookupStatus ?? '?'}, reported=${num(res.data?.reportedTotal) ?? '?'}, more=${res.data?.page?.hasMore ? 'yes' : 'no'})`,
@@ -847,9 +864,13 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         if (bad) console.warn(`[SocialFetch] unreadable person record; fields: ${describeShape(bad)}`)
         return raw.map((r) => {
           const person = mapPerson(r)
-          if (person && fitsTitle && !fitsTitle(str(r?.headline))) return 'off-title'
-          const at = person && namedIn(str(r?.headline))
-          return at ? { ...person, company: at.name, companyRef: at.ref } : person
+          const headline = str(r?.headline)
+          const roles = person && rolesFor ? rolesFor(headline) : null
+          if (roles && !roles.length) return 'off-title'
+          const at = person && namedIn(headline)
+          const hit = at ? { ...person, company: at.name, companyRef: at.ref } : person
+          // Kept beside a title that only came from the headline; a record with the real job on it keeps that.
+          return hit && roles && hit.title === (titleFromHeadline(headline) ?? '') ? { ...hit, roles } : hit
         })
       }
 
@@ -862,7 +883,6 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         const title = query.search
         // The title goes in `title`, which filters; `keyword` only ranks.
         const keyword = [filters.keyword?.trim(), companyId ? null : company?.name].filter(Boolean).join(' ')
-        const fitsTitle = query.fits
         const multiWord = /\s/.test(title)
         const titleParam = (joiner: string) => (title ? title.replace(/\s+/g, joiner) : undefined)
         const params = {
@@ -896,7 +916,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             }
           }
           const page = res.data?.page
-          const people = readPeople(res, FETCH_SIZE, fitsTitle)
+          const people = readPeople(res, FETCH_SIZE, query.roles)
           hits = {
             items: people,
             hasMore: Boolean(page?.hasMore),
@@ -926,7 +946,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const nextCursors: Record<string, string> = {}
       let reportedTotal: number | null = null
       const people: PersonResult[] = []
-      const seen = new Set<string>()
+      // Everyone read so far, with the parts of their headline that named a title searched for.
+      const seen = new Map<string, { person: PersonResult; roles: string[] }>()
       let wrongCompany = 0
       let unreadable = 0
       let offTitle = 0
@@ -934,17 +955,23 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       for (const { title, people: found, next, reportedTotal: total } of ok) {
         if (next) nextCursors[title] = next
         if (total !== null) reportedTotal = Math.max(reportedTotal ?? 0, total)
-        for (const person of found) {
-          if (!person) {
+        for (const hit of found) {
+          if (!hit) {
             unreadable++
             continue
           }
-          if (person === 'off-title') {
+          if (hit === 'off-title') {
             offTitle++
             continue
           }
-          if (seen.has(person.profileUrl)) continue
-          seen.add(person.profileUrl)
+          const { roles = [], ...person } = hit
+          // Found under a second title too: both show.
+          const before = seen.get(person.profileUrl)
+          if (before) {
+            for (const role of roles) if (!before.roles.some((r) => norm(r) === norm(role))) before.roles.push(role)
+            continue
+          }
+          seen.set(person.profileUrl, { person, roles: [...roles] })
 
           if (company) {
             const headlineNamesIt = norm(person.title).includes(norm(company.name))
@@ -965,6 +992,16 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           }
           people.push(person)
         }
+      }
+
+      // The job title shown is the part of the headline that named the title
+      // searched for ("Helping teams scale | VP Sales at Acme" shows "VP
+      // Sales"), not whatever the headline opens with. Set here, after the
+      // company check above has read the headline's opening for its name.
+      for (const { person, roles } of seen.values()) {
+        if (!roles.length) continue
+        person.title = roles.join(', ')
+        person.seniority = classifySeniority(person.title)
       }
 
       // Never drop records silently: a shape change would otherwise look like
