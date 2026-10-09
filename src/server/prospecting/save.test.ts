@@ -185,6 +185,24 @@ describe('saveProspects', () => {
     expect(contributed).toHaveLength(1)
   })
 
+  it("saves someone the host's shared database holds with the email it gives, and doesn't send them back to it", async () => {
+    const contributed: unknown[] = []
+    const check = vi.fn()
+    const job = await saveProspects(1, [person('Jane', 'Smith', { shared: 'handle-1' })], {
+      source,
+      finder: { ...finder({}), verifier: { acquire: async () => ({ proxy: null, report: () => {} }), check } },
+      db: fakeDb as any,
+      sharedEmail: async (handle) => (handle === 'handle-1' ? { email: 'jane.smith@acme.com', free: true } : null),
+      sharedFree: true,
+      contribute: (...args: unknown[]) => void contributed.push(args),
+    })
+    expect(job.outcomes[0]).toMatchObject({ status: 'saved', email: 'jane.smith@acme.com', emailStatus: 'verified' })
+    expect(check).not.toHaveBeenCalled()
+    expect(state.contacts[0]).toMatchObject({ email: 'jane.smith@acme.com', email_status: 'verified' })
+    // The hook is told; sharedPeople.contribute itself leaves out anyone marked `shared`.
+    expect(contributed).toHaveLength(1)
+  })
+
   it('looks the company page up once for several people at the same company', async () => {
     await saveProspects(1, [person('Jane', 'Smith'), person('Bob', 'Jones'), person('Ann', 'Lee')], {
       source, finder: finder({}), db: fakeDb as any,

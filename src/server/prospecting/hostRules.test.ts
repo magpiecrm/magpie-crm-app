@@ -41,9 +41,12 @@ describe('host rules', () => {
     await refreshHostRules(reply({ rules: {}, pool: { available: false, contributing: false, termsVersion: '2026-10' } }))
     expect(sharedDatabase()).toBeNull()
     await refreshHostRules(reply({ rules: {}, pool: { available: true, contributing: true, termsVersion: '2026-10', termsUrl: 'https://magpie.test/legal/contributor-terms' } }))
-    expect(sharedDatabase()).toEqual({ contributing: true, termsVersion: '2026-10', termsUrl: 'https://magpie.test/legal/contributor-terms' })
+    expect(sharedDatabase()).toEqual({ canJoin: true, search: false, contributing: true, termsVersion: '2026-10', termsUrl: 'https://magpie.test/legal/contributor-terms' })
     await refreshHostRules(reply({ rules: {}, pool: { available: true, contributing: 'yes', termsVersion: '2026-10', termsUrl: 'javascript:alert(1)' } }))
-    expect(sharedDatabase()).toEqual({ contributing: false, termsVersion: '2026-10', termsUrl: null })
+    expect(sharedDatabase()).toEqual({ canJoin: true, search: false, contributing: false, termsVersion: '2026-10', termsUrl: null })
+    // Searching can be on for everyone before, or without, joining being open.
+    await refreshHostRules(reply({ rules: {}, pool: { available: false, search: true, contributing: false, termsVersion: '2026-10' } }))
+    expect(sharedDatabase()).toMatchObject({ canJoin: false, search: true })
     delete process.env.PROSPECTING_MANAGED
     expect(sharedDatabase()).toBeNull()
   })

@@ -90,6 +90,12 @@ export interface PersonResult {
   /** Set once the email has been revealed, so saving reuses it. */
   email?: string
   emailStatus?: EmailStatus
+  /**
+   * Their job and employer came from the host's shared database
+   * (sharedPeople.ts) instead of a profile lookup: the handle the host takes
+   * to give their verified email. Hosted copies only.
+   */
+  shared?: string
 }
 
 /**

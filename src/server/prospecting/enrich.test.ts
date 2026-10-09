@@ -612,6 +612,96 @@ describe('searchPeople in a workspace run by its host', () => {
   })
 })
 
+describe("searchPeople with the host's shared database", () => {
+  const ENV = { PROSPECTING_MANAGED: 'on', REACHER_URL: 'https://services.magpie.test', REACHER_SECRET: 'vt_mc_acme' }
+  const url = (handle: string) => `https://www.linkedin.com/in/${handle}`
+  /** A host holding these people: handle → what it knows. */
+  function hosted(contributing: boolean, held: Record<string, { company: string; companyRef: string | null; verifiedAt?: string; title?: string }>) {
+    Object.assign(process.env, ENV)
+    ;(globalThis as any).__hostRules = { rules: {}, pool: { canJoin: true, search: true, contributing, termsVersion: '1', termsUrl: null } }
+    const asked: string[][] = []
+    vi.stubGlobal('fetch', async (target: string, init: RequestInit) => {
+      if (!String(target).endsWith('/v1/pool/known')) return Response.json({})
+      const profiles: string[] = JSON.parse(String(init.body)).profiles
+      asked.push(profiles)
+      return Response.json({
+        people: Object.entries(held)
+          .filter(([handle]) => profiles.includes(profileHash(url(handle))!))
+          .map(([handle, k]) => ({
+            profile: profileHash(url(handle)), handle: `handle-${handle}`, title: k.title ?? 'Head of Analysis', seniority: 'head', company: k.company, companyRef: k.companyRef,
+            companyDomain: 'barclays.com', country: 'United Kingdom', verifiedAt: k.verifiedAt ?? new Date().toISOString(),
+          })),
+      })
+    })
+    return asked
+  }
+  const unhost = () => {
+    for (const k of Object.keys(ENV)) delete process.env[k]
+    delete (globalThis as any).__hostRules
+    vi.unstubAllGlobals()
+  }
+
+  it("takes someone it holds from it, with no profile bought, and looks everyone else up", async () => {
+    const asked = hosted(true, { ana: { company: 'Barclays', companyRef: '42' } })
+    try {
+      searchPage = pageOf(hit('ana'), hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(asked).toHaveLength(1)
+      expect(getPerson.mock.calls.map((c) => c[0])).toEqual([url('ben')])
+      expect(res.items.map((p) => [p.firstName, p.title, p.company, p.companyRef, p.shared, p.profileChecked])).toEqual([
+        ['ana', 'Head of Analysis', 'Barclays', '42', 'handle-ana', true],
+        ['ben', 'Business Analyst', 'Acme', '7', undefined, true],
+      ])
+      expect(res.refined).toEqual([url('ben'), url('ana')])
+      // Free to a copy that contributes.
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, searchProfiles: 1, prospectCredits: 0 })
+    } finally {
+      unhost()
+    }
+  })
+
+  it("charges a copy that doesn't contribute what the profile would have cost", async () => {
+    hosted(false, { ana: { company: 'Barclays', companyRef: '42' } })
+    try {
+      searchPage = pageOf(hit('ana'))
+      await searchPeople({ titles: ['Business Analyst'] })
+      expect(getPerson).not.toHaveBeenCalled()
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, prospectCredits: 0.96 })
+    } finally {
+      unhost()
+    }
+  })
+
+  it("looks someone up after all when they may have moved on: another employer in their headline, or an old record", async () => {
+    hosted(true, { ana: { company: 'Lloyds', companyRef: '99' }, ben: { company: 'Acme', companyRef: '7', verifiedAt: new Date(Date.now() - 200 * 86_400_000).toISOString() } })
+    try {
+      searchPage = pageOf({ ...hit('ana'), company: 'Barclays' }, hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(getPerson).toHaveBeenCalledTimes(2)
+      expect(res.items.every((p) => !p.shared)).toBe(true)
+    } finally {
+      unhost()
+    }
+  })
+
+  it('still leaves out a contact, and still searches when the host is down', async () => {
+    hosted(true, { ana: { company: 'Barclays', companyRef: '42' } })
+    try {
+      contacts = [{ email: 'ana.smith@barclays.com', first_name: 'ana', last_name: 'Smith', job_title: 'x', company: 'Barclays' }]
+      searchPage = pageOf(hit('ana'))
+      expect((await searchPeople({ titles: ['Business Analyst'] })).items).toEqual([])
+
+      contacts = []
+      vi.stubGlobal('fetch', async () => Promise.reject(new Error('down')))
+      const res = await searchPeople({ titles: ['Business Analyst'], fromStart: true })
+      expect(res.items.map((p) => [p.firstName, p.shared])).toEqual([['ana', undefined]])
+      expect(getPerson).toHaveBeenCalledTimes(1)
+    } finally {
+      unhost()
+    }
+  })
+})
+
 describe('searchPeople carries on where the last search stopped', () => {
   const cursorArg = () => (searchPeopleMock.mock.calls.at(-1) as unknown[])[1] as { cursor?: string }
 

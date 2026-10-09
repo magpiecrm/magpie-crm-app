@@ -43,6 +43,10 @@ export function SharedDatabaseBlock({ shared }: { shared: { contributing: boolea
             from prospect search with a verified email, so nobody pays to find the same person twice.
           </p>
           <p>
+            People it already holds turn up in your searches as usual. While you contribute, their details and verified
+            email cost you nothing.
+          </p>
+          <p>
             What's sent is the person's name, job title, employer, country, profile address and verified work email. Never
             contacts you imported or who signed up, your lists or notes, or anything about what you send.
           </p>

@@ -228,7 +228,12 @@ contacts, and that is the only point where emails are looked up.
   contacts, guessed addresses, lists and notes never are. The host is the
   controller of that database: it tells each person and takes their opt-outs,
   which reach every copy through the shared opt-out list. A copy you run
-  yourself has no host and sends nothing.
+  yourself has no host and sends nothing. Where the host has switched it on,
+  a hosted copy's search asks the host which of the people it found are
+  already held (by a keyed hash of their profile address): their job and
+  employer come from the host instead of a paid profile lookup, and their
+  verified email from the host when revealed or saved. That's free to a copy
+  that contributes; others pay what the lookup and email would have cost.
 - **Disclosure log**: every prospected contact saved gets a hashed log entry
   (sources, timestamp, notice status). New contacts start with
   `notice_status = pending`; nothing yet delivers the notice.

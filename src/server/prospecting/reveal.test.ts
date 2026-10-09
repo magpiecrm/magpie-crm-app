@@ -77,6 +77,34 @@ describe('revealEmail', () => {
     expect(JSON.stringify(state.disclosure)).not.toMatch(/jane|smith|acme/i)
   })
 
+  it("takes the email of someone the host's shared database holds from the host, with no lookup", async () => {
+    const asked: string[] = []
+    const sharedEmail = async (handle: string) => (asked.push(handle), { email: 'jane.smith@acme.com', free: true })
+    const res = await revealEmail({ ...jane, shared: '7.2026-10-11.sig' }, { source, finder, db: fakeDb as any, sharedEmail, sharedFree: true })
+    expect(res).toMatchObject({ status: 'found', email: 'jane.smith@acme.com', emailStatus: 'verified', domain: 'acme.com' })
+    expect(asked).toEqual(['7.2026-10-11.sig'])
+    expect(check).not.toHaveBeenCalled()
+    expect(state.disclosure).toHaveLength(1)
+  })
+
+  it("doesn't use a contributor's reveals for it, but does anyone else's", async () => {
+    allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { reveals: 5 }, used: { prospects: 0, reveals: 5, emailsSent: 0 } }
+    const sharedEmail = async () => ({ email: 'jane.smith@acme.com', free: true })
+    const shared = { ...jane, shared: 'h' }
+    expect(await revealEmail(shared, { source, finder, db: fakeDb as any, sharedEmail, sharedFree: true })).toMatchObject({ status: 'found' })
+    await expect(revealEmail(shared, { source, finder, db: fakeDb as any, sharedEmail, sharedFree: false })).rejects.toThrow(/reveals/)
+  })
+
+  it('finds the address the usual way when the host no longer has it, and refuses one that has opted out', async () => {
+    const gone = await revealEmail({ ...jane, shared: 'h' }, { source, finder, db: fakeDb as any, sharedEmail: async () => null, sharedFree: true })
+    expect(gone).toMatchObject({ status: 'found', email: 'jane.smith@acme.com' })
+    expect(check).toHaveBeenCalled()
+
+    state.suppression = hashesFor({ email: 'jane.smith@acme.com' })
+    const out = await revealEmail({ ...jane, shared: 'h' }, { source, finder, db: fakeDb as any, sharedEmail: async () => ({ email: 'jane.smith@acme.com', free: true }), sharedFree: true })
+    expect(out.status).toBe('unavailable')
+  })
+
   it('refuses opted-out people before spending anything, without saying why', async () => {
     state.suppression = hashesFor({ profileUrl: jane.profileUrl })
     const res = await revealEmail(jane, { source, finder, db: fakeDb as any })

@@ -102,6 +102,7 @@ const personInput = z.object({
   previously: z.enum(['saved', 'revealed']).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   emailStatus: z.enum(EMAIL_STATUSES).optional(),
+  shared: z.string().max(200).optional(),
 })
 
 /**
@@ -118,12 +119,16 @@ export const revealEmailFn = createServerFn({ method: 'POST' })
     const { getSource, getFinderDeps } = await import('../prospecting/runtime')
     const { allowsFormatConfirmed, isVerifiedOnly } = await import('../prospecting/settings')
     const { db } = await import('../db')
+    const { sharedEmail } = await import('../prospecting/sharedPeople')
+    const { sharedDatabase } = await import('../prospecting/hostRules')
     return revealEmail(data.person, {
       source: getSource(),
       finder: await getFinderDeps(),
       db,
       verifiedOnly: isVerifiedOnly(),
       allowFormatConfirmed: allowsFormatConfirmed(),
+      sharedEmail,
+      sharedFree: Boolean(sharedDatabase()?.contributing),
     })
   })
 

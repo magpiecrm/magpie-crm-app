@@ -8,6 +8,7 @@ import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
+import { knownPeople } from './sharedPeople'
 import { companyKey, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
@@ -109,6 +110,13 @@ async function formatConfirmedAt(db: Db): Promise<(domain: string) => boolean> {
 
 /** Profile lookups run at once: SocialFetch sets no rate limit, and each takes about 2 seconds. */
 const ENRICH_CONCURRENCY = 8
+/** What one profile lookup costs, in SocialFetch credits. */
+const LOOKUP_CREDITS = 3
+/**
+ * How lately the host's shared database must have verified someone's email
+ * for it to say where they work when their headline doesn't.
+ */
+const SHARED_FRESH_MS = 90 * 24 * 60 * 60_000
 
 type Db = typeof import('../db')['db']
 
@@ -664,7 +672,7 @@ async function processBatch(
    * again by the searches of one company.
    */
   splitWhen?: (toLookUp: number) => boolean,
-): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[]; split?: boolean }> {
+): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[]; shared: number; spared: number; split?: boolean }> {
   const counted = { ...tally }
   let items = people
   for (const person of items) {
@@ -754,10 +762,42 @@ async function processBatch(
     { hideUnverifiable, includeContacts, tally },
   )
   if (skipped.size) items = items.filter((p) => !skipped.has(p.profileUrl))
-  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl))
+
+  // People the host's shared database already holds (sharedPeople.ts): their
+  // job and employer come from it, so no profile is paid for, and so does
+  // their verified email when it's asked for. Taken where their headline
+  // names the same employer, or names none and their email was verified
+  // lately; anyone else is looked up as usual, since they may have moved on.
+  const held = await knownPeople(items.filter((p) => p.previously !== 'saved'))
+  const fromShared = new Set<string>()
+  if (held.size) {
+    items = items.map((p) => {
+      const k = held.get(p.profileUrl)
+      if (!k || p.previously === 'saved') return p
+      const sameEmployer = Boolean((p.companyRef && p.companyRef === k.companyRef) || (p.company.trim() && sameCompanyName(p.company, k.company)))
+      const lately = Date.now() - new Date(k.verifiedAt).getTime() < SHARED_FRESH_MS
+      if (!sameEmployer && !(lately && !p.company.trim() && !p.companyRef)) return p
+      fromShared.add(p.profileUrl)
+      return {
+        ...p,
+        title: k.title || p.title,
+        seniority: k.title ? k.seniority : p.seniority,
+        company: k.company,
+        companyRef: k.companyRef ?? p.companyRef,
+        companyDomain: k.companyDomain ?? p.companyDomain,
+        country: p.country ?? k.country,
+        profileChecked: true,
+        shared: k.handle,
+      }
+    })
+  }
+  // Those whose profile would otherwise have been paid for.
+  const spared = [...fromShared].filter((url) => !noLookup.has(url))
+
+  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {
     Object.assign(tally, counted)
-    return { items: [], refined: [], lookedUp: [], split: true }
+    return { items: [], refined: [], lookedUp: [], shared: 0, spared: 0, split: true }
   }
 
   const refined: string[] = []
@@ -783,6 +823,8 @@ async function processBatch(
       tally.noJob += results.length - refined.length - failed.length
     }
   }
+  // Their employer is known as surely as from a lookup, so the checks below apply to them too.
+  refined.push(...spared)
 
   // Contacts added another way (imported, a form) only show up once their
   // employer is known: the same name at the same company.
@@ -791,7 +833,7 @@ async function processBatch(
     const fresh = items.filter((p) => !((refined.includes(p.profileUrl) || noLookup.has(p.profileUrl)) && isContact(p)))
     const dropped = items.filter((p) => !fresh.includes(p))
     tally.inContacts += dropped.length
-    tally.paidInContacts += dropped.filter((p) => refined.includes(p.profileUrl)).length
+    tally.paidInContacts += dropped.filter((p) => refined.includes(p.profileUrl) && !fromShared.has(p.profileUrl)).length
     items = fresh
   }
 
@@ -829,7 +871,15 @@ async function processBatch(
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
 
-  return { items, refined, lookupError, lookedUp: toLookUp.map((p) => p.profileUrl) }
+  const shown = new Set(items.map((p) => p.profileUrl))
+  return {
+    items,
+    refined,
+    lookupError,
+    lookedUp: toLookUp.map((p) => p.profileUrl),
+    shared: [...fromShared].filter((url) => shown.has(url)).length,
+    spared: spared.length,
+  }
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -900,6 +950,9 @@ export async function searchPeople(
   let requests = 0
   let lookupError: string | undefined
   let lookedUp = 0
+  // People whose job and employer came from the host's shared database, and how many profile lookups that spared.
+  let shared = 0
+  let spared = 0
   const paidFor = new Set<string>()
   let wasteful = false
   let orgSearches = 0
@@ -1030,6 +1083,8 @@ export async function searchPeople(
       refined.push(...batch.refined)
       if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
       lookedUp += batch.lookedUp.length
+      shared += batch.shared
+      spared += batch.spared
       batch.lookedUp.forEach((url) => paidFor.add(url))
       if (batch.lookupError) {
         lookupError = batch.lookupError
@@ -1088,16 +1143,23 @@ export async function searchPeople(
       boughtNoJob: tally.noJob,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),
+      fromSharedDatabase: shared,
+      lookupsSpared: spared,
       prospectCredits: Math.round(prospectCredits(credits) * 100) / 100,
     })}`,
   )
 
   // Charged for what the searches cost, not for how many people are shown.
+  // The host's shared database is free to a copy that contributes to it;
+  // any other pays what each profile lookup it spared would have cost.
+  const { sharedDatabase } = await import('./hostRules')
+  const sharedCredits = sharedDatabase()?.contributing ? 0 : spared * LOOKUP_CREDITS
   const { recordUsage } = await import('../usage')
   recordUsage({
     searches: requests + orgSearches,
     prospects: usable(),
-    prospectCredits: prospectCredits(credits),
+    prospectCredits: prospectCredits(credits + sharedCredits),
+    sharedPeople: shared,
     searchProfiles: lookedUp,
     searchPaidWrongCompany: tally.wrongCompany,
     searchPaidInContacts: tally.paidInContacts,
@@ -1229,7 +1291,8 @@ export async function startSave(listId: number, people: PersonResult[]) {
   const { getSource, getFinderDeps } = await import('./runtime')
   const { saveProspects } = await import('./save')
   const { allowsFormatConfirmed, isVerifiedOnly } = await import('./settings')
-  const { contribute } = await import('./sharedPeople')
+  const { contribute, sharedEmail } = await import('./sharedPeople')
+  const { sharedDatabase } = await import('./hostRules')
   return saveProspects(listId, people, {
     source: getSource(),
     finder: await getFinderDeps({ background: true }),
@@ -1237,5 +1300,7 @@ export async function startSave(listId: number, people: PersonResult[]) {
     verifiedOnly: isVerifiedOnly(),
     allowFormatConfirmed: allowsFormatConfirmed(),
     contribute,
+    sharedEmail,
+    sharedFree: Boolean(sharedDatabase()?.contributing),
   })
 }

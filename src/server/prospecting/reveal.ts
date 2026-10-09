@@ -46,17 +46,40 @@ export interface RevealDeps {
   verifiedOnly?: boolean
   /** With `verifiedOnly`, still hand over `format_confirmed` guesses. */
   allowFormatConfirmed?: boolean
+  /** Gives the email of someone held in the host's shared database (sharedPeople.ts sharedEmail). */
+  sharedEmail?: (handle: string) => Promise<{ email: string; free: boolean } | null>
+  /** This copy contributes to that database, so its emails are free. */
+  sharedFree?: boolean
 }
 
 export async function revealEmail(person: PersonResult, deps: RevealDeps): Promise<RevealResult> {
-  // A plan's reveal allowance: checked before anything is looked up.
-  requireAllowance('reveals')
+  // A plan's reveal allowance: checked before anything is looked up. An
+  // email the host's shared database gives a contributor doesn't use it.
+  const fromShared = Boolean(person.shared && deps.sharedEmail)
+  if (!(fromShared && deps.sharedFree)) requireAllowance('reveals')
   const suppressed = deps.db.getSuppressionHashes()
   // "Unavailable" rather than "opted out": the reason isn't shown, so the
   // button can't be used to learn who has opted out.
   const unavailable = { status: 'unavailable' as const, message: "This person's email isn't available." }
 
   if (isSuppressed(hashesFor(person), suppressed)) return unavailable
+
+  // Held in the host's shared database: it gives the address it verified.
+  // If it can't (they've been removed since), the address is found as usual.
+  const held = fromShared ? await deps.sharedEmail!(person.shared!) : null
+  if (held) {
+    if (isSuppressed(hashesFor({ email: held.email }), suppressed)) return unavailable
+    deps.db.addDisclosure({
+      contact_hash: emailHash(held.email),
+      profile_hash: profileHash(person.profileUrl),
+      sources: [person.source],
+      event: 'revealed',
+      notice_status: null,
+    })
+    recordUsage(held.free ? { sharedEmails: 1 } : { emailsFound: 1 })
+    return { status: 'found', email: held.email, emailStatus: 'verified', domain: held.email.split('@')[1], greylisted: false }
+  }
+  if (fromShared && deps.sharedFree) requireAllowance('reveals')
 
   const domain = await domainForPerson(person, deps.source, deps.db)
   if (!domain) {

@@ -41,6 +41,10 @@ interface HostAnswer {
 }
 
 export interface SharedDatabase {
+  /** Whether copies can join it now. */
+  canJoin: boolean
+  /** Whether searches here are told who it holds, and can be given their emails. */
+  search: boolean
   /** Whether this copy sends it the verified contacts it saves from prospect search. */
   contributing: boolean
   /** The Contributor Terms someone here agrees to when joining, and where to read them. */
@@ -93,9 +97,11 @@ function sendLimitsFrom(l: any): SendLimits | null {
 }
 
 function sharedDatabaseFrom(p: any): SharedDatabase | null {
-  if (p?.available !== true || typeof p.termsVersion !== 'string') return null
+  const canJoin = p?.available === true
+  const search = p?.search === true
+  if ((!canJoin && !search) || typeof p.termsVersion !== 'string') return null
   const termsUrl = typeof p.termsUrl === 'string' && /^https:\/\//.test(p.termsUrl) ? p.termsUrl : null
-  return { contributing: p.contributing === true, termsVersion: p.termsVersion, termsUrl }
+  return { canJoin, search, contributing: p.contributing === true, termsVersion: p.termsVersion, termsUrl }
 }
 
 /** Daily sending limits the host set for this copy, if any. */

@@ -36,7 +36,11 @@ key), with the app's actions as tools.
     contact saved from search with a verified email, for the host's shared
     database. The host is that database's controller and sends the people in
     it their notice; nothing imported, guessed or signed-up is ever sent, and
-    a copy that isn't hosted or hasn't joined sends nothing. API keys and base URLs come from
+    a copy that isn't hosted or hasn't joined sends nothing. Where the host
+    has switched searching on, any hosted copy's search also asks it which of
+    the people found it already holds (by profile hash): their job and
+    employer then come from the host instead of a profile lookup, and their
+    email from the host on Reveal or save (`PersonResult.shared`). API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview

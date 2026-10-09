@@ -74,6 +74,10 @@ const USAGE_COUNTERS = [
   'emailsFound',
   /** New contacts created from prospect search. */
   'contactsSaved',
+  /** People in search results whose job and employer came from the host's shared database (sharedPeople.ts). */
+  'sharedPeople',
+  /** Emails the host's shared database gave free, so they aren't in `emailsFound`. */
+  'sharedEmails',
   /** Emails accepted by the sending provider (campaigns, tests and one-offs). */
   'emailsSent',
   /**

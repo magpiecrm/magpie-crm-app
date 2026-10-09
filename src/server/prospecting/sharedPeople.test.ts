@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { refreshHostRules } from './hostRules'
-import { contribute, setContributing } from './sharedPeople'
+import { contribute, knownPeople, setContributing, sharedEmail } from './sharedPeople'
+import { profileHash } from './suppressionHash'
 import type { PersonResult } from './types'
 
 const saved = { ...process.env }
@@ -14,14 +15,23 @@ afterEach(() => {
 })
 
 /** A host with a shared database, answering as magpie-cloud does. */
-function host(start: { contributing: boolean }) {
+function host(start: { contributing: boolean; search?: boolean }) {
   const state = { ...start }
   const sent: Array<{ path: string; secret: string | null; body: any }> = []
   const fetchImpl = (async (url: string, init: RequestInit = {}) => {
     const path = new URL(url).pathname
     const body = init.body ? JSON.parse(String(init.body)) : null
     if (init.method === 'POST') sent.push({ path, secret: new Headers(init.headers).get('x-reacher-secret'), body })
-    if (path === '/v1/prospecting') return Response.json({ rules: {}, pool: { available: true, contributing: state.contributing, termsVersion: '2026-10' } })
+    if (path === '/v1/prospecting') return Response.json({ rules: {}, pool: { available: true, search: state.search ?? true, contributing: state.contributing, termsVersion: '2026-10' } })
+    if (path === '/v1/pool/known') {
+      const held = body.profiles.includes(profileHash(jane.profileUrl))
+      return Response.json({
+        people: held
+          ? [{ profile: profileHash(jane.profileUrl), handle: '7.2026-10-11.sig', title: 'Sales Director', seniority: 'director', company: 'Acme', companyRef: '1', companyDomain: 'acme.com', country: 'United Kingdom', verifiedAt: '2026-10-01T00:00:00.000Z' }]
+          : [],
+      })
+    }
+    if (path === '/v1/pool/reveal') return body.handle === '7.2026-10-11.sig' ? Response.json({ email: 'Jane.Smith@acme.com', free: state.contributing }) : Response.json({ error: 'Not available.' }, { status: 404 })
     if (path === '/v1/pool/membership') {
       if (body.termsVersion !== '2026-10') return Response.json({ error: 'The terms have changed. Reload the page and read them again.' }, { status: 409 })
       state.contributing = body.contribute
@@ -86,6 +96,45 @@ describe('the shared database', () => {
         },
       },
     ])
+  })
+
+  it("isn't sent someone back whose email it gave", async () => {
+    const { fetchImpl, sent } = host({ contributing: true })
+    await refreshHostRules(fetchImpl)
+    contribute({ ...jane, shared: '7.2026-10-11.sig' }, 'jane.smith@acme.com', 'verified', fetchImpl)
+    await settle()
+    expect(sent).toEqual([])
+  })
+
+  it('says which of the people a search found it holds, asked by the hash of their profile address only', async () => {
+    const { fetchImpl, sent } = host({ contributing: false })
+    await refreshHostRules(fetchImpl)
+    const other = { ...jane, profileUrl: 'https://www.linkedin.com/in/someone-else', firstName: 'Sam' }
+    const held = await knownPeople([jane, other], fetchImpl)
+    expect([...held]).toEqual([
+      [jane.profileUrl, { handle: '7.2026-10-11.sig', title: 'Sales Director', seniority: 'director', company: 'Acme', companyRef: '1', companyDomain: 'acme.com', country: 'United Kingdom', verifiedAt: '2026-10-01T00:00:00.000Z' }],
+    ])
+    expect(sent).toEqual([{ path: '/v1/pool/known', secret: 'vt_mc_acme', body: { profiles: [profileHash(jane.profileUrl), profileHash(other.profileUrl)] } }])
+    expect(JSON.stringify(sent)).not.toMatch(/jane|smith|linkedin/i)
+  })
+
+  it("is asked nothing where searching isn't switched on, and a search carries on when it doesn't answer", async () => {
+    const off = host({ contributing: true, search: false })
+    await refreshHostRules(off.fetchImpl)
+    expect((await knownPeople([jane], off.fetchImpl)).size).toBe(0)
+    expect(off.sent).toEqual([])
+
+    const on = host({ contributing: true })
+    await refreshHostRules(on.fetchImpl)
+    expect((await knownPeople([jane], (async () => Promise.reject(new Error('down'))) as unknown as typeof fetch)).size).toBe(0)
+    expect((await knownPeople([jane], (async () => new Response('nope', { status: 502 })) as unknown as typeof fetch)).size).toBe(0)
+  })
+
+  it('gives the email for a handle, says whether it was free, and nothing for a handle it no longer honours', async () => {
+    const { fetchImpl } = host({ contributing: true })
+    expect(await sharedEmail('7.2026-10-11.sig', fetchImpl)).toEqual({ email: 'jane.smith@acme.com', free: true })
+    expect(await sharedEmail('old', fetchImpl)).toBeNull()
+    expect(await sharedEmail('7.2026-10-11.sig', host({ contributing: false }).fetchImpl)).toEqual({ email: 'jane.smith@acme.com', free: false })
   })
 
   it('is sent nothing by a copy that has not joined, for a guessed address, or when the host is down', async () => {

@@ -84,7 +84,9 @@ export function ProspectSearchTab() {
           {saveFormat.isSuccess && !saveFormat.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
         </SettingsBlock>
 
-        {status?.sharedDatabase && <SharedDatabaseBlock shared={status.sharedDatabase} />}
+        {status?.sharedDatabase && (status.sharedDatabase.canJoin || status.sharedDatabase.contributing) && (
+          <SharedDatabaseBlock shared={status.sharedDatabase} />
+        )}
       </SettingsPanel>
     </div>
   )

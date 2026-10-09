@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BadgeCheck, Copy, ExternalLink, Loader2, Mail } from 'lucide-react'
+import { BadgeCheck, Copy, Database, ExternalLink, Loader2, Mail } from 'lucide-react'
 import { Avatar } from '../../../components/ui/Avatar'
 import { Badge } from '../../../components/ui/Badge'
 import type { RevealResult } from '../../../server/prospecting/reveal'
@@ -249,10 +249,16 @@ function TitleText({ person, refined }: { person: PersonResult; refined: boolean
   return (
     <span className="inline-flex items-start gap-1">
       <span>{person.title || '—'}</span>
-      {refined && (
-        <span title="Exact title from their profile">
-          <BadgeCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
+      {person.shared ? (
+        <span title="From the shared database: their job, employer and verified email are already known, so nothing was looked up">
+          <Database className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
         </span>
+      ) : (
+        refined && (
+          <span title="Exact title from their profile">
+            <BadgeCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
+          </span>
+        )
       )}
     </span>
   )

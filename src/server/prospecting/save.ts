@@ -69,6 +69,10 @@ export interface SaveDeps {
   allowFormatConfirmed?: boolean
   /** Passes a newly saved contact to the host's shared database, in a hosted copy that contributes (sharedPeople.ts). */
   contribute?: (person: PersonResult, email: string, status: EmailStatus) => void
+  /** Gives the email of someone held in that database (sharedPeople.ts sharedEmail). */
+  sharedEmail?: (handle: string) => Promise<{ email: string; free: boolean } | null>
+  /** This copy contributes to that database, so its emails are free. */
+  sharedFree?: boolean
 }
 
 const jobs = new Map<string, ProspectJob>()
@@ -137,9 +141,16 @@ async function processPerson(
   }
   const suppressed = deps.db.getSuppressionHashes()
 
+  // Held in the host's shared database: it gives the address it verified, free
+  // to a copy that contributes. If it can't, the address is found as usual.
+  const held =
+    !person.email && person.shared && deps.sharedEmail && (deps.sharedFree || remaining('reveals') >= 1) ? await deps.sharedEmail(person.shared) : null
+
   let found: { email: string | null; status: EmailStatus; greylisted: boolean; detail?: string; reason?: string; outcome?: LookupOutcome }
   if (person.email) {
     found = { email: person.email.toLowerCase().trim(), status: person.emailStatus ?? 'unverified', greylisted: false }
+  } else if (held) {
+    found = { email: held.email, status: 'verified', greylisted: false }
   } else {
     // Finding a new address uses one of the plan's email reveals.
     if (remaining('reveals') < 1) {
@@ -211,7 +222,7 @@ async function processPerson(
     notice_status: 'pending',
   })
   // A revealed address was already counted as found when it was revealed.
-  recordUsage({ contactsSaved: 1, emailsFound: person.email ? 0 : 1 })
+  recordUsage({ contactsSaved: 1, ...(person.email ? {} : held?.free ? { sharedEmails: 1 } : { emailsFound: 1 }) })
   deps.contribute?.(person, found.email, found.status)
   return { ...base, status: 'saved', email: found.email, emailStatus: found.status }
 }
