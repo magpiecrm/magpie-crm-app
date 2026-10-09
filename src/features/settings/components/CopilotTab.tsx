@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, ExternalLink, RefreshCw, Save, Trash2, Zap } from 'lucide-react'
+import { ExternalLink, Save, Trash2, Zap } from 'lucide-react'
+import { Button } from '../../../components/ui/Button'
+import { Field } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { SecretInput } from '../../../components/ui/SecretInput'
 import {
   getCopilotSettingsFn,
@@ -7,7 +10,7 @@ import {
   testAnthropicKeyFn,
   testOpenAIKeyFn,
 } from '../../../server/functions'
-import { SettingsBlock } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsPanel } from './SettingsBlock'
 
 type Masked = Awaited<ReturnType<typeof getCopilotSettingsFn>>
 type KeyField = 'anthropicApiKey' | 'openaiApiKey'
@@ -82,95 +85,66 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
     }
   }
 
+  const hint =
+    current?.source === 'db' ? (
+      `Saved here and stored encrypted (${current.hint}).`
+    ) : current?.source === 'env' ? (
+      <>
+        Using <code className="font-mono">{spec.envVar}</code> from the environment ({current.hint}). A key saved here
+        takes priority.
+      </>
+    ) : current ? (
+      'No key yet.'
+    ) : undefined
+
   return (
     <SettingsBlock
       title={spec.title}
       description={
         <p>
           {spec.intro}{' '}
-          <a href={spec.link.href} target="_blank" rel="noreferrer" className="text-accent hover:underline inline-flex items-center gap-0.5">
-            {spec.link.label} <ExternalLink className="w-3 h-3" />
+          <a href={spec.link.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-accent hover:underline">
+            {spec.link.label} <ExternalLink className="h-3 w-3" />
           </a>
         </p>
       }
     >
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (key) save()
-      }}
-      className="flex flex-col gap-3"
-    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (key) save()
+        }}
+        className="flex flex-col gap-3"
+      >
+        {/* Full width, not one grid slot: a key is long, and so is the "saved" placeholder. */}
+        <Field label="API key" hint={hint}>
+          <SecretInput
+            id={spec.field}
+            value={key}
+            onChange={(v) => {
+              setKey(v)
+              setMessage(null)
+            }}
+            placeholder={current?.isSet ? `Saved (${current.hint}). Enter a new key to replace it` : spec.placeholder}
+          />
+        </Field>
 
-      <div className="flex flex-col gap-1.5 max-w-xl">
-        <label htmlFor={spec.field} className="text-xs font-semibold text-foreground">
-          API key
-        </label>
-        <SecretInput
-          id={spec.field}
-          value={key}
-          onChange={(v) => {
-            setKey(v)
-            setMessage(null)
-          }}
-          placeholder={current?.isSet ? `Saved (${current.hint}). Enter a new key to replace it` : spec.placeholder}
-        />
-        <span className="text-xs text-muted-foreground">
-          {current?.source === 'db' && `Saved here and stored encrypted (${current.hint}).`}
-          {current?.source === 'env' && (
-            <>
-              Using <code className="font-mono">{spec.envVar}</code> from the environment ({current.hint}). A key saved
-              here takes priority.
-            </>
+        {message && <Notice level={message.ok ? 'success' : 'error'}>{message.text}</Notice>}
+
+        <SettingsActions>
+          <Button type="submit" isLoading={isSaving} disabled={!key} leftIcon={<Save className="h-4 w-4" />}>
+            Save key
+          </Button>
+          <Button type="button" variant="outline" onClick={test} isLoading={isTesting} disabled={!key && !current?.isSet} leftIcon={<Zap className="h-4 w-4" />}>
+            Test key
+          </Button>
+          {current?.source === 'db' && !key && (
+            <Button type="button" variant="outline" onClick={() => save(true)} disabled={isSaving} leftIcon={<Trash2 className="h-4 w-4" />}>
+              Remove saved key
+            </Button>
           )}
-          {current && !current.source && 'No key yet.'}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="submit"
-          disabled={isSaving || !key}
-          className="py-2 px-3 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s flex items-center gap-2 cursor-pointer"
-        >
-          {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save key
-        </button>
-        <button
-          type="button"
-          onClick={test}
-          disabled={isTesting || (!key && !current?.isSet)}
-          className="py-2 px-3 border border-border bg-card hover:bg-muted disabled:opacity-50 text-sm font-semibold rounded-md-s flex items-center gap-2 cursor-pointer"
-        >
-          {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-          Test key
-        </button>
-        {current?.source === 'db' && !key && (
-          <button
-            type="button"
-            onClick={() => save(true)}
-            disabled={isSaving}
-            className="py-2 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-md-s flex items-center gap-2 cursor-pointer"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remove saved key
-          </button>
-        )}
-      </div>
-
-      {message && (
-        <div
-          className={`flex items-start gap-2 p-3 rounded-md-s text-xs border max-w-xl ${
-            message.ok
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-              : 'bg-destructive/10 border-destructive/20 text-destructive'
-          }`}
-        >
-          {message.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-          <span>{message.text}</span>
-        </div>
-      )}
-    </form>
+        </SettingsActions>
+      </form>
     </SettingsBlock>
   )
 }
@@ -191,34 +165,37 @@ export function CopilotTab() {
   const noKey = settings && !settings.anthropic.isSet && !settings.openai.isSet
 
   return (
-    <div className="flex flex-col gap-6">
-      {loadError && <p className="text-xs text-destructive">{loadError}</p>}
+    <div className="flex flex-col gap-4">
+      {loadError && <Notice level="error">{loadError}</Notice>}
       {settings?.credsUnreadable && (
-        <div className="flex items-start gap-2.5 p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>The saved keys can't be read (the encryption secret changed). Enter them again and save.</span>
-        </div>
+        <Notice level="error">The saved keys can't be read (the encryption secret changed). Enter them again and save.</Notice>
       )}
-      <p className="text-xs text-muted-foreground leading-relaxed max-w-2xl">
+      <Notice level={noKey ? 'warning' : 'info'}>
         Add a key for Claude, OpenAI, or both, then pick the model in the copilot's chat.
         {noKey && ' The copilot is off until you add one.'}
-      </p>
+      </Notice>
 
-      {KEYS.map((spec) => (
-        <KeySection key={spec.field} spec={spec} settings={settings} onSaved={setSettings} />
-      ))}
+      <SettingsPanel>
+        {KEYS.map((spec) => (
+          <KeySection key={spec.field} spec={spec} settings={settings} onSaved={setSettings} />
+        ))}
 
-      <SettingsBlock
-        title="Why an API key"
-        description={
-        <p>
-          Claude.ai and ChatGPT subscriptions are for one person's own use and can't be shared between an app's
-          users, and Anthropic's terms don't allow apps to offer Claude.ai sign-in at all. An API key can be used by
-          everyone in your team's copy of this app, billed to its owner. The chat's contents (including contact data
-          the copilot reads) go to the provider you pick, so list it as a sub-processor in your privacy notice.
-        </p>
-        }
-      />
+        <SettingsBlock
+          title="Why an API key"
+          description={
+            <p>
+              Claude.ai and ChatGPT subscriptions are for one person's own use and can't be shared between an app's
+              users, and Anthropic's terms don't allow apps to offer Claude.ai sign-in at all. An API key can be used by
+              everyone in your team's copy of this app, billed to its owner.
+            </p>
+          }
+        >
+          <Notice>
+            The chat's contents (including contact data the copilot reads) go to the provider you pick, so list it as a
+            sub-processor in your privacy notice.
+          </Notice>
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }

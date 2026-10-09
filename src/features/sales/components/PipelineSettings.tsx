@@ -5,15 +5,14 @@ import { queryKeys } from '../../../queryKeys'
 import { createPipelineFn, deletePipelineFn, reorderPipelinesFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
-import { FIELD_CLASS } from '../forms'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from '../../settings/components/SettingsBlock'
 import { usePipelines } from '../usePipelines'
 import type { Pipeline } from '../types'
 import { PipelineEditor } from './PipelineEditor'
 
 type PipelinesData = NonNullable<ReturnType<typeof usePipelines>['data']>
-
-const ICON_BUTTON =
-  'p-1.5 rounded-md-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer disabled:opacity-30 disabled:pointer-events-none'
 
 /**
  * Settings → Pipelines: the pipelines in order (the first is the default),
@@ -68,67 +67,84 @@ export function PipelineSettings() {
 
   if (isLoading) {
     return (
-      <div className="space-y-3 max-w-3xl">
-        {Array.from({ length: 2 }).map((_, i) => (
-          <div key={i} className="h-28 bg-muted animate-pulse rounded-xl" />
-        ))}
+      <div className="flex flex-col gap-4">
+        <SettingsPanel>
+          <SettingsBlock title="Your pipelines">
+            <SettingsEmpty>Loading…</SettingsEmpty>
+          </SettingsBlock>
+        </SettingsPanel>
       </div>
     )
   }
 
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Notice level="error">{error.message}</Notice>
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <div className="flex flex-col gap-3">
-        {reorder.error && <p className="text-sm text-destructive">{reorder.error.message}</p>}
-        {pipelines.map((p, i) =>
-          editingId === p.id ? (
-            <PipelineEditor key={p.id} pipeline={p} onDone={() => setEditingId(null)} />
-          ) : (
-            <PipelineCard
-              key={p.id}
-              pipeline={p}
-              isDefault={i === 0}
-              canDelete={pipelines.length > 1}
-              onUp={i > 0 ? () => move(i, -1) : undefined}
-              onDown={i < pipelines.length - 1 ? () => move(i, 1) : undefined}
-              onEdit={() => setEditingId(p.id)}
-            />
-          ),
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
+      {reorder.error && <Notice level="error">{reorder.error.message}</Notice>}
 
-      <form
-        className="bg-card border border-border rounded-xl p-5 flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (newName.trim()) create.mutate()
-        }}
-      >
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">New pipeline</h3>
-          <p className="text-sm text-muted-foreground">It starts with the usual stages, which you can change.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            aria-label="Pipeline name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="Renewals"
-            className={FIELD_CLASS}
-          />
-          <Button type="submit" isLoading={create.isPending} disabled={!newName.trim()} leftIcon={<Plus className="w-4 h-4" />} className="shrink-0">
-            Add pipeline
-          </Button>
-        </div>
-        {create.error && <p className="text-xs text-destructive">{create.error.message}</p>}
-      </form>
+      <SettingsPanel>
+        <SettingsBlock title="Your pipelines" description="The first pipeline is the default. Move one up or down to change the order.">
+          {pipelines.length === 0 ? (
+            <SettingsEmpty>No pipelines yet.</SettingsEmpty>
+          ) : (
+            <SettingsList>
+              {pipelines.map((p, i) =>
+                // A different component while editing, so a row's delete prompt doesn't outlive an edit.
+                editingId === p.id ? (
+                  <SettingsRow key={p.id} title={p.name} badge={i === 0 ? <Badge variant="info">Default</Badge> : undefined}>
+                    <PipelineEditor pipeline={p} onDone={() => setEditingId(null)} />
+                  </SettingsRow>
+                ) : (
+                  <PipelineRow
+                    key={p.id}
+                    pipeline={p}
+                    isDefault={i === 0}
+                    canDelete={pipelines.length > 1}
+                    onUp={i > 0 ? () => move(i, -1) : undefined}
+                    onDown={i < pipelines.length - 1 ? () => move(i, 1) : undefined}
+                    onEdit={() => setEditingId(p.id)}
+                  />
+                ),
+              )}
+            </SettingsList>
+          )}
+        </SettingsBlock>
+
+        <SettingsBlock title="Add a pipeline" description="It starts with the usual stages, which you can change.">
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (newName.trim()) create.mutate()
+            }}
+          >
+            <FieldGrid>
+              <Field label="Name">
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Renewals" className={INPUT_CLASS} />
+              </Field>
+            </FieldGrid>
+            {create.error && <Notice level="error">{create.error.message}</Notice>}
+            <SettingsActions>
+              <Button type="submit" isLoading={create.isPending} disabled={!newName.trim()} leftIcon={<Plus className="h-4 w-4" />}>
+                Add pipeline
+              </Button>
+            </SettingsActions>
+          </form>
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }
 
-function PipelineCard({
+/** One pipeline in the list: its name, its stages, and the buttons to move, edit or delete it. */
+function PipelineRow({
   pipeline,
   isDefault,
   canDelete,
@@ -151,75 +167,59 @@ function PipelineCard({
   })
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 sm:p-5 flex flex-col gap-3">
-      <div className="flex items-start gap-3">
-        <div className="flex flex-col shrink-0 -my-1">
-          <button type="button" onClick={onUp} disabled={!onUp} aria-label={`Move ${pipeline.name} up`} className={ICON_BUTTON}>
-            <ArrowUp className="w-3.5 h-3.5" />
-          </button>
-          <button type="button" onClick={onDown} disabled={!onDown} aria-label={`Move ${pipeline.name} down`} className={ICON_BUTTON}>
-            <ArrowDown className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-foreground truncate">{pipeline.name}</h3>
-            {isDefault && <Badge variant="info">Default</Badge>}
-          </div>
-          <ol className="flex flex-wrap gap-1.5 mt-2" aria-label="Stages">
-            {pipeline.stages.map((s) => (
-              <li
-                key={s.id}
-                className={`px-2 py-0.5 rounded-md-xs text-xs ${
-                  s.kind === 'won'
-                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                    : s.kind === 'lost'
-                      ? 'bg-destructive/10 text-destructive'
-                      : 'bg-muted text-foreground'
-                }`}
-              >
-                {s.name}
-                {s.kind === 'open' && <span className="text-muted-foreground tabular-nums"> {s.probability}%</span>}
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Button variant="ghost" size="sm" onClick={onEdit} leftIcon={<Pencil className="w-3.5 h-3.5" />}>
-            Edit
-          </Button>
-          <button
-            type="button"
+    <SettingsRow
+      title={pipeline.name}
+      badge={isDefault ? <Badge variant="info">Default</Badge> : undefined}
+      actions={
+        <>
+          <Button variant="ghost" size="icon" onClick={onUp} disabled={!onUp} aria-label={`Move ${pipeline.name} up`} leftIcon={<ArrowUp className="h-4 w-4" />} />
+          <Button variant="ghost" size="icon" onClick={onDown} disabled={!onDown} aria-label={`Move ${pipeline.name} down`} leftIcon={<ArrowDown className="h-4 w-4" />} />
+          <Button variant="ghost" size="icon" onClick={onEdit} aria-label={`Edit ${pipeline.name}`} title="Edit" leftIcon={<Pencil className="h-4 w-4" />} />
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setConfirming(true)}
             disabled={!canDelete}
             title={canDelete ? 'Delete pipeline' : 'You need at least one pipeline'}
             aria-label={`Delete ${pipeline.name}`}
-            className="p-1.5 rounded-md-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+            className="hover:!bg-destructive/10 hover:!text-destructive"
+            leftIcon={<Trash2 className="h-4 w-4" />}
+          />
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <ol className="flex flex-wrap gap-1.5" aria-label="Stages">
+          {pipeline.stages.map((s) => (
+            <li key={s.id} className="flex">
+              <Badge variant={s.kind === 'won' ? 'success' : s.kind === 'lost' ? 'error' : 'default'}>
+                {s.name}
+                {s.kind === 'open' && <span className="tabular-nums">&nbsp;{s.probability}%</span>}
+              </Badge>
+            </li>
+          ))}
+        </ol>
 
-      {confirming && (
-        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border text-sm">
-          <span className="text-foreground">Delete this pipeline?</span>
-          <Button variant="danger" size="sm" isLoading={remove.isPending} onClick={() => remove.mutate()}>
-            Delete
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setConfirming(false)
-              remove.reset()
-            }}
-          >
-            Cancel
-          </Button>
-        </div>
-      )}
-      {remove.error && <p className="text-xs text-destructive">{remove.error.message}</p>}
-    </div>
+        {confirming && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+            <span>Delete this pipeline?</span>
+            <Button variant="danger" size="sm" isLoading={remove.isPending} onClick={() => remove.mutate()}>
+              Delete
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setConfirming(false)
+                remove.reset()
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
+        {remove.error && <Notice level="error">{remove.error.message}</Notice>}
+      </div>
+    </SettingsRow>
   )
 }

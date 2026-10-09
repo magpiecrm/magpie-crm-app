@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2, ExternalLink, Plus, RefreshCw, Save, ShieldCheck, Trash2, X, Zap } from 'lucide-react'
+import { Activity, AlertCircle, CheckCircle2, ExternalLink, Pencil, Plus, RefreshCw, Save, Server, ShieldCheck, Trash2, Zap } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
+import { Badge } from '../../../components/ui/Badge'
+import { Button } from '../../../components/ui/Button'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { SecretInput } from '../../../components/ui/SecretInput'
 import {
   getProspectingSettingsFn,
@@ -11,13 +15,11 @@ import {
   testVerificationFn,
 } from '../../../server/functions'
 import { SenderHealthPanel } from './SenderHealthPanel'
-import { SettingsBlock } from './SettingsBlock'
-
-const INPUT_CLASS =
-  'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
+import { SettingsActions, SettingsBlock, SettingsCheck, SettingsEmpty, SettingsList, SettingsOption, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 type Masked = Awaited<ReturnType<typeof getProspectingSettingsFn>>
 type VerificationTest = Awaited<ReturnType<typeof testVerificationFn>>
+type ProxyHealth = NonNullable<Awaited<ReturnType<typeof prospectingStatusFn>>>['reacher']['proxies'][number]
 
 interface ProxyRow {
   label: string
@@ -31,6 +33,22 @@ interface ProxyRow {
 
 const toRows = (s: Masked): ProxyRow[] =>
   s.proxies.list.map((p) => ({ label: p.label, host: p.host, port: String(p.port), username: p.username, password: '', passwordSet: p.passwordSet }))
+
+/** A proxy's row when it's closed: where it connects, and as whom. */
+const proxySummary = (p: ProxyRow) => (p.host.trim() ? `${p.host}:${p.port}${p.username ? ` · ${p.username}` : ''}` : 'No host yet')
+
+function ProxyStatus({ health: h }: { health: ProxyHealth }) {
+  if (h.paused) {
+    return (
+      <span title={h.paused}>
+        <Badge variant="error">Paused: blocklisted</Badge>
+      </span>
+    )
+  }
+  if (h.benchedUntil) return <Badge variant="error">Resting until {new Date(h.benchedUntil).toLocaleTimeString()}</Badge>
+  if (h.checksToday >= h.dailyCap) return <Badge variant="warning">Daily limit reached</Badge>
+  return <Badge variant="success">Active</Badge>
+}
 
 /**
  * Settings → Data source (the SocialFetch key) or Email verification
@@ -62,9 +80,22 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
   // Only send the list when edited, so env-var proxies aren't copied into
   // the database by an unrelated save.
   const [proxiesDirty, setProxiesDirty] = useState(false)
+  // The one proxy whose fields are open, by its place in the list.
+  const [editingProxy, setEditingProxy] = useState<number | null>(null)
   const updateProxy = (i: number, patch: Partial<ProxyRow>) => {
     setProxies((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
     setProxiesDirty(true)
+  }
+  const addProxy = () => {
+    setEditingProxy(proxies.length)
+    setProxies((rows) => [...rows, { label: '', host: '', port: '1080', username: '', password: '', passwordSet: false }])
+    setProxiesDirty(true)
+  }
+  const removeProxy = (i: number) => {
+    setProxies((rows) => rows.filter((_, j) => j !== i))
+    setProxiesDirty(true)
+    // The rows after it move up one.
+    setEditingProxy((open) => (open === null || open === i ? null : open > i ? open - 1 : open))
   }
 
   const [isVerifying, setIsVerifying] = useState(false)
@@ -91,6 +122,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
     setProvider(s.verification.chosen ?? s.verification.active ?? 'none')
     setProxies(toRows(s))
     setProxiesDirty(false)
+    setEditingProxy(null)
   }
 
   useEffect(() => {
@@ -181,447 +213,417 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-        <RefreshCw className="w-5 h-5 animate-spin text-accent" />
-        <span>Loading prospecting settings...</span>
+      <div className="flex flex-col gap-4">
+        <SettingsEmpty>
+          <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
+          Loading…
+        </SettingsEmpty>
       </div>
     )
   }
 
   const sf = settings?.socialfetch
 
+  // How the last save (or the first load) went: shown in the block that holds the Save button.
+  const saveResult = (
+    <>
+      {error && <Notice level="error">{error}</Notice>}
+      {success && <Notice level="success">{success}</Notice>}
+    </>
+  )
+  const saveButton = (
+    <Button type="submit" isLoading={isSaving} leftIcon={<Save className="h-4 w-4" />}>
+      Save changes
+    </Button>
+  )
+
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        save()
-      }}
-      className="flex flex-col gap-6"
-    >
+    <div className="flex flex-col gap-4">
       {settings?.credsUnreadable && (
-        <div className="flex items-start gap-2.5 p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Saved keys can't be read</span>
-            The encryption secret changed since they were saved. Enter your SocialFetch key again and save.
-          </div>
-        </div>
+        <Notice level="error" title="Saved keys can't be read">
+          The encryption secret changed since they were saved. Enter your SocialFetch key again and save.
+        </Notice>
       )}
       {settings?.usingDefaultEncryptionSecret && (
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Set an encryption secret</span>
-            Keys are encrypted with a development-only default. Set <code className="font-mono">CREDENTIALS_SECRET</code>{' '}
-            before saving real keys.
-          </div>
-        </div>
+        <Notice title="Set an encryption secret">
+          Keys are encrypted with a development-only default. Set <code className="font-mono">CREDENTIALS_SECRET</code> before
+          saving real keys.
+        </Notice>
       )}
 
-      {section === 'source' && (
-        <>
-      {/* SocialFetch */}
-      <SettingsBlock
-        title="SocialFetch"
-        description={
-        <p>
-          SocialFetch supplies the company and people data behind Prospect Search. Each search page costs 3 credits.{' '}
-          <a
-            href="https://www.socialfetch.dev"
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent hover:underline inline-flex items-center gap-0.5"
-          >
-            Get an API key <ExternalLink className="w-3 h-3" />
-          </a>
-        </p>
-        }
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          save()
+        }}
       >
-
-        <div className="flex flex-col gap-1.5 max-w-xl">
-          <label htmlFor="socialfetch-key" className="text-xs font-semibold text-foreground">
-            API key
-          </label>
-          <SecretInput
-            id="socialfetch-key"
-            value={apiKey}
-            onChange={(v) => {
-              setApiKey(v)
-              setTestResult(null)
-            }}
-            placeholder={sf?.isSet ? `Saved (${sf.hint}). Enter a new key to replace it` : 'sfk_...'}
-          />
-          <span className="text-xs text-muted-foreground">
-            {sf?.source === 'db' && `Saved here and stored encrypted (${sf.hint}).`}
-            {sf?.source === 'env' && (
-              <>
-                Currently using <code className="font-mono">SOCIALFETCH_API_KEY</code> from the environment ({sf.hint}). A
-                key saved here takes priority.
-              </>
-            )}
-            {!sf?.source && 'No key yet. Prospect search stays off until you add one.'}
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={test}
-            disabled={isTesting || (!apiKey && !sf?.isSet)}
-            className="py-2 px-3 border border-border bg-card hover:bg-muted disabled:opacity-50 text-sm font-semibold rounded-md-s flex items-center gap-2 cursor-pointer"
-          >
-            {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-            Test connection
-          </button>
-          {sf?.source === 'db' && !apiKey && (
-            <button
-              type="button"
-              onClick={() => save({ clear: ['socialfetchApiKey'] })}
-              disabled={isSaving}
-              className="py-2 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 rounded-md-s flex items-center gap-2 cursor-pointer"
-            >
-              <Trash2 className="w-4 h-4" />
-              Remove saved key
-            </button>
-          )}
-        </div>
-        {testResult && (
-          <div
-            className={`flex items-start gap-2 p-3 rounded-md-s text-xs border max-w-xl ${
-              testResult.ok
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                : 'bg-destructive/10 border-destructive/20 text-destructive'
-            }`}
-          >
-            {testResult.ok ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-            <span>{testResult.message}</span>
-          </div>
-        )}
-      </SettingsBlock>
-
-        </>
-      )}
-
-      {section === 'verification' && (
-        <>
-      {/* Verification provider */}
-      <SettingsBlock
-        title="Verification service"
-        description={<p>Without verification, every email is an unverified best guess.</p>}
-      >
-        <div role="radiogroup" aria-label="Verification provider" className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {(
-            [
-              ['none', 'Off', 'Best guesses only'],
-              ['reacher', 'Verification server', 'Self-hosted, free. Checks come from your server or proxies.'],
-            ] as const
-          ).map(([value, label, hint]) => (
-            <label
-              key={value}
-              className={`flex items-start gap-2 p-3 rounded-md-s border cursor-pointer transition-colors ${
-                provider === value ? 'border-accent bg-accent/5' : 'border-border hover:bg-muted/40'
-              }`}
-            >
-              <input
-                type="radio"
-                name="verification-provider"
-                className="mt-0.5 text-accent focus:ring-accent"
-                checked={provider === value}
-                onChange={() => setProvider(value)}
-              />
-              <span>
-                <span className="block text-sm font-semibold text-foreground">{label}</span>
-                <span className="block text-[11px] text-muted-foreground leading-snug">{hint}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 rounded border-border text-accent focus:ring-accent"
-            checked={verifiedOnly}
-            onChange={(e) => setVerifiedOnly(e.target.checked)}
-          />
-          <span>
-            <span className="font-semibold">Only give verified emails (recommended)</span>
-            <span className="block text-[11px] text-muted-foreground leading-snug">
-              Reveal and Save only hand over addresses the company's mail server confirmed. Catch-all, risky and
-              unconfirmed guesses are withheld with the reason, which keeps bounces off your sending domain.
-              {provider === 'none' && ' With verification off, nothing can be confirmed, so no emails will be given.'}
-            </span>
-          </span>
-        </label>
-
-        {settings?.verification.active && settings.verification.active !== provider && (
-          <p className="text-xs text-accent">Currently using the verification server. Save to switch.</p>
-        )}
-      </SettingsBlock>
-
-      {provider === 'reacher' && (
-        <>
-        {/* Verification server */}
-        <SettingsBlock
-          title="Verification server (self-hosted)"
-          description={
-          <p>
-            Point this at your self-hosted email verification server (start one with{' '}
-            <code className="font-mono">bun run verifier:up</code>). Checks come from its IP, or the proxies below.
-          </p>
-          }
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-url" className="text-xs font-semibold text-foreground">Server URL</label>
-              <input
-                id="reacher-url"
-                type="url"
-                autoComplete="off"
-                value={reacherUrl}
-                onChange={(e) => setReacherUrl(e.target.value)}
-                placeholder="http://localhost:8080"
-                className={INPUT_CLASS}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-secret" className="text-xs font-semibold text-foreground">Server secret</label>
-              <SecretInput
-                id="reacher-secret"
-                value={reacherSecret}
-                onChange={setReacherSecret}
-                placeholder={settings?.reacher.secretIsSet ? 'Saved. Enter a new one to replace it' : 'Only if RCH__HEADER_SECRET is set'}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-from" className="text-xs font-semibold text-foreground">FROM address</label>
-              <input
-                id="reacher-from"
-                type="email"
-                autoComplete="off"
-                value={fromEmail}
-                onChange={(e) => setFromEmail(e.target.value)}
-                placeholder="verify@yourdomain.com"
-                className={INPUT_CLASS}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="reacher-helo" className="text-xs font-semibold text-foreground">HELO name</label>
-              <input
-                id="reacher-helo"
-                type="text"
-                autoComplete="off"
-                value={helloName}
-                onChange={(e) => setHelloName(e.target.value)}
-                placeholder="mail.yourdomain.com"
-                className={INPUT_CLASS}
-              />
-              <span className="text-xs text-muted-foreground">Should match the reverse DNS of the IP that verifies.</span>
-            </div>
-          </div>
-        </SettingsBlock>
-
-        {/* Proxies */}
-        <SettingsBlock
-          stacked
-          title="Verification proxies (optional)"
-          description={
-          <p>
-            SOCKS5 proxies on servers with outbound port 25 open. Checks rotate across them, with stricter limits for Gmail
-            and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With none, the server connects
-            directly from its own IP. Setup guide: <code className="font-mono">docs/proxies.md</code>.
-          </p>
-          }
-        >
-          {settings?.proxies.source === 'env' && !proxiesDirty && (
-            <p className="text-xs text-accent">Loaded from REACHER_PROXIES. Editing and saving here stores them in Settings instead.</p>
-          )}
-
-          {proxies.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {proxies.map((p, i) => (
-                <div key={i} className="grid grid-cols-2 md:grid-cols-[1fr_1.4fr_0.6fr_1fr_1fr_auto] gap-2 items-center">
-                  <input aria-label="Label" className={INPUT_CLASS} placeholder="Label (e.g. eu-1)" value={p.label} onChange={(e) => updateProxy(i, { label: e.target.value })} />
-                  <input aria-label="Host" className={INPUT_CLASS} placeholder="Host or IP" value={p.host} onChange={(e) => updateProxy(i, { host: e.target.value })} />
-                  <input aria-label="Port" className={INPUT_CLASS} placeholder="1080" inputMode="numeric" value={p.port} onChange={(e) => updateProxy(i, { port: e.target.value.replace(/\D/g, '') })} />
-                  <input aria-label="Username" className={INPUT_CLASS} placeholder="Username" autoComplete="off" value={p.username} onChange={(e) => updateProxy(i, { username: e.target.value })} />
-                  <SecretInput id={`proxy-password-${i}`} value={p.password} onChange={(v) => updateProxy(i, { password: v })} placeholder={p.passwordSet ? 'Saved' : 'Password'} />
-                  <button
-                    type="button"
-                    aria-label="Remove proxy"
-                    onClick={() => {
-                      setProxies((rows) => rows.filter((_, j) => j !== i))
-                      setProxiesDirty(true)
-                    }}
-                    className="p-2 text-muted-foreground hover:text-destructive justify-self-start"
+        <SettingsPanel>
+          {section === 'source' && (
+            <SettingsBlock
+              title="SocialFetch"
+              description={
+                <p>
+                  SocialFetch supplies the company and people data behind prospect search. Each search page costs 3 credits.{' '}
+                  <a
+                    href="https://www.socialfetch.dev"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 text-accent hover:underline"
                   >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setProxies((rows) => [...rows, { label: '', host: '', port: '1080', username: '', password: '', passwordSet: false }])
-                setProxiesDirty(true)
-              }}
-              className="py-1.5 px-3 border border-border bg-card hover:bg-muted text-xs font-semibold rounded-md-s inline-flex items-center gap-1.5"
+                    Get an API key <ExternalLink className="h-3 w-3" />
+                  </a>
+                </p>
+              }
             >
-              <Plus className="w-3.5 h-3.5" /> Add proxy
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-1.5 max-w-xs">
-            <label htmlFor="daily-cap" className="text-xs font-semibold text-foreground">Daily checks per IP</label>
-            <input
-              id="daily-cap"
-              inputMode="numeric"
-              value={dailyCap}
-              onChange={(e) => setDailyCap(e.target.value.replace(/\D/g, ''))}
-              className={INPUT_CLASS}
-            />
-            <span className="text-[11px] text-muted-foreground leading-snug">
-              Each verifying IP stops for the day after this many checks; add another proxy for more. Checks to one
-              company are also paced (up to 12 at once, then about 4 a minute) and stop for the day after 20 rejected
-              guesses, which is what address harvesting looks like.
-            </span>
-          </div>
-
-          {proxyHealth.length > 0 && (
-            <div className="border border-border overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-semibold">Proxy</th>
-                    <th className="text-right px-3 py-2 font-semibold">OK</th>
-                    <th className="text-right px-3 py-2 font-semibold">Greylisted</th>
-                    <th className="text-right px-3 py-2 font-semibold">Blocked</th>
-                    <th className="text-right px-3 py-2 font-semibold">Timeouts</th>
-                    <th className="text-right px-3 py-2 font-semibold" title="Company mail servers that refused a connection from this proxy">Unreachable</th>
-                    <th className="text-right px-3 py-2 font-semibold" title="Checks refused because of the verification domain, not this IP">Domain refused</th>
-                    <th className="text-right px-3 py-2 font-semibold">Today</th>
-                    <th className="text-left px-3 py-2 font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {proxyHealth.map((h) => (
-                    <tr key={h.label}>
-                      <td className="px-3 py-2 font-medium text-foreground">{h.label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.ok}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.greylisted}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.blocked}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.timeouts}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.unreachable ?? 0}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{h.senderRejected ?? 0}</td>
-                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
-                        {h.checksToday ?? 0} / {h.dailyCap ?? '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        {h.paused ? (
-                          <span className="text-destructive" title={h.paused}>Paused: blocklisted</span>
-                        ) : h.benchedUntil ? (
-                          <span className="text-destructive">Resting until {new Date(h.benchedUntil).toLocaleTimeString()}</span>
-                        ) : h.checksToday >= h.dailyCap ? (
-                          <span className="text-amber-600 dark:text-amber-400">Daily limit reached</span>
-                        ) : (
-                          <span className="text-emerald-600 dark:text-emerald-400">Active</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="px-3 py-1.5 text-[10px] text-muted-foreground border-t border-border">Counts since the app last started.</p>
-            </div>
-          )}
-        </SettingsBlock>
-        </>
-      )}
-
-      {/* Shown for the saved setup: the check runs against what's saved, not the form. */}
-      {settings?.verification.active === 'reacher' && settings.verification.healthChecks && (
-        <SenderHealthPanel
-          listedDomainOverride={settings?.verification.listedDomainOverride ?? null}
-          onOverrideChange={async (domain) => {
-            apply(await saveProspectingSettingsFn({ data: { listedDomainOverride: domain } }))
-            refreshSidebar()
-          }}
-        />
-      )}
-
-      {/* Test */}
-      <SettingsBlock
-        title="Test verification"
-        description={
-        <p>
-          Checks a made-up address at Gmail and at Microsoft 365 through the verification server, directly or via each proxy. No real
-          mailbox is contacted. Save your changes first.
-        </p>
-        }
-      >
-        <div>
-          <button
-            type="button"
-            onClick={runVerificationTest}
-            disabled={isVerifying}
-            className="py-2 px-3 border border-border bg-card hover:bg-muted disabled:opacity-50 text-sm font-semibold rounded-md-s inline-flex items-center gap-2 cursor-pointer"
-          >
-            {isVerifying ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-            {isVerifying ? 'Testing…' : 'Test verification'}
-          </button>
-        </div>
-        {verificationError && <p className="text-xs text-destructive">{verificationError}</p>}
-        {verification && !verification.configured && (
-          <p className="text-xs text-destructive">
-            Verification is off, or the chosen service isn't set up yet. Pick one above, fill it in and save first.
-          </p>
-        )}
-        {verification?.configured && (
-          <div className="border border-border divide-y divide-border">
-            {verification.results.map((r, i) => (
-              <div key={i} className="px-3 py-2 flex items-start gap-2 text-xs">
-                {r.ok ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+              <Field
+                label="API key"
+                hint={
+                  <>
+                    {sf?.source === 'db' && `Saved here and stored encrypted (${sf.hint}).`}
+                    {sf?.source === 'env' && (
+                      <>
+                        Currently using <code className="font-mono">SOCIALFETCH_API_KEY</code> from the environment ({sf.hint}). A
+                        key saved here takes priority.
+                      </>
+                    )}
+                    {!sf?.source && 'No key yet. Prospect search stays off until you add one.'}
+                  </>
+                }
+              >
+                <SecretInput
+                  id="socialfetch-key"
+                  value={apiKey}
+                  onChange={(v) => {
+                    setApiKey(v)
+                    setTestResult(null)
+                  }}
+                  placeholder={sf?.isSet ? `Saved (${sf.hint}). Enter a new key to replace it` : 'sfk_...'}
+                />
+              </Field>
+              {testResult && <Notice level={testResult.ok ? 'success' : 'error'}>{testResult.message}</Notice>}
+              {saveResult}
+              <SettingsActions>
+                {saveButton}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={test}
+                  isLoading={isTesting}
+                  disabled={!apiKey && !sf?.isSet}
+                  leftIcon={<Zap className="h-4 w-4" />}
+                >
+                  Test connection
+                </Button>
+                {sf?.source === 'db' && !apiKey && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => save({ clear: ['socialfetchApiKey'] })}
+                    disabled={isSaving}
+                    leftIcon={<Trash2 className="h-4 w-4" />}
+                  >
+                    Remove saved key
+                  </Button>
                 )}
-                <div className="min-w-0">
-                  <span className="font-semibold text-foreground">{r.via}</span>
-                  <span className="text-muted-foreground"> → {r.provider} · {(r.ms / 1000).toFixed(1)}s</span>
-                  {r.detail && <p className="text-muted-foreground mt-0.5 break-words">{r.detail}</p>}
+              </SettingsActions>
+            </SettingsBlock>
+          )}
+
+          {section === 'verification' && (
+            <>
+              {/* Verification provider */}
+              <SettingsBlock title="Verification service" description="Without verification, every email is an unverified best guess.">
+                <div role="radiogroup" aria-label="Verification provider">
+                  <FieldGrid>
+                    <SettingsOption selected={provider === 'none'} onSelect={() => setProvider('none')} title="Off" detail="Best guesses only." />
+                    <SettingsOption
+                      selected={provider === 'reacher'}
+                      onSelect={() => setProvider('reacher')}
+                      title="Verification server"
+                      detail="Self-hosted, free. Checks come from your server or proxies."
+                    />
+                  </FieldGrid>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SettingsBlock>
+                <SettingsCheck
+                  checked={verifiedOnly}
+                  onChange={setVerifiedOnly}
+                  label="Only give verified emails (recommended)"
+                  hint={
+                    <>
+                      Reveal and Save only hand over addresses the company's mail server confirmed. Catch-all, risky and
+                      unconfirmed guesses are withheld with the reason, which keeps bounces off your sending domain.
+                      {provider === 'none' && ' With verification off, nothing can be confirmed, so no emails will be given.'}
+                    </>
+                  }
+                />
+                {settings?.verification.active && settings.verification.active !== provider && (
+                  <Notice>Currently using the verification server. Save to switch.</Notice>
+                )}
+              </SettingsBlock>
 
-        </>
-      )}
+              {provider === 'reacher' && (
+                <>
+                  {/* Verification server */}
+                  <SettingsBlock
+                    title="Server"
+                    description={
+                      <p>
+                        Point this at your self-hosted email verification server (start one with{' '}
+                        <code className="font-mono">bun run verifier:up</code>). Checks come from its IP, or the proxies below.
+                      </p>
+                    }
+                  >
+                    <FieldGrid>
+                      <Field label="Server URL">
+                        <input
+                          type="url"
+                          autoComplete="off"
+                          value={reacherUrl}
+                          onChange={(e) => setReacherUrl(e.target.value)}
+                          placeholder="http://localhost:8080"
+                          className={INPUT_CLASS}
+                        />
+                      </Field>
+                      <Field label="Server secret">
+                        <SecretInput
+                          id="reacher-secret"
+                          value={reacherSecret}
+                          onChange={setReacherSecret}
+                          placeholder={settings?.reacher.secretIsSet ? 'Saved. Enter a new one to replace it' : 'Only if RCH__HEADER_SECRET is set'}
+                        />
+                      </Field>
+                      <Field label="FROM address">
+                        <input
+                          type="email"
+                          autoComplete="off"
+                          value={fromEmail}
+                          onChange={(e) => setFromEmail(e.target.value)}
+                          placeholder="verify@yourdomain.com"
+                          className={INPUT_CLASS}
+                        />
+                      </Field>
+                      <Field label="HELO name" hint="Should match the reverse DNS of the IP that verifies.">
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          value={helloName}
+                          onChange={(e) => setHelloName(e.target.value)}
+                          placeholder="mail.yourdomain.com"
+                          className={INPUT_CLASS}
+                        />
+                      </Field>
+                    </FieldGrid>
+                  </SettingsBlock>
 
-      {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md-s flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{error}</span>
-        </div>
-      )}
-      {success && (
-        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-sm rounded-md-s flex items-start gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{success}</span>
-        </div>
-      )}
+                  {/* Proxies */}
+                  <SettingsBlock
+                    title="Proxies"
+                    description={
+                      <p>
+                        Optional. SOCKS5 proxies on servers with outbound port 25 open. Checks rotate across them, with stricter
+                        limits for Gmail and Microsoft, and a proxy that starts getting blocked is benched for 15 minutes. With
+                        none, the server connects directly from its own IP. Setup guide:{' '}
+                        <code className="font-mono">docs/proxies.md</code>.
+                      </p>
+                    }
+                  >
+                    {settings?.proxies.source === 'env' && !proxiesDirty && (
+                      <Notice>Loaded from REACHER_PROXIES. Editing and saving here stores them in Settings instead.</Notice>
+                    )}
 
-      <button
-        type="submit"
-        disabled={isSaving}
-        className="w-full md:w-auto md:self-end py-2.5 px-6 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-      >
-        {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-        <span>{isSaving ? 'Saving...' : 'Save'}</span>
-      </button>
-    </form>
+                    {proxies.length === 0 ? (
+                      <SettingsEmpty>No proxies. Checks come from the server's own IP.</SettingsEmpty>
+                    ) : (
+                      <SettingsList>
+                        {proxies.map((p, i) => {
+                          const name = p.label || p.host || 'New proxy'
+                          const isEditing = editingProxy === i
+                          return (
+                            <SettingsRow
+                              key={i}
+                              icon={<Server className="h-4 w-4" />}
+                              title={name}
+                              detail={proxySummary(p)}
+                              actions={
+                                <>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setEditingProxy(isEditing ? null : i)}
+                                    aria-label={`Edit ${name}`}
+                                    aria-expanded={isEditing}
+                                    title="Edit"
+                                    leftIcon={<Pencil className="h-4 w-4" />}
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => removeProxy(i)}
+                                    aria-label={`Remove ${name}`}
+                                    title="Remove"
+                                    className="hover:!bg-destructive/10 hover:!text-destructive"
+                                    leftIcon={<Trash2 className="h-4 w-4" />}
+                                  />
+                                </>
+                              }
+                            >
+                              {isEditing && (
+                                <div className="flex flex-col gap-3">
+                                  <FieldGrid cols={3}>
+                                    <Field label="Label">
+                                      <input className={INPUT_CLASS} placeholder="eu-1" value={p.label} onChange={(e) => updateProxy(i, { label: e.target.value })} />
+                                    </Field>
+                                    <Field label="Host or IP">
+                                      <input className={INPUT_CLASS} value={p.host} onChange={(e) => updateProxy(i, { host: e.target.value })} />
+                                    </Field>
+                                    <Field label="Port">
+                                      <input className={INPUT_CLASS} placeholder="1080" inputMode="numeric" value={p.port} onChange={(e) => updateProxy(i, { port: e.target.value.replace(/\D/g, '') })} />
+                                    </Field>
+                                  </FieldGrid>
+                                  <FieldGrid>
+                                    <Field label="Username">
+                                      <input className={INPUT_CLASS} autoComplete="off" value={p.username} onChange={(e) => updateProxy(i, { username: e.target.value })} />
+                                    </Field>
+                                    <Field label="Password">
+                                      <SecretInput
+                                        id={`proxy-password-${i}`}
+                                        value={p.password}
+                                        onChange={(v) => updateProxy(i, { password: v })}
+                                        placeholder={p.passwordSet ? 'Saved. Enter a new one to replace it' : ''}
+                                      />
+                                    </Field>
+                                  </FieldGrid>
+                                  <SettingsActions>
+                                    <Button type="button" variant="outline" size="sm" onClick={() => setEditingProxy(null)}>
+                                      Done
+                                    </Button>
+                                  </SettingsActions>
+                                </div>
+                              )}
+                            </SettingsRow>
+                          )
+                        })}
+                      </SettingsList>
+                    )}
+                    <SettingsActions>
+                      <Button type="button" variant="outline" onClick={addProxy} leftIcon={<Plus className="h-4 w-4" />}>
+                        Add proxy
+                      </Button>
+                    </SettingsActions>
+                  </SettingsBlock>
+
+                  <SettingsBlock
+                    title="Limits"
+                    description={
+                      <>
+                        <p>Each verifying IP stops for the day after this many checks; add another proxy for more.</p>
+                        <p>
+                          Checks to one company are also paced (up to 12 at once, then about 4 a minute) and stop for the day
+                          after 20 rejected guesses, which is what address harvesting looks like.
+                        </p>
+                      </>
+                    }
+                  >
+                    <FieldGrid>
+                      <Field label="Daily checks per IP">
+                        <input inputMode="numeric" value={dailyCap} onChange={(e) => setDailyCap(e.target.value.replace(/\D/g, ''))} className={INPUT_CLASS} />
+                      </Field>
+                    </FieldGrid>
+                  </SettingsBlock>
+
+                  {proxyHealth.length > 0 && (
+                    <SettingsBlock title="Checks by IP" description="Counts since the app last started.">
+                      <SettingsList>
+                        {proxyHealth.map((h) => (
+                          <SettingsRow
+                            key={h.label}
+                            icon={<Activity className="h-4 w-4" />}
+                            title={h.label}
+                            detail={`${h.checksToday ?? 0} / ${h.dailyCap ?? '—'} checks today`}
+                            badge={<ProxyStatus health={h} />}
+                          >
+                            <dl className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs">
+                              {(
+                                [
+                                  ['OK', h.ok],
+                                  ['Greylisted', h.greylisted],
+                                  ['Blocked', h.blocked],
+                                  ['Timeouts', h.timeouts],
+                                  ['Unreachable', h.unreachable ?? 0, 'Company mail servers that refused a connection from this proxy'],
+                                  ['Domain refused', h.senderRejected ?? 0, 'Checks refused because of the verification domain, not this IP'],
+                                ] as Array<[string, number, string?]>
+                              ).map(([label, count, title]) => (
+                                <div key={label} className="flex gap-1.5" title={title}>
+                                  <dt className="text-muted-foreground">{label}</dt>
+                                  <dd className="tabular-nums text-foreground">{count}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </SettingsRow>
+                        ))}
+                      </SettingsList>
+                    </SettingsBlock>
+                  )}
+                </>
+              )}
+
+              <SettingsBlock title="Save" description="The health check and the test below run against what's saved, not the form.">
+                {saveResult}
+                <SettingsActions>{saveButton}</SettingsActions>
+              </SettingsBlock>
+
+              {/* Shown for the saved setup: the check runs against what's saved, not the form. */}
+              {settings?.verification.active === 'reacher' && settings.verification.healthChecks && (
+                <SenderHealthPanel
+                  listedDomainOverride={settings?.verification.listedDomainOverride ?? null}
+                  onOverrideChange={async (domain) => {
+                    apply(await saveProspectingSettingsFn({ data: { listedDomainOverride: domain } }))
+                    refreshSidebar()
+                  }}
+                />
+              )}
+
+              {/* Test */}
+              <SettingsBlock
+                title="Test"
+                description="Checks a made-up address at Gmail and at Microsoft 365 through the verification server, directly or via each proxy. No real mailbox is contacted. Save your changes first."
+              >
+                {verificationError && <Notice level="error">{verificationError}</Notice>}
+                {verification && !verification.configured && (
+                  <Notice level="error">Verification is off, or the chosen service isn't set up yet. Pick one above, fill it in and save first.</Notice>
+                )}
+                {verification?.configured && (
+                  <SettingsList>
+                    {verification.results.map((r, i) => (
+                      <SettingsRow
+                        key={i}
+                        icon={
+                          r.ok ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                          ) : (
+                            <AlertCircle className="h-4 w-4 text-destructive" />
+                          )
+                        }
+                        title={`${r.via} → ${r.provider}`}
+                        detail={`${(r.ms / 1000).toFixed(1)}s`}
+                      >
+                        {r.detail && <p className="break-words text-xs text-muted-foreground">{r.detail}</p>}
+                      </SettingsRow>
+                    ))}
+                  </SettingsList>
+                )}
+                <SettingsActions>
+                  <Button type="button" onClick={runVerificationTest} isLoading={isVerifying} leftIcon={<ShieldCheck className="h-4 w-4" />}>
+                    Test verification
+                  </Button>
+                </SettingsActions>
+              </SettingsBlock>
+            </>
+          )}
+        </SettingsPanel>
+      </form>
+    </div>
   )
 }

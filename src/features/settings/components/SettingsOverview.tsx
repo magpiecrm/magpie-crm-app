@@ -5,10 +5,12 @@ import { getUsageFn } from '../../../server/functions'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
 import type { SectionStatus, StatusLevel } from '../useSettingsStatus'
 import { AllowanceMeter } from './AllowanceMeter'
+import { SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
 
 const ORDER: Record<StatusLevel, number> = { error: 0, warning: 1, ok: 2, info: 3 }
 
-function StatusIcon({ level, className = 'w-4 h-4' }: { level: StatusLevel; className?: string }) {
+function StatusIcon({ level }: { level: StatusLevel }) {
+  const className = 'h-4 w-4 shrink-0'
   if (level === 'error') return <AlertCircle className={`${className} text-destructive`} />
   if (level === 'warning') return <AlertTriangle className={`${className} text-amber-600 dark:text-amber-400`} />
   if (level === 'ok') return <CheckCircle2 className={`${className} text-emerald-600 dark:text-emerald-400`} />
@@ -22,37 +24,33 @@ const USAGE_TILES = [
   { key: 'emailsSent', label: 'Emails sent' },
 ] as const
 
-const CARD = 'border border-border bg-card rounded-md-s'
-const HEADING = 'text-xs font-bold text-muted-foreground uppercase tracking-wider'
-
 /** This month's usage, counted by the app itself (see server/usage.ts). */
-function UsageThisMonth({ data, wide }: { data: Awaited<ReturnType<typeof getUsageFn>>; wide: boolean }) {
+function UsageThisMonth({ data }: { data: Awaited<ReturnType<typeof getUsageFn>> }) {
   const monthName = new Date(`${data.month}-01T00:00:00Z`).toLocaleString(undefined, { month: 'long', timeZone: 'UTC' })
   return (
-    <div className="flex flex-col gap-3 min-w-0">
-      <h3 className={HEADING}>Usage in {monthName}</h3>
-      <div className={`grid grid-cols-2 gap-px bg-border overflow-hidden ${wide ? 'sm:grid-cols-4' : ''} ${CARD}`}>
+    <SettingsBlock title="Usage this month" description={`${monthName} so far.`}>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md-s border border-border bg-border">
         {USAGE_TILES.map((tile) => (
-          <div key={tile.key} className="bg-card px-4 py-3">
+          <div key={tile.key} className="bg-background px-3 py-2.5">
             <p className="text-xs text-muted-foreground">{tile.label}</p>
             <p className="text-2xl font-semibold tabular-nums text-foreground">{data[tile.key].toLocaleString()}</p>
           </div>
         ))}
       </div>
-    </div>
+    </SettingsBlock>
   )
 }
 
 const TINT: Record<StatusLevel, string> = {
-  error: 'border-destructive/40 bg-destructive/5 hover:bg-destructive/10',
-  warning: 'border-amber-500/40 bg-amber-500/5 hover:bg-amber-500/10',
-  ok: 'border-border bg-card hover:bg-muted/60',
-  info: 'border-border bg-card hover:bg-muted/60',
+  error: 'border-destructive/40 bg-destructive/5',
+  warning: 'border-amber-500/40 bg-amber-500/5',
+  ok: 'border-border bg-background hover:bg-muted',
+  info: 'border-border bg-background hover:bg-muted',
 }
 
 /**
- * Settings → Overview: the plan's allowances beside this month's usage, then
- * every page's status as cards, problems first.
+ * Settings → Overview: the plan's allowances, this month's usage, then every
+ * other page's status as rows, problems first.
  */
 export function SettingsOverview({
   statuses,
@@ -71,8 +69,15 @@ export function SettingsOverview({
 
   if (isLoading && rows.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
-        <RefreshCw className="w-4 h-4 animate-spin text-accent" /> Checking your setup…
+      <div className="flex flex-col gap-4">
+        <SettingsPanel>
+          <SettingsBlock title="Setup">
+            <SettingsEmpty>
+              <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
+              Checking your setup…
+            </SettingsEmpty>
+          </SettingsBlock>
+        </SettingsPanel>
       </div>
     )
   }
@@ -81,46 +86,40 @@ export function SettingsOverview({
   const hasPlan = Boolean(usage?.allowance?.items.length)
 
   return (
-    <div className="flex flex-col gap-8">
-      {usage && (
-        <div className={`grid gap-6 items-start ${hasPlan ? 'lg:grid-cols-2' : ''}`}>
-          {hasPlan && (
-            <div className={`p-4 ${CARD}`}>
-              <AllowanceMeter />
-            </div>
-          )}
-          <UsageThisMonth data={usage} wide={!hasPlan} />
-        </div>
-      )}
+    <div className="flex flex-col gap-4">
+      <SettingsPanel>
+        {hasPlan && (
+          <SettingsBlock title="Your plan" description="What your plan gives you each month, and how much of it you've used.">
+            <AllowanceMeter heading={false} />
+          </SettingsBlock>
+        )}
+        {usage && <UsageThisMonth data={usage} />}
 
-      <div className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className={HEADING}>Setup</h3>
-          <span className={`text-xs font-semibold ${problems ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
-            {problems === 0 ? 'Everything is set up' : `${problems} ${problems === 1 ? 'thing needs' : 'things need'} your attention`}
-          </span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map(({ section, status }) => (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => onOpen(section.id)}
-              className={`group text-left flex flex-col gap-2 p-4 rounded-md-s border transition-colors cursor-pointer ${TINT[status.level]}`}
-            >
-              <span className="flex items-center gap-2">
-                <StatusIcon level={status.level} className="w-4 h-4 shrink-0" />
-                <span className="text-sm font-semibold text-foreground truncate">{section.label}</span>
-                {section.group && <span className="ml-auto text-[11px] text-muted-foreground shrink-0">{section.group}</span>}
-              </span>
-              <span className="text-xs text-muted-foreground leading-snug flex-1">{status.text}</span>
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground group-hover:text-accent">
-                {status.action ?? 'Open'} <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+        <SettingsBlock
+          title="Setup"
+          description={problems === 0 ? 'Everything is set up.' : `${problems} ${problems === 1 ? 'thing needs' : 'things need'} your attention.`}
+        >
+          <SettingsList>
+            {rows.map(({ section, status }) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => onOpen(section.id)}
+                className={`group flex w-full min-h-[46px] items-center gap-3 rounded-md-s border px-3 py-1.5 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
+              >
+                <StatusIcon level={status.level} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">{section.label}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{status.text}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-accent">
+                  {status.action ?? 'Open'} <ArrowRight className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            ))}
+          </SettingsList>
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }

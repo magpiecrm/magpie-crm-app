@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { AlertCircle, AlertTriangle, CheckCircle2, CreditCard, ExternalLink, Loader2 } from 'lucide-react'
+import { CreditCard, ExternalLink, RefreshCw } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { billingPortalFn, cancelPlanFn, changePlanFn, checkoutFn, finishCheckoutFn, getBillingFn, keepPlanFn } from '../../../server/functions'
 import type { Plan } from '../../../server/managedBilling'
 import { formatPence } from '../planMath'
 import { AllowanceMeter } from './AllowanceMeter'
 import { PlanEditor } from './PlanEditor'
-import { SettingsBlock } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsOption, SettingsPanel } from './SettingsBlock'
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 /** Checkout sessions already recorded, so a remount doesn't record one twice. */
@@ -102,17 +104,23 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
 
   if (billing.isLoading || finishing) {
     return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="w-4 h-4 animate-spin" /> {finishing ? 'Setting up your plan…' : 'Loading your plan…'}
-      </p>
+      <div className="flex flex-col gap-4">
+        <SettingsPanel>
+          <SettingsBlock title="Your plan">
+            <SettingsEmpty>
+              <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
+              {finishing ? 'Setting up your plan…' : 'Loading your plan…'}
+            </SettingsEmpty>
+          </SettingsBlock>
+        </SettingsPanel>
+      </div>
     )
   }
   if (billing.isError || !billing.data) {
     return (
-      <p className="flex items-center gap-2 text-sm text-destructive">
-        <AlertCircle className="w-4 h-4" />
-        {billing.error ? (billing.error as Error).message : "Billing isn't available on this workspace."}
-      </p>
+      <div className="flex flex-col gap-4">
+        <Notice level="error">{billing.error ? (billing.error as Error).message : "Billing isn't available on this workspace."}</Notice>
+      </div>
     )
   }
 
@@ -121,125 +129,123 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
   const failed = (change.error ?? keep.error ?? (finishError ? new Error(finishError) : null)) as Error | null
 
   return (
-    <div className="flex flex-col gap-6">
-      {notice && (
-        <p className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400" role="status">
-          <CheckCircle2 className="w-4 h-4" /> {notice}
-        </p>
-      )}
-      {failed && (
-        <p className="flex items-center gap-2 text-sm text-destructive" role="alert">
-          <AlertCircle className="w-4 h-4" /> {failed.message}
-        </p>
-      )}
+    <div className="flex flex-col gap-4">
+      {notice && <Notice level="success">{notice}</Notice>}
+      {failed && <Notice level="error">{failed.message}</Notice>}
 
       {b.status === 'past_due' && (
-        <Banner tone="error" title="Your last payment didn't go through">
-          <p>The payment provider is retrying it. Update your card so your plan carries on.</p>
-          <Button size="sm" variant="secondary" onClick={() => portal.mutate(window.open('', '_blank'))} isLoading={portal.isPending}>
-            Update card
-          </Button>
-        </Banner>
-      )}
-      {b.live && b.cancelAt && (
-        <Banner tone="warning" title={`Your plan ends on ${day(b.cancelAt)}`}>
-          <p>You keep everything until then. After that there's nothing to search, reveal or send with, and 30 days later the workspace closes (your data is kept).</p>
-          <Button size="sm" onClick={() => keep.mutate()} isLoading={keep.isPending}>
-            Keep my plan
-          </Button>
-        </Banner>
-      )}
-      {!b.live && b.endedAt && (
-        <Banner tone="error" title={`Your plan ended on ${day(b.endedAt)}`}>
-          <p>
-            You can still sign in and see your data, but not search, reveal or send.
-            {b.suspendOn && ` The workspace closes on ${day(b.suspendOn)} (${daysUntil(b.suspendOn)} days) unless you choose a plan; your data is kept.`}
-          </p>
-        </Banner>
-      )}
-
-      {b.live && (
-        <SettingsBlock
-          title="This month"
-          description={
-            <>
-              <p>What you've used of your plan.{b.periodEnd && ` It resets on ${day(b.periodEnd)}; unused amounts don't roll over.`}</p>
-              {b.monthlyPence !== null && (
-                <p>
-                  <span className="font-semibold text-foreground">{formatPence(b.monthlyPence, b.currency)} a month</span>
-                  {b.periodEnd && !b.cancelAt && `, renews ${day(b.periodEnd)}`}
-                </p>
-              )}
-            </>
+        <Notice
+          level="error"
+          title="Your last payment didn't go through"
+          action={
+            <Button size="sm" variant="outline" onClick={() => portal.mutate(window.open('', '_blank'))} isLoading={portal.isPending}>
+              Update card
+            </Button>
           }
         >
-          <AllowanceMeter showUpgrade={false} />
-        </SettingsBlock>
+          The payment provider is retrying it. Update your card so your plan carries on.
+        </Notice>
       )}
-
-      <SettingsBlock
-        title={b.live ? 'Change your plan' : 'Choose a plan'}
-        description={
-          b.live ? (
-            <p>Pick how much you'll use each month. You're charged for more straight away; less applies from your next renewal.</p>
-          ) : (
-            <p>Pick how much you'll use each month, then pay in the secure checkout. You pay monthly up front, and can cancel any time.</p>
-          )
-        }
-      >
-        {b.live && b.cancelAt ? (
-          <p className="text-sm text-muted-foreground">Keep your plan first to change it.</p>
-        ) : (
-          <PlanEditor key={JSON.stringify(b.nextPlan)} billing={b} busy={change.isPending} onSubmit={(plan) => change.mutate(plan)} />
-        )}
-      </SettingsBlock>
-
-      {b.status !== 'none' && (
-        <SettingsBlock title="Payment method and invoices" description={<p>Your card, billing details and past invoices, on the payment provider's secure page.</p>}>
-          <div className="flex flex-col gap-2 items-start">
-            <Button variant="secondary" leftIcon={<CreditCard className="w-4 h-4" />} rightIcon={<ExternalLink className="w-3.5 h-3.5" />} onClick={() => portal.mutate(window.open('', '_blank'))} isLoading={portal.isPending}>
-              Manage payment and invoices
+      {b.live && b.cancelAt && (
+        <Notice
+          level="warning"
+          title={`Your plan ends on ${day(b.cancelAt)}`}
+          action={
+            <Button size="sm" onClick={() => keep.mutate()} isLoading={keep.isPending}>
+              Keep my plan
             </Button>
-            {portal.isError && <p className="text-xs text-destructive">{(portal.error as Error).message}</p>}
-          </div>
-        </SettingsBlock>
+          }
+        >
+          You keep everything until then. After that there's nothing to search, reveal or send with, and 30 days later the workspace closes (your data is kept).
+        </Notice>
+      )}
+      {!b.live && b.endedAt && (
+        <Notice level="error" title={`Your plan ended on ${day(b.endedAt)}`}>
+          You can still sign in and see your data, but not search, reveal or send.
+          {b.suspendOn && ` The workspace closes on ${day(b.suspendOn)} (${daysUntil(b.suspendOn)} days) unless you choose a plan; your data is kept.`}
+        </Notice>
       )}
 
-      {b.live && !b.cancelAt && (
-        <SettingsBlock title="Cancel your plan" description={<p>Your plan ends at the end of the month you've paid for. You can change your mind until then.</p>}>
-          {cancelling ? (
-            <CancelForm
-              reasons={b.catalogue.cancelReasons}
-              endsOn={b.periodEnd}
-              busy={cancel.isPending}
-              error={cancel.isError ? (cancel.error as Error).message : null}
-              onCancel={(why) => cancel.mutate(why)}
-              onBack={() => setCancelling(false)}
-            />
+      <SettingsPanel>
+        {b.live && (
+          <SettingsBlock
+            title="Your plan"
+            description={`What you've used of your plan.${b.periodEnd ? ` It resets on ${day(b.periodEnd)}; unused amounts don't roll over.` : ''}`}
+          >
+            {b.monthlyPence !== null && (
+              <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+                <dt className="text-muted-foreground">Price</dt>
+                <dd className="text-foreground tabular-nums">{formatPence(b.monthlyPence, b.currency)} a month</dd>
+                {b.periodEnd && !b.cancelAt && (
+                  <>
+                    <dt className="text-muted-foreground">Renews</dt>
+                    <dd className="text-foreground tabular-nums">{day(b.periodEnd)}</dd>
+                  </>
+                )}
+              </dl>
+            )}
+            <AllowanceMeter showUpgrade={false} heading={false} />
+          </SettingsBlock>
+        )}
+
+        <SettingsBlock
+          title={b.live ? 'Change your plan' : 'Choose a plan'}
+          description={
+            b.live
+              ? "Pick how much you'll use each month. You're charged for more straight away; less applies from your next renewal."
+              : "Pick how much you'll use each month, then pay in the secure checkout. You pay monthly up front, and can cancel any time."
+          }
+        >
+          {b.live && b.cancelAt ? (
+            <Notice>Keep your plan first to change it.</Notice>
           ) : (
-            <div>
-              <Button variant="outline" className="text-destructive border-destructive/40 hover:bg-destructive/10" onClick={() => setCancelling(true)} disabled={busy}>
-                Cancel plan…
-              </Button>
-            </div>
+            <PlanEditor key={JSON.stringify(b.nextPlan)} billing={b} busy={change.isPending} onSubmit={(plan) => change.mutate(plan)} />
           )}
         </SettingsBlock>
-      )}
-    </div>
-  )
-}
 
-function Banner({ tone, title, children }: { tone: 'warning' | 'error'; title: string; children: React.ReactNode }) {
-  return (
-    <div
-      className={`rounded-md-m border p-4 flex gap-3 ${tone === 'error' ? 'border-destructive/40 bg-destructive/5' : 'border-amber-500/40 bg-amber-500/5'}`}
-      role="status"
-    >
-      <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${tone === 'error' ? 'text-destructive' : 'text-amber-600 dark:text-amber-400'}`} />
-      <div className="flex flex-col gap-2 items-start text-sm text-foreground">
-        <p className="font-semibold">{title}</p>
-        <div className="flex flex-col gap-3 items-start text-muted-foreground">{children}</div>
-      </div>
+        {b.status !== 'none' && (
+          <SettingsBlock title="Payment method and invoices" description="Your card, billing details and past invoices, on the payment provider's secure page.">
+            {portal.isError && <Notice level="error">{(portal.error as Error).message}</Notice>}
+            <SettingsActions>
+              <Button
+                variant="outline"
+                leftIcon={<CreditCard className="h-4 w-4" />}
+                rightIcon={<ExternalLink className="h-3.5 w-3.5" />}
+                onClick={() => portal.mutate(window.open('', '_blank'))}
+                isLoading={portal.isPending}
+              >
+                Manage payment and invoices
+              </Button>
+            </SettingsActions>
+          </SettingsBlock>
+        )}
+
+        {b.live && !b.cancelAt && (
+          <SettingsBlock title="Cancel your plan" description="Your plan ends at the end of the month you've paid for. You can change your mind until then.">
+            {cancelling ? (
+              <CancelForm
+                reasons={b.catalogue.cancelReasons}
+                endsOn={b.periodEnd}
+                busy={cancel.isPending}
+                error={cancel.isError ? (cancel.error as Error).message : null}
+                onCancel={(why) => cancel.mutate(why)}
+                onBack={() => setCancelling(false)}
+              />
+            ) : (
+              <SettingsActions>
+                <Button
+                  variant="outline"
+                  className="!border-destructive/40 !text-destructive hover:!bg-destructive/10"
+                  onClick={() => setCancelling(true)}
+                  disabled={busy}
+                >
+                  Cancel plan
+                </Button>
+              </SettingsActions>
+            )}
+          </SettingsBlock>
+        )}
+      </SettingsPanel>
     </div>
   )
 }
@@ -264,53 +270,38 @@ function CancelForm({
   const [comment, setComment] = useState('')
   return (
     <form
-      className="rounded-md-m border border-destructive/40 bg-destructive/5 p-4 flex flex-col gap-4 max-w-xl"
+      className="flex flex-col gap-3"
       onSubmit={(e) => {
         e.preventDefault()
         onCancel({ feedback, comment: comment.trim() })
       }}
     >
-      <div className="flex flex-col gap-1">
-        <h4 className="text-sm font-semibold text-foreground">Cancel your plan?</h4>
-        <p className="text-xs text-muted-foreground">
-          It ends {endsOn ? `on ${day(endsOn)}` : 'at the end of this month'}, with no refund for the rest of the month. After that there's nothing to search,
-          reveal or send with, and 30 days later the workspace closes. Your data is kept, and choosing a plan again opens it.
-        </p>
-      </div>
-      <fieldset className="flex flex-col gap-1.5">
-        <legend className="text-xs font-semibold text-foreground mb-1">Why are you leaving? (optional)</legend>
-        <div className="grid sm:grid-cols-2 gap-x-4 gap-y-1.5">
+      <Notice level="warning" title="Cancel your plan?">
+        It ends {endsOn ? `on ${day(endsOn)}` : 'at the end of this month'}, with no refund for the rest of the month. After that there's nothing to search,
+        reveal or send with, and 30 days later the workspace closes. Your data is kept, and choosing a plan again opens it.
+      </Notice>
+      <div role="radiogroup" aria-labelledby="cancel-why" className="flex flex-col gap-1.5">
+        <span id="cancel-why" className="text-xs font-semibold text-muted-foreground">
+          Why are you leaving? (optional)
+        </span>
+        <FieldGrid>
           {reasons.map((r) => (
-            <label key={r.id} className="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input type="radio" name="feedback" value={r.id} checked={feedback === r.id} onChange={() => setFeedback(r.id)} className="accent-accent" />
-              {r.label}
-            </label>
+            <SettingsOption key={r.id} selected={feedback === r.id} onSelect={() => setFeedback(r.id)} title={r.label} />
           ))}
-        </div>
-      </fieldset>
-      <label className="flex flex-col gap-1.5">
-        <span className="text-xs font-semibold text-foreground">Anything else you'd like to tell us? (optional)</span>
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          maxLength={500}
-          rows={3}
-          className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-        />
-      </label>
-      {error && (
-        <p className="flex items-center gap-2 text-xs text-destructive" role="alert">
-          <AlertCircle className="w-3.5 h-3.5" /> {error}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2">
+        </FieldGrid>
+      </div>
+      <Field label="Anything else you'd like to tell us? (optional)">
+        <textarea value={comment} onChange={(e) => setComment(e.target.value)} maxLength={500} rows={3} className={INPUT_CLASS} />
+      </Field>
+      {error && <Notice level="error">{error}</Notice>}
+      <SettingsActions>
         <Button type="submit" variant="danger" isLoading={busy}>
           Cancel my plan
         </Button>
         <Button type="button" variant="outline" onClick={onBack} disabled={busy}>
           Keep it
         </Button>
-      </div>
+      </SettingsActions>
     </form>
   )
 }

@@ -17,6 +17,8 @@ import { ApiKeysTab } from './ApiKeysTab'
 import { PipelineSettings } from '../../sales/components/PipelineSettings'
 import { BillingTab } from './BillingTab'
 import { Select } from '../../../components/ui/Select'
+import { INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
@@ -69,6 +71,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   }
 
   const current = SETTINGS_SECTIONS.find((s) => s.id === active) ?? SETTINGS_SECTIONS[0]
+  const currentStatus = statuses[current.id]
 
   return (
     <div className="p-4 lg:p-8 flex flex-col gap-6">
@@ -81,7 +84,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           <Select
             value={active}
             onChange={(e) => open(e.target.value as SettingsSection)}
-            className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
+            className={INPUT_CLASS}
           >
             {GROUPS.map((group) =>
               group.name ? (
@@ -104,7 +107,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
               {group.name && (
-                <span className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{group.name}</span>
+                <span className="px-3 pb-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{group.name}</span>
               )}
               {group.sections.map((s) => {
                 const level = statuses[s.id]?.level
@@ -130,17 +133,25 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         </nav>
         </aside>
 
-        <section className="flex-1 min-w-0 max-w-6xl flex flex-col gap-6">
-          <header className="flex flex-col gap-1 border-b border-border pb-4">
-            <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>
+        {/* Every page is the same width: the panel's label column, its controls column and their padding. */}
+        <section className="flex-1 min-w-0 max-w-[57rem] flex flex-col gap-5">
+          <header className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>
+              {/* The same status the menu's dot stands for, in words. */}
+              {active !== 'overview' && currentStatus && (
+                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                  {DOT[currentStatus.level] && <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level]}`} />}
+                  <span className="truncate">{currentStatus.text}</span>
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground max-w-2xl">{current.intro}</p>
           </header>
 
           {active === 'overview' && <SettingsOverview statuses={statuses} isLoading={isLoading} onOpen={open} />}
           {hiddenPage && (
-            <p className="text-sm text-muted-foreground max-w-2xl">
-              Prospect data and email verification are provided with your plan, so there's nothing to set up here.
-            </p>
+            <Notice>Prospect data and email verification are provided with your plan, so there's nothing to set up here.</Notice>
           )}
           {active === 'search' && <ProspectSearchTab />}
           {active === 'source' && !hiddenPage && <ProspectingTab key="source" section="source" />}

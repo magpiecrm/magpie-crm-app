@@ -77,7 +77,13 @@ key), with the app's actions as tools.
   `email-builder/types.ts`, rendered by `BlockRenderer`, compiled to HTML by
   `utils/compiler.ts`.
 - **UI primitives** live in `src/components/ui/` (Button, Dialog, Badge, etc.);
-  reuse these rather than hand-rolling.
+  reuse these rather than hand-rolling. Form fields use `Field`, `FieldGrid`
+  and `INPUT_CLASS` (`Field.tsx`); messages use `Notice`.
+- **Settings pages** all share one layout (`features/settings/components/
+  SettingsBlock.tsx`): one `SettingsPanel` per page, divided into
+  `SettingsBlock`s whose controls share a fixed column, lists as
+  `SettingsRow`s, and a block's buttons bottom-left in `SettingsActions`.
+  Build new settings from these, in sentence case, rather than new cards.
 
 ## Conventions
 

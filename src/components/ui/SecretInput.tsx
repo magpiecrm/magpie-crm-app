@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
-
-const INPUT_CLASS =
-  'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
+import { INPUT_CLASS } from './Field'
 
 /** A key or password field that's hidden by default, with a show/hide toggle. */
 export function SecretInput({

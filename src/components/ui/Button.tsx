@@ -24,20 +24,22 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
+    // Every variant has a border (see-through where it shows none), so a
+    // button is the same height whatever its variant, and the same as a field.
     const baseStyle =
-      'inline-flex items-center justify-center font-medium transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer'
+      'inline-flex items-center justify-center border font-medium whitespace-nowrap transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 select-none cursor-pointer'
 
     const variants = {
       primary:
-        'bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90',
+        'border-transparent bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90',
       secondary:
-        'bg-card text-foreground border border-input hover:bg-muted active:bg-muted-hover',
+        'bg-card text-foreground border-input hover:bg-muted active:bg-muted-hover',
       outline:
-        'border border-input bg-transparent text-foreground hover:bg-muted active:bg-muted-hover',
+        'border-input bg-transparent text-foreground hover:bg-muted active:bg-muted-hover',
       ghost:
-        'text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted-hover',
+        'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted-hover',
       danger:
-        'bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95',
+        'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95',
     }
 
     const sizes = {

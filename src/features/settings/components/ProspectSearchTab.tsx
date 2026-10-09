@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { prospectingStatusFn, saveSearchPreferencesFn } from '../../../server/functions'
-import { SettingsBlock } from './SettingsBlock'
+import { SettingsBlock, SettingsCheck, SettingsPanel } from './SettingsBlock'
 
 /** Settings → Prospect search: what search results show. Hosted copies can change it too. */
 export function ProspectSearchTab() {
@@ -25,96 +25,64 @@ export function ProspectSearchTab() {
   const stopAt = `${+((rules?.maxBounceRate ?? 0.02) * 100).toFixed(1)}%`
 
   return (
-    <div className="flex flex-col gap-6">
-      <SettingsBlock
-        title="People whose email can't be verified"
-        description={
-          <>
-            <p>
-              Some people can't get a verified email: their company's mail server accepts every address, real or not,
-              or doesn't take email, or a lookup already found nothing that works.
-            </p>
-            <p>
-              People whose lookup failed for a reason a retry won't change are remembered for 90 days, as a scrambled
-              code of their profile address, so later searches leave them out before paying to look them up again.
-            </p>
-            {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these people are always shown.</p>}
-          </>
-        }
-      >
-        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+    <div className="flex flex-col gap-4">
+      <SettingsPanel>
+        <SettingsBlock
+          title="Unverifiable emails"
+          description={
+            <>
+              <p>
+                Some people can't get a verified email: their company's mail server accepts every address, real or not,
+                or doesn't take email, or a lookup already found nothing that works.
+              </p>
+              <p>
+                People whose lookup failed for a reason a retry won't change are remembered for 90 days, as a scrambled
+                code of their profile address, so later searches leave them out before paying to look them up again.
+              </p>
+              {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these people are always shown.</p>}
+            </>
+          }
+        >
+          <SettingsCheck
             checked={hideUnverifiable}
             disabled={!status || !verifiedOnly || save.isPending}
-            onChange={(e) => save.mutate(e.target.checked)}
+            onChange={(checked) => save.mutate(checked)}
+            label="Hide people whose email can't be verified (recommended)"
+            hint="On: they're left out of results, and search keeps looking to fill the page. Off: they're listed, marked Unverifiable where the email would be."
           />
-          <span>
-            <span className="font-semibold">Hide people whose email can't be verified (recommended)</span>
-            <span className="block text-[11px] text-muted-foreground leading-snug max-w-xl">
-              On: they're left out of results, and search keeps looking to fill the page. Off: they're listed, marked
-              Unverifiable where the email would be.
-            </span>
-          </span>
-        </label>
-        {save.isError && (
-          <p className="flex items-center gap-1.5 text-xs text-destructive">
-            <AlertCircle className="w-3.5 h-3.5" /> {(save.error as Error).message}
-          </p>
-        )}
-        {save.isSuccess && !save.isPending && (
-          <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Saved. Your next search uses it.
-          </p>
-        )}
-      </SettingsBlock>
+          {save.isError && <Notice level="error">{(save.error as Error).message}</Notice>}
+          {save.isSuccess && !save.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
+        </SettingsBlock>
 
-      <SettingsBlock
-        title="Companies that accept every address"
-        description={
-          <>
-            <p>
-              At these companies the mail server can't confirm any address, so emails there are normally withheld. Often
-              their address format is still clear: several addresses you already have there follow it, or the mail server
-              confirmed it before.
-            </p>
-            <p>
-              These addresses are marked Format confirmed. They're right most of the time but can still bounce, so a
-              campaign sends them in a first batch of {batch} and holds the rest for at least {wait}, until that batch's
-              bounces are in. If more than {stopAt} of it bounces, the rest aren't sent until you choose to.
-            </p>
-            {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these are always handed over.</p>}
-          </>
-        }
-      >
-        <label className="flex items-start gap-2 text-xs text-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 rounded border-border text-accent focus:ring-accent"
+        <SettingsBlock
+          title="Companies that accept every address"
+          description={
+            <>
+              <p>
+                At these companies the mail server can't confirm any address, so emails there are normally withheld. Often
+                their address format is still clear: several addresses you already have there follow it, or the mail server
+                confirmed it before.
+              </p>
+              <p>
+                These addresses are marked Format confirmed. They're right most of the time but can still bounce, so a
+                campaign sends them in a first batch of {batch} and holds the rest for at least {wait}, until that batch's
+                bounces are in. If more than {stopAt} of it bounces, the rest aren't sent until you choose to.
+              </p>
+              {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these are always handed over.</p>}
+            </>
+          }
+        >
+          <SettingsCheck
             checked={allowFormatConfirmed}
             disabled={!status || !verifiedOnly || saveFormat.isPending}
-            onChange={(e) => saveFormat.mutate(e.target.checked)}
+            onChange={(checked) => saveFormat.mutate(checked)}
+            label="Hand over addresses whose format is confirmed"
+            hint="On: Reveal and saving give these addresses, and search shows people at those companies. Off: only verified addresses are handed over."
           />
-          <span>
-            <span className="font-semibold">Hand over addresses whose format is confirmed</span>
-            <span className="block text-[11px] text-muted-foreground leading-snug max-w-xl">
-              On: Reveal and saving give these addresses, and search shows people at those companies. Off: only verified
-              addresses are handed over.
-            </span>
-          </span>
-        </label>
-        {saveFormat.isError && (
-          <p className="flex items-center gap-1.5 text-xs text-destructive">
-            <AlertCircle className="w-3.5 h-3.5" /> {(saveFormat.error as Error).message}
-          </p>
-        )}
-        {saveFormat.isSuccess && !saveFormat.isPending && (
-          <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Saved. Your next search uses it.
-          </p>
-        )}
-      </SettingsBlock>
+          {saveFormat.isError && <Notice level="error">{(saveFormat.error as Error).message}</Notice>}
+          {saveFormat.isSuccess && !saveFormat.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }

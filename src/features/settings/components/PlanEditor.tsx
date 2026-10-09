@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
+import { Notice } from '../../../components/ui/Notice'
 import type { BillingStatus, Plan } from '../../../server/managedBilling'
-import { capped, formatPence, monthlyPence, nearestStep, planChanges, unitPrice, PLAN_KINDS } from '../planMath'
+import { capped, formatPence, monthlyPence, nearestStep, planChanges, unitPrice, PLAN_KINDS, type PlanChange } from '../planMath'
+import { SettingsActions, SettingsList, SettingsRow } from './SettingsBlock'
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
 
@@ -52,92 +54,100 @@ export function PlanEditor({
   }
 
   if (reviewing && billing.live) {
+    const line = (c: PlanChange, more: boolean) => (
+      <SettingsRow
+        key={c.kind}
+        icon={more ? <ArrowUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : <ArrowDown className="h-4 w-4" />}
+        title={
+          <>
+            {nameOf(c.kind)}: <span className="tabular-nums">{c.to.toLocaleString()}</span>
+          </>
+        }
+        detail={`${more ? 'Up' : 'Down'} from ${c.from.toLocaleString()}`}
+      />
+    )
     return (
-      <div className="flex flex-col gap-4 max-w-xl">
-        <div className="rounded-md-m border border-border bg-card p-4 flex flex-col gap-3">
-          <h4 className="text-sm font-semibold text-foreground">Check the change</h4>
-          {up.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Straight away:</span> you pay the difference for the rest of this month now.
-              </p>
-              {up.map((c) => (
-                <p key={c.kind} className="flex items-center gap-2 text-sm text-foreground">
-                  <ArrowUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  {nameOf(c.kind)}: {c.from.toLocaleString()} → <b>{c.to.toLocaleString()}</b>
-                </p>
-              ))}
-            </div>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm font-medium text-foreground">Check the change</p>
+        {up.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Straight away:</span> you pay the difference for the rest of this month now.
+            </p>
+            <SettingsList>{up.map((c) => line(c, true))}</SettingsList>
+          </div>
+        )}
+        {down.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">From {billing.periodEnd ? day(billing.periodEnd) : 'your next renewal'}:</span> you keep this
+              month's amounts until then, with no refund.
+            </p>
+            <SettingsList>{down.map((c) => line(c, false))}</SettingsList>
+          </div>
+        )}
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
+          <dt className="text-muted-foreground">New monthly price</dt>
+          <dd className="text-foreground tabular-nums">{formatPence(pence, billing.currency)}</dd>
+          {billing.monthlyPence !== null && (
+            <>
+              <dt className="text-muted-foreground">Before this change</dt>
+              <dd className="text-foreground tabular-nums">{formatPence(billing.monthlyPence, billing.currency)}</dd>
+            </>
           )}
-          {down.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">From {billing.periodEnd ? day(billing.periodEnd) : 'your next renewal'}:</span> you keep this
-                month's amounts until then, with no refund.
-              </p>
-              {down.map((c) => (
-                <p key={c.kind} className="flex items-center gap-2 text-sm text-foreground">
-                  <ArrowDown className="w-4 h-4 text-muted-foreground" />
-                  {nameOf(c.kind)}: {c.from.toLocaleString()} → <b>{c.to.toLocaleString()}</b>
-                </p>
-              ))}
-            </div>
-          )}
-          <p className="text-sm text-foreground border-t border-border pt-3">
-            New monthly price <b className="tabular-nums">{formatPence(pence, billing.currency)}</b>
-            {billing.monthlyPence !== null && <span className="text-muted-foreground"> (was {formatPence(billing.monthlyPence, billing.currency)})</span>}
-          </p>
-        </div>
-        <div className="flex gap-2">
+        </dl>
+        <SettingsActions>
           <Button onClick={() => onSubmit(plan)} isLoading={busy}>
             Confirm change
           </Button>
           <Button variant="outline" onClick={() => setReviewing(false)} disabled={busy}>
             Back
           </Button>
-        </div>
+        </SettingsActions>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col gap-5 max-w-xl">
-      {kinds.map((k) => {
-        const shown = plan[k.id]
-        return (
-          <div key={k.id} className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-3">
-              <label htmlFor={`plan-${k.id}`} className="text-sm font-semibold text-foreground">
-                {k.name}
-              </label>
-              <span className="text-sm font-semibold tabular-nums text-foreground">{shown.toLocaleString()}</span>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
+        {kinds.map((k) => {
+          const shown = plan[k.id]
+          return (
+            <div key={k.id} className="flex flex-col gap-1.5">
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <label htmlFor={`plan-${k.id}`} className="font-medium text-foreground">
+                  {k.name}
+                </label>
+                <span className="font-medium tabular-nums text-foreground">{shown.toLocaleString()}</span>
+              </div>
+              <input
+                id={`plan-${k.id}`}
+                type="range"
+                min={0}
+                max={k.steps.length - 1}
+                value={at[k.id]}
+                onChange={(e) => move(k.id, Number(e.target.value))}
+                disabled={busy}
+                className="w-full accent-accent cursor-pointer"
+              />
+              <p className="text-xs text-muted-foreground">
+                {unitPrice(k, billing.currency)}: {k.unit}.
+                {k.maxShareOf && ` Up to ${Math.round(k.maxShareOf.share * 100)}% of your ${nameOf(k.maxShareOf.kind).toLowerCase()}.`}
+              </p>
             </div>
-            <input
-              id={`plan-${k.id}`}
-              type="range"
-              min={0}
-              max={k.steps.length - 1}
-              value={at[k.id]}
-              onChange={(e) => move(k.id, Number(e.target.value))}
-              disabled={busy}
-              className="w-full accent-accent cursor-pointer"
-            />
-            <p className="text-[11px] text-muted-foreground">
-              {unitPrice(k, billing.currency)}: {k.unit}.
-              {k.maxShareOf && ` Up to ${Math.round(k.maxShareOf.share * 100)}% of your ${nameOf(k.maxShareOf.kind).toLowerCase()}.`}
-            </p>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
 
-      <div className="flex items-baseline justify-between border-t border-border pt-3">
-        <span className="text-sm text-muted-foreground">Per month</span>
-        <b className="text-lg tabular-nums text-foreground">{formatPence(pence, billing.currency)}</b>
+      <div className="flex flex-col">
+        <span className="text-xs text-muted-foreground">Per month</span>
+        <span className="text-2xl font-semibold tabular-nums text-foreground">{formatPence(pence, billing.currency)}</span>
       </div>
       {underMinimum && (
-        <p className="text-xs text-destructive" role="alert">
+        <Notice level="error">
           The minimum is {formatPence(minimumPence, billing.currency)} a month. Move a slider up.
-        </p>
+        </Notice>
       )}
       {billing.live && (
         <p className="text-xs text-muted-foreground">
@@ -145,7 +155,7 @@ export function PlanEditor({
           next renewal{billing.periodEnd ? ` on ${day(billing.periodEnd)}` : ''}.
         </p>
       )}
-      <div>
+      <SettingsActions>
         {billing.live ? (
           <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
             Review change
@@ -155,7 +165,7 @@ export function PlanEditor({
             Continue to payment
           </Button>
         )}
-      </div>
+      </SettingsActions>
     </div>
   )
 }

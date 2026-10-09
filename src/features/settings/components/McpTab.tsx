@@ -1,36 +1,41 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Copy, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, Copy, KeyRound, Trash2 } from 'lucide-react'
 import { APP_NAME } from '../../../brand'
 import { createApiKeyFn, deleteApiKeyFn, getMcpKeysFn } from '../../../server/functions'
-import { SettingsBlock } from './SettingsBlock'
+import { Button } from '../../../components/ui/Button'
+import { CODE_CLASS, Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 type McpKey = Awaited<ReturnType<typeof getMcpKeysFn>>['keys'][number]
 
 const SERVER_NAME = APP_NAME.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 const KEY_PLACEHOLDER = '<your MCP key>'
 
+/** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
+
 function CopyBlock({ label, code, note }: { label: string; code: string; note?: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-foreground">{label}</span>
-        <button
+        <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
           onClick={() => {
             navigator.clipboard?.writeText(code)
             setCopied(true)
             setTimeout(() => setCopied(false), 1500)
           }}
-          className="text-[11px] font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+          leftIcon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         >
-          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {copied ? 'Copied' : 'Copy'}
-        </button>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
       </div>
-      <pre className="text-[11px] leading-relaxed bg-muted/50 border border-border rounded-md-s p-3 overflow-x-auto whitespace-pre font-mono text-foreground">
-        {code}
-      </pre>
-      {note && <p className="text-[11px] text-muted-foreground leading-snug">{note}</p>}
+      <pre className={`${CODE_CLASS} whitespace-pre`}>{code}</pre>
+      {note && <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>}
     </div>
   )
 }
@@ -130,95 +135,107 @@ export function McpTab() {
   ]
 
   return (
-    <div className="flex flex-col gap-6">
-      <SettingsBlock
-        title="How it works"
-        description={
-          <p>
-            Let Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP: search prospects, manage lists,
+    <div className="flex flex-col gap-4">
+      {error && <Notice level="error">{error}</Notice>}
+
+      <SettingsPanel>
+        <SettingsBlock
+          title="How it works"
+          description="Each app gets its own key, which you can revoke at any time. Apps ask you before running anything that changes data."
+        >
+          <p className="text-sm leading-relaxed text-foreground">
+            Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP. They can search prospects, manage lists,
             contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
-            same builder tools as the copilot. Each app gets its own key, which you can revoke at any time. Apps ask you
-            before running anything that changes data.
+            same builder tools as the copilot.
           </p>
-        }
-      >
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>
-            A key gives full access to your contacts and can run prospect searches. Data the AI reads is
-            sent to that app's provider (Anthropic, OpenAI, …), so list them as sub-processors in your privacy notice.
-          </span>
-        </div>
-      </SettingsBlock>
+          <Notice>
+            A key gives full access to your contacts and can run prospect searches. Data the AI reads is sent to that
+            app's provider (Anthropic, OpenAI, …), so list them as sub-processors in your privacy notice.
+          </Notice>
+        </SettingsBlock>
 
-      <SettingsBlock title="MCP keys" description={<p>One key per app, so you can revoke one without touching the others.</p>}>
-        <form onSubmit={create} className="flex flex-wrap gap-2 max-w-xl">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name, e.g. Claude Desktop (laptop)"
-            className="flex-1 min-w-[12rem] bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-          <button
-            type="submit"
-            disabled={busy || !name.trim()}
-            className="py-2 px-3 bg-accent hover:bg-accent/95 disabled:opacity-50 text-accent-foreground text-sm font-semibold rounded-md-s inline-flex items-center gap-2"
-          >
-            {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />} Create key
-          </button>
-        </form>
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        {newKey && (
-          <div className="p-3 border border-emerald-500/30 bg-emerald-500/10 rounded-md-s flex flex-col gap-1.5">
-            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              Copy this key now. It won't be shown again; the setup snippets below already include it.
-            </span>
-            <code className="text-xs font-mono break-all text-foreground">{newKey}</code>
-          </div>
-        )}
-        {keys.length > 0 && (
-          <div className="border border-border divide-y divide-border rounded-md-s">
-            {keys.map((k) => (
-              <div key={k.id} className="px-3 py-2 flex items-center gap-3 text-xs">
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-foreground truncate">{k.name}</p>
-                  <p className="text-muted-foreground font-mono">{k.masked_key}</p>
+        <SettingsBlock title="Your keys" description="One key per app, so you can revoke one without touching the others.">
+          {keys.length === 0 ? (
+            <SettingsEmpty>No keys yet.</SettingsEmpty>
+          ) : (
+            <SettingsList>
+              {keys.map((k) => (
+                <SettingsRow
+                  key={k.id}
+                  icon={<KeyRound className="h-4 w-4" />}
+                  title={k.name}
+                  detail={
+                    <>
+                      <span className="font-mono">{k.masked_key}</span> · {k.last_used_at ? `Used ${new Date(k.last_used_at).toLocaleString()}` : 'Never used'}
+                    </>
+                  }
+                  actions={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => revoke(k.id)}
+                      aria-label={`Revoke ${k.name}`}
+                      title="Revoke"
+                      className="hover:!bg-destructive/10 hover:!text-destructive"
+                      leftIcon={<Trash2 className="h-4 w-4" />}
+                    />
+                  }
+                />
+              ))}
+            </SettingsList>
+          )}
+        </SettingsBlock>
+
+        <SettingsBlock title="Create a key" description="Name it after the app that will use it.">
+          <form onSubmit={create} className="flex flex-col gap-3">
+            <FieldGrid>
+              <Field label="Name">
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
+              </Field>
+            </FieldGrid>
+            {newKey && (
+              <Notice level="success" title="Copy this key now">
+                <div className="flex flex-col gap-2">
+                  <p>It won't be shown again. The setup snippets below already include it.</p>
+                  <code className={`${CODE_CLASS} block select-all whitespace-nowrap`}>{newKey}</code>
                 </div>
-                <span className="text-muted-foreground whitespace-nowrap">
-                  {k.last_used_at ? `Used ${new Date(k.last_used_at).toLocaleString()}` : 'Never used'}
-                </span>
-                <button type="button" onClick={() => revoke(k.id)} className="p-1.5 text-muted-foreground hover:text-destructive" title="Revoke">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </SettingsBlock>
-
-      <SettingsBlock
-        title="Set up"
-        description={
-          <>
-            <p>
-              Server address: <code className="font-mono text-foreground break-all">{url}</code>
-            </p>
-            {isLocal && (
-              <p>
-                That only works for apps on this computer (Claude Code, Claude Desktop, Cursor, Codex). Apps that connect
-                from the cloud (the OpenAI API, ChatGPT, Claude on the web) need this app on a public https address.
-              </p>
+              </Notice>
             )}
-            <p>
-              Anything else that supports MCP over Streamable HTTP works the same way: the address above, plus the header{' '}
-              <code className="font-mono">Authorization: Bearer &lt;key&gt;</code>. Adding it as a connector in the ChatGPT
-              app or on claude.ai needs a sign-in flow (OAuth) that isn't built yet.
-            </p>
-          </>
-        }
-      >
-        <SetupTabs clients={clients} />
-      </SettingsBlock>
+            <SettingsActions>
+              <Button type="submit" isLoading={busy} disabled={!name.trim()} leftIcon={<KeyRound className="h-4 w-4" />}>
+                Create key
+              </Button>
+            </SettingsActions>
+          </form>
+        </SettingsBlock>
+
+        <SettingsBlock
+          title="Set up your app"
+          description={
+            <>
+              <p>
+                Anything else that supports MCP over Streamable HTTP works the same way: the server address, plus the
+                header <code className="font-mono">Authorization: Bearer &lt;key&gt;</code>.
+              </p>
+              <p>
+                Adding it as a connector in the ChatGPT app or on claude.ai needs a sign-in flow (OAuth) that isn't built
+                yet.
+              </p>
+            </>
+          }
+        >
+          <Field label="Server address">
+            <code className={`${CODE_CLASS} block whitespace-nowrap`}>{url}</code>
+          </Field>
+          {isLocal && (
+            <Notice level="warning">
+              This address only works for apps on this computer (Claude Code, Claude Desktop, Cursor, Codex). Apps that
+              connect from the cloud (the OpenAI API, ChatGPT, Claude on the web) need this app on a public https address.
+            </Notice>
+          )}
+          <SetupTabs clients={clients} />
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }
@@ -238,20 +255,21 @@ function SetupTabs({ clients }: { clients: SetupClient[] }) {
   const client = clients.find((c) => c.id === active) ?? clients[0]
   return (
     <div className="flex flex-col gap-3">
-      <div role="tablist" aria-label="AI app" className="flex flex-wrap gap-1 p-1 bg-muted/50 border border-border rounded-md-s self-start">
+      {/* A row of small buttons, the chosen one outlined like a chosen SettingsOption. */}
+      <div role="tablist" aria-label="AI app" className="flex flex-wrap gap-1.5">
         {clients.map((c) => (
-          <button
+          <Button
             key={c.id}
             type="button"
             role="tab"
+            variant="outline"
+            size="sm"
             aria-selected={c.id === client.id}
             onClick={() => setActive(c.id)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-md-s cursor-pointer transition-colors ${
-              c.id === client.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
+            className={c.id === client.id ? '!border-accent !bg-accent/5' : '!text-muted-foreground hover:!text-foreground'}
           >
             {c.label}
-          </button>
+          </Button>
         ))}
       </div>
       <div role="tabpanel">

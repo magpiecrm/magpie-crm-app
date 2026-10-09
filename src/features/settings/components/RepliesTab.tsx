@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, CheckCircle2, Inbox, RefreshCw } from 'lucide-react'
+import { Inbox, RefreshCw } from 'lucide-react'
 import { checkMailboxesNowFn, deleteMailboxFn, getSendersFn, mailboxesFn, saveMailboxFn } from '../../../server/functions'
+import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
 import { SecretInput } from '../../../components/ui/SecretInput'
 import { Switch } from '../../../components/ui/Switch'
 import { queryKeys } from '../../../queryKeys'
-import { SettingsBlock } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 import type { MailboxView } from '../../sequences/types'
-
-const FIELD = 'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
 
 /** Mail services people use, with their IMAP server. */
 const SERVICES = [
@@ -43,45 +44,52 @@ export function RepliesTab() {
   })
 
   return (
-    <div className="space-y-6">
-      <SettingsBlock
-        title="How it works"
-        description={
-          <>
-            <p>
-              Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
-              people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
-              "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
-            </p>
-            <p>
-              Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
-              is kept, and the app can't send or delete mail.
-            </p>
-            <p>While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.</p>
-          </>
-        }
-      >
-        {boxes.length > 0 && (
-          <div className="flex items-center gap-3">
-            <Button size="sm" variant="secondary" leftIcon={<RefreshCw className="w-3.5 h-3.5" />} isLoading={check.isPending} onClick={() => check.mutate()}>
-              Check now
-            </Button>
-            {check.error && <span className="text-xs text-destructive">{(check.error as Error).message}</span>}
-          </div>
-        )}
-      </SettingsBlock>
+    <div className="flex flex-col gap-4">
+      <SettingsPanel>
+        <SettingsBlock title="How it works">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
+            people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
+            "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
+            is kept, and the app can't send or delete mail.
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.
+          </p>
+        </SettingsBlock>
 
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : senders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Add a sender address first (Settings → Sender addresses).</p>
-      ) : (
-        senders.map((s) => <SenderInbox key={s.id} sender={s} box={boxes.find((b) => b.sender_id === s.id) ?? null} />)
-      )}
+        <SettingsBlock title="Inboxes" description="One for each sender address. Until a sender's inbox is connected, replies to it have to be marked by hand.">
+          {isLoading ? (
+            <SettingsEmpty>Loading…</SettingsEmpty>
+          ) : senders.length === 0 ? (
+            <SettingsEmpty>Add a sender address first (Settings → Sender addresses).</SettingsEmpty>
+          ) : (
+            <SettingsList>
+              {senders.map((s) => (
+                <SenderInbox key={s.id} sender={s} box={boxes.find((b) => b.sender_id === s.id) ?? null} />
+              ))}
+            </SettingsList>
+          )}
+          {boxes.length > 0 && (
+            <>
+              {check.error && <Notice level="error">{(check.error as Error).message}</Notice>}
+              <SettingsActions>
+                <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} isLoading={check.isPending} onClick={() => check.mutate()}>
+                  Check now
+                </Button>
+              </SettingsActions>
+            </>
+          )}
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }
 
+/** One sender's row in the list: its inbox's state, and under it the inbox's details or the form that connects it. */
 function SenderInbox({ sender, box }: { sender: { id: number; name: string; email: string }; box: MailboxView | null }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -89,40 +97,53 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
   const disconnect = useMutation({ mutationFn: () => deleteMailboxFn({ data: { id: box!.id } }), onSuccess: refresh })
   const [confirming, setConfirming] = useState(false)
 
+  const state = !box
+    ? null
+    : box.status === 'ok'
+      ? `checked ${ago(box.last_polled_at)}`
+      : box.status === 'auth_failed'
+        ? 'reconnect it'
+        : `first failed ${ago(box.error_since)}`
+
   return (
-    <SettingsBlock
+    <SettingsRow
+      icon={<Inbox className="h-4 w-4" />}
       title={sender.name || sender.email}
-      description={
-        <>
-          <p>{sender.email}</p>
-          {box ? (
-            box.status === 'ok' ? (
-              <p className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Connected · checked {ago(box.last_polled_at)}
-              </p>
-            ) : (
-              <p className="flex items-start gap-1.5 text-destructive">
-                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                {box.status === 'auth_failed' ? 'Login refused: reconnect it.' : `Not working (first failed ${ago(box.error_since)})`}
-              </p>
-            )
-          ) : (
-            <p>Not connected: replies to this sender have to be marked by hand.</p>
-          )}
-        </>
+      // The address is the title when the sender has no name.
+      detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
+      badge={
+        !box ? (
+          <Badge>Not connected</Badge>
+        ) : box.status === 'ok' ? (
+          <Badge variant="success">Connected</Badge>
+        ) : (
+          <Badge variant="error">{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>
+        )
+      }
+      actions={
+        !box && !editing ? (
+          <Button size="sm" onClick={() => setEditing(true)}>
+            Connect inbox
+          </Button>
+        ) : undefined
       }
     >
       {box && !editing ? (
-        <div className="space-y-2 text-sm">
-          <p className="text-foreground">
-            <Inbox className="inline w-4 h-4 mr-1.5 -mt-0.5 text-muted-foreground" />
-            {box.user} on {box.host}
-            {box.folder ? <span className="text-muted-foreground"> · reading {box.folder}</span> : null}
-          </p>
-          <p className="text-muted-foreground">{box.replies_found === 1 ? '1 reply found so far.' : `${box.replies_found} replies found so far.`}</p>
-          {box.last_error && <p className="text-destructive">{box.last_error}</p>}
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5 text-sm">
+            <p className="text-foreground">
+              {box.user} on {box.host}
+              {box.folder ? <span className="text-muted-foreground"> · reading {box.folder}</span> : null}
+            </p>
+            <p className="text-muted-foreground">{box.replies_found === 1 ? '1 reply found so far.' : `${box.replies_found} replies found so far.`}</p>
+          </div>
+          {box.last_error && (
+            <Notice level="error" className="break-words">
+              {box.last_error}
+            </Notice>
+          )}
+          <SettingsActions>
+            <Button size="sm" variant={box.status === 'ok' ? 'outline' : 'primary'} onClick={() => setEditing(true)}>
               {box.status === 'ok' ? 'Change' : 'Reconnect'}
             </Button>
             {confirming ? (
@@ -130,27 +151,21 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
                 <Button size="sm" variant="danger" isLoading={disconnect.isPending} onClick={() => disconnect.mutate()}>
                   Disconnect
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+                <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>
                   Keep
                 </Button>
               </>
             ) : (
-              <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
+              <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
                 Disconnect
               </Button>
             )}
-          </div>
+          </SettingsActions>
         </div>
       ) : box || editing ? (
         <ConnectForm sender={sender} box={box} onDone={() => setEditing(false)} />
-      ) : (
-        <div>
-          <Button size="sm" onClick={() => setEditing(true)}>
-            Connect inbox
-          </Button>
-        </div>
-      )}
-    </SettingsBlock>
+      ) : null}
+    </SettingsRow>
   )
 }
 
@@ -188,81 +203,71 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
         e.preventDefault()
         save.mutate()
       }}
-      className="space-y-3 max-w-lg"
+      className="flex flex-col gap-3"
     >
-      <div>
-        <label htmlFor={`svc-${sender.id}`} className="block text-xs font-medium text-foreground mb-1">
-          Mail service
-        </label>
-        <Select id={`svc-${sender.id}`} value={service} onChange={(e) => setService(e.target.value)} className={FIELD}>
-          {SERVICES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </Select>
-      </div>
+      <FieldGrid>
+        <Field label="Mail service">
+          <Select value={service} onChange={(e) => setService(e.target.value)} className={INPUT_CLASS}>
+            {SERVICES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </FieldGrid>
 
       {service === 'microsoft' ? (
-        <p className="text-sm text-muted-foreground">
-          Microsoft 365 and Outlook don't allow password logins to an inbox from other apps, so they can't be connected this way yet. Mark replies
-          by hand on the sequence's People tab for now.
-        </p>
+        <Notice>
+          Microsoft 365 and Outlook don't allow password logins to an inbox from other apps, so they can't be connected this way yet. Mark replies by
+          hand on the sequence's People tab for now.
+        </Notice>
       ) : (
         <>
           {service === 'gmail' && (
-            <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">Gmail needs an app password, not your normal one:</p>
-              <ol className="list-decimal pl-4 space-y-0.5">
+            <Notice title="Gmail needs an app password, not your normal one:">
+              <ol className="list-decimal pl-4">
                 <li>Turn on 2-Step Verification in your Google Account (Security), if it isn't on.</li>
                 <li>
-                  Go to <span className="font-mono">myaccount.google.com/apppasswords</span>, make one called "MagpieCRM", and paste the 16 letters below.
+                  Go to <code className="font-mono">myaccount.google.com/apppasswords</code>, make one called "MagpieCRM", and paste the 16 letters below.
                 </li>
                 <li>Google Workspace: if there's no App passwords page, your admin has turned them off for your organisation.</li>
               </ol>
-            </div>
+            </Notice>
           )}
           {custom && (
-            <div className="grid grid-cols-[1fr_6rem] gap-2">
-              <div>
-                <label htmlFor={`host-${sender.id}`} className="block text-xs font-medium text-foreground mb-1">
-                  IMAP server
-                </label>
-                <input id={`host-${sender.id}`} value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.example.com" className={FIELD} />
-              </div>
-              <div>
-                <label htmlFor={`port-${sender.id}`} className="block text-xs font-medium text-foreground mb-1">
-                  Port
-                </label>
-                <input id={`port-${sender.id}`} type="number" value={port} onChange={(e) => setPort(Number(e.target.value) || 993)} className={FIELD} />
-              </div>
-              <div className="col-span-2 flex items-center gap-2 text-sm">
+            <>
+              <FieldGrid cols={3}>
+                <Field label="IMAP server" className="sm:col-span-2">
+                  <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="imap.example.com" className={INPUT_CLASS} />
+                </Field>
+                <Field label="Port">
+                  <input type="number" value={port} onChange={(e) => setPort(Number(e.target.value) || 993)} className={INPUT_CLASS} />
+                </Field>
+              </FieldGrid>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Switch checked={secure} onChange={setSecure} label="SSL/TLS" />
-                <span className="text-muted-foreground">SSL/TLS (port 993). Off: STARTTLS (port 143).</span>
+                <span>SSL/TLS (port 993). Off: STARTTLS (port 143).</span>
               </div>
-            </div>
+            </>
           )}
-          <div>
-            <label htmlFor={`user-${sender.id}`} className="block text-xs font-medium text-foreground mb-1">
-              Login
-            </label>
-            <input id={`user-${sender.id}`} value={user} onChange={(e) => setUser(e.target.value)} className={FIELD} autoComplete="off" />
-          </div>
-          <div>
-            <label htmlFor={`pass-${sender.id}`} className="block text-xs font-medium text-foreground mb-1">
-              {service === 'gmail' ? 'App password' : 'Password'}
-            </label>
-            <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder={box ? 'Leave empty to keep the saved one' : ''} />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <FieldGrid>
+            <Field label="Login">
+              <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT_CLASS} autoComplete="off" />
+            </Field>
+            <Field label={service === 'gmail' ? 'App password' : 'Password'}>
+              <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder={box ? 'Leave empty to keep the saved one' : ''} />
+            </Field>
+          </FieldGrid>
+          {save.error && <Notice level="error">{(save.error as Error).message}</Notice>}
+          <SettingsActions>
             <Button type="submit" size="sm" isLoading={save.isPending} disabled={!user || (!password && !box) || (custom && !host)}>
               Check and connect
             </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+            <Button type="button" size="sm" variant="outline" onClick={onDone}>
               Cancel
             </Button>
-            {save.error && <span className="text-xs text-destructive">{(save.error as Error).message}</span>}
-          </div>
+          </SettingsActions>
         </>
       )}
     </form>

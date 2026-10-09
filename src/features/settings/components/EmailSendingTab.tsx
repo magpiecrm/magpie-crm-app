@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2, Eye, EyeOff, RefreshCw, Save, Send } from 'lucide-react'
+import { Eye, EyeOff, RefreshCw, Save, Send } from 'lucide-react'
 import {
   getEmailSettingsFn,
   saveEmailSettingsFn,
@@ -8,12 +8,12 @@ import {
 // Descriptors only — importing the provider registry here would pull nodemailer
 // and node:crypto into the client bundle.
 import type { ProviderDescriptor, ProviderField } from '../../../server/providers/types'
-import { ManagedSending } from './ManagedSending'
-import { SettingsBlock } from './SettingsBlock'
+import { Button } from '../../../components/ui/Button'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
-
-const INPUT_CLASS =
-  'w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
+import { ManagedSending } from './ManagedSending'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsPanel } from './SettingsBlock'
 
 type FieldState = { value: string; isSet: boolean }
 type FieldsByProvider = Record<string, Record<string, FieldState>>
@@ -26,7 +26,7 @@ export function EmailSendingTab() {
   const [source, setSource] = useState<'db' | 'env'>('env')
   const [credsUnreadable, setCredsUnreadable] = useState(false)
   const [usingDefaultSecret, setUsingDefaultSecret] = useState(false)
-  // The host runs sending through Amazon SES: this page is just sending domains.
+  // The host runs sending through its own mail server: this page is just sending domains.
   const [managed, setManaged] = useState(false)
 
   const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
@@ -138,12 +138,16 @@ export function EmailSendingTab() {
     const id = `${provider}-${field.key}`
 
     return (
-      <div key={field.key} className="flex flex-col gap-1.5">
-        <label className="text-xs font-semibold text-foreground">
-          {field.label}
-          {field.required && <span className="text-destructive"> *</span>}
-        </label>
-
+      <Field
+        key={field.key}
+        label={
+          <>
+            {field.label}
+            {field.required && <span className="text-destructive"> *</span>}
+          </>
+        }
+        hint={field.help}
+      >
         {field.type === 'select' ? (
           <Select
             value={state.value}
@@ -165,15 +169,17 @@ export function EmailSendingTab() {
               // Secrets are never sent back to the browser, so a saved value
               // shows as empty. Blank on save means "keep what is stored".
               placeholder={state.isSet ? 'Saved — leave blank to keep' : field.placeholder}
-              className={INPUT_CLASS + ' pr-10'}
+              className={`${INPUT_CLASS} pr-10`}
             />
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => toggleVisibility(id)}
-              className="absolute right-2 p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-            >
-              {visibleFields[id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
+              aria-label={visibleFields[id] ? 'Hide' : 'Show'}
+              className="absolute right-0.5"
+              leftIcon={visibleFields[id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            />
           </div>
         ) : (
           <input
@@ -184,17 +190,21 @@ export function EmailSendingTab() {
             className={INPUT_CLASS}
           />
         )}
-
-        {field.help && <span className="text-xs text-muted-foreground">{field.help}</span>}
-      </div>
+      </Field>
     )
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-        <RefreshCw className="w-5 h-5 animate-spin text-accent" />
-        <span>Loading sending settings...</span>
+      <div className="flex flex-col gap-4">
+        <SettingsPanel>
+          <SettingsBlock title="Sending">
+            <SettingsEmpty>
+              <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
+              Loading…
+            </SettingsEmpty>
+          </SettingsBlock>
+        </SettingsPanel>
       </div>
     )
   }
@@ -202,206 +212,146 @@ export function EmailSendingTab() {
   if (managed) return <ManagedSending />
 
   return (
-    <form onSubmit={handleSave} className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {source === 'env' && (
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Using environment variables</span>
-            <span>
-              No provider has been saved yet, so sending falls back to your{' '}
-              <code className="font-mono">SES_*</code>, <code className="font-mono">CLOUDFLARE_*</code> or{' '}
-              <code className="font-mono">SMTP_*</code> variables. Saving here overrides them.
-            </span>
-          </div>
-        </div>
+        <Notice title="Using environment variables">
+          No provider has been saved yet, so sending falls back to your <code className="font-mono">SES_*</code>,{' '}
+          <code className="font-mono">CLOUDFLARE_*</code> or <code className="font-mono">SMTP_*</code> variables. Saving here overrides them.
+        </Notice>
       )}
 
       {credsUnreadable && (
-        <div className="flex items-start gap-2.5 p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Stored credentials cannot be read</span>
-            <span>
-              The encryption secret changed since they were saved. Re-enter the credentials below.
-            </span>
-          </div>
-        </div>
+        <Notice level="error" title="Stored credentials cannot be read">
+          The encryption secret changed since they were saved. Enter the credentials again below.
+        </Notice>
       )}
 
       {usingDefaultSecret && (
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Set an encryption secret</span>
-            <span>
-              API keys are encrypted at rest with a built-in default key, which is obfuscation
-              rather than protection. Set <code className="font-mono">CREDENTIALS_SECRET</code> to
-              a random value.
-            </span>
-          </div>
-        </div>
+        <Notice level="warning" title="Set an encryption secret">
+          API keys are encrypted at rest with a built-in default key, which is obfuscation rather than protection. Set{' '}
+          <code className="font-mono">CREDENTIALS_SECRET</code> to a random value.
+        </Notice>
       )}
 
-      {/* Provider picker */}
-      <SettingsBlock title="Sending provider">
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-foreground">Default provider</label>
-          <Select
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            className={INPUT_CLASS}
-          >
-            {providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
-          {descriptor && (
-            <span className="text-xs text-muted-foreground">
-              {descriptor.summary}{' '}
-              <a
-                href={descriptor.docsUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-accent hover:underline"
-              >
-                Docs
-              </a>
-            </span>
+      {/* One form around every block: the save button sits in the last block it covers. */}
+      <form onSubmit={handleSave}>
+        <SettingsPanel>
+          {/* Provider picker */}
+          <SettingsBlock title="Sending provider">
+            <FieldGrid>
+              <Field label="Default provider">
+                <Select value={provider} onChange={(e) => setProvider(e.target.value)} className={INPUT_CLASS}>
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </FieldGrid>
+            {descriptor && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {descriptor.summary}{' '}
+                <a href={descriptor.docsUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                  Docs
+                </a>
+              </p>
+            )}
+
+            {descriptor && !descriptor.httpsOnly && (
+              <Notice level="warning">
+                This provider needs outbound SMTP ports, which many hosts (Railway included) block. The HTTPS-based providers work everywhere.
+              </Notice>
+            )}
+
+            <Notice>
+              Each provider authenticates your sending domain separately. Set up SPF, DKIM and DMARC for {descriptor?.label ?? 'the provider'}{' '}
+              before sending a campaign, or your mail will land in spam.
+            </Notice>
+          </SettingsBlock>
+
+          {/* Credentials, rendered from the provider descriptor */}
+          {descriptor && descriptor.fields.length > 0 && (
+            <SettingsBlock title={`${descriptor.label} credentials`}>
+              <FieldGrid>{descriptor.fields.map(renderField)}</FieldGrid>
+            </SettingsBlock>
           )}
-        </div>
 
-        {descriptor && !descriptor.httpsOnly && (
-          <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>
-              This provider needs outbound SMTP ports, which many hosts (Railway included) block.
-              The HTTPS-based providers work everywhere.
-            </span>
-          </div>
-        )}
-
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>
-            Each provider authenticates your sending domain separately. Set up SPF, DKIM and DMARC
-            for {descriptor?.label ?? 'the provider'} before sending a campaign, or your mail will
-            land in spam.
-          </span>
-        </div>
-      </SettingsBlock>
-
-      {/* Credentials, rendered from the provider descriptor */}
-      {descriptor && descriptor.fields.length > 0 && (
-        <SettingsBlock title={`${descriptor.label} credentials`}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {descriptor.fields.map(renderField)}
-          </div>
-        </SettingsBlock>
-      )}
-
-      {/* Sender identity */}
-      <SettingsBlock title="Default sender">
-        <div className="flex flex-col gap-1.5">
-          <input
-            type="text"
-            value={defaultSender}
-            onChange={(e) => setDefaultSender(e.target.value)}
-            placeholder='e.g. "Sender Name" <hello@domain.com>'
-            className={INPUT_CLASS}
-          />
-          <span className="text-xs text-muted-foreground">
-            Used when a message does not name its own sender. Additional from-addresses are managed
-            on the Sender addresses page.
-          </span>
-        </div>
-      </SettingsBlock>
-
-      {error && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{success}</span>
-        </div>
-      )}
-
-      <div>
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md-s text-sm font-semibold hover:bg-primary/85 disabled:opacity-60 cursor-pointer"
-        >
-          {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          {isSaving ? 'Saving...' : 'Save sending settings'}
-        </button>
-      </div>
-
-      {/* Test send — the fastest way to find out a domain is unverified */}
-      <SettingsBlock title="Send a test email">
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <input
-            type="email"
-            value={testTo}
-            onChange={(e) => setTestTo(e.target.value)}
-            placeholder="you@yourdomain.com"
-            className={INPUT_CLASS + ' sm:max-w-xs'}
-          />
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={isTesting || !testTo}
-            className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-md-s text-sm font-semibold text-foreground hover:bg-muted/40 disabled:opacity-60 cursor-pointer"
+          {/* Sender identity */}
+          <SettingsBlock
+            title="Default sender"
+            description="Used when a message does not name its own sender. Additional from-addresses are managed on the Sender addresses page."
           >
-            {isTesting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {isTesting ? 'Sending...' : 'Send test'}
-          </button>
-        </div>
-        <span className="text-xs text-muted-foreground">
-          Uses the saved settings, so save any changes first.
-        </span>
-        {testResult && (
-          <div
-            className={
-              testResult.ok
-                ? 'p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent'
-                : 'p-3 bg-destructive/10 border border-destructive/20 rounded-md-s text-xs text-destructive font-mono'
-            }
-          >
-            {testResult.message}
-          </div>
-        )}
-      </SettingsBlock>
+            <Field label="Name and address">
+              <input
+                type="text"
+                value={defaultSender}
+                onChange={(e) => setDefaultSender(e.target.value)}
+                placeholder='e.g. "Your name" <hello@domain.com>'
+                className={INPUT_CLASS}
+              />
+            </Field>
 
-      {/* Bounce webhook hint */}
-      {descriptor && descriptor.id !== 'cloudflare' && descriptor.id !== 'smtp' && (
-        <div className="flex items-start gap-2.5 p-3 bg-accent/5 border border-accent/15 rounded-md-s text-xs text-accent">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block mb-0.5">Bounces and spam complaints</span>
-            {webhooksOn ? (
-              <span>
-                Point {descriptor.label}'s bounce and spam complaint webhooks at{' '}
-                <code className="font-mono break-all">
+            {error && <Notice level="error">{error}</Notice>}
+            {success && <Notice level="success">{success}</Notice>}
+
+            <SettingsActions>
+              <Button type="submit" isLoading={isSaving} leftIcon={<Save className="h-4 w-4" />}>
+                Save sending settings
+              </Button>
+            </SettingsActions>
+          </SettingsBlock>
+
+          {/* Test send — the fastest way to find out a domain is unverified */}
+          <SettingsBlock title="Send a test" description="Uses the saved settings, so save any changes first.">
+            <FieldGrid>
+              <Field label="Send a test email to">
+                <input
+                  type="email"
+                  value={testTo}
+                  onChange={(e) => setTestTo(e.target.value)}
+                  placeholder="you@yourdomain.com"
+                  className={INPUT_CLASS}
+                />
+              </Field>
+            </FieldGrid>
+            {testResult && (
+              <Notice level={testResult.ok ? 'success' : 'error'} className="break-words">
+                {testResult.message}
+              </Notice>
+            )}
+            <SettingsActions>
+              <Button type="button" onClick={handleTest} isLoading={isTesting} disabled={!testTo} leftIcon={<Send className="h-4 w-4" />}>
+                Send a test
+              </Button>
+            </SettingsActions>
+          </SettingsBlock>
+
+          {/* Bounce webhook hint */}
+          {descriptor && descriptor.id !== 'cloudflare' && descriptor.id !== 'smtp' && (
+            <SettingsBlock
+              title="Bounces and spam complaints"
+              description={
+                webhooksOn
+                  ? `Point ${descriptor.label}'s bounce and spam complaint webhooks at this address, so bounced addresses and complaints are taken off your lists automatically.`
+                  : undefined
+              }
+            >
+              {webhooksOn ? (
+                <code className="rounded-md-s border border-border bg-background px-3 py-2 text-xs text-foreground break-all">
                   {typeof window !== 'undefined' ? window.location.origin : ''}
                   /api/webhooks/email/{descriptor.id}?s=<i>your WEBHOOK_SECRET</i>
-                </code>{' '}
-                so bounced addresses and complaints are taken off your lists automatically.
-              </span>
-            ) : (
-              <span>
-                Set <code className="font-mono">WEBHOOK_SECRET</code> on this server to turn on bounce and complaint tracking; until then{' '}
-                {descriptor.label}'s webhooks are refused.
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </form>
+                </code>
+              ) : (
+                <Notice level="warning">
+                  Set <code className="font-mono">WEBHOOK_SECRET</code> on this server to turn on bounce and complaint tracking; until then{' '}
+                  {descriptor.label}'s webhooks are refused.
+                </Notice>
+              )}
+            </SettingsBlock>
+          )}
+        </SettingsPanel>
+      </form>
+    </div>
   )
 }

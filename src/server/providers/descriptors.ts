@@ -27,7 +27,7 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
       },
       {
         key: 'apiToken',
-        label: 'API Token',
+        label: 'API token',
         type: 'secret',
         required: true,
         help: 'Needs Email Sending: Send. Add Analytics: Read for bounce polling.',
@@ -48,7 +48,7 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://resend.com/docs/api-reference/emails/send-email',
     httpsOnly: true,
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'secret', required: true, placeholder: 're_...' },
+      { key: 'apiKey', label: 'API key', type: 'secret', required: true, placeholder: 're_...' },
     ],
   },
   {
@@ -59,11 +59,11 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     httpsOnly: true,
     fields: [
       { key: 'region', label: 'Region', type: 'text', required: true, defaultValue: 'us-east-1', placeholder: 'us-east-1' },
-      { key: 'accessKeyId', label: 'Access Key ID', type: 'text', required: true, placeholder: 'AKIA...' },
-      { key: 'secretAccessKey', label: 'Secret Access Key', type: 'secret', required: true },
+      { key: 'accessKeyId', label: 'Access key ID', type: 'text', required: true, placeholder: 'AKIA...' },
+      { key: 'secretAccessKey', label: 'Secret access key', type: 'secret', required: true },
       {
         key: 'configurationSet',
-        label: 'Configuration Set',
+        label: 'Configuration set',
         type: 'text',
         placeholder: 'Optional',
         help: 'Needed if you want SES to publish bounce events to SNS.',
@@ -77,10 +77,10 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://postmarkapp.com/developer/api/email-api',
     httpsOnly: true,
     fields: [
-      { key: 'serverToken', label: 'Server API Token', type: 'secret', required: true },
+      { key: 'serverToken', label: 'Server API token', type: 'secret', required: true },
       {
         key: 'messageStream',
-        label: 'Message Stream',
+        label: 'Message stream',
         type: 'text',
         required: true,
         defaultValue: 'broadcast',
@@ -95,7 +95,7 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send',
     httpsOnly: true,
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'secret', required: true, placeholder: 'SG....' },
+      { key: 'apiKey', label: 'API key', type: 'secret', required: true, placeholder: 'SG....' },
     ],
   },
   {
@@ -105,10 +105,10 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://documentation.mailgun.com/docs/mailgun/api-reference/openapi-final/tag/Messages/',
     httpsOnly: true,
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'secret', required: true },
+      { key: 'apiKey', label: 'API key', type: 'secret', required: true },
       {
         key: 'domain',
-        label: 'Sending Domain',
+        label: 'Sending domain',
         type: 'text',
         required: true,
         placeholder: 'mg.yourdomain.com',
@@ -135,7 +135,7 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://developers.brevo.com/reference/sendtransacemail',
     httpsOnly: true,
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'secret', required: true, placeholder: 'xkeysib-...' },
+      { key: 'apiKey', label: 'API key', type: 'secret', required: true, placeholder: 'xkeysib-...' },
     ],
   },
   {
@@ -145,7 +145,7 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://mailchimp.com/developer/transactional/api/messages/send-new-message/',
     httpsOnly: true,
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'secret', required: true },
+      { key: 'apiKey', label: 'API key', type: 'secret', required: true },
     ],
   },
   {
@@ -155,8 +155,8 @@ export const PROVIDER_DESCRIPTORS: ProviderDescriptor[] = [
     docsUrl: 'https://nodemailer.com/smtp/',
     httpsOnly: false,
     fields: [
-      { key: 'host', label: 'SMTP Host', type: 'text', required: true, placeholder: 'smtp.zoho.eu' },
-      { key: 'port', label: 'SMTP Port', type: 'number', required: true, defaultValue: '465', placeholder: '465' },
+      { key: 'host', label: 'SMTP host', type: 'text', required: true, placeholder: 'smtp.zoho.eu' },
+      { key: 'port', label: 'SMTP port', type: 'number', required: true, defaultValue: '465', placeholder: '465' },
       { key: 'user', label: 'Username', type: 'text', required: true, placeholder: 'hello@yourdomain.com' },
       { key: 'pass', label: 'Password', type: 'secret', required: true },
     ],

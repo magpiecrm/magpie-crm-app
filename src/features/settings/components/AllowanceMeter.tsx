@@ -10,7 +10,16 @@ const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsS
  * hosts this copy sells usage up front (see server/allowance.ts). Renders
  * nothing otherwise.
  */
-export function AllowanceMeter({ compact = false, showUpgrade = true }: { compact?: boolean; showUpgrade?: boolean }) {
+export function AllowanceMeter({
+  compact = false,
+  showUpgrade = true,
+  heading = true,
+}: {
+  compact?: boolean
+  showUpgrade?: boolean
+  /** Off where the block around it already says "Your plan" (Settings): only the reset date shows. */
+  heading?: boolean
+}) {
   const { data } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60_000 })
   const allowance = data?.allowance
   if (!allowance || allowance.items.length === 0) return null
@@ -22,12 +31,13 @@ export function AllowanceMeter({ compact = false, showUpgrade = true }: { compac
 
   return (
     <div className={`flex flex-col ${compact ? 'gap-2' : 'gap-3'}`}>
-      {!compact && (
+      {!compact && heading && (
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Your plan this month</h3>
           {resets && <span className="text-xs text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
         </div>
       )}
+      {!compact && !heading && resets && <p className="text-xs text-muted-foreground">Resets {resets}</p>}
       {allowance.sendingPaused && (
         <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold text-destructive`}>
           Sending is paused by your hosting provider.

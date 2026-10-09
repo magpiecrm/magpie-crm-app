@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Mail, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, Mail, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { createSenderFn, deleteSenderFn, getSendersFn, updateSenderFn } from '../../../server/functions'
-import { SettingsBlock } from './SettingsBlock'
+import { Button } from '../../../components/ui/Button'
+import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 /** Settings → Sender addresses: the names and addresses campaigns are sent from. */
 export function SendersTab() {
@@ -53,7 +56,7 @@ export function SendersTab() {
       setNewSenderName('')
       setNewSenderEmail('')
       await fetchSenders()
-      showSenderSuccess('Sender added successfully!')
+      showSenderSuccess('Sender added.')
     } catch (e: any) {
       setSenderError(e.message || 'Failed to add sender')
     } finally {
@@ -83,7 +86,7 @@ export function SendersTab() {
       await updateSenderFn({ data: { id, name: editName.trim(), email: editEmail.trim() } })
       setEditingSenderId(null)
       await fetchSenders()
-      showSenderSuccess('Sender updated successfully!')
+      showSenderSuccess('Sender updated.')
     } catch (e: any) {
       setSenderError(e.message || 'Failed to update sender')
     } finally {
@@ -92,7 +95,7 @@ export function SendersTab() {
   }
 
   const handleDeleteSender = async (id: number, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete the sender "${name}"?`)) return
+    if (!window.confirm(`Delete the sender "${name}"?`)) return
     setSenderError(null)
     try {
       await deleteSenderFn({ data: { id } })
@@ -104,156 +107,141 @@ export function SendersTab() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Success / Error messages */}
-      {senderSuccess && (
-        <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-500 text-sm rounded-md-s flex items-center gap-2">
-          <Check className="w-4 h-4 shrink-0" />
-          <span>{senderSuccess}</span>
-        </div>
-      )}
-      {senderError && (
-        <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded-md-s flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <span>{senderError}</span>
-        </div>
-      )}
+    <div className="flex flex-col gap-4">
+      {senderSuccess && <Notice level="success">{senderSuccess}</Notice>}
+      {senderError && <Notice level="error">{senderError}</Notice>}
 
-      {/* Senders List */}
-      <SettingsBlock title="Current senders">
-        {isLoadingSenders ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
-            <RefreshCw className="w-5 h-5 animate-spin text-accent" />
-            <span>Loading senders...</span>
-          </div>
-        ) : senders.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">No senders found. Add one below.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {senders.map((sender) => (
-              <div key={sender.id} className="border border-border rounded-md-s bg-muted/20 overflow-hidden">
-                {editingSenderId === sender.id ? (
-                  /* Edit Mode */
-                  <div className="p-4 flex flex-col gap-3">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-foreground">Display Name</label>
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          placeholder="e.g. Marketing Team"
-                          className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                        />
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-foreground">Email Address</label>
-                        <input
-                          type="email"
-                          value={editEmail}
-                          onChange={(e) => setEditEmail(e.target.value)}
-                          placeholder="e.g. hello@yourdomain.com"
-                          className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2 justify-end">
-                      <button
-                        type="button"
-                        onClick={handleCancelEdit}
-                        className="px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground border border-border hover:bg-muted rounded-md-s transition-all cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleSaveEdit(sender.id)}
-                        disabled={isSavingSender || !editName.trim() || !editEmail.trim()}
-                        className="px-3 py-1.5 text-xs font-semibold bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground rounded-md-s transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        {isSavingSender ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* View Mode */
-                  <div className="p-4 flex items-center gap-3">
-                    <div className="p-2 bg-accent/10 rounded-md-s text-accent shrink-0">
-                      <Mail className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{sender.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono truncate">{sender.email}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(sender)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent hover:border-border rounded-md-s transition-all cursor-pointer"
-                        title="Edit sender"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteSender(sender.id, sender.name)}
-                        className="p-1.5 text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20 rounded-md-s transition-all cursor-pointer"
-                        title="Delete sender"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </SettingsBlock>
-
-      {/* Add New Sender */}
-      <SettingsBlock title="Add new sender">
-      <form onSubmit={handleAddSender} className="flex flex-col gap-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Display Name</label>
-            <input
-              type="text"
-              required
-              value={newSenderName}
-              onChange={(e) => setNewSenderName(e.target.value)}
-              placeholder="e.g. Marketing Team"
-              disabled={isAddingSender}
-              className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-foreground">Email Address</label>
-            <input
-              type="email"
-              required
-              value={newSenderEmail}
-              onChange={(e) => setNewSenderEmail(e.target.value)}
-              placeholder="e.g. hello@yourdomain.com"
-              disabled={isAddingSender}
-              className="bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-            />
-          </div>
-        </div>
-        <button
-          type="submit"
-          disabled={isAddingSender || !newSenderName.trim() || !newSenderEmail.trim()}
-          className="w-full md:w-auto md:self-end px-4 py-2.5 bg-primary hover:bg-primary/85 disabled:opacity-50 text-primary-foreground text-sm font-semibold rounded-md-s transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          {isAddingSender ? (
-            <><RefreshCw className="w-4 h-4 animate-spin" /><span>Adding...</span></>
+      <SettingsPanel>
+        <SettingsBlock title="Senders" description="The names and addresses campaigns are sent from.">
+          {isLoadingSenders ? (
+            <SettingsEmpty>
+              <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
+              Loading…
+            </SettingsEmpty>
+          ) : senders.length === 0 ? (
+            <SettingsEmpty>No senders yet. Add one below.</SettingsEmpty>
           ) : (
-            <><Plus className="w-4 h-4" /><span>Add Sender</span></>
+            <SettingsList>
+              {senders.map((sender) => {
+                const editing = editingSenderId === sender.id
+                return (
+                  <SettingsRow
+                    key={sender.id}
+                    icon={<Mail className="h-4 w-4" />}
+                    title={sender.name}
+                    detail={sender.email}
+                    actions={
+                      // While it's being edited, the form below is the row's only controls.
+                      editing ? undefined : (
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleStartEdit(sender)}
+                            aria-label={`Edit ${sender.name}`}
+                            title="Edit"
+                            leftIcon={<Pencil className="h-4 w-4" />}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDeleteSender(sender.id, sender.name)}
+                            aria-label={`Delete ${sender.name}`}
+                            title="Delete"
+                            className="hover:!bg-destructive/10 hover:!text-destructive"
+                            leftIcon={<Trash2 className="h-4 w-4" />}
+                          />
+                        </>
+                      )
+                    }
+                  >
+                    {editing && (
+                      <div className="flex flex-col gap-3">
+                        <FieldGrid>
+                          <Field label="Display name">
+                            <input
+                              type="text"
+                              value={editName}
+                              onChange={(e) => setEditName(e.target.value)}
+                              placeholder="Marketing team"
+                              className={INPUT_CLASS}
+                            />
+                          </Field>
+                          <Field label="Email address">
+                            <input
+                              type="email"
+                              value={editEmail}
+                              onChange={(e) => setEditEmail(e.target.value)}
+                              placeholder="hello@yourdomain.com"
+                              className={INPUT_CLASS}
+                            />
+                          </Field>
+                        </FieldGrid>
+                        <SettingsActions>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => handleSaveEdit(sender.id)}
+                            isLoading={isSavingSender}
+                            disabled={!editName.trim() || !editEmail.trim()}
+                            leftIcon={<Check className="h-3.5 w-3.5" />}
+                          >
+                            Save
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" onClick={handleCancelEdit}>
+                            Cancel
+                          </Button>
+                        </SettingsActions>
+                      </div>
+                    )}
+                  </SettingsRow>
+                )
+              })}
+            </SettingsList>
           )}
-        </button>
-      </form>
-      </SettingsBlock>
+        </SettingsBlock>
+
+        <SettingsBlock title="Add a sender">
+          <form onSubmit={handleAddSender} className="flex flex-col gap-3">
+            <FieldGrid>
+              <Field label="Display name">
+                <input
+                  type="text"
+                  required
+                  value={newSenderName}
+                  onChange={(e) => setNewSenderName(e.target.value)}
+                  placeholder="Marketing team"
+                  disabled={isAddingSender}
+                  className={INPUT_CLASS}
+                />
+              </Field>
+              <Field label="Email address">
+                <input
+                  type="email"
+                  required
+                  value={newSenderEmail}
+                  onChange={(e) => setNewSenderEmail(e.target.value)}
+                  placeholder="hello@yourdomain.com"
+                  disabled={isAddingSender}
+                  className={INPUT_CLASS}
+                />
+              </Field>
+            </FieldGrid>
+            <SettingsActions>
+              <Button
+                type="submit"
+                isLoading={isAddingSender}
+                disabled={!newSenderName.trim() || !newSenderEmail.trim()}
+                leftIcon={<Plus className="h-4 w-4" />}
+              >
+                Add sender
+              </Button>
+            </SettingsActions>
+          </form>
+        </SettingsBlock>
+      </SettingsPanel>
     </div>
   )
 }
