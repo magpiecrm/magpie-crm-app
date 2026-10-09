@@ -11,7 +11,9 @@
 // employer, country, profile address and the verified work email. Never an
 // imported or signed-up contact, a guessed address, notes, lists, or
 // anything about what was emailed to them. A copy that isn't hosted, or
-// hasn't joined, sends nothing.
+// hasn't joined, sends nothing. Contacts saved the same way before the copy
+// joined are offered too, a batch at a time, except anyone who has
+// unsubscribed, complained or bounced here.
 //
 // Any hosted copy's searches can also use that database, where the host has
 // switched it on. The search itself is unchanged; of the people it finds, the
@@ -41,6 +43,57 @@ async function post(path: string, body: unknown, fetchImpl: typeof fetch, timeou
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   })
+}
+
+type Db = typeof import('../db')['db']
+/** The host takes 200 at a time; the slack is for contacts saved in the same instant, who go together. */
+const BATCH = 150
+const HOST_MAX = 200
+
+/**
+ * Offers the host the contacts this copy saved from prospect search before
+ * it joined (or that the host had no room for then): oldest first, one batch
+ * a call, carrying on next time from where the host stopped taking them.
+ * Returns how many it took. Only contacts with a verified email who can
+ * still be emailed here; one whose email came from the database itself
+ * (source `shared`) is never sent back.
+ */
+export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getProspectingSettings' | 'saveProspectingSettings'>, fetchImpl: typeof fetch = fetch): Promise<number> {
+  if (!sharedDatabase()?.contributing) return 0
+  const settings = db.getProspectingSettings()
+  const from = settings?.shared_offered_until ?? ''
+  const waiting = db.data.contacts
+    .filter((c) => c.source === 'socialfetch' && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email))
+    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+  if (waiting.length === 0) return 0
+  let size = Math.min(BATCH, waiting.length)
+  while (size < waiting.length && size < HOST_MAX && waiting[size].created_at === waiting[size - 1].created_at) size++
+  const due = waiting.slice(0, size)
+  const people = due.map((c) => ({
+    firstName: c.first_name,
+    lastName: c.last_name,
+    title: c.job_title,
+    company: c.company,
+    email: c.email,
+    emailStatus: 'verified',
+    source: 'socialfetch',
+    verifiedAt: c.created_at,
+  }))
+  const res = await post('/v1/pool/contribute', { people }, fetchImpl)
+  if (!res.ok) return 0
+  const body = (await res.json()) as { accepted?: number; full?: number }
+  // Those it had no room for are the last in the batch: they're offered again
+  // next time, so the place kept is the last moment before the first of them.
+  const taken = due.length - Math.min(due.length, Math.max(0, Number(body.full) || 0))
+  const until =
+    taken === due.length
+      ? due[taken - 1].created_at
+      : due
+          .slice(0, taken)
+          .reverse()
+          .find((c) => c.created_at < due[taken].created_at)?.created_at
+  if (until) db.saveProspectingSettings({ ...(settings ?? { updated_at: new Date().toISOString() }), shared_offered_until: until })
+  return Number(body.accepted) || 0
 }
 
 /** What the host holds about someone a search found: their job and employer, and the handle for their email. */

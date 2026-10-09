@@ -5,6 +5,7 @@ import { notify } from './notify'
 import { sendCampaign, settleHeldGuesses } from './emailService'
 import { refreshHostRules } from './prospecting/hostRules'
 import { reportFormats } from './prospecting/sharedFormats'
+import { contributeSaved } from './prospecting/sharedPeople'
 import { getAppUrl } from './appUrl'
 import { encryptToken } from './crypto'
 
@@ -147,6 +148,13 @@ export function startEmailScheduler() {
       .catch((err) => console.error('[SharedFormats] Report failed:', err))
   g.__shareFormatsTimeout = setTimeout(shareFormats, 2 * 60_000)
   g.__shareFormatsInterval = setInterval(shareFormats, 6 * 60 * 60_000)
+  // Where this copy contributes to its host's shared database: the contacts it saved before joining.
+  const offerSaved = () =>
+    contributeSaved(db)
+      .then((n) => n && console.log(`[SharedPeople] The host took ${n} contacts saved before joining`))
+      .catch((err) => console.error('[SharedPeople] Offering saved contacts failed:', err))
+  g.__sharedPeopleTimeout = setTimeout(offerSaved, 3 * 60_000)
+  g.__sharedPeopleInterval = setInterval(offerSaved, 6 * 60 * 60_000)
 
   g.__bouncePollerInterval = setInterval(() => {
     pollBounces().catch((err) => console.error('[BouncePoller] Poll failed:', err))

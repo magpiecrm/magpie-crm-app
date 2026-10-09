@@ -417,6 +417,12 @@ export interface DbSchema {
 export interface ProspectingSettingsRecord {
   secrets?: string
   /**
+   * In a copy that contributes to its host's shared database: contacts saved
+   * before it joined have been offered up to this `created_at`
+   * (prospecting/sharedPeople.ts contributeSaved).
+   */
+  shared_offered_until?: string
+  /**
    * Whether emails are verified (by the verification server) or not. Absent means "verify when
    * it's set up". `neverbounce` may linger from before it was removed; it's
    * treated as absent.

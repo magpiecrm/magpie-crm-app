@@ -225,7 +225,9 @@ contacts, and that is the only point where emails are looked up.
   search**; from then on each contact saved from prospect search with a
   verified email is sent to the host (name, job title, employer, country,
   profile address and the email; `sharedPeople.ts`). Imported and signed-up
-  contacts, guessed addresses, lists and notes never are. The host is the
+  contacts, guessed addresses, lists and notes never are. Contacts saved the
+  same way before joining are offered too, in batches, except anyone who has
+  unsubscribed, complained or bounced. The host is the
   controller of that database: it tells each person and takes their opt-outs,
   which reach every copy through the shared opt-out list. A copy you run
   yourself has no host and sends nothing. Where the host has switched it on,

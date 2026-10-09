@@ -198,7 +198,7 @@ describe('saveProspects', () => {
     })
     expect(job.outcomes[0]).toMatchObject({ status: 'saved', email: 'jane.smith@acme.com', emailStatus: 'verified' })
     expect(check).not.toHaveBeenCalled()
-    expect(state.contacts[0]).toMatchObject({ email: 'jane.smith@acme.com', email_status: 'verified' })
+    expect(state.contacts[0]).toMatchObject({ email: 'jane.smith@acme.com', email_status: 'verified', source: 'shared' })
     // The hook is told; sharedPeople.contribute itself leaves out anyone marked `shared`.
     expect(contributed).toHaveLength(1)
   })

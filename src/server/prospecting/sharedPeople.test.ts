@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { refreshHostRules } from './hostRules'
-import { contribute, knownPeople, setContributing, sharedEmail } from './sharedPeople'
+import { contribute, contributeSaved, knownPeople, setContributing, sharedEmail } from './sharedPeople'
 import { profileHash } from './suppressionHash'
 import type { PersonResult } from './types'
 
@@ -104,6 +104,71 @@ describe('the shared database', () => {
     contribute({ ...jane, shared: '7.2026-10-11.sig' }, 'jane.smith@acme.com', 'verified', fetchImpl)
     await settle()
     expect(sent).toEqual([])
+  })
+
+  describe('contacts saved before joining', () => {
+    const contact = (n: number, over: Record<string, unknown> = {}) => ({
+      email: `p${n}@acme.co.uk`, first_name: 'Pat', last_name: `Lee${n}`, job_title: 'Buyer', company: 'Acme', status: 'subscribed',
+      created_at: `2026-0${1 + Math.floor(n / 10)}-1${n % 10}T10:00:00.000Z`, source: 'socialfetch', email_status: 'verified', ...over,
+    })
+    function store(contacts: any[]) {
+      let settings: any = null
+      return {
+        data: { contacts },
+        emailStop: (email: string) => (email === 'p3@acme.co.uk' ? { reason: 'unsubscribed' as const, at: 'x' } : null),
+        getProspectingSettings: () => settings,
+        saveProspectingSettings: (next: any) => void (settings = next),
+      } as any
+    }
+
+    it("are offered once it has joined: verified finds from prospect search that can still be emailed, and nothing else", async () => {
+      const db = store([
+        contact(1),
+        contact(2, { source: undefined }), // imported
+        contact(3), // unsubscribed here
+        contact(4, { email_status: 'catch_all_likely' }),
+        contact(5, { status: 'bounced' }),
+        contact(6, { source: 'shared' }), // its email came from the database
+        contact(7),
+      ])
+      const out = host({ contributing: false })
+      await refreshHostRules(out.fetchImpl)
+      expect(await contributeSaved(db, out.fetchImpl)).toBe(0)
+      expect(out.sent).toEqual([])
+
+      const { fetchImpl, sent } = host({ contributing: true })
+      await refreshHostRules(fetchImpl)
+      await contributeSaved(db, fetchImpl)
+      expect(sent).toHaveLength(1)
+      expect(sent[0].body.people).toEqual([
+        { firstName: 'Pat', lastName: 'Lee1', title: 'Buyer', company: 'Acme', email: 'p1@acme.co.uk', emailStatus: 'verified', source: 'socialfetch', verifiedAt: '2026-01-11T10:00:00.000Z' },
+        { firstName: 'Pat', lastName: 'Lee7', title: 'Buyer', company: 'Acme', email: 'p7@acme.co.uk', emailStatus: 'verified', source: 'socialfetch', verifiedAt: '2026-01-17T10:00:00.000Z' },
+      ])
+      // Once: the next round has nothing left to offer.
+      await contributeSaved(db, fetchImpl)
+      expect(sent).toHaveLength(1)
+    })
+
+    it('carry on next time from where the host ran out of room', async () => {
+      const db = store([contact(1), contact(2), contact(4), contact(5)])
+      const asked: string[][] = []
+      let room = 1
+      const fetchImpl = (async (url: string, init: RequestInit = {}) => {
+        if (new URL(url).pathname === '/v1/prospecting') return Response.json({ rules: {}, pool: { available: true, contributing: true, termsVersion: '2026-10' } })
+        const people = JSON.parse(String(init.body)).people as Array<{ email: string }>
+        asked.push(people.map((p) => p.email))
+        const accepted = Math.min(room, people.length)
+        return Response.json({ accepted, rejected: people.length - accepted, full: people.length - accepted })
+      }) as unknown as typeof fetch
+      await refreshHostRules(fetchImpl)
+      expect(await contributeSaved(db, fetchImpl)).toBe(1)
+      room = 10
+      expect(await contributeSaved(db, fetchImpl)).toBe(3)
+      expect(asked).toEqual([
+        ['p1@acme.co.uk', 'p2@acme.co.uk', 'p4@acme.co.uk', 'p5@acme.co.uk'],
+        ['p2@acme.co.uk', 'p4@acme.co.uk', 'p5@acme.co.uk'],
+      ])
+    })
   })
 
   it('says which of the people a search found it holds, asked by the hash of their profile address only', async () => {

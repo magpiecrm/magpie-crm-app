@@ -246,9 +246,15 @@ export const setSharedDatabaseFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const session = await requireAuth()
-    const { setContributing } = await import('../prospecting/sharedPeople')
+    const { contributeSaved, setContributing } = await import('../prospecting/sharedPeople')
     try {
-      return { success: true as const, contributing: await setContributing(data.contribute, session.email as string) }
+      const contributing = await setContributing(data.contribute, session.email as string)
+      // Contacts saved before joining are offered straight away; the rest follow from the scheduler.
+      if (contributing) {
+        const { db } = await import('../db')
+        void contributeSaved(db).catch((err) => console.error('[SharedPeople] Offering saved contacts failed:', err))
+      }
+      return { success: true as const, contributing }
     } catch (err) {
       return { success: false as const, error: err instanceof Error ? err.message : "The shared database isn't available right now." }
     }

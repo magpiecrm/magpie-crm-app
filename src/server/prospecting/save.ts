@@ -210,7 +210,8 @@ async function processPerson(
   }
 
   deps.db.setContactProspectFields(found.email, {
-    source: person.source,
+    // `shared`: the email came from the host's shared database, so this contact is never contributed back to it.
+    source: held ? 'shared' : person.source,
     email_status: found.status,
     notice_status: 'pending',
   })
