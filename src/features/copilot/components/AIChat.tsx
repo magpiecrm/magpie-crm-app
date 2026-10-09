@@ -149,8 +149,8 @@ interface AIChatProps {
  */
 const CLAUDE_MODELS = [
   { label: 'Fable 5.1 (most capable)', value: 'claude-fable-5-1' },
-  { label: 'Sonnet 5 (faster, cheaper)', value: 'claude-sonnet-5' },
-  { label: 'Haiku 4.5 (fastest)', value: 'claude-haiku-4-5' },
+  { label: 'Sonnet 5.5 (faster, cheaper)', value: 'claude-sonnet-5-5' },
+  { label: 'Haiku 5.5 (fastest)', value: 'claude-haiku-5-5' },
 ] as const
 
 /**
@@ -161,10 +161,10 @@ const CLAUDE_MODELS = [
 const OPENAI_PREFIX = 'openai:'
 const OPENAI_MODELS = [
   { label: 'GPT-6 Astra (most capable)', value: 'gpt-6-astra' },
-  { label: 'GPT-6 Sol (balanced)', value: 'gpt-6-sol' },
+  { label: 'GPT-6.1 Sol (balanced)', value: 'gpt-6.1-sol' },
   { label: 'GPT-6 Luna (fastest)', value: 'gpt-6-luna' },
 ] as const
-const OPENAI_DEFAULT_OPTION = `${OPENAI_PREFIX}gpt-6-sol`
+const OPENAI_DEFAULT_OPTION = `${OPENAI_PREFIX}gpt-6.1-sol`
 
 interface DropdownOption {
   id: string
@@ -222,7 +222,7 @@ const PERMISSION_MODE_OPTIONS: DropdownOption[] = [
 
 /**
  * Effort levels both APIs take (Anthropic's `output_config.effort`, OpenAI's
- * `reasoning.effort`). Haiku 4.5 has no effort setting, so it's ignored there.
+ * `reasoning.effort`).
  */
 const EFFORT_OPTIONS: DropdownOption[] = [
   { id: '', label: 'Default', description: 'The model paces itself.', icon: <Gauge className="w-3.5 h-3.5 text-accent" /> },

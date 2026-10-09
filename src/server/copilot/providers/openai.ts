@@ -41,7 +41,7 @@ function toolOutput(outcome: ToolOutcome): string | unknown[] {
 export const openaiAdapter: ModelAdapter = {
   id: 'openai',
   label: 'OpenAI',
-  defaultModel: 'gpt-6-sol',
+  defaultModel: 'gpt-6.1-sol',
   requireKey: requireOpenAIKey,
   textItem: (role, text) => ({ role, content: text }),
 

@@ -8,8 +8,8 @@ import type { ToolOutcome } from '../mcp'
 
 const API_URL = 'https://api.anthropic.com/v1/messages'
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
-/** Haiku 4.5 predates the effort setting, and rejects it. */
-const supportsEffort = (model: string) => !/haiku/i.test(model)
+/** Haiku 4.5 predates the effort setting, and rejects it. Haiku 5.5 takes it. */
+const supportsEffort = (model: string) => !/haiku-4/i.test(model)
 
 /** Tool output as Claude takes it: text, plus the rendered image when there is one. */
 function toolContent(outcome: ToolOutcome): unknown[] {

@@ -80,7 +80,7 @@ describe('copilot on OpenAI', () => {
 
     expect(events.map((e) => e.type)).toEqual(['session', 'tool_start', 'tool_result', 'text', 'done'])
     expect(events.at(-1)).toMatchObject({ type: 'done', text: 'You have one list: Newsletter.' })
-    expect(bodies[0]).toMatchObject({ model: 'gpt-6-sol', store: false, include: ['reasoning.encrypted_content'] })
+    expect(bodies[0]).toMatchObject({ model: 'gpt-6.1-sol', store: false, include: ['reasoning.encrypted_content'] })
     expect(bodies[0].input).toEqual([{ role: 'user', content: 'What lists do I have?' }])
     // The second request carries the call (without its unreplayable id) and its output.
     const [, sentCall, output] = bodies[1].input
@@ -198,13 +198,19 @@ describe('copilot on Claude', () => {
     expect(JSON.stringify(bodies[1].messages.slice(0, -1))).not.toContain('cache_control')
   })
 
-  it('sends effort, except to Haiku, which has none', async () => {
+  it('sends effort, except to Haiku 4.5, which has none', async () => {
     const { session } = newChat()
-    const { fetchImpl, bodies } = fakeOpenAI(claudeMessage([{ type: 'text', text: 'a' }]), claudeMessage([{ type: 'text', text: 'b' }]))
-    await runClaudeTurn({ sessionId: session.id, message: 'Hi', model: 'claude-sonnet-5', effort: 'xhigh' }, fetchImpl)
+    const { fetchImpl, bodies } = fakeOpenAI(
+      claudeMessage([{ type: 'text', text: 'a' }]),
+      claudeMessage([{ type: 'text', text: 'b' }]),
+      claudeMessage([{ type: 'text', text: 'c' }]),
+    )
+    await runClaudeTurn({ sessionId: session.id, message: 'Hi', model: 'claude-sonnet-5-5', effort: 'xhigh' }, fetchImpl)
+    await runClaudeTurn({ sessionId: session.id, message: 'Hi', model: 'claude-haiku-5-5', effort: 'high' }, fetchImpl)
     await runClaudeTurn({ sessionId: session.id, message: 'Hi', model: 'claude-haiku-4-5', effort: 'high' }, fetchImpl)
-    expect(bodies[0]).toMatchObject({ model: 'claude-sonnet-5', output_config: { effort: 'xhigh' } })
-    expect(bodies[1].output_config).toBeUndefined()
+    expect(bodies[0]).toMatchObject({ model: 'claude-sonnet-5-5', output_config: { effort: 'xhigh' } })
+    expect(bodies[1]).toMatchObject({ model: 'claude-haiku-5-5', output_config: { effort: 'high' } })
+    expect(bodies[2].output_config).toBeUndefined()
   })
 
   it('marks a failed tool result as an error for Claude', async () => {
