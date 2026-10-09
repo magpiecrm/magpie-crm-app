@@ -67,6 +67,8 @@ export interface SaveDeps {
   verifiedOnly?: boolean
   /** With `verifiedOnly`, still save `format_confirmed` guesses. */
   allowFormatConfirmed?: boolean
+  /** Passes a newly saved contact to the host's shared database, in a hosted copy that contributes (sharedPeople.ts). */
+  contribute?: (person: PersonResult, email: string, status: EmailStatus) => void
 }
 
 const jobs = new Map<string, ProspectJob>()
@@ -210,6 +212,7 @@ async function processPerson(
   })
   // A revealed address was already counted as found when it was revealed.
   recordUsage({ contactsSaved: 1, emailsFound: person.email ? 0 : 1 })
+  deps.contribute?.(person, found.email, found.status)
   return { ...base, status: 'saved', email: found.email, emailStatus: found.status }
 }
 

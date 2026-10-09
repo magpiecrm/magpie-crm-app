@@ -183,6 +183,8 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
         allowFormatConfirmed: allowsFormatConfirmed(),
         rules: (await import('../prospecting/hostRules')).prospectingRules(),
       },
+      /** The host's shared database of business contacts, when it has one open (sharedPeople.ts). */
+      sharedDatabase: (await import('../prospecting/hostRules')).sharedDatabase(),
       reacher: {
         configured: verifier?.provider === 'reacher',
         // The host's IPs aren't a managed copy's business.
@@ -231,6 +233,20 @@ export const saveSearchPreferencesFn = createServerFn({ method: 'POST' })
     const { saveSearchPreferences } = await import('../prospecting/settings')
     saveSearchPreferences(data)
     return { ok: true }
+  })
+
+/** Joins or leaves the host's shared database (sharedPeople.ts). Joining is agreeing to its Contributor Terms. */
+export const setSharedDatabaseFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { contribute: boolean }) => z.object({ contribute: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const session = await requireAuth()
+    const { setContributing } = await import('../prospecting/sharedPeople')
+    try {
+      return { success: true as const, contributing: await setContributing(data.contribute, session.email as string) }
+    } catch (err) {
+      return { success: false as const, error: err instanceof Error ? err.message : "The shared database isn't available right now." }
+    }
   })
 
 export const getProspectingSettingsFn = createServerFn({ method: 'GET' })

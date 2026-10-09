@@ -36,6 +36,16 @@ interface HostAnswer {
   checks: CheckShare | null
   /** Daily sending limits the host has set for this copy itself, in place of the ramp (sendingLimits.ts). */
   sendLimits: SendLimits | null
+  /** The host's shared database of business contacts (sharedPeople.ts); null when it has none, or it isn't open. */
+  pool: SharedDatabase | null
+}
+
+export interface SharedDatabase {
+  /** Whether this copy sends it the verified contacts it saves from prospect search. */
+  contributing: boolean
+  /** The Contributor Terms someone here agrees to when joining, and where to read them. */
+  termsVersion: string
+  termsUrl: string | null
 }
 
 /** Emails a day of each kind; a kind left out follows the ramp. */
@@ -82,6 +92,12 @@ function sendLimitsFrom(l: any): SendLimits | null {
   return cold === undefined && optIn === undefined ? null : { ...(cold !== undefined ? { cold } : {}), ...(optIn !== undefined ? { optIn } : {}) }
 }
 
+function sharedDatabaseFrom(p: any): SharedDatabase | null {
+  if (p?.available !== true || typeof p.termsVersion !== 'string') return null
+  const termsUrl = typeof p.termsUrl === 'string' && /^https:\/\//.test(p.termsUrl) ? p.termsUrl : null
+  return { contributing: p.contributing === true, termsVersion: p.termsVersion, termsUrl }
+}
+
 /** Daily sending limits the host set for this copy, if any. */
 export function hostSendLimits(): SendLimits | null {
   return env.sendingManaged() ? (g.__hostRules?.sendLimits ?? null) : null
@@ -102,6 +118,11 @@ export function hostCheckShare(): CheckShare | null {
 /** Whether this copy reports and asks for company email formats: hosted, and not left out. */
 export function formatSharingOn(): boolean {
   return env.prospectingManaged() && g.__hostRules?.formatSharing === true
+}
+
+/** The host's shared database, when it has one open to this copy. */
+export function sharedDatabase(): SharedDatabase | null {
+  return env.prospectingManaged() ? (g.__hostRules?.pool ?? null) : null
 }
 
 /**
@@ -128,6 +149,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       eventsPending: body?.eventsPending === true,
       checks: checkShareFrom(body?.checks),
       sendLimits: sendLimitsFrom(body?.sendLimits),
+      pool: sharedDatabaseFrom(body?.pool),
     }
     g.__hostRules = answer
     return answer

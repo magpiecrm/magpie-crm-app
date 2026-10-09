@@ -30,7 +30,13 @@ key), with the app's actions as tools.
     only (size-capped, never on disk): `profileCache.ts` holds profile
     lookups for 24h so a person isn't paid for twice, and `searchPool.ts`
     holds the search hits a page didn't use for 1h, so the next page or
-    top-up doesn't pay for another request. API keys and base URLs come from
+    top-up doesn't pay for another request. One thing does leave a copy:
+    `sharedPeople.ts`, in a hosted copy whose owner agreed to its host's
+    Contributor Terms (Settings → Prospect search), sends the host each
+    contact saved from search with a verified email, for the host's shared
+    database. The host is that database's controller and sends the people in
+    it their notice; nothing imported, guessed or signed-up is ever sent, and
+    a copy that isn't hosted or hasn't joined sends nothing. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview

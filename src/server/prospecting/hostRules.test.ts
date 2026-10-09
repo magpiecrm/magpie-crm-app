@@ -35,6 +35,19 @@ describe('host rules', () => {
     expect(hostCheckShare()).toBeNull()
   })
 
+  it("say whether the host has a shared database open, and whether this copy contributes", async () => {
+    const { sharedDatabase } = await import('./hostRules')
+    expect(sharedDatabase()).toBeNull()
+    await refreshHostRules(reply({ rules: {}, pool: { available: false, contributing: false, termsVersion: '2026-10' } }))
+    expect(sharedDatabase()).toBeNull()
+    await refreshHostRules(reply({ rules: {}, pool: { available: true, contributing: true, termsVersion: '2026-10', termsUrl: 'https://magpie.test/legal/contributor-terms' } }))
+    expect(sharedDatabase()).toEqual({ contributing: true, termsVersion: '2026-10', termsUrl: 'https://magpie.test/legal/contributor-terms' })
+    await refreshHostRules(reply({ rules: {}, pool: { available: true, contributing: 'yes', termsVersion: '2026-10', termsUrl: 'javascript:alert(1)' } }))
+    expect(sharedDatabase()).toEqual({ contributing: false, termsVersion: '2026-10', termsUrl: null })
+    delete process.env.PROSPECTING_MANAGED
+    expect(sharedDatabase()).toBeNull()
+  })
+
   it('keep the last answer when the host fails, and are never asked outside a hosted copy', async () => {
     await refreshHostRules(reply({ rules: { firstBatch: 30 }, formatSharing: true }))
     expect(await refreshHostRules(reply({}, 500))).toBeNull()

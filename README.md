@@ -219,6 +219,16 @@ contacts, and that is the only point where emails are looked up.
   A host running several copies can give them one `SUPPRESSION_SECRET` and pass
   opt-outs between them through `/api/usage/suppressions`, so an opt-out from
   one copy applies to all of them.
+- **Shared database** (hosted copies only): a host can keep one database of
+  business contacts for all its copies. A copy takes part only once someone
+  there agrees to the host's Contributor Terms in **Settings → Prospect
+  search**; from then on each contact saved from prospect search with a
+  verified email is sent to the host (name, job title, employer, country,
+  profile address and the email; `sharedPeople.ts`). Imported and signed-up
+  contacts, guessed addresses, lists and notes never are. The host is the
+  controller of that database: it tells each person and takes their opt-outs,
+  which reach every copy through the shared opt-out list. A copy you run
+  yourself has no host and sends nothing.
 - **Disclosure log**: every prospected contact saved gets a hashed log entry
   (sources, timestamp, notice status). New contacts start with
   `notice_status = pending`; nothing yet delivers the notice.

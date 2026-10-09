@@ -176,6 +176,15 @@ describe('saveProspects', () => {
     expect(JSON.stringify(entry)).not.toMatch(/jane|smith|acme|linkedin/i)
   })
 
+  it('passes each newly saved contact on for the shared database, and nobody already saved', async () => {
+    const contributed: unknown[] = []
+    const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any, contribute: (...args: unknown[]) => void contributed.push(args) }
+    await saveProspects(1, [person('Jane', 'Smith'), person('Bob', 'Jones')], deps)
+    expect(contributed).toEqual([[expect.objectContaining({ firstName: 'Jane', company: 'Acme' }), 'jane.smith@acme.com', 'verified']])
+    await saveProspects(1, [person('Jane', 'Smith')], deps)
+    expect(contributed).toHaveLength(1)
+  })
+
   it('looks the company page up once for several people at the same company', async () => {
     await saveProspects(1, [person('Jane', 'Smith'), person('Bob', 'Jones'), person('Ann', 'Lee')], {
       source, finder: finder({}), db: fakeDb as any,

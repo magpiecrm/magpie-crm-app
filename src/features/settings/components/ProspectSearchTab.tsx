@@ -3,6 +3,7 @@ import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { prospectingStatusFn, saveSearchPreferencesFn } from '../../../server/functions'
 import { SettingsBlock, SettingsCheck, SettingsPanel } from './SettingsBlock'
+import { SharedDatabaseBlock } from './SharedDatabaseBlock'
 
 /** Settings → Prospect search: what search results show. Hosted copies can change it too. */
 export function ProspectSearchTab() {
@@ -82,6 +83,8 @@ export function ProspectSearchTab() {
           {saveFormat.isError && <Notice level="error">{(saveFormat.error as Error).message}</Notice>}
           {saveFormat.isSuccess && !saveFormat.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
         </SettingsBlock>
+
+        {status?.sharedDatabase && <SharedDatabaseBlock shared={status.sharedDatabase} />}
       </SettingsPanel>
     </div>
   )

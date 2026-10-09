@@ -1229,11 +1229,13 @@ export async function startSave(listId: number, people: PersonResult[]) {
   const { getSource, getFinderDeps } = await import('./runtime')
   const { saveProspects } = await import('./save')
   const { allowsFormatConfirmed, isVerifiedOnly } = await import('./settings')
+  const { contribute } = await import('./sharedPeople')
   return saveProspects(listId, people, {
     source: getSource(),
     finder: await getFinderDeps({ background: true }),
     db,
     verifiedOnly: isVerifiedOnly(),
     allowFormatConfirmed: allowsFormatConfirmed(),
+    contribute,
   })
 }
