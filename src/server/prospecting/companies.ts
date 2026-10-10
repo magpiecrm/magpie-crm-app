@@ -66,6 +66,12 @@ export async function domainForPerson(person: PersonResult, source: CompanySourc
     if (cached?.domain_source === 'user' && cached.domain) return cached.domain
   }
   if (person.companyDomain) return normaliseDomain(person.companyDomain)
-  if (person.companyRef) return resolveCompanyDomain(person.companyRef, person.company, source, db, person.companySlug)
-  return null
+  const domain = person.companyRef ? await resolveCompanyDomain(person.companyRef, person.company, source, db, person.companySlug) : null
+  // Which company a lookup stopped at for want of a website, for the log. Company
+  // data only: an employer without a company page is named by nothing, since
+  // its name would come from the person's own headline.
+  if (!domain) {
+    console.log(`[EmailFinder] no website known for ${person.companyRef ? `company ${person.companyRef} (${person.company})` : 'an employer with no company page'} -> no_domain`)
+  }
+  return domain
 }

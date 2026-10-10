@@ -446,6 +446,8 @@ export async function findEmail(
     const parent = await parentWithMail(domain, deps)
     if (!parent) {
       const suggestion = (await deps.suggestMailDomain?.(domain).catch(() => null)) ?? undefined
+      // Which website's domain takes no email, for the log: company data only.
+      console.log(`[EmailFinder] ${domain}: takes no email${suggestion ? ` (its DNS is run from ${suggestion})` : ''} -> not_found`)
       return {
         email: null,
         status: 'not_found',
