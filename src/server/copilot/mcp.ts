@@ -204,7 +204,7 @@ Sequences (cold outreach): createSequence drafts a first email and follow-ups (p
 
 Every marketing email needs an {{ unsubscribe }} link (the footer block has one), images need alt text, and image URLs come from searchImages, never invented.
 
-searchPeople and searchCompanies use the account's prospect credits on every call, so only search when the user asked for it.
+searchPeople uses one of the account's prospect credits for each person it shows, so only search when the user asked for it.
 
 ${renderBlockReference()}
 

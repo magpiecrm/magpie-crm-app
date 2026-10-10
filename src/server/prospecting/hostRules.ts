@@ -38,6 +38,8 @@ interface HostAnswer {
   sendLimits: SendLimits | null
   /** The host's shared database of business contacts (sharedPeople.ts); null when it has none, or it isn't open. */
   pool: SharedDatabase | null
+  /** The host answers profile lookups at no cost to it, so a search looks everyone up rather than guessing employers (search.ts). */
+  profileLookupsFree: boolean
 }
 
 export interface SharedDatabase {
@@ -126,6 +128,11 @@ export function formatSharingOn(): boolean {
   return env.prospectingManaged() && g.__hostRules?.formatSharing === true
 }
 
+/** Whether this copy's host answers profile lookups at no cost to it. */
+export function profileLookupsFree(): boolean {
+  return env.prospectingManaged() && g.__hostRules?.profileLookupsFree === true
+}
+
 /** The host's shared database, when it has one open to this copy. */
 export function sharedDatabase(): SharedDatabase | null {
   return env.prospectingManaged() ? (g.__hostRules?.pool ?? null) : null
@@ -156,6 +163,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       checks: checkShareFrom(body?.checks),
       sendLimits: sendLimitsFrom(body?.sendLimits),
       pool: sharedDatabaseFrom(body?.pool),
+      profileLookupsFree: body?.profileLookupsFree === true,
     }
     g.__hostRules = answer
     return answer

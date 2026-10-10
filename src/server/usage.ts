@@ -20,13 +20,13 @@ const USAGE_COUNTERS = [
   /** People shown in prospect search results. */
   'prospects',
   /**
-   * What searches cost, in prospect credits (allowance.ts; to the hundredth):
-   * this is what a plan's prospect allowance counts.
+   * What searches used, in prospect credits (allowance.ts): one for each
+   * person shown. This is what a plan's prospect allowance counts.
    */
   'prospectCredits',
   /**
-   * Where prospect credits go (search yield): profiles looked up during search
-   * (3 credits each), and of those, people then left out because they turned
+   * What finding them took (search yield): profiles looked up during search,
+   * and of those, people then left out because they turned
    * out to work elsewhere, to be a contact already, or (hidden while
    * verified-only is on) to be at a company where no email can be verified.
    */

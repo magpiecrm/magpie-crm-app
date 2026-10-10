@@ -9,19 +9,17 @@ import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } fro
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
 import { knownPeople } from './sharedPeople'
-import { companyKey, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
+import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
 export async function searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
-  const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
-  // Browsing companies is searching too: it uses prospect credits for what it costs.
+  const { remaining, requireAllowance } = await import('../allowance')
+  // Browsing companies is free, but not once the plan's prospects are used up.
   if (remaining('prospects') < 1) requireAllowance('prospects')
-  const { result: page, credits } = await meterCredits(() => getSource().searchCompanies(filters))
-  const { recordUsage } = await import('../usage')
-  recordUsage({ prospectCredits: prospectCredits(credits) })
+  const page = await getSource().searchCompanies(filters)
 
   // A domain the user entered by hand beats the provider's (often missing) one.
   for (const company of page.items) {
@@ -111,7 +109,6 @@ async function formatConfirmedAt(db: Db): Promise<(domain: string) => boolean> {
 /** Profile lookups run at once: SocialFetch sets no rate limit, and each takes about 2 seconds. */
 const ENRICH_CONCURRENCY = 8
 /** What one profile lookup costs, in SocialFetch credits. */
-const LOOKUP_CREDITS = 3
 /**
  * How lately the host's shared database must have verified someone's email
  * for it to say where they work when their headline doesn't.
@@ -360,7 +357,7 @@ interface Tally {
   noLookup: number
 }
 
-type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies'>>
+type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies' | 'getCompany'>>
 
 /* ------------------------------------------------------------- companies first */
 
@@ -654,6 +651,36 @@ async function companyFirstPage(
 }
 
 /**
+ * Of these people, whose profiles were looked up, those whose current
+ * employer `fits`, each with that employer. One company lookup per company;
+ * one that can't be looked up doesn't fit.
+ */
+async function employersFitting(people: PersonResult[], source: Source, fits: (company: CompanyResult) => boolean): Promise<Map<string, CompanyResult>> {
+  const out = new Map<string, CompanyResult>()
+  const getCompany = source.getCompany?.bind(source)
+  if (!getCompany) return out
+  const companies = new Map<string, Promise<CompanyResult | null>>()
+  await mapLimit(
+    people.filter((p) => p.companyRef),
+    ENRICH_CONCURRENCY,
+    async (p) => {
+      const ref = p.companyRef!
+      if (!companies.has(ref)) companies.set(ref, getCompany(ref, p.companySlug ?? null).catch(() => null))
+      const company = await companies.get(ref)!
+      if (company && fits(company)) out.set(p.profileUrl, company)
+    },
+  )
+  return out
+}
+
+/** Whether a company fits a search's industries and company sizes. */
+function fitsFilters(company: CompanyResult, filters: PeopleFilters): boolean {
+  const industries = (filters.industries ?? []).map((i) => i.trim().toLowerCase()).filter(Boolean)
+  if (industries.length && !(company.industry && industries.includes(company.industry.trim().toLowerCase()))) return false
+  return inHeadcountBuckets(company.headcount, filters.companySizes ?? [])
+}
+
+/**
  * One search page's people, made ready to show: opted-out people and hidden
  * surnames removed (before anything is paid for), saved contacts filled in
  * from the contact, everyone else's profile looked up for their real title
@@ -677,6 +704,13 @@ async function processBatch(
    * again by the searches of one company.
    */
   splitWhen?: (toLookUp: number) => boolean,
+  /**
+   * Profile lookups cost nothing (the host's profileLookupsFree): everyone's
+   * profile is looked up rather than their employer taken from the search,
+   * and in a companies-first search someone whose real employer isn't one of
+   * the companies searched is kept when it `fits` the filters.
+   */
+  free?: { fits: ((company: CompanyResult) => boolean) | null },
 ): Promise<{
   items: PersonResult[]
   refined: string[]
@@ -737,7 +771,9 @@ async function processBatch(
   // up until a Reveal finds no address for them. In a companies-first search
   // the same goes for anyone whose headline names one of the companies.
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
-    if (p.previously === 'saved' || p.profileChecked) return null
+    // A company search also finds people who list it without working there
+    // (members of a society, say): with lookups free, everyone is checked.
+    if (free || p.previously === 'saved' || p.profileChecked) return null
     if (company && /^\d+$/.test(company.ref)) return company
     if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
     if (companySet?.size && p.company) {
@@ -758,7 +794,7 @@ async function processBatch(
   // people who used to work at one of the companies: someone whose headline
   // names another employer has moved on, so no profile is paid for to find
   // that out (it was most of the profiles paid for in these searches).
-  if (companySet?.size) {
+  if (companySet?.size && !free) {
     const names = [...companySet.values()]
     const elsewhere = new Set(
       items
@@ -870,11 +906,17 @@ async function processBatch(
   } else if (companySet?.size) {
     // Someone who has moved on since LinkedIn indexed them isn't at one of them any more.
     const names = [...companySet.values()]
-    const atOne = items.filter(
-      (p) => !refined.includes(p.profileUrl) || (p.companyRef && companySet.has(p.companyRef)) || names.some((n) => sameCompanyName(p.company, n)),
-    )
-    tally.wrongCompany += items.length - atOne.length
-    items = atOne
+    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || Boolean(p.companyRef && companySet.has(p.companyRef)) || names.some((n) => sameCompanyName(p.company, n))
+    // Unless, with lookups free, where they do work fits the filters too.
+    const fitting = free?.fits ? await employersFitting(items.filter((p) => !atOne(p)), source, free.fits) : new Map<string, CompanyResult>()
+    const kept = items
+      .filter((p) => atOne(p) || fitting.has(p.profileUrl))
+      .map((p) => {
+        const at = fitting.get(p.profileUrl)
+        return at ? { ...p, company: at.name, companyDomain: at.domain ?? p.companyDomain } : p
+      })
+    tally.wrongCompany += items.length - kept.length
+    items = kept
   }
 
   // Mark people at companies already known to accept every address. The
@@ -926,7 +968,7 @@ export async function searchPeople(
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
-  const { prospectCredits, remaining, requireAllowance } = await import('../allowance')
+  const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
   const source: Source = getSource()
   const companyFirst = !company && Boolean(filters.companySizes?.length)
@@ -935,17 +977,21 @@ export async function searchPeople(
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
   const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail)
+  // Where the host's profile lookups are free, everyone is looked up, and in a
+  // companies-first search someone working elsewhere is kept if that fits.
+  const { profileLookupsFree } = await import('./hostRules')
+  const free = profileLookupsFree() ? { fits: companyFirst ? (c: CompanyResult) => fitsFilters(c, filters) : null } : undefined
   // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
 
   // Results per page apply to each job title, as the search itself does. The
   // page offers them in 25s (PAGE_SIZES): full pages share each search's cost
-  // among the most people, which is what a prospect credit is priced on.
+  // among the most people.
   const titles = new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   const slots = Math.min(MAX_TITLES_SEARCHED, Math.max(1, titles))
   const perSlot = Math.min(PAGE_SIZES[PAGE_SIZES.length - 1], Math.max(1, filters.count ?? PAGE_SIZES[0]))
-  // About one credit per person on a full page, so a page asks for no more than are left.
+  // A credit per person shown, so a page asks for no more than are left.
   const target = Math.min(perSlot * slots, Math.floor(left))
   // Requests the page takes before any top-up: over 50 a title needs two.
   const planned = Math.ceil(Math.ceil(target / slots) / MAX_PER_REQUEST)
@@ -1029,7 +1075,7 @@ export async function searchPeople(
   }
   // What a full page normally costs: its searches and a profile lookup per person.
   const pageBudget = planned * 3 + target * 3
-  const { credits } = await meterCredits(async (spent) => {
+  await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
       const count = Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil(need / slots)))
@@ -1057,7 +1103,8 @@ export async function searchPeople(
       }
       const { page, companySet, splitCursor } = r
       let splitWhen: ((toLookUp: number) => boolean) | undefined
-      if (splitCursor) {
+      // Searching companies one at a time saves lookups, which are nothing to save when free.
+      if (splitCursor && !free) {
         // A batch with more people than this page is likely to need more lookups than it shows.
         const batchSize = r.companySet?.size ?? 0
         const more = r.batchHasMore
@@ -1085,8 +1132,7 @@ export async function searchPeople(
         nextCursor &&
         usable() + fresh.length < target &&
         searches < planned + MAX_TOP_UPS &&
-        !(searches >= planned + TOP_UPS && spent() >= pageBudget) &&
-        prospectCredits(spent()) < left
+        !(searches >= planned + TOP_UPS && spent() >= pageBudget)
       if (certain) {
         // Sized for what's still needed if everyone here is shown.
         const fetched = fetchPage(nextCursor!, Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil((need - fresh.length) / slots))))
@@ -1094,7 +1140,7 @@ export async function searchPeople(
         ahead = { cursor: nextCursor!, fetched }
       }
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free)
       if (batch.split && splitCursor) {
         // Searched again one company at a time: its people come back from those searches.
         split.batches++
@@ -1130,20 +1176,18 @@ export async function searchPeople(
         break
       }
       if (searches >= planned + TOP_UPS && spent() >= pageBudget) break
-      // No top-up search once what's been spent uses up the credits left.
-      if (prospectCredits(spent()) >= left) break
       cursor = nextCursor
     }
 
     // Short of a full page: those whose profile couldn't be confirmed are
     // asked about once more. LinkedIn sometimes turns away a profile it would
     // show a moment later; one hidden from anyone not signed in stays hidden.
-    if (heldBack.length && usable() < target && !lookupError && !interrupted && !cantConfirm && prospectCredits(spent()) < left) {
+    if (heldBack.length && usable() < target && !lookupError && !interrupted && !cantConfirm) {
       const groups = new Map<Map<string, string> | undefined, PersonResult[]>()
       for (const { person, companySet } of heldBack) groups.set(companySet, [...(groups.get(companySet) ?? []), person])
       heldBack = []
       for (const [companySet, people] of groups) {
-        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
+        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
         items.push(...batch.items)
         refined.push(...batch.refined)
         if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
@@ -1205,20 +1249,16 @@ export async function searchPeople(
       shown: usable(),
       fromSharedDatabase: shared,
       lookupsSpared: spared,
-      prospectCredits: Math.round(prospectCredits(credits) * 100) / 100,
+      prospectCredits: usable(),
     })}`,
   )
 
-  // Charged for what the searches cost, not for how many people are shown.
-  // The host's shared database is free to a copy that contributes to it;
-  // any other pays what each profile lookup it spared would have cost.
-  const { sharedDatabase } = await import('./hostRules')
-  const sharedCredits = sharedDatabase()?.contributing ? 0 : spared * LOOKUP_CREDITS
+  // A prospect credit for each person shown; what finding them took isn't charged.
   const { recordUsage } = await import('../usage')
   recordUsage({
     searches: requests + orgSearches,
     prospects: usable(),
-    prospectCredits: prospectCredits(credits + sharedCredits),
+    prospectCredits: usable(),
     sharedPeople: shared,
     searchProfiles: lookedUp,
     searchPaidWrongCompany: tally.wrongCompany,
@@ -1293,7 +1333,7 @@ export async function searchPeople(
     details.push(`Some results were left out, so ${plural(requests - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
   if (target < perSlot * slots) {
-    warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
+    warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page shows at most that many people. Upgrade to get more.`)
   }
   if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
   if (cantConfirm) {

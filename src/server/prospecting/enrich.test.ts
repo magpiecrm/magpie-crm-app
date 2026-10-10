@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ProfileUnconfirmed, type Page, type PersonResult } from './types'
+import { ProfileUnconfirmed, type CompanyResult, type Page, type PersonResult } from './types'
 
 // Every people search looks up each result's profile for their real title
 // and employer. SocialFetch source and db are replaced by fakes.
@@ -26,10 +26,15 @@ let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 let companyPage: any
 const searchCompaniesMock = vi.fn(async () => structuredClone(companyPage))
+// Company pages by ref, for checking where someone really works.
+let employers: Record<string, Partial<CompanyResult>> = {}
+const getCompanyMock = vi.fn(async (ref: string): Promise<CompanyResult | null> =>
+  employers[ref] ? { ref, name: '', domain: null, industry: null, headcount: null, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch', ...employers[ref] } : null,
+)
 // Checks of companies' mail servers (screenCompanies): which domains accept every address.
 let catchAllDomains = new Set<string>()
 vi.mock('./runtime', () => ({
-  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock }),
+  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock }),
   getFinderDeps: async () => ({
     getDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     updateDomain: (d: string, patch: any) => {
@@ -89,6 +94,8 @@ const allFound = (n: number) => `That's everyone this search found: ${n} of the 
 const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextCursor: null, reportedTotal: 100, warnings: [] })
 
 beforeEach(() => {
+  employers = {}
+  getCompanyMock.mockClear()
   getPerson.mockClear()
   getPerson.mockImplementation(defaultGetPerson)
   allowance = null
@@ -111,7 +118,7 @@ describe('searchPeople with a plan allowance', () => {
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
     expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 1 })
-    expect(res.warnings).toContain('Your plan has 1 prospect credit left this month, so this page asks for at most about that many people. Upgrade to get more.')
+    expect(res.warnings).toContain('Your plan has 1 prospect credit left this month, so this page shows at most that many people. Upgrade to get more.')
   })
 
   it('stops before searching when none are left', async () => {
@@ -718,23 +725,66 @@ describe("searchPeople with the host's shared database", () => {
         ['ben', 'Business Analyst', 'Acme', '7', undefined, true],
       ])
       expect(res.refined).toEqual([url('ben'), url('ana')])
-      // Free to a copy that contributes.
-      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, searchProfiles: 1, prospectCredits: 0 })
+      // A credit for each person shown, wherever their details came from.
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, searchProfiles: 1, prospectCredits: 2 })
     } finally {
       unhost()
     }
   })
 
-  it("charges a copy that doesn't contribute what the profile would have cost", async () => {
+  it("charges a copy that doesn't contribute a credit for the person shown, like anyone else", async () => {
     hosted(false, { ana: { company: 'Barclays', companyRef: '42' } })
     try {
       searchPage = pageOf(hit('ana'))
       await searchPeople({ titles: ['Business Analyst'] })
       expect(getPerson).not.toHaveBeenCalled()
-      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, prospectCredits: 0.96 })
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1, prospectCredits: 1 })
     } finally {
       unhost()
     }
+  })
+
+  describe('where the host’s profile lookups are free', () => {
+    const free = () => {
+      hosted(true, {})
+      ;(globalThis as any).__hostRules.profileLookupsFree = true
+    }
+    const barclays = { items: [{ ref: '42', name: 'Barclays', domain: 'barclays.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' as const }], nextCursor: null, reportedTotal: null, warnings: [] }
+
+    it('looks everyone up in a companies-first search, and keeps someone working elsewhere when that fits the filters', async () => {
+      free()
+      try {
+        employers = { '7': { name: 'Acme', domain: 'acme.com', industry: 'Banking', headcount: 30 } }
+        companyPage = barclays
+        // Eve's headline names Barclays, which would have been taken without a lookup.
+        searchPage = pageOf({ ...hit('eve', 'Analyst at Barclays UK'), company: 'Barclays UK' }, hit('ana'), hit('ben'))
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(getPerson).toHaveBeenCalledTimes(3)
+        // Ben works at Acme, not Barclays: a bank of 11-50 too, so he's kept, at Acme.
+        expect(res.items.map((p) => [p.firstName, p.company, p.companyDomain])).toEqual([
+          ['eve', 'Barclays UK', null],
+          ['ana', 'Barclays', 'barclays.com'],
+          ['ben', 'Acme', 'acme.com'],
+        ])
+        expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 3, prospectCredits: 3 })
+      } finally {
+        unhost()
+      }
+    })
+
+    it('leaves out someone whose real employer doesn’t fit', async () => {
+      free()
+      try {
+        employers = { '7': { name: 'Acme', domain: 'acme.com', industry: 'Retail', headcount: 30 } }
+        companyPage = barclays
+        searchPage = pageOf(hit('ana'), hit('ben'))
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+        expect(getCompanyMock).toHaveBeenCalledWith('7', null)
+      } finally {
+        unhost()
+      }
+    })
   })
 
   it("looks someone up after all when they may have moved on: another employer in their headline, or an old record", async () => {

@@ -87,9 +87,9 @@ type Fetch = typeof fetch
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * Credits SocialFetch charged inside `fn` (and whatever it awaits), for work
- * that's paid for by what it actually cost: a plan's prospect credits
- * (search.ts). Concurrent searches each get their own count.
+ * Credits SocialFetch charged inside `fn` (and whatever it awaits): what a
+ * search has cost so far, which limits its top-up searches (search.ts).
+ * Concurrent searches each get their own count.
  */
 const meter = new AsyncLocalStorage<{ credits: number }>()
 export async function meterCredits<T>(fn: (spent: () => number) => Promise<T>): Promise<{ result: T; credits: number }> {
@@ -590,7 +590,7 @@ const BUCKET_BOUNDS: Record<HeadcountBucket, [number, number]> = {
   '10001+': [10001, Number.POSITIVE_INFINITY],
 }
 
-function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
+export function inHeadcountBuckets(headcount: number | null, buckets: HeadcountBucket[]): boolean {
   if (buckets.length === 0) return true
   if (headcount === null) return false
   return buckets.some((b) => headcount >= BUCKET_BOUNDS[b][0] && headcount <= BUCKET_BOUNDS[b][1])
