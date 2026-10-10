@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinderDeps } from './emailFinder'
-import { ProfileUnconfirmed, type CompanySource, type PeopleSource, type PersonResult } from './types'
+import { CompanyUnconfirmed, ProfileUnconfirmed, type CompanySource, type PeopleSource, type PersonResult } from './types'
 
 // End-to-end save and opt-out against an in-memory stand-in for the JSON db,
 // a fake SocialFetch company source and a fake verification server. Nothing touches the
@@ -208,6 +208,16 @@ describe('saveProspects', () => {
       source, finder: finder({}), db: fakeDb as any,
     })
     expect(source.getCompany).toHaveBeenCalledTimes(1)
+    expect(state.companies[0]).toMatchObject({ domain: 'acme.com', page_checked: true })
+  })
+
+  it('remembers nothing about a company its host couldn’t confirm, so it is asked about again next time', async () => {
+    vi.mocked(source.getCompany).mockRejectedValueOnce(new CompanyUnconfirmed())
+    const first = await saveProspects(1, [person('Jane', 'Smith')], { source, finder: finder({}), db: fakeDb as any })
+    expect(first.outcomes[0].status).toBe('no_domain')
+    expect(state.companies).toEqual([])
+    await saveProspects(1, [person('Bob', 'Jones')], { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getCompany).toHaveBeenCalledTimes(2)
     expect(state.companies[0]).toMatchObject({ domain: 'acme.com', page_checked: true })
   })
 

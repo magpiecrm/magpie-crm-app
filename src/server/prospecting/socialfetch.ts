@@ -30,7 +30,7 @@ import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
 import { createSearchPool, searchPoolKey, type HeldHits, type Hit } from './searchPool'
-import { ProfileUnconfirmed } from './types'
+import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
 import type {
   CompanyFilters,
   CompanyRef,
@@ -778,6 +778,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const res = await get<any>('/v1/linkedin/companies', {
             url: `https://www.linkedin.com/company/${encodeURIComponent(pageSlug)}/`,
           })
+          // Only a host answers this (see CompanyUnconfirmed): its organization lookup would say the same.
+          if (res.data?.lookupStatus === 'unconfirmed') throw new CompanyUnconfirmed()
           if (res.data?.lookupStatus === 'found') {
             const company = mapCompanyPage(res.data, ref)
             if (company) return company
@@ -785,10 +787,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           // A school or other non-company page: fall through to the organization lookup.
         } catch (err) {
           // Out of credits or a bad key won't be fixed by the other endpoint.
-          if (err instanceof SocialFetchError && (err.code === 'credits_exhausted' || err.code === 'unauthorized')) throw err
+          if (err instanceof CompanyUnconfirmed || (err instanceof SocialFetchError && (err.code === 'credits_exhausted' || err.code === 'unauthorized'))) throw err
         }
       }
       const res = await get<any>('/v2/linkedin/organizations', numeric ? { id: ref } : { slug: ref })
+      if (res.data?.lookupStatus === 'unconfirmed') throw new CompanyUnconfirmed()
       if (res.data?.lookupStatus !== 'found') return null
       return mapOrganization(res.data?.organization)
     },

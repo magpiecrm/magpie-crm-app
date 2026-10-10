@@ -1,5 +1,5 @@
 import { normaliseDomain } from './suppression'
-import type { CompanySource, PersonResult } from './types'
+import { CompanyUnconfirmed, type CompanySource, type PersonResult } from './types'
 
 type Db = typeof import('../db')['db']
 
@@ -27,7 +27,14 @@ export async function resolveCompanyDomain(
   if (pending) return pending
   const task = (async () => {
     const pageSlug = slug ?? cached?.slug ?? null
-    const company = await source.getCompany(ref, pageSlug)
+    let company
+    try {
+      company = await source.getCompany(ref, pageSlug)
+    } catch (err) {
+      // Nothing learned: not remembered, so it's asked about again next time.
+      if (err instanceof CompanyUnconfirmed) return null
+      throw err
+    }
     db.upsertProspectCompanies([{
       ref,
       name: company?.name ?? cached?.name ?? fallbackName,

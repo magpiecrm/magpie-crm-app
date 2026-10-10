@@ -280,15 +280,13 @@ describe('searchPeople with profiles that can’t be confirmed', () => {
     return asked
   }
 
-  it('leaves them out after asking once more, charges nothing for them, and says so', async () => {
+  it('leaves them out after asking once more, quietly, and charges nothing for them', async () => {
     const asked = unconfirmedFor(['zed'])
     searchPage = pageOf(hit('ana'), hit('zed'), hit('ben'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
     expect(asked.get('zed')).toBe(2)
-    expect(res.warnings).toContain(
-      "1 person was left out because their LinkedIn profile couldn't be read to confirm where they work (some people hide theirs from anyone not signed in). Nothing was charged for them.",
-    )
+    expect(res.warnings).toEqual([allFound(2)])
     expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchProfiles: 2, prospects: 2 }))
   })
 
@@ -315,7 +313,6 @@ describe('searchPeople with profiles that can’t be confirmed', () => {
     expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
     // The page filled up without them: not asked about again.
     expect(asked.get('zed')).toBe(1)
-    expect(res.warnings.join(' ')).toContain('1 person was left out')
     searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
   })
 

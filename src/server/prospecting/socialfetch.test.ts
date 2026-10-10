@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ProfileUnconfirmed } from './types'
+import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
 import {
   canonicalProfileUrl,
   createSocialFetchSource,
@@ -732,6 +732,22 @@ describe('a profile its host couldn’t confirm', () => {
     const src = createSocialFetchSource(f.impl, () => 'sfk_test')
     await expect(src.getPerson('https://www.linkedin.com/in/x')).rejects.toBeInstanceOf(ProfileUnconfirmed)
     expect(await src.getPerson('https://www.linkedin.com/in/y')).toBeNull()
+  })
+})
+
+describe('a company its host couldn’t confirm', () => {
+  it('is an error of its own, without paying for the organization lookup', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'unconfirmed' }, 0)])
+    const src = createSocialFetchSource(f.impl, () => 'sfk_test')
+    await expect(src.getCompany('42', 'acme')).rejects.toBeInstanceOf(CompanyUnconfirmed)
+    expect(f.calls.map((u) => u.pathname)).toEqual(['/v1/linkedin/companies'])
+  })
+
+  it('is the same from the organization lookup, when there is no page name', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'unconfirmed' }, 0)])
+    const src = createSocialFetchSource(f.impl, () => 'sfk_test')
+    await expect(src.getCompany('42')).rejects.toBeInstanceOf(CompanyUnconfirmed)
+    expect(f.calls.map((u) => u.pathname)).toEqual(['/v2/linkedin/organizations'])
   })
 })
 

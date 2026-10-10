@@ -186,7 +186,7 @@ export interface Page<T> {
 
 export interface CompanySource {
   searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>>
-  /** `slug` (the LinkedIn company page name) allows a cheaper lookup when known. */
+  /** `slug` (the LinkedIn company page name) allows a cheaper lookup when known. Throws CompanyUnconfirmed when it couldn't be read. */
   getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null>
 }
 
@@ -207,6 +207,14 @@ export class ProfileUnconfirmed extends Error {
   constructor() {
     super("The profile couldn't be confirmed.")
     this.name = 'ProfileUnconfirmed'
+  }
+}
+
+/** The same for a company lookup: nothing learned, so nothing is remembered about the company. */
+export class CompanyUnconfirmed extends Error {
+  constructor() {
+    super("The company couldn't be confirmed.")
+    this.name = 'CompanyUnconfirmed'
   }
 }
 

@@ -1255,12 +1255,6 @@ export async function searchPeople(
     )
   }
   if (tally.failed > 0) details.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
-  if (tally.unconfirmed > 0) {
-    // A warning, not a detail: only a hosted copy gets these, and it shows warnings.
-    warnings.push(
-      `${plural(tally.unconfirmed, 'person was', 'people were')} left out because ${tally.unconfirmed === 1 ? 'their LinkedIn profile' : 'their LinkedIn profiles'} couldn't be read to confirm where they work (some people hide theirs from anyone not signed in). Nothing was charged for them.`,
-    )
-  }
   if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
