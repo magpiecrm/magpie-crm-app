@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Page, PersonResult } from './types'
+import { ProfileUnconfirmed, type Page, type PersonResult } from './types'
 
 // Every people search looks up each result's profile for their real title
 // and employer. SocialFetch source and db are replaced by fakes.
@@ -90,6 +90,7 @@ const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextC
 
 beforeEach(() => {
   getPerson.mockClear()
+  getPerson.mockImplementation(defaultGetPerson)
   allowance = null
   suppressedHashes = new Set()
   emailDomains = {}
@@ -262,6 +263,73 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     expect(recordUsage).toHaveBeenCalledWith(
       expect.objectContaining({ searchProfiles: 3, searchPaidUnverifiable: 1, searchPaidInContacts: 1, searchPaidWrongCompany: 0, prospects: 1 }),
     )
+  })
+})
+
+describe('searchPeople with profiles that can’t be confirmed', () => {
+  /** A lookup of these handles can't be confirmed, the first `times` times each is asked. */
+  const unconfirmedFor = (handles: string[], times = Infinity) => {
+    const asked = new Map<string, number>()
+    getPerson.mockImplementation(async (url: string) => {
+      const handle = url.split('/in/')[1]
+      const n = (asked.get(handle) ?? 0) + 1
+      asked.set(handle, n)
+      if (handles.includes(handle) && n <= times) throw new ProfileUnconfirmed()
+      return defaultGetPerson(url)
+    })
+    return asked
+  }
+
+  it('leaves them out after asking once more, charges nothing for them, and says so', async () => {
+    const asked = unconfirmedFor(['zed'])
+    searchPage = pageOf(hit('ana'), hit('zed'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
+    expect(asked.get('zed')).toBe(2)
+    expect(res.warnings).toContain(
+      "1 person was left out because their LinkedIn profile couldn't be read to confirm where they work (some people hide theirs from anyone not signed in). Nothing was charged for them.",
+    )
+    expect(recordUsage).toHaveBeenCalledWith(expect.objectContaining({ searchProfiles: 2, prospects: 2 }))
+  })
+
+  it('shows them when the second ask confirms them', async () => {
+    unconfirmedFor(['ana'], 1)
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.firstName, p.company])).toEqual([
+      ['ben', 'Acme'],
+      ['ana', 'Barclays'],
+    ])
+    expect(res.refined).toContain('https://www.linkedin.com/in/ana')
+    expect(res.warnings.join(' ')).not.toContain("couldn't be read")
+  })
+
+  it('searches on for others in their place, and asks about them again only if the page is still short', async () => {
+    const asked = unconfirmedFor(['zed'])
+    searchPeopleMock.mockClear()
+    searchPeopleMock
+      .mockImplementationOnce(async () => ({ ...pageOf(hit('ana'), hit('zed')), nextCursor: 'c1' }))
+      .mockImplementationOnce(async () => pageOf(hit('ben')))
+    const res = await searchPeople({ titles: ['Business Analyst'], count: 2 } as any)
+    expect(searchPeopleMock).toHaveBeenCalledTimes(2)
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
+    // The page filled up without them: not asked about again.
+    expect(asked.get('zed')).toBe(1)
+    expect(res.warnings.join(' ')).toContain('1 person was left out')
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+  })
+
+  it('stops searching when no profile in a batch can be confirmed, as more searching would confirm none either', async () => {
+    const handles = Array.from({ length: 10 }, (_, i) => `p${i}`)
+    unconfirmedFor(handles)
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(...handles.map((h) => hit(h))), nextCursor: 'c1' }))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    // The next page may have been started ahead, but no one on it is looked up, and no one is asked about again.
+    expect(getPerson).toHaveBeenCalledTimes(10)
+    expect(res.items).toEqual([])
+    expect(res.warnings).toContain("Profiles can't be checked right now, so this page stopped at 0 of the 25 asked for. Load more in a few minutes to carry on.")
+    searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
   })
 })
 

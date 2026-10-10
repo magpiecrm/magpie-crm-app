@@ -193,7 +193,21 @@ export interface CompanySource {
 export interface PeopleSource {
   /** `company` null searches across all companies. */
   searchPeople(company: CompanyRef | null, filters: PeopleFilters): Promise<Page<PersonResult>>
+  /** Null when there's no such profile; throws ProfileUnconfirmed when it couldn't be read. */
   getPerson(profileRef: string): Promise<PersonResult | null>
+}
+
+/**
+ * A profile lookup that learned nothing: the profile may well be there, but
+ * it couldn't be read. A hosted copy's host can answer this way when it reads
+ * LinkedIn's public pages, where some people hide their profiles from anyone
+ * not signed in. Nothing is charged, and asking again later may work.
+ */
+export class ProfileUnconfirmed extends Error {
+  constructor() {
+    super("The profile couldn't be confirmed.")
+    this.name = 'ProfileUnconfirmed'
+  }
 }
 
 /** Outcome of email finding for one person, before anything is stored. */

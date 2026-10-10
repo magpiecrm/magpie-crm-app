@@ -30,6 +30,7 @@ import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
 import { createSearchPool, searchPoolKey, type HeldHits, type Hit } from './searchPool'
+import { ProfileUnconfirmed } from './types'
 import type {
   CompanyFilters,
   CompanyRef,
@@ -1060,6 +1061,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
 
     async getPerson(profileRef: string): Promise<PersonResult | null> {
       const res = await get<any>('/v2/linkedin/profiles', { handle: profileRef })
+      // Only a host answers this (see ProfileUnconfirmed); SocialFetch never does.
+      if (res.data?.lookupStatus === 'unconfirmed') throw new ProfileUnconfirmed()
       if (res.data?.lookupStatus !== 'found') return null
       const person = mapPerson(res.data?.profile)
       // Log field names (never values) if no current job came through at

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinderDeps } from './emailFinder'
-import type { CompanySource, PeopleSource, PersonResult } from './types'
+import { ProfileUnconfirmed, type CompanySource, type PeopleSource, type PersonResult } from './types'
 
 // End-to-end save and opt-out against an in-memory stand-in for the JSON db,
 // a fake SocialFetch company source and a fake verification server. Nothing touches the
@@ -319,6 +319,14 @@ describe('saveProspects', () => {
     expect(source.getPerson).toHaveBeenCalledTimes(1)
     expect(job.outcomes.filter((o) => o.status === 'error')).toHaveLength(1)
     expect(job.outcomes.filter((o) => o.status === 'no_domain')).toHaveLength(3)
+  })
+
+  it('carries on looking up profiles when one couldn’t be confirmed', async () => {
+    vi.mocked(source.getPerson).mockRejectedValueOnce(new ProfileUnconfirmed())
+    const people = ['Aa', 'Bb', 'Cc'].map((n) => person(n, 'Nobody', { company: '', companyRef: null }))
+    const job = await saveProspects(1, people, { source, finder: finder({}), db: fakeDb as any })
+    expect(source.getPerson).toHaveBeenCalledTimes(3)
+    expect(job.outcomes.filter((o) => o.status === 'error')).toHaveLength(0)
   })
 
   it('reports no_domain when the profile lists no employer either', async () => {

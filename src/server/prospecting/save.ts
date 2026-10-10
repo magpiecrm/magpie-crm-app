@@ -12,7 +12,7 @@ import { domainForPerson } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { isPacing } from './proxyRouter'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import { handsOver, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
+import { handsOver, ProfileUnconfirmed, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { remaining } from '../allowance'
 import { rememberIfUnverifiable } from './unverifiable'
@@ -104,8 +104,17 @@ async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGa
     if (!(await gate.first)) return person
   }
   const lookup = deps.source.getPerson(person.profileUrl)
-  gate.first ??= lookup.then(() => true).catch(() => false)
-  return refineFromProfile(person, await lookup) ?? person
+  // A profile that couldn't be confirmed says nothing about the rest.
+  gate.first ??= lookup.then(
+    () => true,
+    (err) => err instanceof ProfileUnconfirmed,
+  )
+  try {
+    return refineFromProfile(person, await lookup) ?? person
+  } catch (err) {
+    if (err instanceof ProfileUnconfirmed) return person
+    throw err
+  }
 }
 
 interface LookupGate {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ProfileUnconfirmed } from './types'
 import {
   canonicalProfileUrl,
   createSocialFetchSource,
@@ -722,6 +723,15 @@ describe('errors and retries', () => {
     const f = fakeFetch([new Response('{"error":{"message":"insufficient credits"}}', { status: 402 })])
     await expect(createSocialFetchSource(f.impl).getCompany('5', 'beta-inc')).rejects.toMatchObject({ code: 'credits_exhausted' })
     expect(f.calls).toHaveLength(1)
+  })
+})
+
+describe('a profile its host couldn’t confirm', () => {
+  it('is an error of its own, not "no such profile"', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'unconfirmed' }, 0), envelope({ lookupStatus: 'not_found' }, 0)])
+    const src = createSocialFetchSource(f.impl, () => 'sfk_test')
+    await expect(src.getPerson('https://www.linkedin.com/in/x')).rejects.toBeInstanceOf(ProfileUnconfirmed)
+    expect(await src.getPerson('https://www.linkedin.com/in/y')).toBeNull()
   })
 })
 

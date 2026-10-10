@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
+import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
@@ -125,6 +125,8 @@ interface Enriched {
   refined: boolean
   /** The lookup itself failed (e.g. out of credits); nothing was learned. */
   error?: string
+  /** The profile couldn't be read (ProfileUnconfirmed): nothing learned, nothing charged. */
+  unconfirmed?: boolean
 }
 
 /** One profile lookup (3 credits): the person's real current title and employer. */
@@ -133,6 +135,7 @@ async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Pr
   try {
     profile = await source.getPerson(person.profileUrl)
   } catch (err: any) {
+    if (err instanceof ProfileUnconfirmed) return { person, refined: false, unconfirmed: true }
     // Keep the search result rather than failing the whole page the user
     // already paid for; not marked checked, so saving can try again.
     return { person, refined: false, error: String(err?.message ?? err) }
@@ -340,6 +343,8 @@ interface Tally {
   failed: number
   failedError?: string
   noJob: number
+  /** Left out because their profile couldn't be confirmed (ProfileUnconfirmed), after a second try. */
+  unconfirmed: number
   wrongCompany: number
   /** Left out before their profile lookup: remembered from a lookup that couldn't verify them. */
   remembered: number
@@ -672,7 +677,17 @@ async function processBatch(
    * again by the searches of one company.
    */
   splitWhen?: (toLookUp: number) => boolean,
-): Promise<{ items: PersonResult[]; refined: string[]; lookupError?: string; lookedUp: string[]; shared: number; spared: number; split?: boolean }> {
+): Promise<{
+  items: PersonResult[]
+  refined: string[]
+  lookupError?: string
+  lookedUp: string[]
+  shared: number
+  spared: number
+  split?: boolean
+  /** People whose profile couldn't be confirmed: left out of `items`, for the page to ask about again or leave out. */
+  unconfirmed: PersonResult[]
+}> {
   const counted = { ...tally }
   let items = people
   for (const person of items) {
@@ -797,11 +812,13 @@ async function processBatch(
   const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {
     Object.assign(tally, counted)
-    return { items: [], refined: [], lookedUp: [], shared: 0, spared: 0, split: true }
+    return { items: [], refined: [], lookedUp: [], shared: 0, spared: 0, split: true, unconfirmed: [] }
   }
 
   const refined: string[] = []
   let lookupError: string | undefined
+  let unconfirmed: PersonResult[] = []
+  const notRead = new Set<string>()
   if (toLookUp.length > 0) {
     // Check the first profile before paying for the rest: if the lookup
     // itself fails (no credits, API down) the rest would fail too. A profile
@@ -814,13 +831,18 @@ async function processBatch(
     const byUrl = new Map(results.map((r) => [r.person.profileUrl, r.person]))
     items = items.map((p) => byUrl.get(p.profileUrl) ?? p)
     for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
+    // Nothing is known of where they work, so they aren't shown: the page
+    // finds others instead, and asks about them again if it runs short.
+    unconfirmed = results.filter((r) => r.unconfirmed).map((r) => r.person)
+    unconfirmed.forEach((p) => notRead.add(p.profileUrl))
+    if (notRead.size) items = items.filter((p) => !notRead.has(p.profileUrl))
     if (first.error) {
       lookupError = first.error
     } else {
       const failed = results.filter((r) => r.error)
       tally.failed += failed.length
       tally.failedError ??= failed[0]?.error
-      tally.noJob += results.length - refined.length - failed.length
+      tally.noJob += results.length - refined.length - failed.length - unconfirmed.length
     }
   }
   // Their employer is known as surely as from a lookup, so the checks below apply to them too.
@@ -876,9 +898,11 @@ async function processBatch(
     items,
     refined,
     lookupError,
-    lookedUp: toLookUp.map((p) => p.profileUrl),
+    // Those not confirmed cost nothing.
+    lookedUp: toLookUp.filter((p) => !notRead.has(p.profileUrl)).map((p) => p.profileUrl),
     shared: [...fromShared].filter((url) => shown.has(url)).length,
     spared: spared.length,
+    unconfirmed,
   }
 }
 
@@ -932,7 +956,7 @@ export async function searchPeople(
   const warnings: string[] = []
   const details: string[] = []
   const tally: Tally = {
-    noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, wrongCompany: 0, remembered: 0,
+    noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
   }
   // Hidden people don't fill the page.
@@ -959,6 +983,11 @@ export async function searchPeople(
   let companiesFound = 0
   // Set when the data source failed partway: the page keeps what it had found.
   let interrupted = false
+  // People whose profile couldn't be confirmed (ProfileUnconfirmed), with the
+  // companies their batch searched: asked about again if the page runs short.
+  let heldBack: Array<{ person: PersonResult; companySet?: Map<string, string> }> = []
+  // Set when a whole batch of profiles couldn't be confirmed: more searching wouldn't confirm any either.
+  let cantConfirm = false
   // Companies left out before searching people there (screenCompanies).
   const screened = { unverifiable: 0, noDomain: 0 }
   // How many companies match the filters in all, as SocialFetch counts them (up to 1,000).
@@ -1086,8 +1115,13 @@ export async function searchPeople(
       shared += batch.shared
       spared += batch.spared
       batch.lookedUp.forEach((url) => paidFor.add(url))
+      heldBack.push(...batch.unconfirmed.map((person) => ({ person, companySet })))
       if (batch.lookupError) {
         lookupError = batch.lookupError
+        break
+      }
+      if (batch.unconfirmed.length >= MIN_LOOKUPS_TO_JUDGE && batch.lookedUp.length === 0) {
+        cantConfirm = true
         break
       }
       if (usable() >= target || !nextCursor || searches >= planned + MAX_TOP_UPS) break
@@ -1100,6 +1134,31 @@ export async function searchPeople(
       if (prospectCredits(spent()) >= left) break
       cursor = nextCursor
     }
+
+    // Short of a full page: those whose profile couldn't be confirmed are
+    // asked about once more. LinkedIn sometimes turns away a profile it would
+    // show a moment later; one hidden from anyone not signed in stays hidden.
+    if (heldBack.length && usable() < target && !lookupError && !interrupted && !cantConfirm && prospectCredits(spent()) < left) {
+      const groups = new Map<Map<string, string> | undefined, PersonResult[]>()
+      for (const { person, companySet } of heldBack) groups.set(companySet, [...(groups.get(companySet) ?? []), person])
+      heldBack = []
+      for (const [companySet, people] of groups) {
+        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet)
+        items.push(...batch.items)
+        refined.push(...batch.refined)
+        if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
+        lookedUp += batch.lookedUp.length
+        shared += batch.shared
+        spared += batch.spared
+        batch.lookedUp.forEach((url) => paidFor.add(url))
+        heldBack.push(...batch.unconfirmed.map((person) => ({ person, companySet })))
+        if (batch.lookupError) {
+          lookupError = batch.lookupError
+          break
+        }
+      }
+    }
+    tally.unconfirmed = heldBack.length
     dropAhead()
     await Promise.allSettled(unused)
   })
@@ -1141,6 +1200,7 @@ export async function searchPeople(
       profilesBought: lookedUp,
       boughtWrongCompany: tally.wrongCompany,
       boughtNoJob: tally.noJob,
+      profileUnconfirmed: tally.unconfirmed,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),
       fromSharedDatabase: shared,
@@ -1195,6 +1255,12 @@ export async function searchPeople(
     )
   }
   if (tally.failed > 0) details.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
+  if (tally.unconfirmed > 0) {
+    // A warning, not a detail: only a hosted copy gets these, and it shows warnings.
+    warnings.push(
+      `${plural(tally.unconfirmed, 'person was', 'people were')} left out because ${tally.unconfirmed === 1 ? 'their LinkedIn profile' : 'their LinkedIn profiles'} couldn't be read to confirm where they work (some people hide theirs from anyone not signed in). Nothing was charged for them.`,
+    )
+  }
   if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
@@ -1236,7 +1302,9 @@ export async function searchPeople(
     warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page asks for at most about that many people. Upgrade to get more.`)
   }
   if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
-  if (interrupted) {
+  if (cantConfirm) {
+    warnings.push(`Profiles can't be checked right now, so this page stopped at ${usable()} of the ${target} asked for. Load more in a few minutes to carry on.`)
+  } else if (interrupted) {
     // A warning: a hosted copy shows it too, as it says what to do.
     warnings.push(`The people data source is busy right now, so this page stopped at ${usable()} of the ${target} asked for. Load more in a minute to carry on.`)
   } else if (!lookupError && usable() < target && nextCursor && !wasteful) {
