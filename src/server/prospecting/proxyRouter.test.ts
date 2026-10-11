@@ -34,6 +34,21 @@ describe('ProxyRouter', () => {
     expect(labels).toEqual(['a', 'b', 'a', 'b'])
   })
 
+  it('leaves part of each minute and each day alone for a check nobody is waiting on', async () => {
+    const c = clock()
+    const r = new ProxyRouter([proxies[0]], { ...c, perProxyPerMinute: 4, dailyCapPerIp: () => 6 })
+    const ahead = { leaveFree: 0.5, maxWaitMs: 0 }
+    await r.acquire('other', undefined, ahead)
+    await r.acquire('other', undefined, ahead)
+    // Half the minute is used: a check made ahead of time stops there, a Reveal carries on.
+    await expect(r.acquire('other', undefined, ahead)).rejects.toThrow(/per-minute limit/)
+    await r.acquire('other')
+    // And the second half of the day's checks is never taken ahead of time.
+    c.advance(61_000)
+    await expect(r.acquire('other', undefined, ahead)).rejects.toThrow()
+    await r.acquire('other')
+  })
+
   it('waits for the per-proxy window instead of exceeding it', async () => {
     const c = clock()
     const r = new ProxyRouter([proxies[0]], { ...c, perProxyPerMinute: 2 })

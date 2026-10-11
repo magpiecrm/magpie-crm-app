@@ -234,10 +234,16 @@ export class ProxyRouter {
    * `VerificationLimitError` straight away for limits that waiting a minute
    * won't clear (paused, daily caps, refused by every IP), and after
    * `maxWaitMs` otherwise.
+   *
+   * `leaveFree` is for checks nobody is waiting on (a search testing
+   * companies' mail domains ahead of time): the share of each minute's and
+   * each day's checks they leave alone, so a Reveal or a save never finds
+   * the allowance spent on them.
    */
-  async acquire(provider: MailProvider, domain?: string, opts: { maxWaitMs?: number } = {}): Promise<Lease> {
+  async acquire(provider: MailProvider, domain?: string, opts: { maxWaitMs?: number; leaveFree?: number } = {}): Promise<Lease> {
     const deadline = this.opts.now() + (opts.maxWaitMs ?? this.opts.maxWaitMs)
     const target = domain?.toLowerCase()
+    const share = (limit: number) => (opts.leaveFree ? Math.floor(limit * (1 - opts.leaveFree)) : limit)
     for (;;) {
       const now = this.opts.now()
       this.prune(now)
@@ -263,7 +269,7 @@ export class ProxyRouter {
       }
 
       // Usable IPs: not paused, not benched, under today's cap.
-      const cap = this.opts.dailyCapPerIp()
+      const cap = share(this.opts.dailyCapPerIp())
       const reasons = open.map((p) => this.opts.pausedReason(p.config))
       const usable = open.filter((p, i) => !reasons[i] && p.benchedUntil <= now && p.today.length < cap)
       if (usable.length === 0) throw this.nothingUsable(open, reasons, cap, now)
@@ -273,8 +279,8 @@ export class ProxyRouter {
         for (let i = 0; i < this.pool.length; i++) {
           const p = this.pool[(this.cursor + i) % this.pool.length]
           if (!usable.includes(p)) continue
-          if (p.recent.length >= this.opts.perProxyPerMinute) continue
-          if (p.providerRecent[provider].length >= this.opts.perProviderPerMinute[provider]) continue
+          if (p.recent.length >= share(this.opts.perProxyPerMinute)) continue
+          if (p.providerRecent[provider].length >= share(this.opts.perProviderPerMinute[provider])) continue
           this.cursor = (this.cursor + i + 1) % this.pool.length
           return this.lease(p, provider, target, now)
         }

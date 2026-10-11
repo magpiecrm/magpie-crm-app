@@ -326,8 +326,9 @@ function trustedPattern(rec: EmailDomainRecord | null, now: number): string | nu
 // one catch-all probe instead of racing.
 const inflight = new Map<string, Promise<EmailDomainRecord>>()
 
-async function prepareDomain(domain: string, deps: FinderDeps): Promise<EmailDomainRecord> {
-  const key = domain
+async function prepareDomain(domain: string, deps: FinderDeps, lane = ''): Promise<EmailDomainRecord> {
+  // A check made ahead of time gives up sooner than a lookup would, so a lookup never shares its outcome.
+  const key = lane + domain
   const existing = inflight.get(key)
   if (existing) return existing
   const task = (async () => {
@@ -420,9 +421,10 @@ export async function findEmailCounted(...args: Parameters<typeof findEmail>): P
  * email and whether it accepts every address (one or two checks from our
  * verification servers, or none while the last verdict stands), kept for the
  * lookups that follow. Prospect search uses it to leave out companies where
- * nothing can be verified before searching people there.
+ * nothing can be verified before searching people there, and people at such
+ * companies before they're shown.
  */
-export const probeDomain = (domain: string, deps: FinderDeps) => prepareDomain(domain.toLowerCase().trim(), deps)
+export const probeDomain = (domain: string, deps: FinderDeps) => prepareDomain(domain.toLowerCase().trim(), deps, 'ahead:')
 
 export async function findEmail(
   person: { firstName: string; lastName: string },

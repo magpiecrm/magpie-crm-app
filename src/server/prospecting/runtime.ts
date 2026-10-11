@@ -102,12 +102,19 @@ async function resolveSoaContact(domain: string): Promise<string | null> {
   }
 }
 
+/** The share of the verification allowance that checks made ahead of time leave for Reveals and saves. */
+const AHEAD_LEAVES_FREE = 0.5
+
 /**
  * `background`: a save job, which can wait out a company's pacing (minutes);
  * a Reveal, where someone is watching, gives up sooner with a clear message.
+ * `ahead`: a search testing companies' mail domains before anyone asks for an
+ * email there. Nobody is waiting on those, so they take only what's spare
+ * (half of each minute's and each day's checks) and give up soon.
  */
-export async function getFinderDeps(opts: { background?: boolean } = {}): Promise<FinderDeps> {
-  const maxWaitMs = opts.background ? 10 * 60_000 : 90_000
+export async function getFinderDeps(opts: { background?: boolean; ahead?: boolean } = {}): Promise<FinderDeps> {
+  const maxWaitMs = opts.ahead ? 30_000 : opts.background ? 10 * 60_000 : 90_000
+  const leaveFree = opts.ahead ? AHEAD_LEAVES_FREE : undefined
   const { db } = await import('../db')
   // Read once per save, so a settings change mid-save doesn't split a job.
   const active = getActiveVerifier()
@@ -118,7 +125,7 @@ export async function getFinderDeps(opts: { background?: boolean } = {}): Promis
     verifier:
       active?.provider === 'reacher'
         ? {
-            acquire: (provider, domain) => getProxyRouter().acquire(provider, domain, { maxWaitMs }),
+            acquire: (provider, domain) => getProxyRouter().acquire(provider, domain, { maxWaitMs, leaveFree }),
             check: (email, lease) => checkEmail(email, lease.proxy, active.reacher),
           }
         : null,

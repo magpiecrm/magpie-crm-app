@@ -299,6 +299,42 @@ async function skipBeforeLookup(
   return skip
 }
 
+/**
+ * How long a batch of people waits for their companies' mail domains to be
+ * tested before it's shown. A test still running after that carries on, and
+ * is known about by the next search or Reveal.
+ */
+const AHEAD_MS = 20_000
+
+/**
+ * Tests mail domains nobody has looked an email up at yet: whether each
+ * takes email (DNS, free) and whether it accepts every address (a check or
+ * two from the verification servers, the same ones a first Reveal there
+ * would make, so a Reveal that follows doesn't repeat them). People at a
+ * domain where nothing can be verified are then hidden before anyone spends
+ * a credit on them. The checks use only what's spare of the verification
+ * allowance (getFinderDeps `ahead`). Returns how many were answered in time.
+ */
+async function checkDomainsAhead(domains: string[]): Promise<number> {
+  if (!domains.length) return 0
+  const { getFinderDeps } = await import('./runtime')
+  const { probeDomain } = await import('./emailFinder')
+  const deps = await getFinderDeps({ ahead: true })
+  let answered = 0
+  let waiting = true
+  const checks = Promise.allSettled(
+    domains.map(async (domain) => {
+      await probeDomain(domain, deps)
+      if (waiting) answered++
+    }),
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([checks, new Promise((r) => (timer = setTimeout(r, AHEAD_MS)))])
+  clearTimeout(timer)
+  waiting = false
+  return answered
+}
+
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
   let next = 0
@@ -360,6 +396,9 @@ interface Tally {
   employerBySite: number
   /** Marked as having no company to find a website for (PersonResult.noCompany). */
   noCompany: number
+  /** Mail domains tested before their people were shown (checkDomainsAhead), and those there was no time or allowance for. */
+  domainsChecked: number
+  domainsUnchecked: number
   skippedNotWorking: number
   skippedContact: number
   /** Companies-first: left out before their profile lookup because their headline names an employer that isn't one of the companies searched. */
@@ -998,21 +1037,40 @@ async function processBatch(
     return { ...p, noCompany: true }
   })
 
-  // Mark people at companies already known to accept every address. The
-  // page decides whether to hide them (it does while verified-only is on).
-  // Only the cache is read: finding out about a new company would take an
-  // SMTP check, and that waits until someone is actually revealed or saved.
-  const now = Date.now()
+  // Mark people at companies known to accept every address, or to take no
+  // email at all. The page decides whether to hide them (it does while
+  // verified-only is on).
   const worthIt = await formatConfirmedAt(db)
-  for (const p of items) {
-    if (p.companyDomain && isKnownCatchAll(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.catchAll = !worthIt(p.companyDomain)
-    else if (p.companyDomain && isKnownNoMail(p.companyDomain, (d) => db.getEmailDomain(d), now)) p.noMail = true
+  const known = (d: string) => db.getEmailDomain(d)
+  const markKnown = () => {
+    const now = Date.now()
+    for (const p of items) {
+      if (!p.companyDomain || p.catchAll || p.noMail) continue
+      if (isKnownCatchAll(p.companyDomain, known, now)) p.catchAll = !worthIt(p.companyDomain)
+      else if (isKnownNoMail(p.companyDomain, known, now)) p.noMail = true
+    }
   }
+  markKnown()
   // In a hosted copy, also companies any other copy there has found out
   // about (sharedCatchAll.ts): company refs and domains only.
   const unmarked = items.filter((p) => !p.catchAll && !(p.companyDomain && worthIt(p.companyDomain)))
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
+  // Where such people are hidden, the domains nobody has tested yet are
+  // tested now, so that nobody is shown someone a Reveal can't work for.
+  if (hideUnverifiable) {
+    const untested = [
+      ...new Set(
+        items
+          .filter((p) => p.companyDomain && !p.catchAll && !p.noMail && p.previously !== 'saved' && !worthIt(p.companyDomain))
+          .map((p) => p.companyDomain!.toLowerCase().trim()),
+      ),
+    ]
+    const answered = await checkDomainsAhead(untested)
+    tally.domainsChecked += answered
+    tally.domainsUnchecked += untested.length - answered
+    markKnown()
+  }
 
   const shown = new Set(items.map((p) => p.profileUrl))
   return {
@@ -1083,7 +1141,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1329,6 +1387,8 @@ export async function searchPeople(
       employerByPageGuess: tally.employerByGuess,
       employerByWebSearch: tally.employerBySite,
       noCompanyPage: tally.noCompany,
+      domainsCheckedAhead: tally.domainsChecked,
+      domainsNotChecked: tally.domainsUnchecked,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),
       fromSharedDatabase: shared,

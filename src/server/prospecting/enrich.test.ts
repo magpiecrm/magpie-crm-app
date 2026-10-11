@@ -692,6 +692,35 @@ describe('searchPeople fills the page', () => {
   })
 })
 
+describe('searchPeople testing mail domains before people are shown', () => {
+  const funnel = (log: { mock: { calls: unknown[][] } }) => JSON.parse(String(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Search funnel'))).split('Search funnel ')[1])
+
+  it('hides people at a domain that turns out to accept every address, and remembers what it learned', async () => {
+    catchAllDomains = new Set(['barclays.com'])
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(res.items.map((p) => [p.firstName, p.companyDomain, Boolean(p.catchAll)])).toEqual([['ana', 'barclays.com', true], ['ben', 'acme.com', false]])
+      expect(funnel(log)).toMatchObject({ domainsCheckedAhead: 2, domainsNotChecked: 0, hiddenUnverifiable: 1, shown: 1, prospectCredits: 1 })
+      // Kept for the Reveal that follows, which doesn't test the domain again.
+      expect(emailDomains['barclays.com']).toMatchObject({ catch_all: true })
+      expect(emailDomains['acme.com']).toMatchObject({ catch_all: false, accepts_mail: true })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('tests nothing where such people are shown anyway', async () => {
+    prospectingSettings = { hide_unverifiable: false }
+    catchAllDomains = new Set(['barclays.com'])
+    searchPage = pageOf(hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.firstName, p.companyDomain, Boolean(p.catchAll)])).toEqual([['ana', 'barclays.com', false]])
+    expect(emailDomains).toEqual({})
+  })
+})
+
 describe('searchPeople in a workspace run by its host', () => {
   it('keeps only the notes the user can act on, not how the page was put together', async () => {
     process.env.PROSPECTING_MANAGED = 'on'
