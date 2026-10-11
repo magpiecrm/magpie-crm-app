@@ -110,10 +110,12 @@ const AHEAD_LEAVES_FREE = 0.5
  * a Reveal, where someone is watching, gives up sooner with a clear message.
  * `ahead`: a search testing companies' mail domains before anyone asks for an
  * email there. Nobody is waiting on those, so they take only what's spare
- * (half of each minute's and each day's checks) and give up soon.
+ * (half of each minute's and each day's checks), and wait their turn for
+ * minutes rather than give up: a test that finishes after its people were
+ * shown is still there for the next search and for a Reveal.
  */
 export async function getFinderDeps(opts: { background?: boolean; ahead?: boolean } = {}): Promise<FinderDeps> {
-  const maxWaitMs = opts.ahead ? 30_000 : opts.background ? 10 * 60_000 : 90_000
+  const maxWaitMs = opts.ahead ? 5 * 60_000 : opts.background ? 10 * 60_000 : 90_000
   const leaveFree = opts.ahead ? AHEAD_LEAVES_FREE : undefined
   const { db } = await import('../db')
   // Read once per save, so a settings change mid-save doesn't split a job.

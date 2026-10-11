@@ -301,10 +301,12 @@ async function skipBeforeLookup(
 
 /**
  * How long a batch of people waits for their companies' mail domains to be
- * tested before it's shown. A test still running after that carries on, and
- * is known about by the next search or Reveal.
+ * tested before it's shown. The tests are paced (about one every four
+ * seconds), so a batch of a dozen new companies needs most of this. A test
+ * still waiting its turn after that carries on, and is known about by the
+ * next batch, the next search or a Reveal.
  */
-const AHEAD_MS = 20_000
+const AHEAD_MS = 45_000
 
 /**
  * Tests mail domains nobody has looked an email up at yet: whether each

@@ -20,7 +20,9 @@ describe('streamPeopleSearch', () => {
     const people = JSON.stringify({ type: 'people', items: [person('ana')], refined: ['https://www.linkedin.com/in/ana'] }) + '\n'
     const more = JSON.stringify({ type: 'people', items: [person('ben')], refined: [] }) + '\n'
     const done = JSON.stringify({ type: 'done', page: { items: [person('ana'), person('ben')], nextCursor: 'c2', reportedTotal: null, warnings: [], refined: [], resumed: false } }) + '\n'
-    reply([people.slice(0, 20), people.slice(20) + more.slice(0, 5), more.slice(5), done])
+    // With the lines that only keep the connection open, which carry nothing.
+    const wait = JSON.stringify({ type: 'wait' }) + '\n'
+    reply([wait, people.slice(0, 20), people.slice(20) + more.slice(0, 5), more.slice(5), wait + wait, done])
     const found: string[][] = []
     const page = await streamPeopleSearch({ titles: ['Founder'] }, (f) => found.push(f.items.map((p) => p.firstName)))
     expect(found).toEqual([['ana'], ['ben']])

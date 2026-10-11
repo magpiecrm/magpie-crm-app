@@ -34,10 +34,15 @@ export async function streamPeopleSearch(
     buffered = done ? '' : lines.pop()!
     for (const line of lines) {
       if (!line.trim()) continue
-      const msg = JSON.parse(line) as { type: 'people'; items: PersonResult[]; refined: string[] } | { type: 'done'; page: PeopleSearchPage } | { type: 'error'; message: string }
+      const msg = JSON.parse(line) as
+        | { type: 'people'; items: PersonResult[]; refined: string[] }
+        | { type: 'done'; page: PeopleSearchPage }
+        | { type: 'error'; message: string }
+        | { type: 'wait' }
       if (msg.type === 'people') onPeople({ items: msg.items, refined: msg.refined })
       else if (msg.type === 'done') return msg.page
-      else throw new Error(msg.message)
+      else if (msg.type === 'error') throw new Error(msg.message)
+      // 'wait': the search is still working; the line only keeps the connection open.
     }
     if (done) throw new Error('The search stopped before it finished. Try again.')
   }

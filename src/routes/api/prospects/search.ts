@@ -6,8 +6,12 @@ import { createFileRoute } from '@tanstack/react-router'
  * take a minute or more). The body is the same as searchPeopleFn's; the reply
  * is newline-delimited JSON: `{"type":"people","items":[…],"refined":[…]}`
  * lines, then one `{"type":"done","page":{…}}` (searchPeopleFn's result) or
- * `{"type":"error","message":"…"}`.
+ * `{"type":"error","message":"…"}`. While a batch is being worked on, a
+ * `{"type":"wait"}` line goes out every so often: a reply that says nothing
+ * for a minute or two gets dropped by what's in between.
  */
+const STILL_HERE_MS = 15_000
+
 export const Route = createFileRoute('/api/prospects/search')({
   server: {
     handlers: {
@@ -40,12 +44,14 @@ export const Route = createFileRoute('/api/prospects/search')({
                 open = false
               }
             }
+            const stillHere = setInterval(() => send({ type: 'wait' }), STILL_HERE_MS)
             try {
               const page = await searchPeople(input, { onPeople: (found) => send({ type: 'people', ...found }) })
               send({ type: 'done', page })
             } catch (err) {
               send({ type: 'error', message: err instanceof Error ? err.message : 'Search failed' })
             } finally {
+              clearInterval(stillHere)
               if (open) controller.close()
             }
           },
