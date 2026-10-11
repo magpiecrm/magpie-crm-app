@@ -8,7 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyNamer, findCompanyByName, isCompanyName } from './companies'
+import { companyNamer, companyPageReader, findCompanyByName, isCompanyName } from './companies'
 import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
@@ -966,7 +966,9 @@ async function processBatch(
   }
   // Those whose employer has no LinkedIn page at all: its own website by web
   // search (companySite.ts), where this copy has one to use. A small firm
-  // whose founder typed its name in usually still has a website.
+  // whose founder typed its name in usually still has a website. Where the
+  // search turns up a LinkedIn page for it after all, the website is read
+  // from there, with the host's lookups free.
   const searchWeb = webSearcher()
   const bySite = new Map<string, string>()
   if (searchWeb) {
@@ -974,7 +976,8 @@ async function processBatch(
       unplaced.filter((p) => !byGuess.has(p.profileUrl) && !several.has(p.profileUrl) && isCompanyName(p.company)),
       ENRICH_CONCURRENCY,
       async (p) => {
-        const domain = await findCompanySite(p.company, p.country, searchWeb, db).catch(() => null)
+        const page = free && getCompany ? companyPageReader(p.company, { getCompany }, db) : undefined
+        const domain = await findCompanySite(p.company, p.country, searchWeb, db, Date.now(), page).catch(() => null)
         if (domain) bySite.set(p.profileUrl, domain)
       },
     )

@@ -34,8 +34,9 @@ key), with the app's actions as tools.
     company page gets its website from a web search instead
     (`companySite.ts`, through `webSearch.ts`: the copy's own
     `WEB_SEARCH_API_KEY`, or its host's): only a domain that is plainly the
-    company's name is taken, and what was found is kept by company name
-    (`company_sites`). One thing does leave a copy:
+    company's name is taken, or the website on a LinkedIn company page the
+    search turns up under the same name, and what was found is kept by
+    company name (`company_sites`). One thing does leave a copy:
     `sharedPeople.ts`, in a hosted copy whose owner agreed to its host's
     Contributor Terms (Settings → Prospect search), sends the host each
     contact saved from search with a verified email, for the host's shared

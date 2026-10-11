@@ -7,6 +7,11 @@
 // names the company in full. The email check is the second safeguard: an
 // address only counts once that domain's mail server confirms it.
 //
+// Sometimes the search turns up a LinkedIn company page instead: the person
+// typed their employer's name in rather than picking its page, and the page
+// goes by a name nobody would guess. Its website is then read from that page
+// (the caller's `page`), which has to carry the same name.
+//
 // The search is for the name alone, from the company's own country: a small
 // firm's site comes first there, and adding the country as a word, or "Ltd",
 // brings up registries and directories instead.
@@ -142,6 +147,20 @@ export function siteFromResults(name: string, results: WebResult[]): string | nu
   return found?.domain ?? null
 }
 
+/** The LinkedIn company page among the results, when one names the company: its page name, or null. */
+export function companyPageFromResults(name: string, results: WebResult[]): string | null {
+  for (const r of results) {
+    const pageName = /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/([^/?#]+)/i.exec(r.url)?.[1]
+    if (!pageName || !namesCompany(r, name)) continue
+    try {
+      return decodeURIComponent(pageName).toLowerCase()
+    } catch {
+      return pageName.toLowerCase()
+    }
+  }
+  return null
+}
+
 /** A result's host, unless it's a directory, a registry or a social network. */
 function ownSite(r: WebResult): string | null {
   const host = domainFromWebsite(r.url)
@@ -181,12 +200,23 @@ export function whyNoSite(name: string, results: WebResult[]): string {
 // One search for several people at the same employer.
 const inflight = new Map<string, Promise<string | null>>()
 
+/** Reads a LinkedIn company page for its website: null when the page isn't this company's or lists none, and throws when it couldn't be read. */
+export type CompanyPageReader = (pageName: string) => Promise<string | null>
+
 /**
  * A company's website domain from a web search for its name, or null. Asks
  * once per name and remembers the answer; a search that fails is tried
- * again next time.
+ * again next time. With `page`, a LinkedIn company page the search turns up
+ * is read for the website when no result is the site itself.
  */
-export async function findCompanySite(name: string, country: string | null, search: WebSearch, db: Pick<Db, 'getCompanySite' | 'setCompanySite'>, now = Date.now()): Promise<string | null> {
+export async function findCompanySite(
+  name: string,
+  country: string | null,
+  search: WebSearch,
+  db: Pick<Db, 'getCompanySite' | 'setCompanySite'>,
+  now = Date.now(),
+  page?: CompanyPageReader,
+): Promise<string | null> {
   const key = companyKey(name)
   if (key.length < 3) return null
   const kept = db.getCompanySite(key)
@@ -201,10 +231,20 @@ export async function findCompanySite(name: string, country: string | null, sear
       console.warn(`[CompanySite] web search failed: ${err?.message ?? err}`)
       return null
     }
-    const domain = siteFromResults(name, results)
+    let domain = siteFromResults(name, results)
+    const pageName = domain || !page ? null : companyPageFromResults(name, results)
+    if (pageName && page) {
+      try {
+        domain = await page(pageName)
+      } catch {
+        // The page couldn't be read just now: nothing learned, so nothing remembered.
+        console.log('[CompanySite] web search found their LinkedIn page, which could not be read')
+        return null
+      }
+    }
     db.setCompanySite(key, domain)
     // The domain only: a small firm's name can be a person's.
-    console.log(`[CompanySite] web search ${domain ? `found ${domain}` : `found no website that is plainly theirs: ${whyNoSite(name, results)}`}`)
+    console.log(`[CompanySite] web search ${domain ? `found ${domain}${pageName ? ', on the LinkedIn page it turned up' : ''}` : `found no website that is plainly theirs: ${whyNoSite(name, results)}`}`)
     return domain
   })()
   inflight.set(key, task)

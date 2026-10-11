@@ -1,6 +1,6 @@
 import { companyKey, sameCompanyName } from './socialfetch'
 import { normaliseDomain } from './suppression'
-import { findCompanySite } from './companySite'
+import { findCompanySite, type CompanyPageReader } from './companySite'
 import { webSearcher, type WebSearch } from './webSearch'
 import { CompanyUnconfirmed, type CompanySource, type PersonResult } from './types'
 
@@ -117,6 +117,25 @@ const GUESS_KEPT_MS = 24 * 60 * 60_000
 export const forgetCompanyGuesses = () => guessed.clear()
 
 /**
+ * The company at a LinkedIn page, when the page's own name is this name
+ * once "Ltd" and the like are set aside: nearly the same isn't enough to
+ * take a page for an employer. It goes in the company cache. Throws
+ * CompanyUnconfirmed when the host couldn't read the page.
+ */
+async function companyAtPage(pageName: string, name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null> {
+  const company = await source.getCompany(pageName, pageName, { pageOnly: true })
+  if (!company || companyKey(company.name) !== companyKey(name) || !sameCompanyName(company.name, name)) return null
+  db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: company.domain, domain_source: 'socialfetch', page_checked: true, headcount: company.headcount, slug: pageName }])
+  return { ref: company.ref, name: company.name, domain: company.domain, slug: pageName }
+}
+
+/** Reads the website off a LinkedIn company page a web search turned up for an employer (companySite.ts). */
+export const companyPageReader =
+  (name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): CompanyPageReader =>
+  async (pageName) =>
+    (await companyAtPage(pageName, name, source, db))?.domain ?? null
+
+/**
  * Finds an employer's company page when a profile names it without linking
  * it: asks for the page its name would have, and takes it only when the
  * page's own name is the same. Many people type their employer in rather
@@ -131,9 +150,9 @@ export async function findCompanyByName(name: string, source: Pick<CompanySource
   if (before && now - before.at < GUESS_KEPT_MS) return before.found
   const found = (async () => {
     for (const pageName of pageNamesFor(name)) {
-      let company
       try {
-        company = await source.getCompany(pageName, pageName, { pageOnly: true })
+        const company = await companyAtPage(pageName, name, source, db)
+        if (company) return company
       } catch (err) {
         if (err instanceof CompanyUnconfirmed) {
           guessed.delete(key)
@@ -141,10 +160,6 @@ export async function findCompanyByName(name: string, source: Pick<CompanySource
         }
         throw err
       }
-      // The same name once "Ltd" and the like are set aside: nearly the same isn't enough for a guess.
-      if (!company || companyKey(company.name) !== key || !sameCompanyName(company.name, name)) continue
-      db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: company.domain, domain_source: 'socialfetch', page_checked: true, headcount: company.headcount, slug: pageName }])
-      return { ref: company.ref, name: company.name, domain: company.domain, slug: pageName }
     }
     return null
   })()
@@ -183,8 +198,9 @@ export async function domainForPerson(
   const ref = person.companyRef ?? named?.ref ?? null
   let domain = ref ? await resolveCompanyDomain(ref, person.company, source, db, person.companySlug ?? named?.slug) : null
   // No company page, or none with a website: the company's own site by web search, when it's plainly theirs.
+  // Or, for an employer with no page we know of, off the page the search turns up.
   if (!domain && search && isCompanyName(named?.name ?? person.company)) {
-    domain = await findCompanySite(named?.name ?? person.company, person.country, search, db)
+    domain = await findCompanySite(named?.name ?? person.company, person.country, search, db, Date.now(), ref ? undefined : companyPageReader(person.company, source, db))
   }
   // Which company a lookup stopped at for want of a website, for the log. Company
   // data only: an employer without a company page is named by nothing, since

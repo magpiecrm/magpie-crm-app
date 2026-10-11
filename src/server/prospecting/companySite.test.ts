@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { domainFitsName, findCompanySite, plainName, siteFromResults, whyNoSite } from './companySite'
+import { companyPageFromResults, domainFitsName, findCompanySite, plainName, siteFromResults, whyNoSite } from './companySite'
 import { decodoSearch, webSearcher, type WebResult } from './webSearch'
 
 const result = (url: string, title = '', description = ''): WebResult => ({ url, title, description })
@@ -70,6 +70,28 @@ describe('a company’s website from a web search', () => {
     expect(whyNoSite('Nowhere Much', [result('https://www.theguardian.com/somewhere', 'Somewhere else entirely')])).toBe('no site fits the name (2-word name, 1 results)')
   })
 
+  it('reads the website off a LinkedIn page the search turns up, when no result is the site itself', async () => {
+    const linkedin = result('https://uk.linkedin.com/company/tbx-research-uk?trk=x', 'Tinderbox Research | LinkedIn')
+    expect(companyPageFromResults('Tinderbox Research Ltd', [result('https://www.yell.com/biz/1'), linkedin])).toBe('tbx-research-uk')
+    // Not someone's profile, and not another company's page.
+    expect(companyPageFromResults('Tinderbox Research', [result('https://uk.linkedin.com/in/jane', 'Jane - Tinderbox Research'), result('https://www.linkedin.com/company/tinderbox', 'Tinderbox Business Development')])).toBeNull()
+
+    const kept = new Map<string, { domain: string | null; at: string }>()
+    const db = { getCompanySite: (k: string) => kept.get(k) ?? null, setCompanySite: (k: string, domain: string | null) => void kept.set(k, { domain, at: new Date().toISOString() }) }
+    const read: string[] = []
+    const page = async (pageName: string) => (read.push(pageName), 'tbxresearch.co.uk')
+    expect(await findCompanySite('Tinderbox Research', 'United Kingdom', async () => [linkedin], db, Date.now(), page)).toBe('tbxresearch.co.uk')
+    expect(kept.get('tinderbox research')?.domain).toBe('tbxresearch.co.uk')
+    // The site itself among the results is taken first, and the page left alone.
+    expect(await findCompanySite('Acme Widgets', null, async () => [result('https://www.linkedin.com/company/acme-w', 'Acme Widgets'), result('https://acmewidgets.com/')], db, Date.now(), page)).toBe('acmewidgets.com')
+    expect(read).toEqual(['tbx-research-uk'])
+    // A page that isn't theirs, or lists no website, is a miss like any other; one that couldn't be read is asked about again.
+    expect(await findCompanySite('Nowhere Much', null, async () => [result('https://www.linkedin.com/company/nm', 'Nowhere Much')], db, Date.now(), async () => null)).toBeNull()
+    expect(kept.get('nowhere much')).toMatchObject({ domain: null })
+    expect(await findCompanySite('Elsewhere Much', null, async () => [result('https://www.linkedin.com/company/em', 'Elsewhere Much')], db, Date.now(), async () => Promise.reject(new Error('not read')))).toBeNull()
+    expect(kept.has('elsewhere much')).toBe(false)
+  })
+
   it('searches for the name by itself', () => {
     expect(plainName('Research Works Ltd')).toBe('Research Works')
     expect(plainName('IT GuidePoint Corporation (itguidepoint.com)')).toBe('IT GuidePoint')
@@ -123,6 +145,18 @@ describe('the domain to find someone’s email on', () => {
     const noPages = { searchCompanies: async () => ({ items: [], nextCursor: null, reportedTotal: null, warnings: [] }), getCompany: async () => null }
     const search = async () => [result('https://tinderboxresearch.com/')]
     expect(await domainForPerson(person, noPages, store(), search)).toBe('tinderboxresearch.com')
+    // A LinkedIn page the search turns up is read for the website, if it goes by the same name.
+    forgetCompanyGuesses()
+    const asked: string[] = []
+    const pages = {
+      ...noPages,
+      getCompany: async (ref: string) => (asked.push(ref), ref === 'tbx-uk' ? { ref: '991', name: 'Tinderbox Research Ltd', domain: 'tbxresearch.co.uk', headcount: 4 } : null),
+    } as any
+    const turnsUp = (title: string) => async () => [result('https://uk.linkedin.com/company/tbx-uk', title)]
+    expect(await domainForPerson(person, pages, store(), turnsUp('Tinderbox Research | LinkedIn'))).toBe('tbxresearch.co.uk')
+    expect(asked).toEqual(['tinderbox-research', 'tbx-uk'])
+    forgetCompanyGuesses()
+    expect(await domainForPerson({ ...person, company: 'Tinderbox Researchers' }, pages, store(), turnsUp('Tinderbox Researchers | LinkedIn'))).toBeNull()
     // A company with a page that lists no website is searched for too.
     expect(await domainForPerson({ ...person, companyRef: 'tinderbox-research' }, noPages, store(), search)).toBe('tinderboxresearch.com')
     // Without a web search, or for what isn't a company, there's nothing to go on.
