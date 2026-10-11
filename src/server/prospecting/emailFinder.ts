@@ -151,6 +151,22 @@ export function isKnownNoMail(domain: string, getDomain: FinderDeps['getDomain']
 }
 
 /**
+ * Whether `domain`'s mail server lately gave our test no usable answer (it
+ * blocked the check, or answered neither way), with another try not due for
+ * a good while: a lookup there now would end the same way, unverified. Not
+ * greylisting, which only asks for a few minutes, and not a domain where an
+ * address has been verified since. Cache only, like `isKnownCatchAll`.
+ */
+export function isKnownSilent(domain: string, getDomain: FinderDeps['getDomain'], now: number): boolean {
+  const rec = getDomain(domain.toLowerCase().trim())
+  if (!rec || rec.accepts_mail === false || rec.pattern) return false
+  // A verdict that still stands, either way, is an answer.
+  if (!isStale(rec.catch_all_checked_at, catchAllMaxAge(rec), now)) return false
+  const recheckAt = rec.catch_all_recheck_at ? Date.parse(rec.catch_all_recheck_at) : 0
+  return recheckAt - now > GREYLIST_RECHECK_MS
+}
+
+/**
  * Whether a guess at `domain` would come back `format_confirmed` if the
  * company accepts every address: its format is well established, by the mail
  * server before or by addresses already held there. Cache and contacts only,

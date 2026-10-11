@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
 import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
-import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
+import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
 import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName } from './companies'
@@ -281,7 +281,7 @@ async function skipBeforeLookup(
       const domain = domainOf(p)
       if (skip.has(p.profileUrl) || !domain || worthIt(domain)) continue
       const known = (d: string) => db.getEmailDomain(d)
-      if (isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now)) {
+      if (knownDeadEnd(domain, known, now)) {
         skip.add(p.profileUrl)
         opts.tally.skippedUnverifiable++
       } else {
@@ -334,6 +334,14 @@ async function checkDomainsAhead(domains: string[]): Promise<number> {
   waiting = false
   return answered
 }
+
+/**
+ * Whether earlier checks say no address can be verified at a mail domain:
+ * it accepts every address, takes no email, or its mail server wouldn't
+ * answer our test and isn't due another try yet. Cache only.
+ */
+const knownDeadEnd = (domain: string, known: (d: string) => ReturnType<Db['getEmailDomain']>, now: number) =>
+  isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now) || isKnownSilent(domain, known, now)
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length)
@@ -499,7 +507,7 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
       noDomain++
     } else if (worthIt(domain)) {
       continue
-    } else if (isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now)) {
+    } else if (knownDeadEnd(domain, known, now)) {
       out.add(c.ref)
       unverifiable++
     } else {
@@ -522,7 +530,7 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
     const checks = Promise.allSettled(
       toCheck.map(async ({ domain }) => {
         const rec = await probeDomain(domain, deps)
-        answered.set(domain, rec.accepts_mail === false || rec.catch_all === true)
+        answered.set(domain, rec.accepts_mail === false || rec.catch_all === true || isKnownSilent(domain, known, Date.now()))
       }),
     )
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -549,7 +557,7 @@ async function withoutUnverifiable(companies: Array<[ref: string, name: string]>
   const known = (d: string) => db.getEmailDomain(d)
   const keep = companies.filter(([ref]) => {
     const domain = (db.getProspectCompany(ref)?.domain ?? '').toLowerCase().replace(/^www\./, '')
-    return !domain || worthIt(domain) || !(isKnownCatchAll(domain, known, now) || isKnownNoMail(domain, known, now))
+    return !domain || worthIt(domain) || !knownDeadEnd(domain, known, now)
   })
   screened.unverifiable += companies.length - keep.length
   return keep
@@ -1072,17 +1080,18 @@ async function processBatch(
     })
   }
 
-  // Mark people at companies known to accept every address, or to take no
-  // email at all. The page decides whether to hide them (it does while
-  // verified-only is on).
+  // Mark people at companies known to accept every address, to take no
+  // email at all, or whose mail server wouldn't answer our test. The page
+  // decides whether to hide them (it does while verified-only is on).
   const worthIt = await formatConfirmedAt(db)
   const known = (d: string) => db.getEmailDomain(d)
   const markKnown = () => {
     const now = Date.now()
     for (const p of items) {
-      if (!p.companyDomain || p.catchAll || p.noMail) continue
+      if (!p.companyDomain || p.catchAll || p.noMail || p.noAnswer) continue
       if (isKnownCatchAll(p.companyDomain, known, now)) p.catchAll = !worthIt(p.companyDomain)
       else if (isKnownNoMail(p.companyDomain, known, now)) p.noMail = true
+      else if (isKnownSilent(p.companyDomain, known, now)) p.noAnswer = !worthIt(p.companyDomain)
     }
   }
   markKnown()
@@ -1097,7 +1106,7 @@ async function processBatch(
     const untested = [
       ...new Set(
         items
-          .filter((p) => p.companyDomain && !p.catchAll && !p.noMail && p.previously !== 'saved' && !worthIt(p.companyDomain))
+          .filter((p) => p.companyDomain && !p.catchAll && !p.noMail && !p.noAnswer && p.previously !== 'saved' && !worthIt(p.companyDomain))
           .map((p) => p.companyDomain!.toLowerCase().trim()),
       ),
     ]
@@ -1148,7 +1157,7 @@ export async function searchPeople(
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
-  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail || p.noCompany)
+  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail || p.noAnswer || p.noCompany)
   // Where the host's profile lookups are free, everyone is looked up, and in a
   // companies-first search someone working elsewhere is kept if that fits.
   const { profileLookupsFree } = await import('./hostRules')
@@ -1426,6 +1435,7 @@ export async function searchPeople(
       noWebsite: tally.noWebsite,
       domainsCheckedAhead: tally.domainsChecked,
       domainsNotChecked: tally.domainsUnchecked,
+      mailServerSilent: items.filter((p) => p.noAnswer).length,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),
       fromSharedDatabase: shared,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EmailDomainRecord } from '../db'
-import { findEmail, isKnownCatchAll, type FinderDeps } from './emailFinder'
+import { findEmail, isKnownCatchAll, isKnownSilent, type FinderDeps } from './emailFinder'
 import type { Reachability } from './reacher'
 
 const NOW = Date.parse('2026-09-01T00:00:00Z')
@@ -379,6 +379,22 @@ describe('isKnownCatchAll', () => {
   })
   const fresh = new Date(NOW - 86_400_000).toISOString()
   const lookup = (records: Record<string, EmailDomainRecord>) => (d: string) => records[d] ?? null
+
+  it("knows a mail server that wouldn't answer the test, while another try isn't due", () => {
+    const at = (ms: number) => new Date(NOW + ms).toISOString()
+    const silent = (patch: Partial<EmailDomainRecord>) => isKnownSilent('acme.com', lookup({ 'acme.com': rec(patch) }), NOW)
+    // Blocked or answered neither way: not asked again for a day.
+    expect(silent({ catch_all_recheck_at: at(20 * 3_600_000) })).toBe(true)
+    // Greylisting only asks for a few minutes; a try that's due, or never made, says nothing.
+    expect(silent({ catch_all_recheck_at: at(4 * 60_000) })).toBe(false)
+    expect(silent({ catch_all_recheck_at: at(-60_000) })).toBe(false)
+    expect(silent({})).toBe(false)
+    // A verdict that stands, an address verified there since, or no mail at all: each is an answer.
+    expect(silent({ catch_all: false, catch_all_checked_at: fresh, catch_all_recheck_at: at(20 * 3_600_000) })).toBe(false)
+    expect(silent({ pattern: 'first.last', catch_all_recheck_at: at(20 * 3_600_000) })).toBe(false)
+    expect(silent({ accepts_mail: false, catch_all_recheck_at: at(20 * 3_600_000) })).toBe(false)
+    expect(isKnownSilent('acme.com', lookup({}), NOW)).toBe(false)
+  })
 
   it('is true only for a fresh catch-all result', () => {
     expect(isKnownCatchAll('acme.com', lookup({ 'acme.com': rec({ catch_all: true, catch_all_checked_at: fresh }) }), NOW)).toBe(true)

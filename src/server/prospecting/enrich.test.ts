@@ -33,6 +33,8 @@ const getCompanyMock = vi.fn(async (ref: string): Promise<CompanyResult | null> 
 )
 // Checks of companies' mail servers (screenCompanies): which domains accept every address.
 let catchAllDomains = new Set<string>()
+// And which mail servers block the check, answering neither way.
+let silentDomains = new Set<string>()
 vi.mock('./runtime', () => ({
   getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock }),
   getFinderDeps: async () => ({
@@ -44,7 +46,10 @@ vi.mock('./runtime', () => ({
     resolveMx: async () => ['mx.example'],
     verifier: {
       acquire: async () => ({ proxy: null, report: () => {} }),
-      check: async (email: string) => ({ reachability: catchAllDomains.has(email.split('@')[1]) ? 'safe' : 'invalid', isCatchAll: null, outcome: 'ok' }),
+      check: async (email: string) =>
+        silentDomains.has(email.split('@')[1])
+          ? { reachability: 'unknown', isCatchAll: null, outcome: 'blocked' }
+          : { reachability: catchAllDomains.has(email.split('@')[1]) ? 'safe' : 'invalid', isCatchAll: null, outcome: 'ok' },
     },
     now: () => Date.now(),
   }),
@@ -113,6 +118,7 @@ beforeEach(() => {
   contacts = []
   prospectCompanies = []
   catchAllDomains = new Set()
+  silentDomains = new Set()
   recordUsage.mockClear()
   positions.clear()
 })
@@ -706,6 +712,23 @@ describe('searchPeople testing mail domains before people are shown', () => {
       // Kept for the Reveal that follows, which doesn't test the domain again.
       expect(emailDomains['barclays.com']).toMatchObject({ catch_all: true })
       expect(emailDomains['acme.com']).toMatchObject({ catch_all: false, accepts_mail: true })
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it("hides people at a domain whose mail server won't answer the test, until it's due another try", async () => {
+    silentDomains = new Set(['barclays.com'])
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(res.items.map((p) => [p.firstName, Boolean(p.noAnswer)])).toEqual([['ana', true], ['ben', false]])
+      expect(funnel(log)).toMatchObject({ mailServerSilent: 1, hiddenUnverifiable: 1, shown: 1, prospectCredits: 1 })
+      // Not asked again by the next search: the same answer stands for a day.
+      const before = JSON.stringify(emailDomains['barclays.com'])
+      await searchPeople({ titles: ['Business Analyst'], fromStart: true })
+      expect(JSON.stringify(emailDomains['barclays.com'])).toBe(before)
     } finally {
       log.mockRestore()
     }

@@ -446,7 +446,7 @@ export function ProspectSearch() {
   // Someone the user has revealed stays in view with the outcome on their
   // row, however it ended, rather than vanishing on the click; later
   // searches leave them out (unverifiable.ts).
-  const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail || p.noCompany)
+  const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail || p.noAnswer || p.noCompany)
   const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
   const hiding = hiddenCount > 0 && !showHidden
   const peopleItems = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople

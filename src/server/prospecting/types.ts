@@ -83,6 +83,12 @@ export interface PersonResult {
   /** Their company's domain is already known to take no email. Company data, not personal. */
   noMail?: boolean
   /**
+   * Their company's mail server lately wouldn't answer our check (it blocks
+   * verification, or answered neither way), so an address there can't be
+   * verified until it's tried again, a day on. Company data, not personal.
+   */
+  noAnswer?: boolean
+  /**
    * Their profile names an employer without linking its company page, and no
    * company we know goes by that name alone; or its page lists no website
    * and none could be found. Either way there's no website to find an email
