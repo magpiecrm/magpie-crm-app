@@ -134,12 +134,48 @@ export function siteFromResults(name: string, results: WebResult[]): string | nu
   const oneWord = !companyKey(plainName(name)).includes(' ')
   let found: { domain: string; fit: number } | null = null
   for (const r of oneWord ? results.slice(0, 2) : results) {
-    const host = domainFromWebsite(r.url)
-    if (!host || NOT_THEIR_SITE.some((s) => host === s || host.endsWith(`.${s}`))) continue
+    const host = ownSite(r)
+    if (!host) continue
     const how = fit(host, name)
     if (how > (found?.fit ?? 0) && (how > LOOSE || namesCompany(r, name))) found = { domain: siteDomain(host), fit: how }
   }
   return found?.domain ?? null
+}
+
+/** A result's host, unless it's a directory, a registry or a social network. */
+function ownSite(r: WebResult): string | null {
+  const host = domainFromWebsite(r.url)
+  return host && !NOT_THEIR_SITE.some((s) => host === s || host.endsWith(`.${s}`)) ? host : null
+}
+
+/**
+ * Why a search gave no website, for the log: the kind of miss and the shape
+ * of the name, never the name itself. It's what says which searches aren't
+ * worth paying for, and what else could be read from the ones that are.
+ */
+export function whyNoSite(name: string, results: WebResult[]): string {
+  const words = companyKey(plainName(name)).split(' ').filter(Boolean).length
+  const shape = [
+    `${words}-word name`,
+    ...(/\b(ltd|limited|llp|llc|plc|inc|gmbh)\b/i.test(name) ? ['legal form'] : []),
+    `${results.length} results`,
+    // A company page we never knew of: its website could be read from there instead.
+    ...(results.some((r) => /linkedin\.com\/company\//i.test(r.url) && namesCompany(r, name)) ? ['its LinkedIn page among them'] : []),
+  ].join(', ')
+  const sites = results.map((r, at) => ({ r, at, host: ownSite(r) })).filter((x): x is { r: WebResult; at: number; host: string } => Boolean(x.host))
+  const fits = sites.filter((x) => fit(x.host, name) > 0)
+  const why = !results.length
+    ? 'no results'
+    : !sites.length
+      ? 'only directories and social sites'
+      : words === 1 && fits.some((x) => x.at >= 2)
+        ? 'a fit below the first two results'
+        : fits.length
+          ? "a near fit the page didn't name"
+          : sites.some((x) => x.at < 3 && namesCompany(x.r, name))
+            ? 'a page that names it, on a domain unlike its name'
+            : 'no site fits the name'
+  return `${why} (${shape})`
 }
 
 // One search for several people at the same employer.
@@ -161,13 +197,14 @@ export async function findCompanySite(name: string, country: string | null, sear
     let results: WebResult[]
     try {
       results = await search(plainName(name), country)
-    } catch {
+    } catch (err: any) {
+      console.warn(`[CompanySite] web search failed: ${err?.message ?? err}`)
       return null
     }
     const domain = siteFromResults(name, results)
     db.setCompanySite(key, domain)
     // The domain only: a small firm's name can be a person's.
-    console.log(`[CompanySite] web search ${domain ? `found ${domain}` : 'found no website that is plainly theirs'}`)
+    console.log(`[CompanySite] web search ${domain ? `found ${domain}` : `found no website that is plainly theirs: ${whyNoSite(name, results)}`}`)
     return domain
   })()
   inflight.set(key, task)

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { domainFitsName, findCompanySite, plainName, siteFromResults } from './companySite'
+import { domainFitsName, findCompanySite, plainName, siteFromResults, whyNoSite } from './companySite'
 import { decodoSearch, webSearcher, type WebResult } from './webSearch'
 
 const result = (url: string, title = '', description = ''): WebResult => ({ url, title, description })
@@ -58,6 +58,16 @@ describe('a company’s website from a web search', () => {
     const others = [result('https://uk.linkedin.com/company/ecomotive'), result('https://en.wikipedia.org/wiki/Ecomotive'), result('https://ecomotive.biz/')]
     expect(siteFromResults('EcoMotive', others)).toBeNull()
     expect(siteFromResults('EcoMotive', others.slice(1))).toBe('ecomotive.biz')
+  })
+
+  it('says what kind of miss a search was, without the name', () => {
+    const linkedin = result('https://uk.linkedin.com/company/tinderbox-research', 'Tinderbox Research | LinkedIn')
+    expect(whyNoSite('Tinderbox Research Ltd', [])).toBe('no results (2-word name, legal form, 0 results)')
+    expect(whyNoSite('Tinderbox Research', [linkedin, result('https://www.yell.com/biz/tinderbox')])).toBe('only directories and social sites (2-word name, 2 results, its LinkedIn page among them)')
+    expect(whyNoSite('Tinderbox Research', [result('https://tinder-box.co.uk/', 'Tinder-Box - The Performance Spark')])).toBe("a near fit the page didn't name (2-word name, 1 results)")
+    expect(whyNoSite('EcoMotive', [linkedin, result('https://en.wikipedia.org/wiki/Ecomotive'), result('https://ecomotive.biz/')])).toBe('a fit below the first two results (1-word name, 3 results)')
+    expect(whyNoSite('PINCH Insight & Strategy', [result('https://wearepinch.com/', 'PINCH Insight & Strategy | Research agency')])).toBe('a page that names it, on a domain unlike its name (3-word name, 1 results)')
+    expect(whyNoSite('Nowhere Much', [result('https://www.theguardian.com/somewhere', 'Somewhere else entirely')])).toBe('no site fits the name (2-word name, 1 results)')
   })
 
   it('searches for the name by itself', () => {
