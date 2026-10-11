@@ -40,6 +40,8 @@ interface HostAnswer {
   pool: SharedDatabase | null
   /** The host answers profile lookups at no cost to it, so a search looks everyone up rather than guessing employers (search.ts). */
   profileLookupsFree: boolean
+  /** The host runs a web search this copy can use to find a company's website (webSearch.ts). */
+  webSearch: boolean
 }
 
 export interface SharedDatabase {
@@ -129,6 +131,11 @@ export function formatSharingOn(): boolean {
 }
 
 /** Whether this copy's host answers profile lookups at no cost to it. */
+/** Whether the host offers a web search for finding a company's website. */
+export function hostWebSearch(): boolean {
+  return env.prospectingManaged() && g.__hostRules?.webSearch === true
+}
+
 export function profileLookupsFree(): boolean {
   return env.prospectingManaged() && g.__hostRules?.profileLookupsFree === true
 }
@@ -164,6 +171,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       sendLimits: sendLimitsFrom(body?.sendLimits),
       pool: sharedDatabaseFrom(body?.pool),
       profileLookupsFree: body?.profileLookupsFree === true,
+      webSearch: body?.webSearch === true,
     }
     g.__hostRules = answer
     return answer

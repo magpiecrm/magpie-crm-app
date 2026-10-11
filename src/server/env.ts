@@ -81,6 +81,13 @@ export const env = {
      */
     balanceHidden: () => prospectingManaged() || readEnv('SOCIALFETCH_BALANCE')?.toLowerCase() === 'hidden',
   },
+  // A web search provider (Decodo's Web Scraping API), for finding the
+  // website of a company with no LinkedIn page (prospecting/webSearch.ts).
+  // Optional; a hosted copy uses its host's instead.
+  webSearch: {
+    apiKey: () => readEnv('WEB_SEARCH_API_KEY'),
+    url: () => readEnv('WEB_SEARCH_URL') || 'https://data.decodo.com/v1/scrape',
+  },
   // Anthropic API key for the copilot (bring your own key). Normally saved in
   // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).
   anthropic: {

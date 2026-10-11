@@ -358,6 +358,12 @@ export interface DbSchema {
    * never anyone found.
    */
   search_positions?: Record<string, { cursor: string; updated_at: string }>
+  /**
+   * Company websites found by web search, by the company's name as it's
+   * compared (prospecting/companySite.ts): the domain, or null when none
+   * was found, so the same name isn't searched for again. Company data only.
+   */
+  company_sites?: Record<string, { domain: string | null; at: string }>
   /** Where this workspace is on its daily sending limits, per kind of mail (sendingLimits.ts). */
   sending_ramp?: { cold?: { level: number; since: string }; optIn?: { level: number; since: string } }
   /**
@@ -770,6 +776,18 @@ class JsonDb {
     }
     if (added > 0) this.save()
     return added
+  }
+
+  getCompanySite(key: string): { domain: string | null; at: string } | null {
+    return this.data.company_sites?.[key] ?? null
+  }
+
+  /** Remembers what a web search found for a company's name; the oldest go once there are 5,000. */
+  setCompanySite(key: string, domain: string | null, now = new Date()) {
+    const sites = { ...(this.data.company_sites ?? {}), [key]: { domain, at: now.toISOString() } }
+    const entries = Object.entries(sites)
+    this.data.company_sites = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, 4_000)) : sites
+    this.save()
   }
 
   getUnverifiable(): Array<{ hash: string; outcome: string; created_at: string }> {

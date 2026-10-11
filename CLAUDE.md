@@ -30,7 +30,12 @@ key), with the app's actions as tools.
     only (size-capped, never on disk): `profileCache.ts` holds profile
     lookups for 24h so a person isn't paid for twice, and `searchPool.ts`
     holds the search hits a page didn't use for 1h, so the next page or
-    top-up doesn't pay for another request. One thing does leave a copy:
+    top-up doesn't pay for another request. An employer with no LinkedIn
+    company page gets its website from a web search instead
+    (`companySite.ts`, through `webSearch.ts`: the copy's own
+    `WEB_SEARCH_API_KEY`, or its host's): only a domain that is plainly the
+    company's name is taken, and what was found is kept by company name
+    (`company_sites`). One thing does leave a copy:
     `sharedPeople.ts`, in a hosted copy whose owner agreed to its host's
     Contributor Terms (Settings → Prospect search), sends the host each
     contact saved from search with a verified email, for the host's shared

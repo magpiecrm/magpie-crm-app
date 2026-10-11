@@ -101,6 +101,10 @@ PROSPECTING_MANAGED=on   # optional — the host runs prospect data and email
                          # see prospecting/hostRules.ts), shares company email
                          # formats as counts (POST /v1/formats, sharedFormats.ts),
                          # and hands over Format confirmed addresses by default
+WEB_SEARCH_API_KEY=...   # optional — a Decodo Web Scraping API key: finds the
+                         # website of a company with no LinkedIn page by web
+                         # search (prospecting/companySite.ts). A hosted copy
+                         # uses its host's instead.
 VERIFICATION_HEALTH_CHECKS=off  # optional — skip blocklist/DNS checks of the
                          # verifying IPs, when someone else runs verification
 SIGN_IN_LINK_SECRET=...  # optional — shared with a hosting portal: turns on

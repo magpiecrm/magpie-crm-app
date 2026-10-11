@@ -8,7 +8,9 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyNamer, findCompanyByName } from './companies'
+import { companyNamer, findCompanyByName, isCompanyName } from './companies'
+import { findCompanySite } from './companySite'
+import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -354,6 +356,8 @@ interface Tally {
   employerByName: number
   /** Placed at the company whose page their employer's name would have, once that page's name matched (findCompanyByName). */
   employerByGuess: number
+  /** Given the website a web search found for their employer, which has no LinkedIn page (companySite.ts). */
+  employerBySite: number
   /** Marked as having no company to find a website for (PersonResult.noCompany). */
   noCompany: number
   skippedNotWorking: number
@@ -960,12 +964,32 @@ async function processBatch(
       if (found) byGuess.set(p.profileUrl, found)
     })
   }
+  // Those whose employer has no LinkedIn page at all: its own website by web
+  // search (companySite.ts), where this copy has one to use. A small firm
+  // whose founder typed its name in usually still has a website.
+  const searchWeb = webSearcher()
+  const bySite = new Map<string, string>()
+  if (searchWeb) {
+    await mapLimit(
+      unplaced.filter((p) => !byGuess.has(p.profileUrl) && !several.has(p.profileUrl) && isCompanyName(p.company)),
+      ENRICH_CONCURRENCY,
+      async (p) => {
+        const domain = await findCompanySite(p.company, p.country, searchWeb, db).catch(() => null)
+        if (domain) bySite.set(p.profileUrl, domain)
+      },
+    )
+  }
   items = items.map((p) => {
     if (p.companyRef || p.companyDomain || p.previously === 'saved' || !p.profileChecked) return p
     const found = byGuess.get(p.profileUrl)
     if (found) {
       tally.employerByGuess++
       return { ...p, companyRef: found.ref, companySlug: p.companySlug ?? found.slug ?? null, companyDomain: found.domain ?? null }
+    }
+    const site = bySite.get(p.profileUrl)
+    if (site) {
+      tally.employerBySite++
+      return { ...p, companyDomain: site }
     }
     tally.noCompany++
     return { ...p, noCompany: true }
@@ -1056,7 +1080,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, noCompany: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1300,6 +1324,7 @@ export async function searchPeople(
       profileUnconfirmed: tally.unconfirmed,
       employerByName: tally.employerByName,
       employerByPageGuess: tally.employerByGuess,
+      employerByWebSearch: tally.employerBySite,
       noCompanyPage: tally.noCompany,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),

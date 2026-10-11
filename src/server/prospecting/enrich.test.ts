@@ -69,9 +69,12 @@ vi.mock('../db', () => ({
     data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies } },
     getSearchPosition: (key: string) => positions.get(key) ?? null,
     setSearchPosition: (key: string, cursor: string | null) => (cursor ? positions.set(key, cursor) : positions.delete(key)),
+    getCompanySite: (key: string) => companySites.get(key) ?? null,
+    setCompanySite: (key: string, domain: string | null) => void companySites.set(key, { domain, at: new Date().toISOString() }),
   },
 }))
 const positions = new Map<string, string>()
+const companySites = new Map<string, { domain: string | null; at: string }>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
 let prospectCompanies: Array<{ ref: string; name: string; domain: string | null }> = []
@@ -98,6 +101,7 @@ beforeEach(() => {
   employers = {}
   getCompanyMock.mockClear()
   forgetCompanyGuesses()
+  companySites.clear()
   getPerson.mockClear()
   getPerson.mockImplementation(defaultGetPerson)
   allowance = null
@@ -816,6 +820,36 @@ describe("searchPeople with the host's shared database", () => {
         expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1 })
       } finally {
         delete profiles.eve
+        unhost()
+      }
+    })
+
+    it("gives someone whose employer has no LinkedIn page the website a web search finds for it, where the host offers one", async () => {
+      free()
+      ;(globalThis as any).__hostRules.webSearch = true
+      const searched: string[] = []
+      vi.stubGlobal('fetch', async (target: string, init: RequestInit) => {
+        if (!String(target).endsWith('/v1/web-search')) return Response.json({})
+        const { query } = JSON.parse(String(init.body))
+        searched.push(query)
+        return Response.json({ results: query.includes('Cat Consulting') ? [{ url: 'https://uk.linkedin.com/company/x', title: '', description: '' }, { url: 'https://www.catconsulting.co.uk/', title: 'Cat Consulting', description: '' }] : [] })
+      })
+      try {
+        profiles.eve = { title: 'Analyst', seniority: null, company: 'Nowhere Much', companyRef: null }
+        profiles.fay = { title: 'Analyst', seniority: null, company: 'Self-employed', companyRef: null }
+        searchPage = pageOf(hit('cat'), hit('eve'), hit('fay'))
+        const res = await searchPeople({ titles: ['Business Analyst'] })
+        expect(res.items.map((p) => [p.firstName, p.companyRef, p.companyDomain, p.noCompany ?? false])).toEqual([
+          ['cat', null, 'catconsulting.co.uk', false],
+          ['eve', null, null, true],
+          ['fay', null, null, true],
+        ])
+        // The employer's name and country only; never for what isn't a company.
+        expect(searched.sort()).toEqual(['"Cat Consulting" United Kingdom', '"Nowhere Much" United Kingdom'])
+        expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1 })
+      } finally {
+        delete profiles.eve
+        delete profiles.fay
         unhost()
       }
     })

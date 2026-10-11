@@ -1,5 +1,7 @@
 import { companyKey, sameCompanyName } from './socialfetch'
 import { normaliseDomain } from './suppression'
+import { findCompanySite } from './companySite'
+import { webSearcher, type WebSearch } from './webSearch'
 import { CompanyUnconfirmed, type CompanySource, type PersonResult } from './types'
 
 type Db = typeof import('../db')['db']
@@ -87,6 +89,12 @@ const NOT_A_COMPANY = new Set(
   ),
 )
 
+/** Whether an employer's name could be a company's, rather than "Self-employed" and the like. */
+export const isCompanyName = (name: string) => {
+  const key = companyKey(name)
+  return key.length >= 3 && !NOT_A_COMPANY.has(key)
+}
+
 /** The page names a company's LinkedIn page might have, from its name: "Research Works Ltd" -> research-works-ltd, research-works. */
 export function pageNamesFor(name: string): string[] {
   const full = name
@@ -152,7 +160,13 @@ export async function findCompanyByName(name: string, source: Pick<CompanySource
  * jlr.com -> jaguarlandrover.com), even over one already attached to a search
  * result from before the correction.
  */
-export async function domainForPerson(person: PersonResult, source: CompanySource, db: Db): Promise<string | null> {
+export async function domainForPerson(
+  person: PersonResult,
+  source: CompanySource,
+  db: Db,
+  /** A web search to fall back on (webSearch.ts); this copy's own unless given, and none when it has none. */
+  search: WebSearch | null = webSearcher(),
+): Promise<string | null> {
   if (person.companyRef) {
     const cached = db.getProspectCompany(person.companyRef)
     if (cached?.domain_source === 'user' && cached.domain) return cached.domain
@@ -167,7 +181,11 @@ export async function domainForPerson(person: PersonResult, source: CompanySourc
   }
   if (named?.domain_source === 'user' && named.domain) return named.domain
   const ref = person.companyRef ?? named?.ref ?? null
-  const domain = ref ? await resolveCompanyDomain(ref, person.company, source, db, person.companySlug ?? named?.slug) : null
+  let domain = ref ? await resolveCompanyDomain(ref, person.company, source, db, person.companySlug ?? named?.slug) : null
+  // No company page, or none with a website: the company's own site by web search, when it's plainly theirs.
+  if (!domain && search && isCompanyName(named?.name ?? person.company)) {
+    domain = await findCompanySite(named?.name ?? person.company, person.country, search, db)
+  }
   // Which company a lookup stopped at for want of a website, for the log. Company
   // data only: an employer without a company page is named by nothing, since
   // its name would come from the person's own headline.
