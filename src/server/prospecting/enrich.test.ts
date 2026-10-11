@@ -69,6 +69,7 @@ vi.mock('../db', () => ({
     knownAddressesAt: () => [],
     getDisclosures: () => disclosures,
     upsertProspectCompanies: () => {},
+    addSearchLog: (entry: any) => void searchLog.push(entry),
     getProspectingSettings: () => prospectingSettings,
     getUnverifiable: () => unverifiable,
     data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies } },
@@ -79,6 +80,8 @@ vi.mock('../db', () => ({
   },
 }))
 const positions = new Map<string, string>()
+// What each search was for and what came of it (searchLog.ts).
+const searchLog: any[] = []
 const companySites = new Map<string, { domain: string | null; at: string }>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
@@ -732,6 +735,25 @@ describe('searchPeople testing mail domains before people are shown', () => {
     } finally {
       log.mockRestore()
     }
+  })
+
+  it('logs what the search was for and what came of it, never who, and marks each person with the search', async () => {
+    searchLog.length = 0
+    catchAllDomains = new Set(['barclays.com'])
+    searchPage = pageOf(hit('ana'), hit('ben'), hit('dan'))
+    const res = await searchPeople({ titles: ['Business Analyst'], country: 'United Kingdom', industries: ['Banking'], keyword: 'treasury' })
+    expect(searchLog).toHaveLength(1)
+    const [entry] = searchLog
+    expect(entry.filters).toEqual({ titles: ['Business Analyst'], seniorities: [], industries: ['Banking'], sizes: [], country: 'United Kingdom', company: null, keyword: true, page: 'first' })
+    expect(entry.counts).toMatchObject({ hits: 3, shown: 1, hiddenUnverifiable: 2, boughtNoJob: 1, profilesBought: 3 })
+    expect(entry.lookups).toEqual({})
+    expect(entry.ms).toBeGreaterThanOrEqual(0)
+    // Nobody's name, profile or employer.
+    expect(JSON.stringify(entry)).not.toMatch(/\bana\b|\bben\b|Smith|linkedin|barclays|acme/i)
+    // Each person carries the search's id, so a Reveal can count against it.
+    expect(new Set(res.items.map((p) => p.searchId))).toEqual(new Set([entry.id]))
+    // And the month's counts have what the yield is worked out from.
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ searchHits: 3, prospects: 1, searchNoJob: 1, searchDeadDomain: 1, searchNoSite: 0 })
   })
 
   it('tests nothing where such people are shown anyway', async () => {

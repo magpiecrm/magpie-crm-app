@@ -80,6 +80,12 @@ export interface PersonResult {
    * there can be verified. Company data (from the domain cache), not personal.
    */
   catchAll?: boolean
+  /**
+   * The search that showed them (searchLog.ts): a random id, so a Reveal or
+   * a save can count its outcome against that search's filters. Says nothing
+   * about the person.
+   */
+  searchId?: string
   /** Their company's domain is already known to take no email. Company data, not personal. */
   noMail?: boolean
   /**

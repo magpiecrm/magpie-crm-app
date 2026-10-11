@@ -53,7 +53,11 @@ key), with the app's actions as tools.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview
     and served by `GET /api/usage` when `USAGE_API_TOKEN` is set. Counts
-    only; record new billable actions here. `allowance.ts` holds optional
+    only; record new billable actions here. `prospecting/searchLog.ts`
+    keeps what each people search was for and what came of it (its filters,
+    the funnel counts, and how the email lookups for the people it showed
+    ended, by the `searchId` each of them carries), served by `GET
+    /api/usage/searches`: filters and counts only, never who was found. `allowance.ts` holds optional
     monthly limits a host sets through `/api/usage/allowance` (prospects,
     reveals, emails sent); check one with `requireAllowance` before an action
     that uses it. Unset means no limits.

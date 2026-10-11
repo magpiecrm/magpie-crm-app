@@ -14,6 +14,7 @@ import { isPacing } from './proxyRouter'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import { handsOver, ProfileUnconfirmed, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
+import { noteSearchLookup } from './searchLog'
 import { remaining } from '../allowance'
 import { rememberIfUnverifiable } from './unverifiable'
 
@@ -169,6 +170,7 @@ async function processPerson(
     if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
     if (!domain) {
       recordLookup('noDomain')
+      void noteSearchLookup(person.searchId, 'noDomain')
       return {
         ...base,
         status: 'no_domain',
@@ -189,7 +191,10 @@ async function processPerson(
   }
   if (found.greylisted && !final) return { ...base, status: 'retrying' }
   // Counted once it's final: a greylisted first try is retried at the end.
-  if (found.outcome) recordLookup(found.outcome)
+  if (found.outcome) {
+    recordLookup(found.outcome)
+    void noteSearchLookup(person.searchId, found.outcome)
+  }
   // Nothing handed over, for a reason no retry changes: remembered, so later
   // searches can leave them out (unverifiable.ts).
   if (found.outcome && (!found.email || !handsOver(found.status, deps))) {

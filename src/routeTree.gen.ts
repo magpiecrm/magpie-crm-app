@@ -52,6 +52,7 @@ import { Route as CollectionPersonasNewRouteImport } from './routes/collection/p
 import { Route as CollectionPersonasPersonaIdRouteImport } from './routes/collection/personas/$personaId'
 import { Route as ApiWebhooksBounceRouteImport } from './routes/api/webhooks/bounce'
 import { Route as ApiUsageSuppressionsRouteImport } from './routes/api/usage.suppressions'
+import { Route as ApiUsageSearchesRouteImport } from './routes/api/usage.searches'
 import { Route as ApiUsageDomainsRouteImport } from './routes/api/usage.domains'
 import { Route as ApiUsageAllowanceRouteImport } from './routes/api/usage.allowance'
 import { Route as ApiUploadsFilenameRouteImport } from './routes/api/uploads/$filename'
@@ -286,6 +287,11 @@ const ApiUsageSuppressionsRoute = ApiUsageSuppressionsRouteImport.update({
   path: '/suppressions',
   getParentRoute: () => ApiUsageRoute,
 } as any)
+const ApiUsageSearchesRoute = ApiUsageSearchesRouteImport.update({
+  id: '/searches',
+  path: '/searches',
+  getParentRoute: () => ApiUsageRoute,
+} as any)
 const ApiUsageDomainsRoute = ApiUsageDomainsRouteImport.update({
   id: '/domains',
   path: '/domains',
@@ -395,6 +401,7 @@ export interface FileRoutesByFullPath {
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/usage/domains': typeof ApiUsageDomainsRoute
+  '/api/usage/searches': typeof ApiUsageSearchesRoute
   '/api/usage/suppressions': typeof ApiUsageSuppressionsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
@@ -451,6 +458,7 @@ export interface FileRoutesByTo {
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/usage/domains': typeof ApiUsageDomainsRoute
+  '/api/usage/searches': typeof ApiUsageSearchesRoute
   '/api/usage/suppressions': typeof ApiUsageSuppressionsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
@@ -512,6 +520,7 @@ export interface FileRoutesById {
   '/api/uploads/$filename': typeof ApiUploadsFilenameRoute
   '/api/usage/allowance': typeof ApiUsageAllowanceRoute
   '/api/usage/domains': typeof ApiUsageDomainsRoute
+  '/api/usage/searches': typeof ApiUsageSearchesRoute
   '/api/usage/suppressions': typeof ApiUsageSuppressionsRoute
   '/api/webhooks/bounce': typeof ApiWebhooksBounceRoute
   '/collection/personas/$personaId': typeof CollectionPersonasPersonaIdRoute
@@ -574,6 +583,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
     | '/api/usage/domains'
+    | '/api/usage/searches'
     | '/api/usage/suppressions'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
@@ -630,6 +640,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
     | '/api/usage/domains'
+    | '/api/usage/searches'
     | '/api/usage/suppressions'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
@@ -690,6 +701,7 @@ export interface FileRouteTypes {
     | '/api/uploads/$filename'
     | '/api/usage/allowance'
     | '/api/usage/domains'
+    | '/api/usage/searches'
     | '/api/usage/suppressions'
     | '/api/webhooks/bounce'
     | '/collection/personas/$personaId'
@@ -1074,6 +1086,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUsageSuppressionsRouteImport
       parentRoute: typeof ApiUsageRoute
     }
+    '/api/usage/searches': {
+      id: '/api/usage/searches'
+      path: '/searches'
+      fullPath: '/api/usage/searches'
+      preLoaderRoute: typeof ApiUsageSearchesRouteImport
+      parentRoute: typeof ApiUsageRoute
+    }
     '/api/usage/domains': {
       id: '/api/usage/domains'
       path: '/domains'
@@ -1185,12 +1204,14 @@ declare module '@tanstack/react-router' {
 interface ApiUsageRouteChildren {
   ApiUsageAllowanceRoute: typeof ApiUsageAllowanceRoute
   ApiUsageDomainsRoute: typeof ApiUsageDomainsRoute
+  ApiUsageSearchesRoute: typeof ApiUsageSearchesRoute
   ApiUsageSuppressionsRoute: typeof ApiUsageSuppressionsRoute
 }
 
 const ApiUsageRouteChildren: ApiUsageRouteChildren = {
   ApiUsageAllowanceRoute: ApiUsageAllowanceRoute,
   ApiUsageDomainsRoute: ApiUsageDomainsRoute,
+  ApiUsageSearchesRoute: ApiUsageSearchesRoute,
   ApiUsageSuppressionsRoute: ApiUsageSuppressionsRoute,
 }
 

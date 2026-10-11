@@ -103,6 +103,7 @@ const personInput = z.object({
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   emailStatus: z.enum(EMAIL_STATUSES).optional(),
   shared: z.string().max(200).optional(),
+  searchId: z.string().max(40).optional(),
 })
 
 /**

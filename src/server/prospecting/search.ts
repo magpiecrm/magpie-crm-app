@@ -12,6 +12,7 @@ import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isC
 import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
+import { logSearch, newSearchId } from './searchLog'
 import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
@@ -1255,6 +1256,9 @@ export async function searchPeople(
   const org: { total: number | null } = { total: null }
   // What became of the people the searches returned, for the funnel log.
   const funnel = { hits: 0, offTitle: 0, filteredOut: 0, repeats: 0 }
+  // For the search log (searchLog.ts): which search showed each person, and how long it took.
+  const searchId = newSearchId()
+  const startedAt = Date.now()
   // Batches searched again one company at a time (SINGLE_REQUESTS_AT_ONCE), and how many companies they held.
   const split = { batches: 0, companies: 0 }
   // One search page (a batch of companies, in a companies-first search), and what finding it took.
@@ -1369,6 +1373,7 @@ export async function searchPeople(
       funnel.filteredOut += page.funnel?.filteredOut ?? 0
       funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
+      for (const p of batch.items) p.searchId = searchId
       items.push(...batch.items)
       refined.push(...batch.refined)
       if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
@@ -1403,6 +1408,7 @@ export async function searchPeople(
       heldBack = []
       for (const [companySet, people] of groups) {
         const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
+        for (const p of batch.items) p.searchId = searchId
         items.push(...batch.items)
         refined.push(...batch.refined)
         if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
@@ -1425,7 +1431,48 @@ export async function searchPeople(
   // Where to carry on next time; at the end of the results, back to the top.
   if (!lookupError) db.setSearchPosition(positionKey, nextCursor)
 
-  // One line per search: where the people it returned went. Filters and counts only, nothing personal.
+  // Where the people it returned went. Filters and counts only, nothing personal:
+  // one line in the log, and one in the search log a host can read (searchLog.ts).
+  const page = filters.cursor ? 'more' : saved ? 'resumed' : 'first'
+  const hiddenPeople = items.filter(hidden)
+  const counts = {
+    companiesFirst: companyFirst,
+    orgSearches,
+    companiesFound,
+    companiesInAll: org.total,
+    companiesLeftOut: screened.unverifiable,
+    batchesSplit: split.batches,
+    companiesSearchedAlone: split.companies,
+    peopleSearches: requests,
+    hits: funnel.hits,
+    offTitle: funnel.offTitle,
+    seniorityOrCountry: funnel.filteredOut,
+    repeats: funnel.repeats,
+    headlineLeft: tally.skippedNotWorking,
+    headlineOtherEmployer: tally.skippedOtherEmployer,
+    inContacts: tally.inContacts,
+    noSurname: tally.noSurname,
+    knownUnverifiable: tally.skippedUnverifiable,
+    noLookupNeeded: tally.noLookup,
+    profilesBought: lookedUp,
+    boughtWrongCompany: tally.wrongCompany,
+    boughtNoJob: tally.noJob,
+    profileUnconfirmed: tally.unconfirmed,
+    employerByName: tally.employerByName,
+    employerByPageGuess: tally.employerByGuess,
+    employerByWebSearch: tally.employerBySite,
+    noCompanyPage: tally.noCompany,
+    companyPagesRead: tally.companyPagesRead,
+    noWebsite: tally.noWebsite,
+    domainsCheckedAhead: tally.domainsChecked,
+    domainsNotChecked: tally.domainsUnchecked,
+    mailServerSilent: items.filter((p) => p.noAnswer).length,
+    hiddenUnverifiable: items.filter(hidden).length,
+    shown: usable(),
+    fromSharedDatabase: shared,
+    lookupsSpared: spared,
+    prospectCredits: usable(),
+  }
   console.log(
     `[Prospecting] Search funnel ${JSON.stringify({
       filters: {
@@ -1436,46 +1483,27 @@ export async function searchPeople(
         country: filters.country,
         keyword: filters.keyword || undefined,
         company: company?.name,
-        page: filters.cursor ? 'more' : saved ? 'resumed' : 'first',
+        page,
       },
-      companiesFirst: companyFirst,
-      orgSearches,
-      companiesFound,
-      companiesInAll: org.total,
-      companiesLeftOut: screened.unverifiable,
-      batchesSplit: split.batches,
-      companiesSearchedAlone: split.companies,
-      peopleSearches: requests,
-      hits: funnel.hits,
-      offTitle: funnel.offTitle,
-      seniorityOrCountry: funnel.filteredOut,
-      repeats: funnel.repeats,
-      headlineLeft: tally.skippedNotWorking,
-      headlineOtherEmployer: tally.skippedOtherEmployer,
-      inContacts: tally.inContacts,
-      noSurname: tally.noSurname,
-      knownUnverifiable: tally.skippedUnverifiable,
-      noLookupNeeded: tally.noLookup,
-      profilesBought: lookedUp,
-      boughtWrongCompany: tally.wrongCompany,
-      boughtNoJob: tally.noJob,
-      profileUnconfirmed: tally.unconfirmed,
-      employerByName: tally.employerByName,
-      employerByPageGuess: tally.employerByGuess,
-      employerByWebSearch: tally.employerBySite,
-      noCompanyPage: tally.noCompany,
-      companyPagesRead: tally.companyPagesRead,
-      noWebsite: tally.noWebsite,
-      domainsCheckedAhead: tally.domainsChecked,
-      domainsNotChecked: tally.domainsUnchecked,
-      mailServerSilent: items.filter((p) => p.noAnswer).length,
-      hiddenUnverifiable: items.filter(hidden).length,
-      shown: usable(),
-      fromSharedDatabase: shared,
-      lookupsSpared: spared,
-      prospectCredits: usable(),
+      ...counts,
     })}`,
   )
+  await logSearch({
+    id: searchId,
+    at: new Date().toISOString(),
+    ms: Date.now() - startedAt,
+    filters: {
+      titles: filters.titles ?? [],
+      seniorities: filters.seniorities ?? [],
+      industries: filters.industries ?? [],
+      sizes: filters.companySizes ?? [],
+      country: filters.country?.trim() || null,
+      company: company?.name ?? null,
+      keyword: Boolean(filters.keyword?.trim()),
+      page,
+    },
+    counts: Object.fromEntries(Object.entries(counts).filter((e): e is [string, number] => typeof e[1] === 'number')),
+  })
 
   // A prospect credit for each person shown; what finding them took isn't charged.
   const { recordUsage } = await import('../usage')
@@ -1485,6 +1513,13 @@ export async function searchPeople(
     prospectCredits: usable(),
     sharedPeople: shared,
     searchProfiles: lookedUp,
+    searchHits: funnel.hits - funnel.repeats,
+    searchOffTitle: funnel.offTitle,
+    searchUnconfirmed: tally.unconfirmed,
+    searchNoJob: tally.noJob,
+    // Someone with no current job has no company either: counted once, as no job.
+    searchNoSite: Math.max(0, hiddenPeople.filter((p) => p.noCompany).length - tally.noJob),
+    searchDeadDomain: hiddenPeople.filter((p) => !p.noCompany).length,
     searchPaidWrongCompany: tally.wrongCompany,
     searchPaidInContacts: tally.paidInContacts,
     searchPaidUnverifiable: items.filter((p) => hidden(p) && paidFor.has(p.profileUrl)).length,

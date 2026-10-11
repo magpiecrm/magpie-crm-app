@@ -364,6 +364,12 @@ export interface DbSchema {
    * was found, so the same name isn't searched for again. Company data only.
    */
   company_sites?: Record<string, { domain: string | null; at: string }>
+  /**
+   * What each people search was for and what came of it (searchLog.ts):
+   * filters, counts and how its people's email lookups ended. Never the
+   * people. The newest 1,000, for 90 days.
+   */
+  search_log?: import('./prospecting/searchLog').SearchLogEntry[]
   /** Where this workspace is on its daily sending limits, per kind of mail (sendingLimits.ts). */
   sending_ramp?: { cold?: { level: number; since: string }; optIn?: { level: number; since: string } }
   /**
@@ -788,6 +794,27 @@ class JsonDb {
     const entries = Object.entries(sites)
     this.data.company_sites = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, 4_000)) : sites
     this.save()
+  }
+
+  /** Adds a finished search to the log (searchLog.ts), dropping the oldest past 1,000 and any older than 90 days. */
+  addSearchLog(entry: import('./prospecting/searchLog').SearchLogEntry, now = new Date()) {
+    const since = new Date(now.getTime() - 90 * 86_400_000).toISOString()
+    this.data.search_log = [...(this.data.search_log ?? []).filter((e) => e.at >= since), entry].slice(-1_000)
+    this.save()
+  }
+
+  /** Counts how an email lookup ended against the search that showed the person. */
+  noteSearchLookup(id: string, outcome: string) {
+    const entry = this.data.search_log?.find((e) => e.id === id)
+    if (!entry) return
+    const lookups = entry.lookups as Record<string, number>
+    lookups[outcome] = (lookups[outcome] ?? 0) + 1
+    this.save()
+  }
+
+  /** The logged searches that finished on or after a day (YYYY-MM-DD), oldest first. */
+  searchLogSince(day: string): import('./prospecting/searchLog').SearchLogEntry[] {
+    return (this.data.search_log ?? []).filter((e) => e.at >= day)
   }
 
   getUnverifiable(): Array<{ hash: string; outcome: string; created_at: string }> {

@@ -5,6 +5,8 @@ import type { CompanySource, PersonResult } from './types'
 // Reveal against an in-memory db, a fake company source and a fake verification server.
 
 let allowance: any = null
+// Lookup outcomes counted against the search that showed the person (searchLog.ts).
+const searchLookups: Array<[string, string]> = []
 const state = { suppression: [] as Array<{ hash: string }>, disclosure: [] as any[], companies: [] as any[], unverifiable: [] as any[] }
 const fakeDb = {
   getAllowance: () => allowance,
@@ -15,6 +17,7 @@ const fakeDb = {
   getProspectCompany: (ref: string) => state.companies.find((c) => c.ref === ref) ?? null,
   data: { get prospect_companies() { return state.companies } },
   upsertProspectCompanies: (entries: any[]) => state.companies.push(...entries),
+  noteSearchLookup: (id: string, outcome: string) => void searchLookups.push([id, outcome]),
 }
 vi.mock('../db', () => ({ db: fakeDb }))
 // How each lookup ended, as counted for the hit rate.
@@ -78,6 +81,14 @@ describe('revealEmail', () => {
     expect(state.disclosure).toHaveLength(1)
     expect(state.disclosure[0]).toMatchObject({ event: 'revealed', sources: ['socialfetch'] })
     expect(JSON.stringify(state.disclosure)).not.toMatch(/jane|smith|acme/i)
+  })
+
+  it('counts how the lookup ended against the search that showed them, by its id alone', async () => {
+    searchLookups.length = 0
+    await revealEmail({ ...jane, searchId: 'abc123' }, { source, finder, db: fakeDb as any })
+    await revealEmail(jane, { source, finder, db: fakeDb as any })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(searchLookups).toEqual([['abc123', 'verified']])
   })
 
   it("takes the email of someone the host's shared database holds from the host, with no lookup", async () => {
