@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { domainFitsName, findCompanySite, siteFromResults } from './companySite'
+import { domainFitsName, findCompanySite, plainName, siteFromResults } from './companySite'
 import { decodoSearch, webSearcher, type WebResult } from './webSearch'
 
-const result = (url: string, title = ''): WebResult => ({ url, title, description: '' })
+const result = (url: string, title = '', description = ''): WebResult => ({ url, title, description })
 
 describe('a company’s website from a web search', () => {
   it('is a domain that is plainly the company’s name, give or take a common ending', () => {
@@ -12,10 +12,18 @@ describe('a company’s website from a web search', () => {
     expect(fits('acme.co.uk', 'Acme Consulting Limited')).toBe(true)
     expect(fits('acmeuk.com', 'Acme')).toBe(true)
     expect(fits('smithandjones.co.uk', 'Smith & Jones')).toBe(true)
+    expect(fits('chalkandchilli.com', 'Chalk+Chilli')).toBe(true)
+    expect(fits('research.works', 'Research Works Ltd')).toBe(true)
+    expect(fits('thesocialcow.co.uk', 'The Social Cow')).toBe(true)
+    // Asides, straplines and legal forms aren't part of the name.
+    expect(fits('specialist-coatings.co.uk', 'Specialist Coatings (GB) Limited')).toBe(true)
+    expect(fits('onefoursix.co.uk', 'onefoursix - Digital Marketing Agency')).toBe(true)
+    expect(fits('planlicht.com', 'Planlicht GmbH & Co.KG')).toBe(true)
     // Not a different company that shares a word, a short scrap, or nothing at all.
     expect(fits('acmeresearchpartners.com', 'Acme')).toBe(false)
     expect(fits('research.com', 'Tinderbox Research')).toBe(false)
     expect(fits('ab.com', 'AB')).toBe(false)
+    expect(fits('red.com', 'RED')).toBe(false)
     expect(fits('acme.com', '')).toBe(false)
   })
 
@@ -30,18 +38,50 @@ describe('a company’s website from a web search', () => {
     expect(siteFromResults('Tinderbox Research Ltd', results)).toBe('tinderboxresearch.com')
     expect(siteFromResults('Tinderbox Research Ltd', results.slice(0, 3))).toBeNull()
     expect(siteFromResults('Tinderbox Research Ltd', [result('https://www.somethingelse.com/tinderbox-research')])).toBeNull()
+    // The site itself, not the part of it a result was on.
+    expect(siteFromResults('Nelson Hall', [result('https://reimagine.nelson-hall.com/', 'NelsonHall | Analyst research')])).toBe('nelson-hall.com')
+  })
+
+  it('takes the closest fit to the name, and a loose one only when the page names the company', () => {
+    // Exactly the name beats the name with an ending, wherever each came.
+    expect(siteFromResults('Blended Collective', [result('https://blendedcollectiveco.com/'), result('https://www.blendedcollective.com/')])).toBe('blendedcollective.com')
+    // Part of the name could be anyone's: another Tinderbox isn't Tinderbox Research.
+    expect(siteFromResults('Tinderbox Research', [result('https://tinder-box.co.uk/', 'Tinder-Box - The Performance Spark')])).toBeNull()
+    expect(siteFromResults('Acme Consulting', [result('https://acme.co.uk/', 'Acme Consulting | Advice for manufacturers')])).toBe('acme.co.uk')
+    expect(siteFromResults('Fineline Market Research', [result('https://www.finelinemr.co.uk/', 'Fineline Market Research')])).toBe('finelinemr.co.uk')
+    expect(siteFromResults('Frozen Garden', [result('https://thefrozengarden.com/', 'Frozen Garden: Smoothie Delivery')])).toBe('thefrozengarden.com')
+    expect(siteFromResults('Frozen Garden', [result('https://thefrozengarden.com/', 'Smoothie Delivery')])).toBeNull()
+    // A name that starts with "The" keeps it, unless the page says it's them.
+    expect(siteFromResults('The Joy Club', [result('https://www.joyclub.com/', 'JOYclub')])).toBeNull()
+    expect(siteFromResults('The Property Marketing Strategists', [result('https://propertymarketingstrategists.co.uk/', 'The Property Marketing Strategists')])).toBe('propertymarketingstrategists.co.uk')
+    // A one-word name is many companies': only the first two results count.
+    const others = [result('https://uk.linkedin.com/company/ecomotive'), result('https://en.wikipedia.org/wiki/Ecomotive'), result('https://ecomotive.biz/')]
+    expect(siteFromResults('EcoMotive', others)).toBeNull()
+    expect(siteFromResults('EcoMotive', others.slice(1))).toBe('ecomotive.biz')
+  })
+
+  it('searches for the name by itself', () => {
+    expect(plainName('Research Works Ltd')).toBe('Research Works')
+    expect(plainName('IT GuidePoint Corporation (itguidepoint.com)')).toBe('IT GuidePoint')
+    expect(plainName('Brookstone Creative Ltd - Industrial Marketing Services')).toBe('Brookstone Creative')
+    expect(plainName('Builderfriend | Social Media Management')).toBe('Builderfriend')
+    expect(plainName('Next Level Careers, LLC')).toBe('Next Level Careers')
+    expect(plainName('Smith & Jones')).toBe('Smith & Jones')
+    // Nothing left to search for: the name as it was.
+    expect(plainName('Co. Ltd')).toBe('Co. Ltd')
   })
 
   it('is searched for once per company, by its name and country only, and remembered either way', async () => {
     const kept = new Map<string, { domain: string | null; at: string }>()
     const db = { getCompanySite: (k: string) => kept.get(k) ?? null, setCompanySite: (k: string, domain: string | null) => void kept.set(k, { domain, at: new Date().toISOString() }) }
-    const asked: string[] = []
-    const search = async (query: string) => (asked.push(query), query.includes('Tinderbox') ? [result('https://tinderboxresearch.com/')] : [])
+    const asked: Array<[string, string | null | undefined]> = []
+    const search = async (query: string, country?: string | null) => (asked.push([query, country]), query.includes('Tinderbox') ? [result('https://tinderboxresearch.com/')] : [])
     const [a, b] = await Promise.all([findCompanySite('Tinderbox Research Ltd', 'United Kingdom', search, db), findCompanySite('Tinderbox Research', 'United Kingdom', search, db)])
     expect([a, b]).toEqual(['tinderboxresearch.com', 'tinderboxresearch.com'])
     expect(await findCompanySite('Nowhere Much', null, search, db)).toBeNull()
     expect(await findCompanySite('Nowhere Much', null, search, db)).toBeNull()
-    expect(asked).toEqual(['"Tinderbox Research Ltd" United Kingdom', '"Nowhere Much"'])
+    // The name alone, searched from the company's country.
+    expect(asked).toEqual([['Tinderbox Research', 'United Kingdom'], ['Nowhere Much', null]])
     // Nothing found is asked about again after a month; a search that failed, next time.
     expect(await findCompanySite('Nowhere Much', null, search, db, Date.now() + 31 * 86_400_000)).toBeNull()
     expect(asked).toHaveLength(3)
@@ -104,6 +144,10 @@ describe('the web search itself', () => {
     expect(await decodoSearch('key-1', '"Acme"', { fetchImpl: answer({ results: { organic } }) })).toEqual([{ url: 'https://acme.com/', title: 'Acme', description: 'Widgets' }])
     expect(await decodoSearch('key-1', '"Acme"', { fetchImpl: answer({ results: { results: { organic } } }) })).toHaveLength(1)
     expect(calls[0]).toEqual({ url: 'https://data.decodo.com/v1/scrape', auth: 'Bearer key-1', body: { target: 'google_search', query: '"Acme"', parse: true } })
+    // Searched from the company's country when it's one we know.
+    await decodoSearch('key-1', 'Acme', { fetchImpl: answer({ results: { organic } }), country: 'uk' })
+    await decodoSearch('key-1', 'Acme', { fetchImpl: answer({ results: { organic } }), country: 'Exeter' })
+    expect(calls.slice(2).map((c) => c.body.geo)).toEqual(['United Kingdom', undefined])
     await expect(decodoSearch('key-1', 'x', { fetchImpl: (async () => new Response('no', { status: 401 })) as unknown as typeof fetch })).rejects.toThrow('401')
   })
 
@@ -125,7 +169,7 @@ describe('the web search itself', () => {
       sent.push({ url, secret: new Headers(init.headers).get('x-reacher-secret'), body: JSON.parse(String(init.body)) })
       return Response.json({ results: [{ url: 'https://acme.com/', title: 'Acme', description: '' }] })
     }) as unknown as typeof fetch)
-    expect(await hosted!('"Acme" United Kingdom')).toEqual([{ url: 'https://acme.com/', title: 'Acme', description: '' }])
-    expect(sent).toEqual([{ url: 'https://services.magpie.test/v1/web-search', secret: 'vt_mc_acme', body: { query: '"Acme" United Kingdom' } }])
+    expect(await hosted!('Acme', 'United Kingdom')).toEqual([{ url: 'https://acme.com/', title: 'Acme', description: '' }])
+    expect(sent).toEqual([{ url: 'https://services.magpie.test/v1/web-search', secret: 'vt_mc_acme', body: { query: 'Acme', country: 'United Kingdom' } }])
   })
 })

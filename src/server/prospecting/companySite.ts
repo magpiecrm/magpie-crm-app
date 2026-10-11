@@ -2,9 +2,14 @@
 // LinkedIn page to read one from: mostly small firms whose founder typed the
 // name in. A result is taken only when its domain plainly belongs to the
 // name ("Tinderbox Research" -> tinderboxresearch.com), and never a
-// directory, a social network or a registry. The email check is the second
-// safeguard: an address only counts once that domain's mail server confirms
-// it.
+// directory, a social network or a registry. A domain that is only the first
+// part of the name ("Acme Consulting" -> acme.co.uk) counts when the page
+// names the company in full. The email check is the second safeguard: an
+// address only counts once that domain's mail server confirms it.
+//
+// The search is for the name alone, from the company's own country: a small
+// firm's site comes first there, and adding the country as a word, or "Ltd",
+// brings up registries and directories instead.
 //
 // What was found, or that nothing was, is remembered by the company's name
 // (db company_sites) so the same employer isn't searched for again: a
@@ -32,40 +37,109 @@ const NOT_THEIR_SITE = [
 /** Words on the end of a company's name that its domain often leaves off. */
 const TRAILING = new Set(['uk', 'international', 'global', 'group', 'consulting', 'consultancy', 'consultants', 'research', 'solutions', 'services', 'partners', 'associates', 'agency', 'studio', 'media', 'digital', 'marketing', 'insight', 'insights'])
 /** And what a domain often adds. */
-const ADDED = ['', 'uk', 'ltd', 'group', 'hq', 'global', 'online', 'co']
+const ADDED = ['uk', 'ltd', 'group', 'hq', 'global', 'online', 'co']
+/** Or puts in front: "Frozen Garden" -> thefrozengarden.com. */
+const PREFIXED = ['the', 'weare', 'get', 'hello', 'team', 'try', 'go', 'my']
 const TWO_LEVEL_TLD = /\.(co|org|ac|ltd|plc|net|com|gov)\.[a-z]{2}$/
+const LEGAL_FORM = /[\s,.]+(ltd|limited|llp|llc|plc|inc|incorporated|corp|corporation|gmbh|kg|ag|bv|pty|srl)\.?$/i
+
+const squash = (s: string) => s.replace(/[^a-z0-9]/g, '')
+
+/**
+ * The company's name by itself: without an aside in brackets, a strapline
+ * ("onefoursix - Digital Marketing Agency") or its legal form, which bring
+ * up registries and directories when searched for.
+ */
+export function plainName(name: string): string {
+  let plain = name.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+  const strapline = plain.search(/\s[-–—|:]\s|\s?\|\s?/)
+  if (strapline >= 3) plain = plain.slice(0, strapline)
+  for (let i = 0; i < 3; i++) plain = plain.replace(/[\s,.&]+co\.?$/i, '').replace(LEGAL_FORM, '').trim()
+  return plain.length >= 3 ? plain : name.trim()
+}
+
+/** The domain a company would have email on: "reimagine.nelson-hall.com" -> "nelson-hall.com". */
+function siteDomain(host: string): string {
+  return host.split('.').slice(TWO_LEVEL_TLD.test(host) ? -3 : -2).join('.')
+}
 
 /** The name part of a domain, letters and digits only: "nelson-hall.com" -> "nelsonhall". */
-function labelOf(domain: string): string {
-  const labels = domain.replace(TWO_LEVEL_TLD, '').split('.')
-  const name = TWO_LEVEL_TLD.test(domain) ? labels[labels.length - 1] : labels[labels.length - 2]
-  return (name ?? '').replace(/[^a-z0-9]/g, '')
+function labelOf(host: string): string {
+  return squash(siteDomain(host).split('.')[0] ?? '')
 }
 
-/** Whether a domain is plainly this company's: its name run together, give or take a common ending. */
-export function domainFitsName(domain: string, name: string): boolean {
-  const label = labelOf(domain)
-  if (label.length < 3) return false
+const EXACT = 3
+const WITH_ENDING = 2
+/** Close, but other companies could have it: only taken when the page names the company. */
+const LOOSE = 1
+
+/**
+ * How well a domain fits a company's name: exactly the name run together
+ * ("Nelson Hall" -> nelson-hall.com), the name with a common ending
+ * (acmeuk.com), or loosely: the name without its last word or two ("Acme
+ * Consulting" -> acme.co.uk), with those as initials (finelinemr.co.uk),
+ * with something in front (getacme.com), or without its "The".
+ */
+function fit(host: string, name: string): number {
+  const label = labelOf(host)
+  const plain = plainName(name)
+  const the = /^the\s/i.test(plain) ? 'the' : ''
+  let best = 0
   // "Smith & Jones" is smithjones or smithandjones.
-  return [name, name.replace(/&/g, ' and ')].some((spelt) => {
+  for (const spelt of [plain, plain.replace(/[&+]/g, ' and ')]) {
     const words = companyKey(spelt).split(' ').filter(Boolean)
-    if (!words.length) return false
-    const whole = words.join('')
+    const whole = the + words.join('')
+    // Too short to be anyone's in particular.
+    if (whole.length < 4) continue
+    // The name spread over the ending too: "Research Works" -> research.works.
+    if (label === whole || (!TWO_LEVEL_TLD.test(host) && squash(siteDomain(host)) === whole)) return EXACT
+    if (ADDED.some((extra) => label === whole + extra)) best = Math.max(best, WITH_ENDING)
     const core = [...words]
     while (core.length > 1 && TRAILING.has(core[core.length - 1])) core.pop()
-    const short = core.join('')
-    return [whole, ...(short.length >= 4 ? [short] : [])].some((n) => ADDED.some((extra) => label === n + extra))
-  })
+    const short = the + core.join('')
+    if (short !== whole && short.length >= 4 && ['', ...ADDED].some((extra) => label === short + extra)) best = Math.max(best, LOOSE)
+    if (!the && PREFIXED.some((front) => label === front + whole)) best = Math.max(best, LOOSE)
+    if (the && ['', ...ADDED].some((extra) => label === words.join('') + extra)) best = Math.max(best, LOOSE)
+    if (words.length > 1 && words[0].length >= 4 && label === the + words[0] + words.slice(1).map((w) => w[0]).join('')) best = Math.max(best, LOOSE)
+  }
+  return best
 }
 
-/** The first result whose domain is plainly the company's own. */
+/** Whether a domain could be this company's, going by its name alone. */
+export function domainFitsName(domain: string, name: string): boolean {
+  return fit(domain, name) > 0
+}
+
+/**
+ * Whether a result's own words name the company in full, however it's
+ * spaced: "NelsonHall | Analyst research". A name that starts with "The" has
+ * to be there with it: "The Joy Club" isn't JOYclub.
+ */
+function namesCompany(r: WebResult, name: string): boolean {
+  const plain = plainName(name)
+  const whole = squash(companyKey(plain))
+  if (whole.length < 4) return false
+  const text = `${r.title} ${r.description}`
+  return /^the\s/i.test(plain) ? squash(text.toLowerCase()).includes(`the${whole}`) : squash(companyKey(text)).includes(whole)
+}
+
+/**
+ * The result whose domain is plainly the company's own: the closest fit to
+ * its name, and the first of those. A loose fit needs the page to name the
+ * company too, so that "Tinderbox Research" isn't given another Tinderbox's
+ * site. A one-word name is shared by more companies than any other, so its
+ * site has to be one of the first two results.
+ */
 export function siteFromResults(name: string, results: WebResult[]): string | null {
-  for (const r of results) {
-    const domain = domainFromWebsite(r.url)
-    if (!domain || NOT_THEIR_SITE.some((s) => domain === s || domain.endsWith(`.${s}`))) continue
-    if (domainFitsName(domain, name)) return domain
+  const oneWord = !companyKey(plainName(name)).includes(' ')
+  let found: { domain: string; fit: number } | null = null
+  for (const r of oneWord ? results.slice(0, 2) : results) {
+    const host = domainFromWebsite(r.url)
+    if (!host || NOT_THEIR_SITE.some((s) => host === s || host.endsWith(`.${s}`))) continue
+    const how = fit(host, name)
+    if (how > (found?.fit ?? 0) && (how > LOOSE || namesCompany(r, name))) found = { domain: siteDomain(host), fit: how }
   }
-  return null
+  return found?.domain ?? null
 }
 
 // One search for several people at the same employer.
@@ -86,7 +160,7 @@ export async function findCompanySite(name: string, country: string | null, sear
   const task = (async () => {
     let results: WebResult[]
     try {
-      results = await search([`"${name.trim()}"`, country?.trim()].filter(Boolean).join(' '))
+      results = await search(plainName(name), country)
     } catch {
       return null
     }

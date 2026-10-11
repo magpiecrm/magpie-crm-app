@@ -830,8 +830,8 @@ describe("searchPeople with the host's shared database", () => {
       const searched: string[] = []
       vi.stubGlobal('fetch', async (target: string, init: RequestInit) => {
         if (!String(target).endsWith('/v1/web-search')) return Response.json({})
-        const { query } = JSON.parse(String(init.body))
-        searched.push(query)
+        const { query, country } = JSON.parse(String(init.body))
+        searched.push(`${query}, from ${country}`)
         return Response.json({ results: query.includes('Cat Consulting') ? [{ url: 'https://uk.linkedin.com/company/x', title: '', description: '' }, { url: 'https://www.catconsulting.co.uk/', title: 'Cat Consulting', description: '' }] : [] })
       })
       try {
@@ -845,7 +845,7 @@ describe("searchPeople with the host's shared database", () => {
           ['fay', null, null, true],
         ])
         // The employer's name and country only; never for what isn't a company.
-        expect(searched.sort()).toEqual(['"Cat Consulting" United Kingdom', '"Nowhere Much" United Kingdom'])
+        expect(searched.sort()).toEqual(['Cat Consulting, from United Kingdom', 'Nowhere Much, from United Kingdom'])
         expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1 })
       } finally {
         delete profiles.eve
