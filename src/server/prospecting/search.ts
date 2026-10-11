@@ -1514,6 +1514,7 @@ export async function searchPeople(
     sharedPeople: shared,
     searchProfiles: lookedUp,
     searchHits: funnel.hits - funnel.repeats,
+    searchShown: usable(),
     searchOffTitle: funnel.offTitle,
     searchUnconfirmed: tally.unconfirmed,
     searchNoJob: tally.noJob,

@@ -32,13 +32,16 @@ const USAGE_COUNTERS = [
    */
   'searchProfiles',
   /**
-   * Search yield (0.9.66): the people searches found (hits, without repeats
-   * of someone already seen), and where those not shown went: off the job
-   * title searched, a profile that couldn't be confirmed, no current job, no
-   * website to find an email on, and a mail domain where nothing can be
-   * verified. `prospects` ÷ `searchHits` is the yield.
+   * Search yield (0.9.67): the people searches found (hits, without repeats
+   * of someone already seen), those they went on to show, and where the
+   * rest went: off the job title searched, a profile that couldn't be
+   * confirmed, no current job, no website to find an email on, and a mail
+   * domain where nothing can be verified. `searchShown` ÷ `searchHits` is
+   * the yield; `searchShown` is `prospects` again, counted from the same
+   * day as the hits so the two can be divided.
    */
   'searchHits',
+  'searchShown',
   'searchOffTitle',
   'searchUnconfirmed',
   'searchNoJob',

@@ -753,7 +753,7 @@ describe('searchPeople testing mail domains before people are shown', () => {
     // Each person carries the search's id, so a Reveal can count against it.
     expect(new Set(res.items.map((p) => p.searchId))).toEqual(new Set([entry.id]))
     // And the month's counts have what the yield is worked out from.
-    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ searchHits: 3, prospects: 1, searchNoJob: 1, searchDeadDomain: 1, searchNoSite: 0 })
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ searchHits: 3, searchShown: 1, prospects: 1, searchNoJob: 1, searchDeadDomain: 1, searchNoSite: 0 })
   })
 
   it('tests nothing where such people are shown anyway', async () => {
