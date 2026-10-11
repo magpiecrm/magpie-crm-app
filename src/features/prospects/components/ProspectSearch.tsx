@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
@@ -50,7 +50,8 @@ import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, SENIORITY_LABEL, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
-import { streamPeopleSearch, type PeopleFound } from '../streamPeopleSearch'
+import { streamPeopleSearch } from '../streamPeopleSearch'
+import { liveSearch, useLivePeople } from '../liveSearch'
 import { Select } from '../../../components/ui/Select'
 
 type Mode = 'companies' | 'people'
@@ -212,15 +213,17 @@ export function ProspectSearch() {
     ...noRefetch,
   })
 
-  // People found so far by the search page being fetched, shown before it finishes.
-  // Each fetch has its own id, so a search left behind can't add to a new one.
-  const [live, setLive] = useState<PeopleFound & { id: number }>({ id: 0, items: [], refined: [] })
-  const fetchId = useRef(0)
+  // People found so far by the search page being fetched, shown before it
+  // finishes. They're kept by search, outside this page (liveSearch.ts), and
+  // the request isn't tied to it either: going to another page leaves the
+  // search running, and coming back finds it with what it has found so far.
+  const liveKey = peopleSearch ? JSON.stringify(peopleSearch) : null
+  const live = useLivePeople(liveKey)
   const people = useInfiniteQuery({
     queryKey: queryKeys.prospects.people(peopleSearch),
-    queryFn: ({ pageParam, signal }) => {
-      const id = ++fetchId.current
-      setLive({ id, items: [], refined: [] })
+    queryFn: ({ pageParam }) => {
+      const key = JSON.stringify(peopleSearch)
+      liveSearch.start(key)
       return streamPeopleSearch(
         {
           company: peopleSearch!.company ? { ref: peopleSearch!.company.ref, name: peopleSearch!.company.name } : null,
@@ -236,8 +239,9 @@ export function ProspectSearch() {
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
           cursor: pageParam,
         },
-        (found) => setLive((prev) => (prev.id === id ? { id, items: [...prev.items, ...found.items], refined: [...prev.refined, ...found.refined] } : prev)),
-        signal,
+        (found) => liveSearch.add(key, found),
+        // No abort signal: taking it would have the search dropped the moment this page is left.
+        undefined,
         // What's left of a plan's allowance changed.
       ).finally(() => queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() }))
     },
@@ -412,7 +416,7 @@ export function ProspectSearch() {
 
   const companyItems = companies.data?.pages.flatMap((p) => p.items) ?? []
   // While a page is being searched, the people it has found so far follow the pages already done.
-  const searching = people.isFetching && live.id === fetchId.current ? live : null
+  const searching = people.isFetching ? live : null
   const donePeople = people.data?.pages.flatMap((p) => p.items) ?? []
   const doneUrls = new Set(donePeople.map((p) => p.profileUrl))
   const allPeople = searching ? [...donePeople, ...searching.items.filter((p) => !doneUrls.has(p.profileUrl))] : donePeople
