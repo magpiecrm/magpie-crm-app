@@ -143,13 +143,32 @@ describe('searchPeople profile lookups', () => {
     expect(res.items.every((p) => p.profileChecked)).toBe(true)
   })
 
+  it("takes an employer named without its company page to be the one company known by that name", async () => {
+    prospectCompanies = [{ ref: '77', name: 'Cat Consulting Ltd', domain: 'catconsulting.co.uk' }]
+    searchPage = pageOf(hit('cat'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.company, p.companyRef, p.companyDomain, p.noCompany ?? false])).toEqual([['Cat Consulting', '77', 'catconsulting.co.uk', false]])
+    expect(res.warnings).toEqual([allFound(1)])
+  })
+
+  it('shows people with no company page, marked, when unverifiable people are shown', async () => {
+    prospectingSettings = { hide_unverifiable: false }
+    searchPage = pageOf(hit('cat'), hit('ana'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    expect(res.items.map((p) => [p.firstName, p.noCompany ?? false])).toEqual([['cat', true], ['ana', false]])
+    expect(res.warnings).toEqual([allFound(2), "1 person's profile doesn't link their employer's company page, so there's no website to find an email on."])
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 2 })
+  })
+
   it("uses the profile's title and employer even when the company has no company page", async () => {
     searchPage = pageOf(hit('cat', 'Analyst | Consultant | Speaker'), hit('ana'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.refined).toEqual(['https://www.linkedin.com/in/cat', 'https://www.linkedin.com/in/ana'])
     const cat = res.items[0]
     expect([cat.title, cat.seniority, cat.company, cat.companyRef, cat.profileChecked]).toEqual(['Senior Business Analyst', 'senior', 'Cat Consulting', null, true])
-    expect(res.warnings).toEqual([allFound(2)])
+    // No company page means no website to find an email on: marked, and not counted while such people are hidden.
+    expect(cat.noCompany).toBe(true)
+    expect(res.warnings).toEqual([allFound(1), "1 person's profile doesn't link their employer's company page, so there's no website to find an email on."])
   })
 
   it('keeps looking up the rest when the first person has no current job listed', async () => {
@@ -158,7 +177,7 @@ describe('searchPeople profile lookups', () => {
     expect(getPerson).toHaveBeenCalledTimes(3)
     expect(res.refined).toEqual(['https://www.linkedin.com/in/ana', 'https://www.linkedin.com/in/ben'])
     expect(res.items[0].title).toBe('Business Analyst') // the headline's, as nothing better is known
-    expect(res.warnings).toEqual([allFound(3), '1 profile has no current job listed; showing the headline instead.'])
+    expect(res.warnings).toEqual([allFound(2), '1 profile has no current job listed, so there is no company to find an email at.'])
   })
 
   it('hides people who turn out to work somewhere other than the chosen company', async () => {
@@ -610,12 +629,15 @@ describe('searchPeople fills the page', () => {
     const fullPage = async (_company: unknown, f: { count: number; cursor?: string }) =>
       withCursor(pageOf(...Array.from({ length: f.count }, (_, i) => ({ ...hit('ben'), profileUrl: `https://www.linkedin.com/in/ben-${f.cursor ?? 'a'}-${i}` }))), 'next')
     searchPeopleMock.mockImplementation(fullPage as unknown as () => Promise<Page<PersonResult>>)
+    // Everyone found works at Acme, so each has somewhere to find an email.
+    getPerson.mockImplementation(async (url: string) => ({ ...(await defaultGetPerson('https://www.linkedin.com/in/ben'))!, profileUrl: url }))
     try {
       const res = await searchPeople({ titles: ['Business Analyst'], count: 75 })
       expect(searchPeopleMock.mock.calls.map((c: any[]) => c[1].count)).toEqual([50, 25])
       expect(res.items).toHaveLength(75)
       expect(res.warnings.join(' ')).not.toMatch(/more search page/)
     } finally {
+      getPerson.mockImplementation(defaultGetPerson)
       searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
     }
   })
@@ -670,16 +692,16 @@ describe('searchPeople in a workspace run by its host', () => {
     try {
       searchPage = { ...pageOf(hit('dan'), hit('ana')), warnings: ['Only the first 5 job titles were searched.'], details: ['1 person was hidden.'] }
       const res = await searchPeople({ titles: ['Business Analyst'] })
-      expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', allFound(2)])
+      expect(res.warnings).toEqual(['Only the first 5 job titles were searched.', allFound(1)])
     } finally {
       delete process.env.PROSPECTING_MANAGED
     }
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.warnings).toEqual([
       'Only the first 5 job titles were searched.',
-      allFound(2),
+      allFound(1),
       '1 person was hidden.',
-      '1 profile has no current job listed; showing the headline instead.',
+      '1 profile has no current job listed, so there is no company to find an email at.',
     ])
   })
 })
@@ -762,7 +784,8 @@ describe("searchPeople with the host's shared database", () => {
         expect(getPerson).toHaveBeenCalledTimes(3)
         // Ben works at Acme, not Barclays: a bank of 11-50 too, so he's kept, at Acme.
         expect(res.items.map((p) => [p.firstName, p.company, p.companyDomain])).toEqual([
-          ['eve', 'Barclays UK', null],
+          // Her profile didn't say, but the name is the company searched inside, so that's taken as her employer.
+          ['eve', 'Barclays UK', 'barclays.com'],
           ['ana', 'Barclays', 'barclays.com'],
           ['ben', 'Acme', 'acme.com'],
         ])

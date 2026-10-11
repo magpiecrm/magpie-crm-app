@@ -8,6 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
+import { companyNamer } from './companies'
 import { knownPeople } from './sharedPeople'
 import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -349,6 +350,10 @@ interface Tally {
   paidInContacts: number
   /** Left out before their profile lookup, from the search hit (skipBeforeLookup). */
   skippedUnverifiable: number
+  /** Taken to work at the one company we know by their employer's name, which their profile didn't link. */
+  employerByName: number
+  /** Marked as having no company to find a website for (PersonResult.noCompany). */
+  noCompany: number
   skippedNotWorking: number
   skippedContact: number
   /** Companies-first: left out before their profile lookup because their headline names an employer that isn't one of the companies searched. */
@@ -919,6 +924,27 @@ async function processBatch(
     items = kept
   }
 
+  // Someone whose profile names an employer without linking its company page
+  // has no company to read a website from, so no email can be found for
+  // them. Where the name is one of the companies this page searched inside,
+  // or we know exactly one company by it, they're taken to work there;
+  // otherwise they're marked, and hidden with the others whose email can't
+  // be verified. Only once their profile has been checked: before that,
+  // saving them may still find where they work.
+  const named = companyNamer(db)
+  items = items.map((p) => {
+    if (p.companyRef || p.companyDomain || p.previously === 'saved') return p
+    const searched = p.company.trim() ? [...(companySet ?? [])].find(([, name]) => sameCompanyName(p.company, name)) : undefined
+    const known = searched ? db.getProspectCompany(searched[0]) ?? { ref: searched[0], domain: null, slug: null } : p.company.trim() ? named(p.company) : null
+    if (known) {
+      tally.employerByName++
+      return { ...p, companyRef: known.ref, companySlug: p.companySlug ?? known.slug ?? null, companyDomain: known.domain ?? null }
+    }
+    if (!p.profileChecked) return p
+    tally.noCompany++
+    return { ...p, noCompany: true }
+  })
+
   // Mark people at companies already known to accept every address. The
   // page decides whether to hide them (it does while verified-only is on).
   // Only the cache is read: finding out about a new company would take an
@@ -976,7 +1002,7 @@ export async function searchPeople(
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
-  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail)
+  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail || p.noCompany)
   // Where the host's profile lookups are free, everyone is looked up, and in a
   // companies-first search someone working elsewhere is kept if that fits.
   const { profileLookupsFree } = await import('./hostRules')
@@ -1004,6 +1030,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
+    employerByName: 0, noCompany: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1245,6 +1272,8 @@ export async function searchPeople(
       boughtWrongCompany: tally.wrongCompany,
       boughtNoJob: tally.noJob,
       profileUnconfirmed: tally.unconfirmed,
+      employerByName: tally.employerByName,
+      noCompanyPage: tally.noCompany,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),
       fromSharedDatabase: shared,
@@ -1295,7 +1324,15 @@ export async function searchPeople(
     )
   }
   if (tally.failed > 0) details.push(`${plural(tally.failed, 'profile lookup', 'profile lookups')} failed (${tally.failedError}); showing the headline instead.`)
-  if (tally.noJob > 0) details.push(`${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed; showing the headline instead.`)
+  if (tally.noJob > 0) {
+    details.push(
+      `${plural(tally.noJob, 'profile has', 'profiles have')} no current job listed${hideUnverifiable ? ', so there is no company to find an email at.' : '; showing the headline instead.'}`,
+    )
+  }
+  if (tally.noCompany > tally.noJob) {
+    const n = tally.noCompany - tally.noJob
+    details.push(`${plural(n, "person's profile doesn't", "people's profiles don't")} link their employer's company page, so there's no website to find an email on.`)
+  }
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)
   }

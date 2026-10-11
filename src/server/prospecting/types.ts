@@ -83,6 +83,12 @@ export interface PersonResult {
   /** Their company's domain is already known to take no email. Company data, not personal. */
   noMail?: boolean
   /**
+   * Their profile names an employer without linking its company page, and no
+   * company we know goes by that name alone: there's no website to find an
+   * email on, so none can be found for them.
+   */
+  noCompany?: boolean
+  /**
    * Already a contact (`saved`: details and email come from the contact, and
    * the profile isn't looked up again) or revealed before (`revealed`).
    */

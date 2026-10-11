@@ -124,6 +124,7 @@ function FixDomain({
  */
 const UNABLE = "Unable to verify email. This didn't use a reveal."
 const UNVERIFIABLE_WHY = 'Their company accepts every address, so no email there can be verified.'
+const NO_COMPANY_WHY = "Their profile doesn't link their employer's company page, so there's no website to find an email on."
 
 /** Reveal button, then the email and its verification status. */
 function EmailCell({
@@ -219,6 +220,15 @@ function EmailCell({
   // Nothing to reveal: the company accepts every address, and only verified
   // emails are handed over. (With verified-only off, Reveal still gives the
   // best guess, marked as catch-all.)
+  // Nothing to reveal either: no company page means no website, so no domain to try.
+  if (person.noCompany && !person.email) {
+    return (
+      <div className="flex flex-col items-start gap-1" title={NO_COMPANY_WHY}>
+        <Badge variant="default">Unverifiable</Badge>
+        {!brief && <span className="text-[10px] text-muted-foreground leading-snug max-w-[14rem]">{NO_COMPANY_WHY}</span>}
+      </div>
+    )
+  }
   if (catchAll && verifiedOnly) {
     return (
       <div className="flex flex-col items-start gap-1" title={UNVERIFIABLE_WHY}>

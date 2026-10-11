@@ -13,6 +13,7 @@ const fakeDb = {
   getUnverifiable: () => state.unverifiable,
   setUnverifiable: (entries: any[]) => (state.unverifiable = entries),
   getProspectCompany: (ref: string) => state.companies.find((c) => c.ref === ref) ?? null,
+  data: { get prospect_companies() { return state.companies } },
   upsertProspectCompanies: (entries: any[]) => state.companies.push(...entries),
 }
 vi.mock('../db', () => ({ db: fakeDb }))
@@ -193,9 +194,19 @@ describe('revealEmail', () => {
     expect(res.status).toBe('not_found')
   })
 
+  it("takes an employer named without its company page to be the one company known by that name, and no company when two are", async () => {
+    state.companies = [{ ref: '9', name: 'Acme Ltd', domain: 'acme.com', domain_source: 'socialfetch', page_checked: true }]
+    const unlinked = { ...jane, companyRef: null, company: 'Acme' }
+    expect(await revealEmail(unlinked, { source, finder, db: fakeDb as any })).toMatchObject({ status: 'found', email: 'jane.smith@acme.com' })
+    expect(source.getCompany).not.toHaveBeenCalled()
+
+    state.companies.push({ ref: '10', name: 'ACME Limited', domain: 'acme.org', domain_source: 'socialfetch', page_checked: true })
+    expect(await revealEmail(unlinked, { source, finder, db: fakeDb as any })).toMatchObject({ status: 'no_domain' })
+  })
+
   it('counts how each lookup ended, for the hit rate', async () => {
     await revealEmail(jane, { source, finder, db: fakeDb as any })
-    await revealEmail({ ...jane, companyRef: null }, { source, finder, db: fakeDb as any })
+    await revealEmail({ ...jane, companyRef: null, company: 'Somewhere Else' }, { source, finder, db: fakeDb as any })
     await revealEmail({ ...jane, firstName: 'Zed', lastName: 'Nobody' }, { source, finder, db: fakeDb as any })
     const limited = { ...finder, verifier: { ...finder.verifier!, acquire: async () => { throw new VerificationLimitError("Today's verification limit is used up.", 'daily_cap') } } }
     await expect(revealEmail(jane, { source, finder: limited, db: fakeDb as any })).rejects.toThrow(/limit is used up/)
