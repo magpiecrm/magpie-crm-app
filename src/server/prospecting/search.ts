@@ -8,7 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyNamer } from './companies'
+import { companyNamer, findCompanyByName } from './companies'
 import { knownPeople } from './sharedPeople'
 import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -352,6 +352,8 @@ interface Tally {
   skippedUnverifiable: number
   /** Taken to work at the one company we know by their employer's name, which their profile didn't link. */
   employerByName: number
+  /** Placed at the company whose page their employer's name would have, once that page's name matched (findCompanyByName). */
+  employerByGuess: number
   /** Marked as having no company to find a website for (PersonResult.noCompany). */
   noCompany: number
   skippedNotWorking: number
@@ -932,15 +934,39 @@ async function processBatch(
   // be verified. Only once their profile has been checked: before that,
   // saving them may still find where they work.
   const named = companyNamer(db)
+  // People whose employer's name more than one known company goes by: no guessing which.
+  const several = new Set<string>()
   items = items.map((p) => {
     if (p.companyRef || p.companyDomain || p.previously === 'saved') return p
     const searched = p.company.trim() ? [...(companySet ?? [])].find(([, name]) => sameCompanyName(p.company, name)) : undefined
-    const known = searched ? db.getProspectCompany(searched[0]) ?? { ref: searched[0], domain: null, slug: null } : p.company.trim() ? named(p.company) : null
+    const byName = searched || !p.company.trim() ? null : named(p.company)
+    if (byName === 'several') several.add(p.profileUrl)
+    const known = searched ? db.getProspectCompany(searched[0]) ?? { ref: searched[0], domain: null, slug: null } : byName === 'several' ? null : byName
     if (known) {
       tally.employerByName++
       return { ...p, companyRef: known.ref, companySlug: p.companySlug ?? known.slug ?? null, companyDomain: known.domain ?? null }
     }
-    if (!p.profileChecked) return p
+    return p
+  })
+  // With the host's lookups free, the rest are worth a look at the page each
+  // employer's name would have (findCompanyByName): many people type their
+  // employer in rather than pick its page. Otherwise that waits for a reveal.
+  const unplaced = items.filter((p) => !p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
+  const byGuess = new Map<string, { ref: string; slug?: string | null; domain: string | null }>()
+  const getCompany = source.getCompany?.bind(source)
+  if (free && getCompany && unplaced.length) {
+    await mapLimit(unplaced.filter((p) => p.company.trim() && !several.has(p.profileUrl)), ENRICH_CONCURRENCY, async (p) => {
+      const found = await findCompanyByName(p.company, { getCompany }, db).catch(() => null)
+      if (found) byGuess.set(p.profileUrl, found)
+    })
+  }
+  items = items.map((p) => {
+    if (p.companyRef || p.companyDomain || p.previously === 'saved' || !p.profileChecked) return p
+    const found = byGuess.get(p.profileUrl)
+    if (found) {
+      tally.employerByGuess++
+      return { ...p, companyRef: found.ref, companySlug: p.companySlug ?? found.slug ?? null, companyDomain: found.domain ?? null }
+    }
     tally.noCompany++
     return { ...p, noCompany: true }
   })
@@ -1030,7 +1056,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, noCompany: 0,
+    employerByName: 0, employerByGuess: 0, noCompany: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1273,6 +1299,7 @@ export async function searchPeople(
       boughtNoJob: tally.noJob,
       profileUnconfirmed: tally.unconfirmed,
       employerByName: tally.employerByName,
+      employerByPageGuess: tally.employerByGuess,
       noCompanyPage: tally.noCompany,
       hiddenUnverifiable: items.filter(hidden).length,
       shown: usable(),

@@ -23,6 +23,7 @@ const limits: string[] = []
 vi.mock('../usage', () => ({ recordUsage: () => {}, recordLookup: (outcome: string) => lookups.push(outcome), recordLimit: (code: string) => limits.push(code) }))
 
 const { revealEmail } = await import('./reveal')
+const { forgetCompanyGuesses } = await import('./companies')
 const { hashesFor } = await import('./suppression')
 const { VerificationLimitError } = await import('./proxyRouter')
 
@@ -52,6 +53,7 @@ const jane: PersonResult = {
 }
 
 beforeEach(() => {
+  forgetCompanyGuesses()
   allowance = null
   state.suppression = []
   state.disclosure = []
@@ -123,8 +125,30 @@ describe('revealEmail', () => {
   })
 
   it('explains when there is no domain to work with', async () => {
-    const res = await revealEmail({ ...jane, companyRef: null }, { source, finder, db: fakeDb as any })
+    const res = await revealEmail({ ...jane, companyRef: null, company: 'Somewhere Else' }, { source, finder, db: fakeDb as any })
     expect(res).toEqual({ status: 'no_domain', message: "We don't know where they work.", canFixDomain: false })
+  })
+
+  it("finds an employer named without its company page at the page its name would have, when that page's name is the same", async () => {
+    const pages = vi.fn(async (ref: string, _slug?: string | null, opts?: { pageOnly?: boolean }) =>
+      ref === 'acme' && opts?.pageOnly
+        ? { ref: '9', name: 'Acme Ltd', domain: 'acme.com', industry: null, headcount: 40, companyType: null, country: 'GB', linkedinUrl: null, source: 'socialfetch' as const }
+        : ref === 'self-employed'
+          ? { ref: '1', name: 'Self-employed', domain: 'selfemployed.example', industry: null, headcount: null, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch' as const }
+          : null,
+    )
+    const byName = { ...source, getCompany: pages }
+    const unlinked = { ...jane, companyRef: null, company: 'Acme Ltd' }
+    expect(await revealEmail(unlinked, { source: byName, finder, db: fakeDb as any })).toMatchObject({ status: 'found', email: 'jane.smith@acme.com' })
+    // Asked for by the page names its name suggests, the page only, and remembered as a company.
+    expect(pages.mock.calls.map((c) => [c[0], c[2]])).toEqual([['acme-ltd', { pageOnly: true }], ['acme', { pageOnly: true }]])
+    expect(state.companies).toEqual([expect.objectContaining({ ref: '9', name: 'Acme Ltd', domain: 'acme.com', slug: 'acme' })])
+
+    // Not a page with another name, and never for what isn't a company.
+    pages.mockClear()
+    expect(await revealEmail({ ...unlinked, company: 'Acme Research Partners' }, { source: byName, finder, db: fakeDb as any })).toMatchObject({ status: 'no_domain' })
+    expect(await revealEmail({ ...unlinked, company: 'Self-employed' }, { source: byName, finder, db: fakeDb as any })).toMatchObject({ status: 'no_domain' })
+    expect(pages.mock.calls.map((c) => c[0])).toEqual(['acme-research-partners'])
   })
 
   it('uses a domain the user set for the company over the one on the search result', async () => {

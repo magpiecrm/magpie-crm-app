@@ -1,4 +1,4 @@
-import { companyKey } from './socialfetch'
+import { companyKey, sameCompanyName } from './socialfetch'
 import { normaliseDomain } from './suppression'
 import { CompanyUnconfirmed, type CompanySource, type PersonResult } from './types'
 
@@ -56,26 +56,94 @@ export async function resolveCompanyDomain(
 }
 
 type CachedCompany = NonNullable<ReturnType<Db['getProspectCompany']>>
+/** As much of a company as placing someone there takes. */
+type KnownCompany = Pick<CachedCompany, 'ref' | 'name' | 'domain'> & Partial<Pick<CachedCompany, 'slug' | 'domain_source'>>
 
 /**
  * Finds the company the cache knows by a name, for someone whose profile
  * names their employer without linking its company page. Only when exactly
- * one company goes by the name: with two, there's no telling which. The
- * cache is read once, so make one of these per job.
+ * one company goes by the name: with `several`, there's no telling which.
+ * The cache is read once, so make one of these per job.
  */
-export function companyNamer(db: Db): (name: string) => CachedCompany | null {
-  let byName: Map<string, CachedCompany | null> | null = null
+export function companyNamer(db: Db): (name: string) => CachedCompany | 'several' | null {
+  let byName: Map<string, CachedCompany | 'several'> | null = null
   return (name) => {
     if (!byName) {
       byName = new Map()
       for (const c of db.data.prospect_companies ?? []) {
         const key = companyKey(c.name)
-        if (key) byName.set(key, byName.has(key) ? null : c)
+        if (key) byName.set(key, byName.has(key) ? 'several' : c)
       }
     }
     const key = companyKey(name)
     return (key && byName.get(key)) || null
   }
+}
+
+/** What people put as their employer when it isn't a company; LinkedIn has pages by some of these names. */
+const NOT_A_COMPANY = new Set(
+  ['self employed', 'selfemployed', 'freelance', 'freelancer', 'independent', 'independent consultant', 'consultant', 'stealth', 'stealth startup', 'confidential', 'private', 'retired', 'unemployed', 'career break', 'various', 'n a', 'none'].map(
+    (n) => companyKey(n),
+  ),
+)
+
+/** The page names a company's LinkedIn page might have, from its name: "Research Works Ltd" -> research-works-ltd, research-works. */
+export function pageNamesFor(name: string): string[] {
+  const full = name
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  const short = full.replace(/-(ltd|limited|llp|plc|inc|llc)$/, '')
+  return [...new Set([full, short])].filter((s) => s.length >= 2)
+}
+
+// Names asked about lately and what came of it, so several people at one
+// employer cost one look. In memory only: an employer's name can be a
+// person's ("Jane Smith Consulting").
+const guessed = new Map<string, { at: number; found: Promise<KnownCompany | null> }>()
+const GUESS_KEPT_MS = 24 * 60 * 60_000
+/** For tests: forget what's been asked about. */
+export const forgetCompanyGuesses = () => guessed.clear()
+
+/**
+ * Finds an employer's company page when a profile names it without linking
+ * it: asks for the page its name would have, and takes it only when the
+ * page's own name is the same. Many people type their employer in rather
+ * than pick its page, so the page often exists all the same. Found ones go
+ * in the company cache; nothing is learned from a page the host couldn't read.
+ */
+export async function findCompanyByName(name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null> {
+  const key = companyKey(name)
+  if (!key || NOT_A_COMPANY.has(key)) return null
+  const now = Date.now()
+  const before = guessed.get(key)
+  if (before && now - before.at < GUESS_KEPT_MS) return before.found
+  const found = (async () => {
+    for (const pageName of pageNamesFor(name)) {
+      let company
+      try {
+        company = await source.getCompany(pageName, pageName, { pageOnly: true })
+      } catch (err) {
+        if (err instanceof CompanyUnconfirmed) {
+          guessed.delete(key)
+          return null
+        }
+        throw err
+      }
+      // The same name once "Ltd" and the like are set aside: nearly the same isn't enough for a guess.
+      if (!company || companyKey(company.name) !== key || !sameCompanyName(company.name, name)) continue
+      db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: company.domain, domain_source: 'socialfetch', page_checked: true, headcount: company.headcount, slug: pageName }])
+      return { ref: company.ref, name: company.name, domain: company.domain, slug: pageName }
+    }
+    return null
+  })()
+  if (guessed.size > 2_000) guessed.clear()
+  guessed.set(key, { at: now, found })
+  found.catch(() => guessed.delete(key))
+  return found
 }
 
 /**
@@ -91,7 +159,12 @@ export async function domainForPerson(person: PersonResult, source: CompanySourc
   }
   if (person.companyDomain) return normaliseDomain(person.companyDomain)
   // An employer named without its company page: the one company we know by that name, if there is one.
-  const named = !person.companyRef && person.company.trim() ? companyNamer(db)(person.company) : null
+  // Or, when we know none by it, the page its name would have, if it turns out to be that company's.
+  let named: KnownCompany | null = null
+  if (!person.companyRef && person.company.trim()) {
+    const known = companyNamer(db)(person.company)
+    named = known === 'several' ? null : (known ?? (await findCompanyByName(person.company, source, db)))
+  }
   if (named?.domain_source === 'user' && named.domain) return named.domain
   const ref = person.companyRef ?? named?.ref ?? null
   const domain = ref ? await resolveCompanyDomain(ref, person.company, source, db, person.companySlug ?? named?.slug) : null

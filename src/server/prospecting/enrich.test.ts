@@ -82,6 +82,7 @@ vi.mock('../usage', async (original) => {
 })
 
 const { searchPeople, searchCompanies } = await import('./search')
+const { forgetCompanyGuesses } = await import('./companies')
 const { hashesFor, emailHash, profileHash } = await import('./suppression')
 
 const hit = (handle: string, title = 'Business Analyst'): PersonResult => ({
@@ -96,6 +97,7 @@ const pageOf = (...items: PersonResult[]): Page<PersonResult> => ({ items, nextC
 beforeEach(() => {
   employers = {}
   getCompanyMock.mockClear()
+  forgetCompanyGuesses()
   getPerson.mockClear()
   getPerson.mockImplementation(defaultGetPerson)
   allowance = null
@@ -791,6 +793,29 @@ describe("searchPeople with the host's shared database", () => {
         ])
         expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 3, prospectCredits: 3 })
       } finally {
+        unhost()
+      }
+    })
+
+    it("places someone whose profile doesn't link their employer at the page its name would have, and leaves them out when there's none", async () => {
+      free()
+      try {
+        // Cat Consulting has a page, which her profile didn't link.
+        employers = { 'cat-consulting': { ref: '77', name: 'Cat Consulting Ltd', domain: 'catconsulting.co.uk' } }
+        profiles.eve = { title: 'Analyst', seniority: null, company: 'Nowhere Much', companyRef: null }
+        searchPage = pageOf(hit('cat'), hit('eve'))
+        const res = await searchPeople({ titles: ['Business Analyst'] })
+        expect(res.items.map((p) => [p.firstName, p.companyRef, p.companyDomain, p.noCompany ?? false])).toEqual([
+          ['cat', '77', 'catconsulting.co.uk', false],
+          ['eve', null, null, true],
+        ])
+        expect(getCompanyMock.mock.calls.map((c) => [c[0], (c as unknown[])[2]])).toEqual([
+          ['cat-consulting', { pageOnly: true }],
+          ['nowhere-much', { pageOnly: true }],
+        ])
+        expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1 })
+      } finally {
+        delete profiles.eve
         unhost()
       }
     })

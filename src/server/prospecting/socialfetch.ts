@@ -765,7 +765,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       }
     },
 
-    async getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null> {
+    async getCompany(ref: string, slug?: string | null, opts: { pageOnly?: boolean } = {}): Promise<CompanyResult | null> {
       // "0" (from a search result mapped before idOf dropped it) isn't a company.
       if (!ref || /^0+$/.test(ref)) return null
       const numeric = numericId(ref)
@@ -790,6 +790,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           if (err instanceof CompanyUnconfirmed || (err instanceof SocialFetchError && (err.code === 'credits_exhausted' || err.code === 'unauthorized'))) throw err
         }
       }
+      if (opts.pageOnly) return null
       const res = await get<any>('/v2/linkedin/organizations', numeric ? { id: ref } : { slug: ref })
       if (res.data?.lookupStatus === 'unconfirmed') throw new CompanyUnconfirmed()
       if (res.data?.lookupStatus !== 'found') return null

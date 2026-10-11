@@ -193,7 +193,8 @@ export interface Page<T> {
 export interface CompanySource {
   searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>>
   /** `slug` (the LinkedIn company page name) allows a cheaper lookup when known. Throws CompanyUnconfirmed when it couldn't be read. */
-  getCompany(ref: string, slug?: string | null): Promise<CompanyResult | null>
+  /** `pageOnly`: just the company page (1 credit), never the dearer organization lookup; for a page name that's a guess. */
+  getCompany(ref: string, slug?: string | null, opts?: { pageOnly?: boolean }): Promise<CompanyResult | null>
 }
 
 export interface PeopleSource {
