@@ -84,8 +84,9 @@ export interface PersonResult {
   noMail?: boolean
   /**
    * Their profile names an employer without linking its company page, and no
-   * company we know goes by that name alone: there's no website to find an
-   * email on, so none can be found for them.
+   * company we know goes by that name alone; or its page lists no website
+   * and none could be found. Either way there's no website to find an email
+   * on, so none can be found for them.
    */
   noCompany?: boolean
   /**

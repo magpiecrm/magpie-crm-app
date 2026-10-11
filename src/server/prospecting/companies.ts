@@ -8,7 +8,7 @@ type Db = typeof import('../db')['db']
 
 // Several people at one company in a single save should cost one company-page
 // lookup, not one each.
-const inflight = new Map<string, Promise<string | null>>()
+const inflight = new Map<string, Promise<string | null | undefined>>()
 
 /**
  * The company's mail domain: from the cache when known, otherwise from its
@@ -23,6 +23,21 @@ export async function resolveCompanyDomain(
   db: Db,
   slug?: string | null,
 ): Promise<string | null> {
+  return (await companyWebsite(ref, fallbackName, source, db, slug)) ?? null
+}
+
+/**
+ * The same, telling a company whose page lists no website (null) from one
+ * whose page couldn't be read just now (undefined): only the first says
+ * there's no website there to be had.
+ */
+export async function companyWebsite(
+  ref: string,
+  fallbackName: string,
+  source: Pick<CompanySource, 'getCompany'>,
+  db: Db,
+  slug?: string | null,
+): Promise<string | null | undefined> {
   const cached = db.getProspectCompany(ref)
   if (cached?.domain || cached?.page_checked || cached?.domain_source === 'user') return cached.domain
 
@@ -35,7 +50,7 @@ export async function resolveCompanyDomain(
       company = await source.getCompany(ref, pageSlug)
     } catch (err) {
       // Nothing learned: not remembered, so it's asked about again next time.
-      if (err instanceof CompanyUnconfirmed) return null
+      if (err instanceof CompanyUnconfirmed) return undefined
       throw err
     }
     db.upsertProspectCompanies([{

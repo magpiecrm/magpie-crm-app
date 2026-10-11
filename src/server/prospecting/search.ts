@@ -8,7 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyNamer, companyPageReader, findCompanyByName, isCompanyName } from './companies'
+import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName } from './companies'
 import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
@@ -399,6 +399,9 @@ interface Tally {
   /** Mail domains tested before their people were shown (checkDomainsAhead), and those there was no time or allowance for. */
   domainsChecked: number
   domainsUnchecked: number
+  /** Company pages read for their website before their people were shown, and people marked because there was none to be found. */
+  companyPagesRead: number
+  noWebsite: number
   skippedNotWorking: number
   skippedContact: number
   /** Companies-first: left out before their profile lookup because their headline names an employer that isn't one of the companies searched. */
@@ -1037,6 +1040,38 @@ async function processBatch(
     return { ...p, noCompany: true }
   })
 
+  // Someone at a company with a LinkedIn page whose website we don't know
+  // yet: a Reveal would read the page for it, and find nothing if the page
+  // lists none. With the host's lookups free the page is read now instead,
+  // and a company with no website on its page is looked for on the web.
+  // Where there's none to be found, its people are marked like those with no
+  // company page; a page that couldn't be read says nothing either way.
+  if (free && getCompany) {
+    const unsited = items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
+    const sites = new Map<string, { domain: string | null; searched: boolean }>()
+    const first = [...new Map(unsited.map((p) => [p.companyRef!, p])).values()]
+    await mapLimit(first, ENRICH_CONCURRENCY, async (p) => {
+      const ref = p.companyRef!
+      const read = !db.getProspectCompany(ref)?.page_checked
+      const onPage = await companyWebsite(ref, p.company, { getCompany }, db, p.companySlug).catch(() => undefined)
+      if (onPage === undefined) return
+      if (read) tally.companyPagesRead++
+      const name = db.getProspectCompany(ref)?.name ?? p.company
+      const found = onPage || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db).catch(() => null)
+      sites.set(ref, { domain: onPage ?? found, searched: Boolean(found) })
+    })
+    items = items.map((p) => {
+      const site = unsited.includes(p) ? sites.get(p.companyRef!) : undefined
+      if (!site) return p
+      if (site.domain) {
+        if (site.searched) tally.employerBySite++
+        return { ...p, companyDomain: site.domain }
+      }
+      tally.noWebsite++
+      return { ...p, noCompany: true }
+    })
+  }
+
   // Mark people at companies known to accept every address, or to take no
   // email at all. The page decides whether to hide them (it does while
   // verified-only is on).
@@ -1141,7 +1176,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1387,6 +1422,8 @@ export async function searchPeople(
       employerByPageGuess: tally.employerByGuess,
       employerByWebSearch: tally.employerBySite,
       noCompanyPage: tally.noCompany,
+      companyPagesRead: tally.companyPagesRead,
+      noWebsite: tally.noWebsite,
       domainsCheckedAhead: tally.domainsChecked,
       domainsNotChecked: tally.domainsUnchecked,
       hiddenUnverifiable: items.filter(hidden).length,
@@ -1447,6 +1484,9 @@ export async function searchPeople(
   if (tally.noCompany > tally.noJob) {
     const n = tally.noCompany - tally.noJob
     details.push(`${plural(n, "person's profile doesn't", "people's profiles don't")} link their employer's company page, so there's no website to find an email on.`)
+  }
+  if (tally.noWebsite > 0) {
+    details.push(`${plural(tally.noWebsite, 'person works', 'people work')} at a company whose LinkedIn page lists no website, and none could be found, so there's nowhere to find an email.`)
   }
   if (tally.remembered > 0) {
     details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}, and no profile lookup was paid for.`)

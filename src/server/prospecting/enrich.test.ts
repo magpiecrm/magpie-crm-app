@@ -853,6 +853,45 @@ describe("searchPeople with the host's shared database", () => {
       }
     })
 
+    it("reads a company's page for its website before showing its people, and hides them where there's none to be found", async () => {
+      free()
+      const { CompanyUnconfirmed } = await import('./types')
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+      try {
+        // Three companies nothing is known about yet: a website on its page, none there, and a page that can't be read.
+        employers = { '61': { name: 'Sited', domain: 'sited.example' }, '62': { name: 'Unsited', domain: null } }
+        getCompanyMock.mockImplementation(async (ref: string) => {
+          if (ref === '63') throw new CompanyUnconfirmed()
+          return employers[ref] ? ({ ref, name: '', domain: null, industry: null, headcount: null, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch', ...employers[ref] } as CompanyResult) : null
+        })
+        profiles.eve = { title: 'Analyst', seniority: null, company: 'Sited', companyRef: '61' }
+        profiles.fay = { title: 'Analyst', seniority: null, company: 'Unsited', companyRef: '62' }
+        profiles.gil = { title: 'Analyst', seniority: null, company: 'Unread', companyRef: '63' }
+        searchPage = pageOf(hit('eve'), hit('fay'), hit('gil'))
+        const res = await searchPeople({ titles: ['Business Analyst'] })
+        expect(res.items.map((p) => [p.firstName, p.companyDomain, p.noCompany ?? false])).toEqual([
+          ['eve', 'sited.example', false],
+          ['fay', null, true],
+          // Nothing learned about it: shown, and its page is read when someone asks for the email.
+          ['gil', null, false],
+        ])
+        const funnel = JSON.parse(String(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Search funnel'))).split('Search funnel ')[1])
+        expect(funnel).toMatchObject({ companyPagesRead: 2, noWebsite: 1, hiddenUnverifiable: 1, shown: 2, prospectCredits: 2 })
+        // The website found is tested like any other before its people are shown.
+        expect(emailDomains['sited.example']).toMatchObject({ accepts_mail: true, catch_all: false })
+      } finally {
+        log.mockRestore()
+        getCompanyMock.mockReset()
+        getCompanyMock.mockImplementation(async (ref: string) =>
+          employers[ref] ? ({ ref, name: '', domain: null, industry: null, headcount: null, companyType: null, country: null, linkedinUrl: null, source: 'socialfetch', ...employers[ref] } as CompanyResult) : null,
+        )
+        delete profiles.eve
+        delete profiles.fay
+        delete profiles.gil
+        unhost()
+      }
+    })
+
     it("gives someone whose employer has no LinkedIn page the website a web search finds for it, where the host offers one", async () => {
       free()
       ;(globalThis as any).__hostRules.webSearch = true

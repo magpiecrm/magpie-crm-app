@@ -124,7 +124,7 @@ function FixDomain({
  */
 const UNABLE = "Unable to verify email. This didn't use a reveal."
 const UNVERIFIABLE_WHY = 'Their company accepts every address, so no email there can be verified.'
-const NO_COMPANY_WHY = "Their profile doesn't link their employer's company page, so there's no website to find an email on."
+const NO_COMPANY_WHY = "Their employer has no website we can find (their profile doesn't link its company page, or the page lists none), so there's nowhere to find an email."
 
 /** Reveal button, then the email and its verification status. */
 function EmailCell({
