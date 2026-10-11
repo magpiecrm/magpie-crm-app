@@ -300,41 +300,61 @@ async function skipBeforeLookup(
 }
 
 /**
- * How long a batch of people waits for their companies' mail domains to be
- * tested before it's shown. The tests are paced (about one every four
- * seconds), so a batch of a dozen new companies needs most of this. A test
- * still waiting its turn after that carries on, and is known about by the
- * next batch, the next search or a Reveal.
+ * How long a batch of people waits, once everything else about it is known,
+ * for the tests of their companies' mail domains to finish before it's
+ * shown. The tests start as each company's website is learned, so most of
+ * their time runs alongside the rest of the batch's work. One still waiting
+ * its turn after this carries on, and is known about by the next batch, the
+ * next search or a Reveal.
  */
-const AHEAD_MS = 45_000
+const AHEAD_MS = 20_000
 
 /**
- * Tests mail domains nobody has looked an email up at yet: whether each
- * takes email (DNS, free) and whether it accepts every address (a check or
- * two from the verification servers, the same ones a first Reveal there
- * would make, so a Reveal that follows doesn't repeat them). People at a
- * domain where nothing can be verified are then hidden before anyone spends
- * a credit on them. The checks use only what's spare of the verification
- * allowance (getFinderDeps `ahead`). Returns how many were answered in time.
+ * Tests of mail domains nobody has looked an email up at yet, made while a
+ * batch of people is put together: whether each takes email (DNS, free) and
+ * whether it accepts every address (a check or two from the verification
+ * servers, the same ones a first Reveal there would make, so a Reveal that
+ * follows doesn't repeat them). People at a domain where nothing can be
+ * verified are then hidden before anyone spends a credit on them. The checks
+ * use only what's spare of the verification allowance (getFinderDeps
+ * `ahead`).
  */
-async function checkDomainsAhead(domains: string[]): Promise<number> {
-  if (!domains.length) return 0
-  const { getFinderDeps } = await import('./runtime')
-  const { probeDomain } = await import('./emailFinder')
-  const deps = await getFinderDeps({ ahead: true })
-  let answered = 0
-  let waiting = true
-  const checks = Promise.allSettled(
-    domains.map(async (domain) => {
-      await probeDomain(domain, deps)
-      if (waiting) answered++
-    }),
-  )
-  let timer: ReturnType<typeof setTimeout> | undefined
-  await Promise.race([checks, new Promise((r) => (timer = setTimeout(r, AHEAD_MS)))])
-  clearTimeout(timer)
-  waiting = false
-  return answered
+function domainTests() {
+  const started = new Map<string, Promise<void>>()
+  const answered = new Set<string>()
+  let tools: Promise<{ deps: Awaited<ReturnType<typeof import('./runtime')['getFinderDeps']>>; probeDomain: typeof import('./emailFinder')['probeDomain'] }> | null = null
+  const load = () =>
+    (tools ??= (async () => {
+      const { getFinderDeps } = await import('./runtime')
+      const { probeDomain } = await import('./emailFinder')
+      return { deps: await getFinderDeps({ ahead: true }), probeDomain }
+    })())
+  const key = (domain: string) => domain.toLowerCase().trim()
+  return {
+    /** Starts testing a domain, without waiting for the answer. */
+    start(domain: string) {
+      const d = key(domain)
+      if (!d || started.has(d)) return
+      started.set(
+        d,
+        (async () => {
+          const { deps, probeDomain } = await load()
+          await probeDomain(d, deps)
+          answered.add(d)
+        })().catch(() => {}),
+      )
+    },
+    /** Waits up to AHEAD_MS for these domains' tests, starting any not begun: how many were answered in time. */
+    async settle(domains: string[]): Promise<number> {
+      const wanted = [...new Set(domains.map(key))].filter(Boolean)
+      if (!wanted.length) return 0
+      wanted.forEach((d) => this.start(d))
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([Promise.all(wanted.map((d) => started.get(d))), new Promise((r) => (timer = setTimeout(r, AHEAD_MS)))])
+      clearTimeout(timer)
+      return wanted.filter((d) => answered.has(d)).length
+    },
+  }
 }
 
 /**
@@ -1008,47 +1028,40 @@ async function processBatch(
   // employer's name would have (findCompanyByName): many people type their
   // employer in rather than pick its page. Otherwise that waits for a reveal.
   const unplaced = items.filter((p) => !p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
-  const byGuess = new Map<string, { ref: string; slug?: string | null; domain: string | null }>()
   const getCompany = source.getCompany?.bind(source)
-  if (free && getCompany && unplaced.length) {
-    await mapLimit(unplaced.filter((p) => p.company.trim() && !several.has(p.profileUrl)), ENRICH_CONCURRENCY, async (p) => {
-      const found = await findCompanyByName(p.company, { getCompany }, db).catch(() => null)
-      if (found) byGuess.set(p.profileUrl, found)
-    })
-  }
-  // Those whose employer has no LinkedIn page at all: its own website by web
-  // search (companySite.ts), where this copy has one to use. A small firm
-  // whose founder typed its name in usually still has a website. Where the
-  // search turns up a LinkedIn page for it after all, the website is read
-  // from there, with the host's lookups free.
   const searchWeb = webSearcher()
-  const bySite = new Map<string, string>()
-  if (searchWeb) {
-    await mapLimit(
-      unplaced.filter((p) => !byGuess.has(p.profileUrl) && !several.has(p.profileUrl) && isCompanyName(p.company)),
-      ENRICH_CONCURRENCY,
-      async (p) => {
-        const page = free && getCompany ? companyPageReader(p.company, { getCompany }, db) : undefined
-        const domain = await findCompanySite(p.company, p.country, searchWeb, db, Date.now(), page).catch(() => null)
-        if (domain) bySite.set(p.profileUrl, domain)
-      },
-    )
+  const worthIt = await formatConfirmedAt(db)
+  // Each company's mail domain is tested as soon as its website is known,
+  // while the rest of the batch is still being worked out (domainTests).
+  const tests = hideUnverifiable ? domainTests() : null
+  const testSoon = (domain: string | null | undefined) => {
+    if (domain && !worthIt(domain)) tests?.start(domain)
   }
-  items = items.map((p) => {
-    if (p.companyRef || p.companyDomain || p.previously === 'saved' || !p.profileChecked) return p
-    const found = byGuess.get(p.profileUrl)
-    if (found) {
-      tally.employerByGuess++
-      return { ...p, companyRef: found.ref, companySlug: p.companySlug ?? found.slug ?? null, companyDomain: found.domain ?? null }
-    }
-    const site = bySite.get(p.profileUrl)
-    if (site) {
-      tally.employerBySite++
-      return { ...p, companyDomain: site }
-    }
-    tally.noCompany++
-    return { ...p, noCompany: true }
-  })
+  for (const p of items) if (p.previously !== 'saved') testSoon(p.companyDomain)
+
+  // Those whose employer has no LinkedIn page that we know of: the page its
+  // name would have, where the host's lookups are free, and failing that its
+  // own website by web search (companySite.ts), where this copy has one to
+  // use. A small firm whose founder typed its name in usually still has a
+  // website. Where the search turns up a LinkedIn page for it after all, the
+  // website is read from there.
+  type Placed = { ref?: string; slug?: string | null; domain: string | null; searched: boolean }
+  const placed = new Map<string, Placed>()
+  const placeUnlinked = mapLimit(
+    unplaced.filter((p) => p.company.trim() && !several.has(p.profileUrl)),
+    ENRICH_CONCURRENCY,
+    async (p) => {
+      const page = free && getCompany ? await findCompanyByName(p.company, { getCompany }, db).catch(() => null) : null
+      const name = page?.name ?? p.company
+      // A page with no website on it is as good as no page: the web is searched either way.
+      const reader = !page && free && getCompany ? companyPageReader(p.company, { getCompany }, db) : undefined
+      const site =
+        page?.domain || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db, Date.now(), reader).catch(() => null)
+      const domain = page?.domain ?? site
+      testSoon(domain)
+      if (page || domain) placed.set(p.profileUrl, { ref: page?.ref, slug: page?.slug, domain, searched: Boolean(site) })
+    },
+  )
 
   // Someone at a company with a LinkedIn page whose website we don't know
   // yet: a Reveal would read the page for it, and find nothing if the page
@@ -1056,22 +1069,27 @@ async function processBatch(
   // and a company with no website on its page is looked for on the web.
   // Where there's none to be found, its people are marked like those with no
   // company page; a page that couldn't be read says nothing either way.
-  if (free && getCompany) {
-    const unsited = items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
-    const sites = new Map<string, { domain: string | null; searched: boolean }>()
-    const first = [...new Map(unsited.map((p) => [p.companyRef!, p])).values()]
-    await mapLimit(first, ENRICH_CONCURRENCY, async (p) => {
-      const ref = p.companyRef!
-      const read = !db.getProspectCompany(ref)?.page_checked
-      const onPage = await companyWebsite(ref, p.company, { getCompany }, db, p.companySlug).catch(() => undefined)
-      if (onPage === undefined) return
-      if (read) tally.companyPagesRead++
-      const name = db.getProspectCompany(ref)?.name ?? p.company
-      const found = onPage || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db).catch(() => null)
-      sites.set(ref, { domain: onPage ?? found, searched: Boolean(found) })
-    })
-    items = items.map((p) => {
-      const site = unsited.includes(p) ? sites.get(p.companyRef!) : undefined
+  const unsited = free && getCompany ? items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked) : []
+  const sites = new Map<string, { domain: string | null; searched: boolean }>()
+  const readPages = mapLimit([...new Map(unsited.map((p) => [p.companyRef!, p])).values()], ENRICH_CONCURRENCY, async (p) => {
+    const ref = p.companyRef!
+    const read = !db.getProspectCompany(ref)?.page_checked
+    const onPage = await companyWebsite(ref, p.company, { getCompany: getCompany! }, db, p.companySlug).catch(() => undefined)
+    if (onPage === undefined) return
+    if (read) tally.companyPagesRead++
+    const name = db.getProspectCompany(ref)?.name ?? p.company
+    const found = onPage || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db).catch(() => null)
+    testSoon(onPage ?? found)
+    sites.set(ref, { domain: onPage ?? found, searched: Boolean(found) })
+  })
+
+  // The two don't wait on each other: one is about people with no company page, the other about people with one.
+  await Promise.all([placeUnlinked, readPages])
+
+  items = items.map((p) => {
+    if (p.previously === 'saved' || !p.profileChecked || p.companyDomain) return p
+    if (p.companyRef) {
+      const site = unsited.includes(p) ? sites.get(p.companyRef) : undefined
       if (!site) return p
       if (site.domain) {
         if (site.searched) tally.employerBySite++
@@ -1079,13 +1097,25 @@ async function processBatch(
       }
       tally.noWebsite++
       return { ...p, noCompany: true }
-    })
-  }
+    }
+    const found = placed.get(p.profileUrl)
+    if (found?.ref) {
+      tally.employerByGuess++
+      if (found.searched) tally.employerBySite++
+      if (!found.domain) tally.noWebsite++
+      return { ...p, companyRef: found.ref, companySlug: p.companySlug ?? found.slug ?? null, companyDomain: found.domain, ...(found.domain ? {} : { noCompany: true }) }
+    }
+    if (found?.domain) {
+      tally.employerBySite++
+      return { ...p, companyDomain: found.domain }
+    }
+    tally.noCompany++
+    return { ...p, noCompany: true }
+  })
 
   // Mark people at companies known to accept every address, to take no
   // email at all, or whose mail server wouldn't answer our test. The page
   // decides whether to hide them (it does while verified-only is on).
-  const worthIt = await formatConfirmedAt(db)
   const known = (d: string) => db.getEmailDomain(d)
   const markKnown = () => {
     const now = Date.now()
@@ -1102,9 +1132,10 @@ async function processBatch(
   const unmarked = items.filter((p) => !p.catchAll && !(p.companyDomain && worthIt(p.companyDomain)))
   const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
   unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
-  // Where such people are hidden, the domains nobody has tested yet are
-  // tested now, so that nobody is shown someone a Reveal can't work for.
-  if (hideUnverifiable) {
+  // Where such people are hidden, the batch waits a little for the tests of
+  // the domains nobody had tested yet, so that nobody is shown someone a
+  // Reveal can't work for.
+  if (tests) {
     const untested = [
       ...new Set(
         items
@@ -1112,7 +1143,7 @@ async function processBatch(
           .map((p) => p.companyDomain!.toLowerCase().trim()),
       ),
     ]
-    const answered = await checkDomainsAhead(untested)
+    const answered = await tests.settle(untested)
     tally.domainsChecked += answered
     tally.domainsUnchecked += untested.length - answered
     markKnown()
