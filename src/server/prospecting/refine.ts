@@ -4,14 +4,17 @@ import type { PersonResult } from './types'
  * A search result corrected from the person's profile: their current job's
  * real title and employer, rather than what was guessed from their headline.
  * A current job without a company page still has its title and employer
- * name; only the company link stays unknown. Null when the profile listed
- * no current job, which leaves the search result as it was.
+ * name; only the company link stays unknown. A profile that names the
+ * employer but no title keeps the title the search matched (`titleExact`
+ * says which it is). Null when the profile listed no current job, which
+ * leaves the search result as it was.
  */
 export function refineFromProfile(person: PersonResult, profile: PersonResult | null): PersonResult | null {
   if (!profile || (!profile.title && !profile.company && !profile.companyRef)) return null
   return {
     ...person,
     title: profile.title || person.title,
+    titleExact: Boolean(profile.title),
     seniority: profile.title ? profile.seniority : person.seniority,
     company: profile.company || person.company,
     companyRef: profile.companyRef ?? person.companyRef,

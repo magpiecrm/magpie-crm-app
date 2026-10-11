@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
+import { refineFromProfile } from './refine'
 import {
   canonicalProfileUrl,
   createSocialFetchSource,
@@ -147,6 +148,26 @@ describe('the title a result shows', () => {
     const f = fakeFetch([people([{ ...searchHit('a', 'Speaker | CFO'), currentPositions: [{ title: 'Group CFO', organizationName: 'Acme Ltd' }] }])])
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['CFO'] })
     expect(page.items[0].title).toBe('Group CFO')
+  })
+})
+
+describe('a title from a profile lookup', () => {
+  // As LinkedIn's public page gives it: the employer, and no title for the job.
+  const untitled = () => rawPerson({ headline: 'Helping teams ship | Founder at Acme', currentPositions: [{ title: null, organizationName: 'Acme', organizationSlug: 'acme', isCurrent: true }] })
+
+  it("is only what a job on the profile says: never the headline's slogan", () => {
+    expect(mapPerson(untitled(), { fromProfile: true })).toMatchObject({ title: '', company: 'Acme', companySlug: 'acme' })
+    // A search hit has nothing but the headline, so there it's still the best there is.
+    expect(mapPerson(untitled())!.title).toBe('Helping teams ship')
+    expect(mapPerson(rawPerson({ currentPositions: [{ title: 'Chief Executive', organizationName: 'Acme', isCurrent: true }] }), { fromProfile: true })!.title).toBe('Chief Executive')
+  })
+
+  it('leaves the title the search matched in place when the profile gives none', () => {
+    const found = { ...mapPerson(untitled())!, title: 'Founder', seniority: 'founder' as const }
+    const noTitle = refineFromProfile(found, mapPerson(untitled(), { fromProfile: true }))
+    expect(noTitle).toMatchObject({ title: 'Founder', titleExact: false, seniority: 'founder', company: 'Acme' })
+    const titled = refineFromProfile(found, mapPerson(rawPerson({ currentPositions: [{ title: 'Managing Director', organizationName: 'Acme', isCurrent: true }] }), { fromProfile: true }))
+    expect(titled).toMatchObject({ title: 'Managing Director', titleExact: true })
   })
 })
 

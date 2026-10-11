@@ -264,7 +264,8 @@ function TitleText({ person, refined }: { person: PersonResult; refined: boolean
           <Database className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
         </span>
       ) : (
-        refined && (
+        refined &&
+        person.titleExact !== false && (
           <span title="Exact title from their profile">
             <BadgeCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
           </span>

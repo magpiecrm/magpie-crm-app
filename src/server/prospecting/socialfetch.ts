@@ -328,7 +328,7 @@ function splitFullName(full: string | null): [string, string] {
  * provider record — pictures, summary, skills, education, follower counts,
  * city-level location, languages — is dropped here and never stored.
  */
-export function mapPerson(p: any): PersonResult | null {
+export function mapPerson(p: any, opts: { fromProfile?: boolean } = {}): PersonResult | null {
   const profileUrl = canonicalProfileUrl(p?.profileUrl, p?.handle)
   if (!profileUrl) return null
 
@@ -350,7 +350,11 @@ export function mapPerson(p: any): PersonResult | null {
   const headline = str(p?.headline)
   const history: any[] = [...(Array.isArray(p?.positions) ? p.positions : []), ...(Array.isArray(p?.fullPositions) ? p.fullPositions : [])]
   const sameJob = current ? history.find((x) => str(x?.title) && sameEmployer(x, current)) : null
-  const title = str(current?.title) ?? str(sameJob?.title) ?? titleFromHeadline(headline) ?? ''
+  // From a profile lookup the title is only what a job there says. A profile
+  // read from LinkedIn's public page often names the employer and no title;
+  // falling back on the headline then put a slogan ("Helping teams ship")
+  // over the title the search had matched.
+  const title = str(current?.title) ?? str(sameJob?.title) ?? (opts.fromProfile ? '' : titleFromHeadline(headline)) ?? ''
   return {
     profileUrl,
     firstName,
@@ -1068,7 +1072,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // Only a host answers this (see ProfileUnconfirmed); SocialFetch never does.
       if (res.data?.lookupStatus === 'unconfirmed') throw new ProfileUnconfirmed()
       if (res.data?.lookupStatus !== 'found') return null
-      const person = mapPerson(res.data?.profile)
+      const person = mapPerson(res.data?.profile, { fromProfile: true })
       // Log field names (never values) if no current job came through at
       // all, so a change in the response can be fixed rather than guessed at.
       // (A current job without a company page is normal.)

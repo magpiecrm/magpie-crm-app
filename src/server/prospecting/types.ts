@@ -81,6 +81,12 @@ export interface PersonResult {
    */
   catchAll?: boolean
   /**
+   * After a profile lookup: whether `title` is their job's own title from
+   * the profile (true), or still the part of their headline the search
+   * matched because the profile gave none (false).
+   */
+  titleExact?: boolean
+  /**
    * The search that showed them (searchLog.ts): a random id, so a Reveal or
    * a save can count its outcome against that search's filters. Says nothing
    * about the person.
