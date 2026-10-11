@@ -523,7 +523,11 @@ export async function findEmail(
     reason: catchAllReason,
     detail: `${catchAllReason} ${likelihood}`,
   }
-  if (rec.catch_all) return catchAll
+  if (rec.catch_all) {
+    // Logged like the other outcomes, so a count of them from the log isn't missing its biggest part. Company data only.
+    console.log(`[EmailFinder] ${domain} (${rec.mx_provider ?? '?'}): accepts every address -> ${catchAll.status}`)
+    return catchAll
+  }
   if (!deps.verifier) {
     return {
       email: candidates[0].email,
