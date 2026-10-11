@@ -26,11 +26,13 @@ key), with the app's actions as tools.
     is the only place contacts get created from search results; `suppression.ts` holds the
     HMAC-hashed opt-out list. Search results are never persisted, and only
     non-personal data (companies, domains, patterns, catch-all) is cached
-    globally — keep it that way. The two exceptions, both in server memory
+    globally — keep it that way. The three exceptions, all in server memory
     only (size-capped, never on disk): `profileCache.ts` holds profile
-    lookups for 24h so a person isn't paid for twice, and `searchPool.ts`
+    lookups for 24h so a person isn't paid for twice, `searchPool.ts`
     holds the search hits a page didn't use for 1h, so the next page or
-    top-up doesn't pay for another request. An employer with no LinkedIn
+    top-up doesn't pay for another request, and `searchRuns.ts` holds a
+    search while it runs, and for 1h if it finished with nobody there, so
+    asking again joins it rather than running and charging a second one. An employer with no LinkedIn
     company page gets its website from a web search instead
     (`companySite.ts`, through `webSearch.ts`: the copy's own
     `WEB_SEARCH_API_KEY`, or its host's): only a domain that is plainly the

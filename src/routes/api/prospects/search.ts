@@ -31,29 +31,46 @@ export const Route = createFileRoute('/api/prospects/search')({
         }
         const { searchPeople } = await import('../../../server/prospecting/search')
 
+        const { joinSearch } = await import('../../../server/prospecting/searchRuns')
+
         const encoder = new TextEncoder()
+        // Leaving the page stops the listening, not the search: it's joined again by asking for the same one (searchRuns.ts).
+        let leave = () => {}
         const stream = new ReadableStream<Uint8Array>({
-          async start(controller) {
+          start(controller) {
             let open = true
             const send = (line: unknown) => {
-              if (!open) return
+              if (!open) return false
               try {
                 controller.enqueue(encoder.encode(JSON.stringify(line) + '\n'))
+                return true
               } catch {
-                // The page went away; the search finishes (and is paid for) all the same.
                 open = false
+                return false
               }
             }
             const stillHere = setInterval(() => send({ type: 'wait' }), STILL_HERE_MS)
-            try {
-              const page = await searchPeople(input, { onPeople: (found) => send({ type: 'people', ...found }) })
-              send({ type: 'done', page })
-            } catch (err) {
-              send({ type: 'error', message: err instanceof Error ? err.message : 'Search failed' })
-            } finally {
+            const stop = joinSearch(
+              JSON.stringify(input),
+              (onPeople) => searchPeople(input, { onPeople: (found) => onPeople(found) }),
+              (line) => {
+                const reached = send(line)
+                if (line.type !== 'people') {
+                  clearInterval(stillHere)
+                  if (open) controller.close()
+                  open = false
+                }
+                return reached
+              },
+            )
+            leave = () => {
               clearInterval(stillHere)
-              if (open) controller.close()
+              open = false
+              stop()
             }
+          },
+          cancel() {
+            leave()
           },
         })
         return new Response(stream, {
