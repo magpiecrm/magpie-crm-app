@@ -63,12 +63,12 @@ vi.mock('../db', () => ({
   db: {
     getAllowance: () => allowance,
     getProspectCompany: (ref: string) =>
-      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 } : (readCompanies.get(ref) ?? null),
+      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 } : null,
     getSuppressionHashes: () => suppressedHashes,
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     knownAddressesAt: () => [],
     getDisclosures: () => disclosures,
-    upsertProspectCompanies: (entries: any[]) => void (keepPagesRead && entries.forEach((e) => readCompanies.set(e.ref, e))),
+    upsertProspectCompanies: () => {},
     addSearchLog: (entry: any) => void searchLog.push(entry),
     getProspectingSettings: () => prospectingSettings,
     getUnverifiable: () => unverifiable,
@@ -80,9 +80,6 @@ vi.mock('../db', () => ({
   },
 }))
 const positions = new Map<string, string>()
-// Company pages a search read, as the company cache would keep them, in the tests that turn it on.
-const readCompanies = new Map<string, any>()
-let keepPagesRead = false
 // What each search was for and what came of it (searchLog.ts).
 const searchLog: any[] = []
 const companySites = new Map<string, { domain: string | null; at: string }>()
@@ -127,8 +124,6 @@ beforeEach(() => {
   silentDomains = new Set()
   recordUsage.mockClear()
   positions.clear()
-  readCompanies.clear()
-  keepPagesRead = false
 })
 
 describe('searchPeople with a plan allowance', () => {
@@ -856,31 +851,26 @@ describe("searchPeople with the host's shared database", () => {
       hosted(true, {})
       ;(globalThis as any).__hostRules.profileLookupsFree = true
     }
+    const barclays = { items: [{ ref: '42', name: 'Barclays', domain: 'barclays.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' as const }], nextCursor: null, reportedTotal: null, warnings: [] }
 
-    it("finds people the usual way when a company size is chosen, and sizes each by their company's page", async () => {
+    it('looks everyone up in a companies-first search, and keeps someone working elsewhere when that fits the filters', async () => {
       free()
-      keepPagesRead = true
-      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-      searchCompaniesMock.mockClear()
       try {
-        // Barclays (ref 42) has 80,000 people and Acme (ref 7) has 30. Cat's employer has no page, so no size to go by.
-        profiles.eve = { title: 'Analyst', seniority: null, company: 'Sized', companyRef: '61' }
-        employers = { '61': { name: 'Sized', domain: 'sized.example', headcount: 20 } }
-        searchPage = pageOf(hit('ana'), hit('ben'), hit('cat'), hit('eve'))
-        const res = await searchPeople({ titles: ['Business Analyst'], companySizes: ['11-50'] })
-        expect(res.items.map((p) => [p.firstName, p.company])).toEqual([['ben', 'Acme'], ['eve', 'Sized']])
-        // No search for companies of that size first, and no people search inside each of them.
-        expect(searchCompaniesMock).not.toHaveBeenCalled()
-        expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[0]).toBeNull()
-        const funnel = JSON.parse(String(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Search funnel'))).split('Search funnel ')[1])
-        expect(funnel).toMatchObject({ companiesFirst: false, orgSearches: 0, wrongSize: 2, shown: 2, prospectCredits: 2 })
-        // Larger companies only: still found first and searched inside, where each has several people who fit.
-        companyPage = { items: [], nextCursor: null, reportedTotal: 0, warnings: [] }
-        await searchPeople({ titles: ['Business Analyst'], companySizes: ['201-500'], industries: ['Banking'] })
-        expect(searchCompaniesMock).toHaveBeenCalled()
+        employers = { '7': { name: 'Acme', domain: 'acme.com', industry: 'Banking', headcount: 30 } }
+        companyPage = barclays
+        // Eve's headline names Barclays, which would have been taken without a lookup.
+        searchPage = pageOf({ ...hit('eve', 'Analyst at Barclays UK'), company: 'Barclays UK' }, hit('ana'), hit('ben'))
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(getPerson).toHaveBeenCalledTimes(3)
+        // Ben works at Acme, not Barclays: a bank of 11-50 too, so he's kept, at Acme.
+        expect(res.items.map((p) => [p.firstName, p.company, p.companyDomain])).toEqual([
+          // Her profile didn't say, but the name is the company searched inside, so that's taken as her employer.
+          ['eve', 'Barclays UK', 'barclays.com'],
+          ['ana', 'Barclays', 'barclays.com'],
+          ['ben', 'Acme', 'acme.com'],
+        ])
+        expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 3, prospectCredits: 3 })
       } finally {
-        log.mockRestore()
-        delete profiles.eve
         unhost()
       }
     })
@@ -973,6 +963,20 @@ describe("searchPeople with the host's shared database", () => {
       } finally {
         delete profiles.eve
         delete profiles.fay
+        unhost()
+      }
+    })
+
+    it('leaves out someone whose real employer doesn’t fit', async () => {
+      free()
+      try {
+        employers = { '7': { name: 'Acme', domain: 'acme.com', industry: 'Retail', headcount: 30 } }
+        companyPage = barclays
+        searchPage = pageOf(hit('ana'), hit('ben'))
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+        expect(getCompanyMock).toHaveBeenCalledWith('7', null)
+      } finally {
         unhost()
       }
     })

@@ -4,7 +4,7 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type HeadcountBucket, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
+import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
@@ -386,9 +386,6 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
  * full page normally does, so pages of people skipped for free (contacts,
  * people who couldn't be verified before) can be passed over.
  */
-/** Company sizes small enough that most have nobody, or one person, who fits a search. */
-const SMALL_COMPANIES = new Set<HeadcountBucket>(['1-10', '11-50'])
-
 const TOP_UPS = 3
 const MAX_TOP_UPS = 10
 /**
@@ -433,8 +430,6 @@ interface Tally {
   /** Mail domains tested before their people were shown (checkDomainsAhead), and those there was no time or allowance for. */
   domainsChecked: number
   domainsUnchecked: number
-  /** Left out because their company isn't one of the sizes searched, or its size isn't known (a size filter with free lookups). */
-  wrongSize: number
   /** Company pages read for their website before their people were shown, and people marked because there was none to be found. */
   companyPagesRead: number
   noWebsite: number
@@ -800,12 +795,6 @@ async function processBatch(
    * the companies searched is kept when it `fits` the filters.
    */
   free?: { fits: ((company: CompanyResult) => boolean) | null },
-  /**
-   * Company sizes to keep (a size filter where lookups are free): people are
-   * found the usual way and those whose company turns out another size, or
-   * of no known size, are left out once its page has been read.
-   */
-  sizes?: HeadcountBucket[],
 ): Promise<{
   items: PersonResult[]
   refined: string[]
@@ -1125,26 +1114,6 @@ async function processBatch(
     return { ...p, noCompany: true }
   })
 
-  // A company size was chosen and the host's lookups are free. Finding the
-  // companies first and searching inside each took a people search for every
-  // handful of them, most finding nobody (55 searches to show 24 people,
-  // once); instead people are found the usual way and their company's size
-  // is read off its page, already fetched above for most of them.
-  if (sizes?.length && getCompany) {
-    const sized = items.filter((p) => p.previously !== 'saved' && p.profileChecked)
-    const unread = sized.filter((p) => {
-      const known = p.companyRef ? db.getProspectCompany(p.companyRef) : null
-      return p.companyRef && known?.headcount == null && !known?.page_checked
-    })
-    await mapLimit([...new Map(unread.map((p) => [p.companyRef!, p])).values()], ENRICH_CONCURRENCY, async (p) => {
-      await companyWebsite(p.companyRef!, p.company, { getCompany }, db, p.companySlug).catch(() => undefined)
-    })
-    const fits = (p: PersonResult) => inHeadcountBuckets(p.companyRef ? (db.getProspectCompany(p.companyRef)?.headcount ?? null) : null, sizes)
-    const kept = items.filter((p) => !sized.includes(p) || fits(p))
-    tally.wrongSize += items.length - kept.length
-    items = kept
-  }
-
   // Mark people at companies known to accept every address, to take no
   // email at all, or whose mail server wouldn't answer our test. The page
   // decides whether to hide them (it does while verified-only is on).
@@ -1217,20 +1186,7 @@ export async function searchPeople(
   const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
   const source: Source = getSource()
-  const { profileLookupsFree } = await import('./hostRules')
-  const lookupsFree = profileLookupsFree()
-  // A company size is searched one of two ways. Companies of that size are
-  // found first and people searched for inside them: good for larger
-  // companies, where each has several people who fit, and poor for small
-  // ones, where most have nobody (55 people searches to show 24 people,
-  // once). Or people are found the usual way and sized by their company's
-  // page afterwards (processBatch `sizes`): good when the size is a common
-  // one among the people found, which small companies are, and it needs page
-  // lookups to be free. So: the second way when a small size is among those
-  // chosen and lookups are free; otherwise the first.
-  const sizeAfter =
-    !company && Boolean(filters.companySizes?.some((size) => SMALL_COMPANIES.has(size))) && lookupsFree && Boolean(source.getCompany)
-  const companyFirst = !company && Boolean(filters.companySizes?.length) && !sizeAfter
+  const companyFirst = !company && Boolean(filters.companySizes?.length)
   if (companyFirst && !companyTerms(filters).length) throw new Error(SIZE_NEEDS_TERM)
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
@@ -1238,8 +1194,8 @@ export async function searchPeople(
   const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail || p.noAnswer || p.noCompany)
   // Where the host's profile lookups are free, everyone is looked up, and in a
   // companies-first search someone working elsewhere is kept if that fits.
-  const free = lookupsFree ? { fits: companyFirst ? (c: CompanyResult) => fitsFilters(c, filters) : null } : undefined
-  const sizes = sizeAfter ? filters.companySizes : undefined
+  const { profileLookupsFree } = await import('./hostRules')
+  const free = profileLookupsFree() ? { fits: companyFirst ? (c: CompanyResult) => fitsFilters(c, filters) : null } : undefined
   // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
@@ -1263,7 +1219,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, wrongSize: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1403,7 +1359,7 @@ export async function searchPeople(
         ahead = { cursor: nextCursor!, fetched }
       }
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free, sizes)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free)
       if (batch.split && splitCursor) {
         // Searched again one company at a time: its people come back from those searches.
         split.batches++
@@ -1451,7 +1407,7 @@ export async function searchPeople(
       for (const { person, companySet } of heldBack) groups.set(companySet, [...(groups.get(companySet) ?? []), person])
       heldBack = []
       for (const [companySet, people] of groups) {
-        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free, sizes)
+        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
         for (const p of batch.items) p.searchId = searchId
         items.push(...batch.items)
         refined.push(...batch.refined)
@@ -1506,7 +1462,6 @@ export async function searchPeople(
     employerByPageGuess: tally.employerByGuess,
     employerByWebSearch: tally.employerBySite,
     noCompanyPage: tally.noCompany,
-    wrongSize: tally.wrongSize,
     companyPagesRead: tally.companyPagesRead,
     noWebsite: tally.noWebsite,
     domainsCheckedAhead: tally.domainsChecked,
@@ -1609,9 +1564,6 @@ export async function searchPeople(
     const n = tally.noCompany - tally.noJob
     details.push(`${plural(n, "person's profile doesn't", "people's profiles don't")} link their employer's company page, so there's no website to find an email on.`)
   }
-  if (tally.wrongSize > 0) {
-    details.push(`${plural(tally.wrongSize, 'person was', 'people were')} left out because their company isn't the size you chose, or its size isn't on its LinkedIn page.`)
-  }
   if (tally.noWebsite > 0) {
     details.push(`${plural(tally.noWebsite, 'person works', 'people work')} at a company whose LinkedIn page lists no website, and none could be found, so there's nowhere to find an email.`)
   }
@@ -1684,7 +1636,6 @@ function wastefulWarning(tally: Tally, hidden: number, lookedUp: number, company
   const reasons: Array<[number, string, string]> = [
     [tally.wrongCompany, companyName ? `Working somewhere other than ${companyName}` : 'Their current employer', 'Try other job titles.'],
     [hidden, "Emails that can't be verified", 'Settings → Prospect search can show these people, marked as unverifiable.'],
-    [tally.wrongSize, "Their company's size", 'Try more company sizes, or leave size out.'],
   ]
   const [n, why, next] = reasons.sort((a, b) => b[0] - a[0])[0]
   const left = n > 0 ? `${why} left out ${n} of the ${lookedUp} people whose profiles were checked` : `Most of the ${lookedUp} people whose profiles were checked were left out`
