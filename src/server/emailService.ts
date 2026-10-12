@@ -6,7 +6,7 @@ import { notify } from './notify'
 import { getAppUrl } from './appUrl'
 import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
-import { mergeContact } from './mergeTags'
+import { mergeContact, unfilledMergeTags } from './mergeTags'
 import { AllowanceError, requireAllowance } from './allowance'
 import { resumeAfterLimit, takeDailyShare } from './sendingLimits'
 import { requireSendingDomain } from './sendingDomains'
@@ -663,6 +663,16 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
   const unsubscribeEnabled = campaign.unsubscribeEnabled !== false || env.sendingManaged()
   // The open-tracking image, only when the campaign has it on (the sender's consent to get).
   const trackOpens = db.campaignTracksOpens(id)
+
+  // A contact tag we can't fill in (a field that doesn't exist, or a tag
+  // written some way we can't read) would reach every recipient as written.
+  const unfilled = [...new Set([campaign.subject, campaign.previewText, withoutBuilderData(campaign.htmlContent ?? '')].flatMap((text) => unfilledMergeTags(text ?? '')))]
+  if (unfilled.length) {
+    throw new Error(
+      `Campaign not sent: ${unfilled.length === 1 ? 'a merge tag' : `${unfilled.length} merge tags`} in it can't be filled in and would show as written: ${unfilled.slice(0, 3).join(', ')}${unfilled.length > 3 ? '…' : ''}. ` +
+        'The contact tags are first_name, last_name, company, email and custom.<field>. Fix it in the editor, then send again.',
+    )
+  }
 
   // Survey blocks link to a survey; sending links to a draft or deleted one
   // would give every recipient a "not found" page.

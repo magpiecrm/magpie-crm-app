@@ -12,11 +12,14 @@ process.env.DATABASE_PATH = join(scratchDir, 'local_db.json')
 process.env.PUBLIC_URL = 'https://example.test'
 
 const sent: string[] = []
+/** What each recipient was sent, by address. */
+const bodies = new Map<string, string>()
 vi.mock('./nodemailer', () => ({
-  sendMail: vi.fn(async (msg: { to: string }) => {
+  sendMail: vi.fn(async (msg: { to: string; html?: string }) => {
     // A little latency, so a racing send gets its chance to interleave.
     await new Promise((r) => setTimeout(r, 5))
     sent.push(msg.to)
+    bodies.set(msg.to, msg.html ?? '')
     return { messageId: 'x' }
   }),
 }))
@@ -44,6 +47,7 @@ async function campaignFor(emails: string[]) {
 
 beforeEach(() => {
   sent.length = 0
+  bodies.clear()
   notices.length = 0
 })
 
@@ -129,6 +133,35 @@ describe('scheduled campaigns', () => {
     await emailService.sendCampaign(id, { resume: true })
     expect(sent).toEqual(['h@x.test'])
     expect((await emailService.getCampaign(id)).status).toBe('sent')
+  })
+})
+
+describe('merge tags in a campaign', () => {
+  it("fill in from a design the builder wrote, where the fallback's quote marks are &quot;", async () => {
+    const list = await emailService.createList(`Tags ${Math.random()}`)
+    await emailService.addContactsToList(list.id, [
+      { email: 'jo@tags.test', attributes: { FIRSTNAME: 'Jo' } },
+      { email: 'nameless@tags.test', attributes: {} },
+    ] as any)
+    const { id } = await emailService.createCampaign({
+      name: 'Tags',
+      subject: 'Hello',
+      htmlContent: '<html><body><p>Hi {{ contact.FIRSTNAME | default: &quot;there&quot; }},</p></body></html>',
+      sender: { name: 'Acme', email: 'hi@acme.test' },
+      recipients: { listIds: [list.id] },
+    })
+    await emailService.sendCampaign(id)
+    expect(bodies.get('jo@tags.test')).toContain('<p>Hi Jo,</p>')
+    expect(bodies.get('nameless@tags.test')).toContain('<p>Hi there,</p>')
+    expect([...bodies.values()].join('')).not.toContain('{{')
+  })
+
+  it("isn't sent with a contact tag that would show as written", async () => {
+    const id = await campaignFor(['a@tags2.test'])
+    await emailService.updateCampaign(id, { htmlContent: '<p>Hi {{ contact.first_name }}, how is life as {{ contact.job_title }}?</p>' })
+    await expect(emailService.sendCampaign(id)).rejects.toThrow(/a merge tag in it can't be filled in and would show as written: \{\{ contact\.job_title \}\}/)
+    expect(sent).toEqual([])
+    expect((await emailService.getCampaign(id)).status).toBe('draft')
   })
 })
 
