@@ -131,10 +131,13 @@ export interface DbSchema {
     guess_hold?: GuessHold | null
     /**
      * Recipients still to come because the daily sending limit was reached
-     * (sendingLimits.ts): the campaign is back on the schedule for the next
-     * day, and this says so. Cleared once everyone has been sent to.
+     * (sendingLimits.ts), or because the campaign goes out in batches: it's
+     * back on the schedule for its next part, and this says so. Cleared once
+     * everyone has been sent to.
      */
     daily_pacing?: { left: number; sent: number } | null
+    /** The sender chose to send it a batch at a time: this many recipients, then a wait. */
+    batches?: { size: number; every_minutes: number } | null
     /**
      * Set on the hidden row one sequence step's emails are recorded under
      * (status 'sequence'): it keeps their tracking and results, and never
@@ -863,7 +866,19 @@ class JsonDb {
   // is one synchronous step, so a scheduled send and a manual send can never
   // both start the same campaign.
 
-  /** How far a campaign has got when the daily sending limit is spreading it over days (see `daily_pacing`). */
+  /** The batches a campaign goes out in, when its sender chose that. */
+  campaignBatches(id: number): { size: number; every_minutes: number } | null {
+    return this.data.campaigns.find((c) => c.id === id)?.batches ?? null
+  }
+
+  setCampaignBatches(id: number, batches: { size: number; every_minutes: number } | null) {
+    const campaign = this.data.campaigns.find((c) => c.id === id)
+    if (!campaign) return
+    campaign.batches = batches
+    this.save()
+  }
+
+  /** How far a campaign has got when it's going out in parts: over days by the daily sending limit, or in batches (see `daily_pacing`). */
   campaignPacing(id: number): { left: number; sent: number } | null {
     return this.data.campaigns.find((c) => c.id === id)?.daily_pacing ?? null
   }
@@ -957,7 +972,7 @@ class JsonDb {
     this.save()
   }
 
-  /** Back on the schedule to carry on at `at`, having reached the daily sending limit with `left` still to send. */
+  /** Back on the schedule to carry on at `at`, with `left` still to send: the daily sending limit was reached, or its next batch is due then. */
   paceCampaign(id: number, at: string, pacing: { left: number; sent: number }) {
     const campaign = this.data.campaigns.find((c) => c.id === id)
     if (!campaign) return

@@ -132,6 +132,64 @@ describe('scheduled campaigns', () => {
   })
 })
 
+describe('a campaign sent in batches', () => {
+  const people = ['a@b.test', 'b@b.test', 'c@b.test', 'd@b.test', 'e@b.test']
+
+  it('sends one batch a run, waits between them, tells the user once, and finishes as sent', async () => {
+    const id = await campaignFor(people)
+    await emailService.updateCampaign(id, { batches: { size: 2, everyMinutes: 30 } })
+    expect((await emailService.getCampaign(id)).batches).toEqual({ size: 2, everyMinutes: 30 })
+
+    const first = await emailService.sendCampaign(id)
+    expect(first).toMatchObject({ sentCount: 2, later: 3, batches: { size: 2, everyMinutes: 30 } })
+    expect(sent).toHaveLength(2)
+    const waiting = await emailService.getCampaign(id)
+    expect(waiting).toMatchObject({ status: 'scheduled', dailyPacing: { sent: 2, left: 3 } })
+    const next = new Date(waiting.scheduledAt!).getTime()
+    expect(Math.abs(next - (Date.now() + 30 * 60_000))).toBeLessThan(10_000)
+
+    // Not before its time.
+    await sendDueCampaigns(new Date(next - 60_000))
+    expect(sent).toHaveLength(2)
+    await sendDueCampaigns(new Date(next + 1000))
+    expect(sent).toHaveLength(4)
+    expect(await emailService.getCampaign(id)).toMatchObject({ status: 'scheduled', dailyPacing: { sent: 4, left: 1 } })
+
+    await sendDueCampaigns(new Date(Date.now() + 2 * HOUR))
+    expect([...sent].sort()).toEqual(people)
+    expect(await emailService.getCampaign(id)).toMatchObject({ status: 'sent', dailyPacing: null })
+    // Said when it started and when it finished, not after each batch.
+    expect(notices.filter((n) => n.startsWith('campaign_sent'))).toEqual([
+      'campaign_sent: "Launch" has started sending: 2 recipients in its first batch, the other 3 in batches of 2 after it.',
+      'campaign_sent: "Launch" finished sending to 5 recipients',
+    ])
+  })
+
+  it('can start at a chosen time, stops when taken off the schedule, and goes all at once again when batches are switched off', async () => {
+    const id = await campaignFor(people)
+    const at = new Date(Date.now() + HOUR)
+    await emailService.updateCampaign(id, { scheduledAt: at.toISOString(), batches: { size: 3, everyMinutes: 60 } })
+    await sendDueCampaigns(new Date(at.getTime() + 1000))
+    expect(sent).toHaveLength(3)
+
+    await emailService.unscheduleCampaign(id)
+    await sendDueCampaigns(new Date(Date.now() + 5 * HOUR))
+    expect(sent).toHaveLength(3)
+
+    await emailService.updateCampaign(id, { batches: null })
+    expect(await emailService.sendCampaign(id)).toMatchObject({ sentCount: 2 })
+    expect([...sent].sort()).toEqual(people)
+    expect((await emailService.getCampaign(id)).status).toBe('sent')
+  })
+
+  it('refuses a batch of nobody or a wait the scheduler can’t keep', async () => {
+    const id = await campaignFor(['a@c.test'])
+    await expect(emailService.updateCampaign(id, { batches: { size: 0, everyMinutes: 60 } })).rejects.toThrow('whole number of emails')
+    await expect(emailService.updateCampaign(id, { batches: { size: 10, everyMinutes: 1 } })).rejects.toThrow('5 minutes to a week')
+    expect((await emailService.getCampaign(id)).batches).toBeNull()
+  })
+})
+
 describe('new rows', () => {
   it('come back with their own id, even with more lists than campaigns', async () => {
     for (let i = 0; i < 4; i++) await emailService.createList(`Extra ${i}`)

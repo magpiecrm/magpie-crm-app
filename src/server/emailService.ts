@@ -324,6 +324,7 @@ export async function getCampaigns() {
       sentAt: c.sentAt,
       scheduledAt: db.campaignScheduledAt(c.id),
       dailyPacing: db.campaignPacing(c.id),
+      batches: batchesOf(c.id),
       recipients: { listIds: c.listId ? [c.listId] : [] },
       sender: { name: c.senderName, email: c.senderEmail },
       statistics: {
@@ -374,6 +375,7 @@ export async function getCampaign(id: number) {
     sentDate: c.sentAt, // Alias for backward compatibility
     scheduledAt: db.campaignScheduledAt(c.id),
       dailyPacing: db.campaignPacing(c.id),
+      batches: batchesOf(c.id),
     /** Unverified recipients held back after a first batch, if any (guessedRecipients.ts). */
     guessHold: db.getGuessHold(c.id),
     recipients: { 
@@ -453,6 +455,15 @@ export async function duplicateCampaign(id: number) {
   })
 }
 
+/** A campaign's batches as the app speaks of them. */
+const batchesOf = (id: number) => {
+  const b = db.campaignBatches(id)
+  return b ? { size: b.size, everyMinutes: b.every_minutes } : null
+}
+
+/** The shortest and longest wait between a campaign's batches: the scheduler looks every minute, and a week is plenty. */
+const BATCH_WAIT_MINUTES = { min: 5, max: 7 * 24 * 60 }
+
 export async function updateCampaign(id: number, payload: {
   name?: string
   subject?: string
@@ -463,6 +474,8 @@ export async function updateCampaign(id: number, payload: {
   scheduledAt?: string
   unsubscribeEnabled?: boolean
   trackOpens?: boolean
+  /** Send it a batch at a time: this many recipients, then this long a wait. Null sends it all at once again. */
+  batches?: { size: number; everyMinutes: number } | null
 }) {
   const existing = await getCampaign(id)
   if (existing.status === 'sent') {
@@ -477,6 +490,14 @@ export async function updateCampaign(id: number, payload: {
     if (Number.isNaN(at.getTime())) throw new Error('That schedule time isn\'t a valid date.')
     if (at.getTime() <= Date.now()) throw new Error('Schedule time must be in the future.')
     scheduledAt = at.toISOString()
+  }
+
+  if (payload.batches) {
+    const { size, everyMinutes } = payload.batches
+    if (!Number.isInteger(size) || size < 1 || size > 100_000) throw new Error('A batch must be a whole number of emails, from 1 to 100,000.')
+    if (!Number.isInteger(everyMinutes) || everyMinutes < BATCH_WAIT_MINUTES.min || everyMinutes > BATCH_WAIT_MINUTES.max) {
+      throw new Error('The wait between batches must be from 5 minutes to a week.')
+    }
   }
 
   let senderId = existing.sender?.id
@@ -509,6 +530,7 @@ export async function updateCampaign(id: number, payload: {
     [name, subject, previewText, htmlContent, listId, senderId, status, unsubscribeEnabled, id]
   )
   if (payload.trackOpens !== undefined) db.setCampaignTrackOpens(id, payload.trackOpens)
+  if (payload.batches !== undefined) db.setCampaignBatches(id, payload.batches ? { size: payload.batches.size, every_minutes: payload.batches.everyMinutes } : null)
   // Sent by the email scheduler once due (emailScheduler.ts).
   if (scheduledAt) db.setCampaignSchedule(id, scheduledAt)
 
@@ -613,9 +635,15 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
     releasing,
     rules.firstBatch,
   )
+  // Sent in batches, when its sender chose that (ScheduleDrawer): this run
+  // takes one batch, and the campaign goes back on the schedule for the next.
+  const batches = releasing ? null : db.campaignBatches(id)
+  const thisBatch = batches ? wanted.slice(0, batches.size) : wanted
+  const nextBatches = wanted.slice(thisBatch.length)
   // Through the host's mail server, only as many as today's sending limit has
   // room for go now (sendingLimits.ts); the rest follow from tomorrow.
-  const { send: toSend, later } = takeDailyShare(wanted)
+  const { send: toSend, later: pastLimit } = takeDailyShare(thisBatch)
+  const later = [...pastLimit, ...nextBatches]
 
   // A plan's email allowance: the whole campaign must fit, rather than stopping halfway.
   requireAllowance('emailsSent', toSend.length, 'Sending this campaign')
@@ -778,18 +806,38 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
 
   const plural = (n: number) => `${n} recipient${n === 1 ? '' : 's'}`
   if (later.length && !releasing) {
-    // Today's limit reached with people still to go: back on the schedule for
-    // tomorrow, when sending it again skips everyone it has reached.
-    const resumeAt = resumeAfterLimit()
+    // People still to go: back on the schedule, when sending it again skips
+    // everyone it has reached. Tomorrow where today's limit was reached,
+    // else when its next batch is due.
+    const byBatch = batches && !pastLimit.length ? batches : null
+    const resumeAt = byBatch ? new Date(Date.now() + byBatch.every_minutes * 60_000).toISOString() : resumeAfterLimit()
+    const started = !db.campaignPacing(id)
     db.paceCampaign(id, resumeAt, { left: later.length, sent: alreadySent.size + toSend.length })
-    notify(
-      'campaign_sent',
-      toSend.length
-        ? `"${campaign.name}" sent to ${plural(toSend.length)} today. The other ${later.length} follow from tomorrow, as your daily sending limit allows.`
-        : `"${campaign.name}" starts sending tomorrow: today's sending limit is used up.`,
-      { url: `/marketing/campaigns/${id}` },
-    )
-    return { success: true, sentCount: toSend.length, skippedOptOuts, heldBack: held.length, later: later.length, resumeAt }
+    // Said once for a campaign in batches, not after every one of them.
+    if (byBatch) {
+      if (started) {
+        notify('campaign_sent', `"${campaign.name}" has started sending: ${plural(toSend.length)} in its first batch, the other ${later.length} in batches of ${byBatch.size} after it.`, {
+          url: `/marketing/campaigns/${id}`,
+        })
+      }
+    } else {
+      notify(
+        'campaign_sent',
+        toSend.length
+          ? `"${campaign.name}" sent to ${plural(toSend.length)} today. The other ${later.length} follow from tomorrow, as your daily sending limit allows.`
+          : `"${campaign.name}" starts sending tomorrow: today's sending limit is used up.`,
+        { url: `/marketing/campaigns/${id}` },
+      )
+    }
+    return {
+      success: true,
+      sentCount: toSend.length,
+      skippedOptOuts,
+      heldBack: held.length,
+      later: later.length,
+      resumeAt,
+      ...(byBatch ? { batches: { size: byBatch.size, everyMinutes: byBatch.every_minutes } } : {}),
+    }
   }
 
   // Spread over days by the daily limit: the notice counts everyone it reached, not only today's.

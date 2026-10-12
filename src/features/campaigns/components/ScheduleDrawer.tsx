@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
-import { X, HelpCircle, Sparkles, Crown, AlertCircle, Info } from 'lucide-react'
+import { X, HelpCircle, AlertCircle, Info } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { sendCampaignFn, unconfirmedInListFn, updateCampaignFn } from '../../../server/functions'
+import { BATCH_WAITS, everyText } from '../batches'
 import { sentMessage } from '../sendResult'
 
 interface ScheduleDrawerProps {
@@ -26,7 +27,7 @@ interface ScheduleDrawerProps {
   onSendSuccess?: () => void
 }
 
-type SendOption = 'now' | 'later' | 'best' | 'batches'
+type SendOption = 'now' | 'later' | 'batches'
 
 const hours = (h: number) => (h === 1 ? 'an hour' : `${h} hours`)
 const pct = (rate: number) => `${+(rate * 100).toFixed(1)}%`
@@ -38,6 +39,9 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  const [batchSize, setBatchSize] = useState('100')
+  const [batchWait, setBatchWait] = useState(60)
+  const [batchStart, setBatchStart] = useState<'now' | 'later'>('now')
   const listId = campaignData.selectedListId
   const { data: unconfirmed } = useQuery({
     queryKey: queryKeys.email.listUnconfirmed(listId ?? 0),
@@ -52,6 +56,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
       setScheduleDate('')
       setScheduleTime('')
       setErrorMsg('')
+      setBatchStart('now')
     }
   }, [isOpen])
 
@@ -66,40 +71,49 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
     }
   }, [isOpen])
 
-  const sendMutation = useMutation({
-    mutationFn: async () => {
-      // Step 1: Always update the campaign contents first to make sure current wizard drafts are saved
-      await updateCampaignFn({
-        data: {
-          id: campaignId,
-          name: campaignData.name,
-          subject: campaignData.subject,
-          previewText: campaignData.previewText,
-          sender: { 
-            name: campaignData.senderName, 
-            email: campaignData.senderEmail,
-            id: campaignData.senderId || undefined
-          },
-          htmlContent: campaignData.htmlContent,
-          recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] },
-          // The form's switches too: without them a change made just before sending was lost.
-          unsubscribeEnabled: campaignData.unsubscribeEnabled,
-          trackOpens: campaignData.trackOpens,
-        }
-      })
+  type Batches = { size: number; everyMinutes: number } | null
 
-      // Step 2: Trigger send action
+  // The campaign as the wizard has it now, so what's sent or scheduled is the current draft.
+  const save = (extra: { scheduledAt?: string; batches: Batches }) =>
+    updateCampaignFn({
+      data: {
+        id: campaignId,
+        name: campaignData.name,
+        subject: campaignData.subject,
+        previewText: campaignData.previewText,
+        sender: {
+          name: campaignData.senderName,
+          email: campaignData.senderEmail,
+          id: campaignData.senderId || undefined,
+        },
+        htmlContent: campaignData.htmlContent,
+        recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] },
+        // The form's switches too: without them a change made just before sending was lost.
+        unsubscribeEnabled: campaignData.unsubscribeEnabled,
+        trackOpens: campaignData.trackOpens,
+        ...extra,
+      },
+    })
+
+  const done = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
+    onClose()
+    if (onSendSuccess) {
+      onSendSuccess()
+    } else {
+      navigate({ to: '/marketing/campaigns' })
+    }
+  }
+
+  const sendMutation = useMutation({
+    // All at once, or its first batch now with the rest following by themselves.
+    mutationFn: async (batches: Batches) => {
+      await save({ batches })
       return sendCampaignFn({ data: { id: campaignId } })
     },
     onSuccess: (res: any) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
       alert(sentMessage(res))
-      onClose()
-      if (onSendSuccess) {
-        onSendSuccess()
-      } else {
-        navigate({ to: '/marketing/campaigns' })
-      }
+      done()
     },
     onError: (err: any) => {
       setErrorMsg(err.message || 'Failed to send campaign')
@@ -107,36 +121,10 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   })
 
   const scheduleMutation = useMutation({
-    mutationFn: async (scheduledAtIso: string) => {
-      // Step 1: Update the campaign with both current wizard contents AND the scheduled date
-      return updateCampaignFn({
-        data: {
-          id: campaignId,
-          name: campaignData.name,
-          subject: campaignData.subject,
-          previewText: campaignData.previewText,
-          sender: { 
-            name: campaignData.senderName, 
-            email: campaignData.senderEmail,
-            id: campaignData.senderId || undefined
-          },
-          htmlContent: campaignData.htmlContent,
-          recipients: { listIds: campaignData.selectedListId ? [campaignData.selectedListId] : [] },
-          unsubscribeEnabled: campaignData.unsubscribeEnabled,
-          trackOpens: campaignData.trackOpens,
-          scheduledAt: scheduledAtIso
-        }
-      })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
-      alert('Campaign scheduled successfully!')
-      onClose()
-      if (onSendSuccess) {
-        onSendSuccess()
-      } else {
-        navigate({ to: '/marketing/campaigns' })
-      }
+    mutationFn: async (plan: { scheduledAt: string; batches: Batches }) => save(plan),
+    onSuccess: (_res, plan) => {
+      alert(plan.batches ? `Campaign scheduled: ${plan.batches.size} ${everyText(plan.batches.everyMinutes)} from then.` : 'Campaign scheduled successfully!')
+      done()
     },
     onError: (err: any) => {
       setErrorMsg(err.message || 'Failed to schedule campaign')
@@ -154,35 +142,69 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
 
   const isCampaignInvalid = missingFields.length > 0
 
+  /** The date and time picked, as an ISO string, or null after saying what's wrong with them. */
+  const pickedTime = (): string | null => {
+    if (!scheduleDate || !scheduleTime) {
+      setErrorMsg('Please select a date and time to schedule.')
+      return null
+    }
+    const combinedDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
+    if (isNaN(combinedDateTime.getTime())) {
+      setErrorMsg('Invalid date or time selected.')
+      return null
+    }
+    if (combinedDateTime.getTime() <= Date.now()) {
+      setErrorMsg('Schedule time must be in the future.')
+      return null
+    }
+    return combinedDateTime.toISOString()
+  }
+
+  const startsLater = selectedOption === 'later' || (selectedOption === 'batches' && batchStart === 'later')
+
   const handleConfirm = () => {
     if (isCampaignInvalid) return
     setErrorMsg('')
-    if (selectedOption === 'now') {
-      sendMutation.mutate()
-    } else if (selectedOption === 'later') {
-      if (!scheduleDate || !scheduleTime) {
-        setErrorMsg('Please select a date and time to schedule.')
+    let batches: Batches = null
+    if (selectedOption === 'batches') {
+      const size = Number(batchSize)
+      if (!Number.isInteger(size) || size < 1) {
+        setErrorMsg('Enter how many emails go in each batch.')
         return
       }
-
-      // Convert date and time to ISO format
-      const combinedDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
-      if (isNaN(combinedDateTime.getTime())) {
-        setErrorMsg('Invalid date or time selected.')
-        return
-      }
-
-      if (combinedDateTime.getTime() <= Date.now()) {
-        setErrorMsg('Schedule time must be in the future.')
-        return
-      }
-
-      scheduleMutation.mutate(combinedDateTime.toISOString())
+      batches = { size, everyMinutes: batchWait }
+    }
+    if (startsLater) {
+      const scheduledAt = pickedTime()
+      if (scheduledAt) scheduleMutation.mutate({ scheduledAt, batches })
+    } else {
+      sendMutation.mutate(batches)
     }
   }
 
   const isPending = sendMutation.isPending || scheduleMutation.isPending
-  const isScheduleDisabled = selectedOption === 'later' && (!scheduleDate || !scheduleTime)
+  const isScheduleDisabled = startsLater && (!scheduleDate || !scheduleTime)
+  const INPUT = 'w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:ring-1 focus:ring-accent outline-none'
+  const SMALL_LABEL = 'block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5'
+  const dateAndTime = (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label htmlFor="schedule-date" className={SMALL_LABEL}>Date</label>
+        <input
+          id="schedule-date"
+          type="date"
+          value={scheduleDate}
+          onChange={(e) => setScheduleDate(e.target.value)}
+          min={new Date().toISOString().split('T')[0]}
+          className={INPUT}
+        />
+      </div>
+      <div>
+        <label htmlFor="schedule-time" className={SMALL_LABEL}>Time</label>
+        <input id="schedule-time" type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className={INPUT} />
+      </div>
+    </div>
+  )
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden font-sans">
@@ -288,74 +310,95 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
               {/* Expansible Date-Time Picker if "later" selected */}
               {selectedOption === 'later' && (
                 <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3.5 animate-in fade-in duration-200">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Date</label>
-                      <input
-                        type="date"
-                        value={scheduleDate}
-                        onChange={(e) => setScheduleDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:ring-1 focus:ring-accent outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Time</label>
-                      <input
-                        type="time"
-                        value={scheduleTime}
-                        onChange={(e) => setScheduleTime(e.target.value)}
-                        className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:ring-1 focus:ring-accent outline-none"
-                      />
-                    </div>
-                  </div>
+                  {dateAndTime}
                 </div>
               )}
             </div>
 
-            {/* Option 3: Send at best time */}
-            <div className="flex items-start gap-3.5 p-4 rounded-xl border bg-muted/5 border-border/60 opacity-80 relative overflow-hidden group">
-              <input
-                type="radio"
-                name="send-option"
-                disabled
-                className="mt-1 w-4 h-4 text-muted-foreground border-border/40 shrink-0 cursor-not-allowed"
-              />
-              <div className="flex-1 flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-muted-foreground">Send at best time</span>
-                  <span title="Finds the optimal time when your recipients are most active to maximize open rates.">
-                    <HelpCircle className="w-4 h-4 text-muted-foreground/60 cursor-pointer" />
+            {/* Option 3: Send in batches */}
+            <div className={`rounded-xl border transition-all ${
+              selectedOption === 'batches'
+                ? 'bg-accent/5 border-accent ring-1 ring-accent'
+                : 'bg-muted/10 border-border hover:bg-muted/20'
+            }`}>
+              <label className="flex items-start gap-3.5 p-4 cursor-pointer">
+                <input
+                  type="radio"
+                  name="send-option"
+                  checked={selectedOption === 'batches'}
+                  onChange={() => setSelectedOption('batches')}
+                  className="mt-1 w-4 h-4 text-accent border-border focus:ring-accent accent-accent shrink-0"
+                />
+                <div className="flex-1 flex items-center gap-2">
+                  <span className="font-bold text-sm text-foreground">Send in batches</span>
+                  <span title="Sends to a set number of recipients at a time, with a wait between, instead of everyone at once.">
+                    <HelpCircle className="w-4 h-4 text-muted-foreground/60" />
                   </span>
                 </div>
-                
-                {/* Aura premium badge */}
-                <div className="flex items-center gap-2">
-                  <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-accent/10 text-accent border border-accent/20">
-                    <Sparkles className="w-3 h-3" />
-                    Powered by Aura
+              </label>
+
+              {selectedOption === 'batches' && (
+                <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3.5 animate-in fade-in duration-200">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="batch-size" className={SMALL_LABEL}>Emails per batch</label>
+                      <input
+                        id="batch-size"
+                        type="number"
+                        min={1}
+                        step={1}
+                        inputMode="numeric"
+                        value={batchSize}
+                        onChange={(e) => setBatchSize(e.target.value)}
+                        className={INPUT}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="batch-wait" className={SMALL_LABEL}>Wait between batches</label>
+                      <select id="batch-wait" value={batchWait} onChange={(e) => setBatchWait(Number(e.target.value))} className={INPUT}>
+                        {BATCH_WAITS.map((w) => (
+                          <option key={w.minutes} value={w.minutes}>{w.label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                  <div>
+                    <label htmlFor="batch-start" className={SMALL_LABEL}>First batch</label>
+                    <select id="batch-start" value={batchStart} onChange={(e) => setBatchStart(e.target.value as 'now' | 'later')} className={INPUT}>
+                      <option value="now">Goes now</option>
+                      <option value="later">Goes at a time I choose</option>
+                    </select>
+                  </div>
+                  {batchStart === 'later' && dateAndTime}
+                  <p className="text-xs text-muted-foreground leading-normal">
+                    {unconfirmed && Number(batchSize) >= 1
+                      ? unconfirmed.total <= Number(batchSize)
+                        ? `All ${unconfirmed.total} recipients fit in one batch. `
+                        : `${unconfirmed.total} recipients in ${Math.ceil(unconfirmed.total / Number(batchSize))} batches, ${everyText(batchWait)}. `
+                      : ''}
+                    The batches carry on by themselves. Taking the campaign off the schedule stops the rest.
+                  </p>
                 </div>
-              </div>
+              )}
             </div>
 
-            {/* Option 4: Send in batches */}
-            <div className="flex items-start gap-3.5 p-4 rounded-xl border bg-muted/5 border-border/60 opacity-80 relative overflow-hidden group">
+            {/* Option 4: Send at best time (not built yet) */}
+            <div className="flex items-start gap-3.5 p-4 rounded-xl border bg-muted/5 border-border/60 opacity-80">
               <input
                 type="radio"
                 name="send-option"
                 disabled
+                aria-label="Send at best time (coming soon)"
                 className="mt-1 w-4 h-4 text-muted-foreground border-border/40 shrink-0 cursor-not-allowed"
               />
-              <div className="flex-1 flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-muted-foreground">Send in batches</span>
-                  <span title="Spreads out delivery over a period to prevent server overload or spam triggers.">
-                    <HelpCircle className="w-4 h-4 text-muted-foreground/60 cursor-pointer" />
-                  </span>
-                  <Crown className="w-3.5 h-3.5 text-amber-500" />
-                </div>
+              <div className="flex-1 flex flex-wrap items-center gap-2">
+                <span className="font-bold text-sm text-muted-foreground">Send at best time</span>
+                <span title="Sends to each recipient at the time they're most likely to open.">
+                  <HelpCircle className="w-4 h-4 text-muted-foreground/60" />
+                </span>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
+                  Coming soon
+                </span>
               </div>
             </div>
 
@@ -378,7 +421,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
             isLoading={isPending}
             className="px-6"
           >
-            {selectedOption === 'now' ? 'Send now' : 'Schedule'}
+            {startsLater ? 'Schedule' : selectedOption === 'batches' ? 'Send first batch' : 'Send now'}
           </Button>
         </div>
 

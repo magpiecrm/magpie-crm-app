@@ -156,6 +156,7 @@ export const updateCampaignFn = createServerFn({ method: 'POST' })
     scheduledAt?: string;
     unsubscribeEnabled?: boolean;
     trackOpens?: boolean;
+    batches?: { size: number; everyMinutes: number } | null;
   }) => d)
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')

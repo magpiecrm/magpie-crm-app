@@ -21,6 +21,7 @@ import {
   FilePen,
 } from 'lucide-react'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
+import { everyText } from '../../../features/campaigns/batches'
 import { HeldBackBanner } from '../../../features/campaigns/components/HeldBackBanner'
 import {
   ClicksTab,
@@ -170,7 +171,7 @@ function CampaignDetailPage() {
                   ? `Sent on ${formattedDate}`
                   : isScheduled
                     ? pacing
-                      ? `Sending over several days: ${pacing.sent} sent, ${pacing.left} to go`
+                      ? `Sending ${campaign.batches ? 'in batches' : 'over several days'}: ${pacing.sent} sent, ${pacing.left} to go`
                       : `Scheduled for ${when(campaign.scheduledAt!)}`
                     : isSending
                       ? 'Sending now'
@@ -235,7 +236,9 @@ function CampaignDetailPage() {
                   ? 'Results appear here as soon as it has gone out.'
                   : isScheduled
                     ? pacing
-                      ? 'Your daily sending limit spreads this campaign over several days. It carries on by itself; Settings → Sending shows the limit and when it goes up.'
+                      ? campaign.batches
+                        ? `It goes out ${campaign.batches.size} at a time, ${everyText(campaign.batches.everyMinutes)}, and carries on by itself. Taking it off the schedule stops the rest.`
+                        : 'Your daily sending limit spreads this campaign over several days. It carries on by itself; Settings → Sending shows the limit and when it goes up.'
                       : 'It sends on its own at that time. Results appear here once it has gone out.'
                     : 'This campaign is a draft. Send it, or schedule it from the editor.'}
               </p>
