@@ -25,6 +25,10 @@ describe('plan maths', () => {
     expect(formatPence(1100)).toBe('£11.00')
     expect(unitPrice(kinds[0])).toBe('£0.009 each')
     expect(unitPrice(kinds[2])).toBe('£0.15 per 1,000')
+    // A plan the host bills in dollars: its amounts are cents.
+    expect(formatPence(1500, 'USD')).toBe('$15.00')
+    expect(unitPrice({ ...kinds[0], unitMillipence: 600 }, 'USD')).toBe('$0.006 each')
+    expect(unitPrice({ ...kinds[2], unitMillipence: 25 }, 'USD')).toBe('$0.25 per 1,000')
   })
 
   it('says what goes up and what goes down', () => {

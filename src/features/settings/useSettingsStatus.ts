@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
+import { formatPence } from './planMath'
 import type { SettingsSection } from './sections'
 
 export type StatusLevel = 'ok' | 'warning' | 'error' | 'info'
@@ -110,7 +111,7 @@ export function useSettingsStatus(): {
   const b = billing.data
   if (b) {
     const on = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
-    const price = b.monthlyPence !== null ? `${(b.monthlyPence / 100).toLocaleString('en-GB', { style: 'currency', currency: b.currency })} a month` : 'Your plan'
+    const price = b.monthlyPence !== null ? `${formatPence(b.monthlyPence, b.currency)} a month` : 'Your plan'
     statuses.billing =
       b.status === 'past_due'
         ? { level: 'error', text: "Your last payment didn't go through. Update your card.", action: 'Update' }

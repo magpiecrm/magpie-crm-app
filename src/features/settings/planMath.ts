@@ -23,19 +23,26 @@ export function capped(plan: Plan, kinds: CatalogueKind[]): Plan {
   return out
 }
 
-/** The monthly price in pence (unit prices are in thousandths of a penny). */
+/**
+ * How a currency's amounts are written: dollars the American way ("$15.00"),
+ * since British formatting writes them "US$15.00". The host says which
+ * currency a plan is in; amounts are in its smallest unit (pence, or cents).
+ */
+export const moneyLocale = (currency: string) => (currency.toUpperCase() === 'USD' ? 'en-US' : 'en-GB')
+
+/** The monthly price in pence or cents (unit prices are in thousandths of one). */
 export function monthlyPence(plan: Plan, kinds: CatalogueKind[]): number {
   return kinds.reduce((sum, k) => sum + (plan[k.id] * k.unitMillipence) / 1000, 0)
 }
 
 export function formatPence(pence: number, currency = 'GBP'): string {
-  return (pence / 100).toLocaleString('en-GB', { style: 'currency', currency, minimumFractionDigits: 2 })
+  return (pence / 100).toLocaleString(moneyLocale(currency), { style: 'currency', currency, minimumFractionDigits: 2 })
 }
 
 /** A unit price as people read it: "£0.009 each", or "£1.50 per 1,000". */
 export function unitPrice(kind: CatalogueKind, currency = 'GBP'): string {
   const pounds = (kind.unitMillipence * kind.per) / 100_000
-  const text = pounds.toLocaleString('en-GB', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 4 })
+  const text = pounds.toLocaleString(moneyLocale(currency), { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 4 })
   return kind.per === 1 ? `${text} each` : `${text} per ${kind.per.toLocaleString('en-GB')}`
 }
 
