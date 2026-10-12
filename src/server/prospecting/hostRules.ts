@@ -51,7 +51,9 @@ export interface SharedDatabase {
   search: boolean
   /** Whether this copy sends it the verified contacts it saves from prospect search. */
   contributing: boolean
-  /** The Contributor Terms someone here agrees to when joining, and where to read them. */
+  /** The host has every copy contribute under its terms until someone there switches it off, rather than asking each to join. */
+  byDefault: boolean
+  /** The Contributor Terms contributing is under, and where to read them. */
   termsVersion: string
   termsUrl: string | null
 }
@@ -105,7 +107,7 @@ function sharedDatabaseFrom(p: any): SharedDatabase | null {
   const search = p?.search === true
   if ((!canJoin && !search) || typeof p.termsVersion !== 'string') return null
   const termsUrl = typeof p.termsUrl === 'string' && /^https:\/\//.test(p.termsUrl) ? p.termsUrl : null
-  return { canJoin, search, contributing: p.contributing === true, termsVersion: p.termsVersion, termsUrl }
+  return { canJoin, search, contributing: p.contributing === true, byDefault: p.byDefault === true, termsVersion: p.termsVersion, termsUrl }
 }
 
 /** Daily sending limits the host set for this copy, if any. */

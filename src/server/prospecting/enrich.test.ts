@@ -792,7 +792,7 @@ describe("searchPeople with the host's shared database", () => {
   /** A host holding these people: handle → what it knows. */
   function hosted(contributing: boolean, held: Record<string, { company: string; companyRef: string | null; verifiedAt?: string; title?: string }>) {
     Object.assign(process.env, ENV)
-    ;(globalThis as any).__hostRules = { rules: {}, pool: { canJoin: true, search: true, contributing, termsVersion: '1', termsUrl: null } }
+    ;(globalThis as any).__hostRules = { rules: {}, pool: { canJoin: true, search: true, contributing, byDefault: false, termsVersion: '1', termsUrl: null } }
     const asked: string[][] = []
     vi.stubGlobal('fetch', async (target: string, init: RequestInit) => {
       if (!String(target).endsWith('/v1/pool/known')) return Response.json({})

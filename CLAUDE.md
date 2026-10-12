@@ -39,12 +39,14 @@ key), with the app's actions as tools.
     company's name is taken, or the website on a LinkedIn company page the
     search turns up under the same name, and what was found is kept by
     company name (`company_sites`). One thing does leave a copy:
-    `sharedPeople.ts`, in a hosted copy whose owner agreed to its host's
-    Contributor Terms (Settings → Prospect search), sends the host each
+    `sharedPeople.ts`, in a hosted copy the host says contributes (someone
+    there agreed to its Contributor Terms in Settings → Prospect search, or
+    the host has every copy contribute until that's switched off there),
+    sends the host each
     contact saved from search with a verified email, for the host's shared
     database. The host is that database's controller and sends the people in
     it their notice; nothing imported, guessed or signed-up is ever sent, and
-    a copy that isn't hosted or hasn't joined sends nothing. Where the host
+    a copy that isn't hosted or isn't contributing sends nothing. Where the host
     has switched searching on, any hosted copy's search also asks it which of
     the people found it already holds (by profile hash): their job and
     employer then come from the host instead of a profile lookup, and their

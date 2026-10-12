@@ -1,17 +1,19 @@
 // In a hosted copy (PROSPECTING_MANAGED, e.g. MagpieCRM Cloud), the host may
-// run a shared database of business contacts: copies that choose to
-// contribute send it the people they save from prospect search with a
+// run a shared database of business contacts: copies that contribute
+// send it the people they save from prospect search with a
 // verified email, so the next copy looking for the same person doesn't buy
 // them again. The host is the controller of that database: it tells each
 // person before anyone can be shown them, and takes their opt-out.
 //
 // This is the one place a copy sends personal data to its host, and only
-// once someone here has agreed to the host's Contributor Terms (Settings →
-// Prospect search). What's sent is what search itself held: name, job title,
+// while the host says this copy contributes: because someone here agreed to
+// the host's Contributor Terms (Settings → Prospect search), or, where the
+// host's own terms have every copy contribute, until someone here switches
+// it off in the same place. What's sent is what search itself held: name, job title,
 // employer, country, profile address and the verified work email. Never an
 // imported or signed-up contact, a guessed address, notes, lists, or
 // anything about what was emailed to them. A copy that isn't hosted, or
-// hasn't joined, sends nothing. Contacts saved the same way before the copy
+// isn't contributing, sends nothing. Contacts saved the same way before the copy
 // joined are offered too, a batch at a time, except anyone who has
 // unsubscribed, complained or bounced here.
 //

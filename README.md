@@ -224,13 +224,15 @@ contacts, and that is the only point where emails are looked up.
   opt-outs between them through `/api/usage/suppressions`, so an opt-out from
   one copy applies to all of them.
 - **Shared database** (hosted copies only): a host can keep one database of
-  business contacts for all its copies. A copy takes part only once someone
-  there agrees to the host's Contributor Terms in **Settings → Prospect
-  search**; from then on each contact saved from prospect search with a
-  verified email is sent to the host (name, job title, employer, country,
+  business contacts for all its copies. A copy takes part only while its host
+  says it contributes: either someone there agreed to the host's Contributor
+  Terms in **Settings → Prospect search**, or the host's terms have every
+  copy contribute until it's switched off in the same place (MagpieCRM Cloud
+  does this). While it contributes, each contact saved from prospect search
+  with a verified email is sent to the host (name, job title, employer, country,
   profile address and the email; `sharedPeople.ts`). Imported and signed-up
   contacts, guessed addresses, lists and notes never are. Contacts saved the
-  same way before joining are offered too, in batches, except anyone who has
+  same way before it started contributing are offered too, in batches, except anyone who has
   unsubscribed, complained or bounced. The host is the
   controller of that database: it tells each person and takes their opt-outs,
   which reach every copy through the shared opt-out list. A copy you run
