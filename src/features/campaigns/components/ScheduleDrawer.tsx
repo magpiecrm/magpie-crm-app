@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
 import { X, HelpCircle, AlertCircle, Info } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
+import { Select } from '../../../components/ui/Select'
 import { sendCampaignFn, unconfirmedInListFn, updateCampaignFn } from '../../../server/functions'
 import { BATCH_WAITS, everyText } from '../batches'
 import { sentMessage } from '../sendResult'
@@ -355,19 +356,19 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
                     </div>
                     <div>
                       <label htmlFor="batch-wait" className={SMALL_LABEL}>Wait between batches</label>
-                      <select id="batch-wait" value={batchWait} onChange={(e) => setBatchWait(Number(e.target.value))} className={INPUT}>
+                      <Select id="batch-wait" value={batchWait} onChange={(e) => setBatchWait(Number(e.target.value))} className={`${INPUT} text-left`}>
                         {BATCH_WAITS.map((w) => (
                           <option key={w.minutes} value={w.minutes}>{w.label}</option>
                         ))}
-                      </select>
+                      </Select>
                     </div>
                   </div>
                   <div>
                     <label htmlFor="batch-start" className={SMALL_LABEL}>First batch</label>
-                    <select id="batch-start" value={batchStart} onChange={(e) => setBatchStart(e.target.value as 'now' | 'later')} className={INPUT}>
+                    <Select id="batch-start" value={batchStart} onChange={(e) => setBatchStart(e.target.value as 'now' | 'later')} className={`${INPUT} text-left`}>
                       <option value="now">Goes now</option>
                       <option value="later">Goes at a time I choose</option>
-                    </select>
+                    </Select>
                   </div>
                   {batchStart === 'later' && dateAndTime}
                   <p className="text-xs text-muted-foreground leading-normal">

@@ -5,7 +5,9 @@ import { Plus, Play, Edit2, Copy, Loader2, Trash2 } from 'lucide-react'
 
 import { useState } from 'react'
 import { campaignsFn, sendCampaignFn, deleteCampaignFn, duplicateCampaignFn } from '../../../server/functions'
+import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { CampaignWizard } from '../../../features/campaigns/components/CampaignWizard'
+import { sortCampaigns } from '../../../features/campaigns/sort'
 import { Pagination } from '../../../components/ui/Pagination'
 import { sentMessage } from '../../../features/campaigns/sendResult'
 
@@ -250,7 +252,8 @@ function CampaignsPage() {
     queryFn: () => campaignsFn(),
   })
 
-  const campaigns = campaignsData?.campaigns || []
+  const [sort, setSort] = useCampaignSort('campaigns')
+  const campaigns = sortCampaigns(campaignsData?.campaigns || [], sort)
 
   // Slice campaigns for current page
   const paginatedCampaigns = campaigns.slice(
@@ -288,6 +291,18 @@ function CampaignsPage() {
           New Campaign
         </button>
       </div>
+
+      {campaigns.length > 1 && (
+        <div className="flex justify-end mb-4">
+          <CampaignSort
+            value={sort}
+            onChange={(next) => {
+              setSort(next)
+              setCurrentPage(1)
+            }}
+          />
+        </div>
+      )}
 
       <div>
         {isLoading ? (

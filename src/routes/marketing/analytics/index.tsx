@@ -5,6 +5,8 @@ import { useState } from 'react'
 import { Calendar, HelpCircle, X } from 'lucide-react'
 import { Badge } from '../../../components/ui/Badge'
 import { campaignsFn } from '../../../server/functions'
+import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
+import { sortCampaigns } from '../../../features/campaigns/sort'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import type { ExportColumn } from '../../../utils/export'
@@ -133,10 +135,11 @@ function AnalyticsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
 
+  const [sort, setSort] = useCampaignSort('analytics')
   const campaigns = campaignsData?.campaigns || []
 
-  // Filter campaigns by date range
-  const filteredCampaigns = campaigns.filter((c: any) => {
+  // Filter campaigns by date range, in the order chosen (newest first unless changed)
+  const filteredCampaigns = sortCampaigns(campaigns, sort).filter((c: any) => {
     const dateStr = c.sentDate || c.createdAt
     if (!dateStr) return true
     const cDate = new Date(dateStr)
@@ -396,12 +399,21 @@ function AnalyticsPage() {
           <div className="card border border-border overflow-hidden bg-card">
             <div className="px-6 py-4 border-b border-border flex justify-between items-center bg-muted/5">
               <h3 className="font-display font-medium text-foreground">Email Campaigns</h3>
+              <div className="flex flex-wrap items-center justify-end gap-3">
+              <CampaignSort
+                value={sort}
+                onChange={(next) => {
+                  setSort(next)
+                  setCurrentPage(1)
+                }}
+              />
               <ExportMenu
                 filename="email_campaigns"
                 sheetName="Campaigns"
                 rows={filteredCampaigns}
                 columns={campaignExportColumns}
               />
+              </div>
             </div>
             
             {/* Mobile card list — 10 columns can't be read on a phone */}
