@@ -28,31 +28,73 @@ export function refineFromProfile(person: PersonResult, profile: PersonResult | 
 type Word = { text: string; at: number }
 
 const wordsIn = (s: string): Word[] =>
-  [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({ text: m[0].normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase(), at: m.index! }))
+  [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => ({ text: m[0].normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase(), at: m.index! }))
 
 const LEGAL_ENDING = new Set(['ltd', 'limited', 'llc', 'llp', 'inc', 'plc', 'gmbh', 'corp', 'corporation'])
+
+/** Words a job is named with. A part of a title with none of them is a company's name or a slogan. */
+const JOB_WORDS = new Set(
+  `accountant administrator adviser advisor agent analyst architect artist assistant associate attorney author broker buyer ceo cfo chair
+  chairman chairperson chairwoman chief cio cmo coach cofounder consultant controller coo coordinator copywriter counsel creator cro cto dean
+  designer developer director editor engineer entrepreneur evp executive founder head instructor investor lawyer lead leader manager marketer
+  md member mentor officer operator owner partner planner president principal producer professor proprietor publisher recruiter rep
+  representative researcher scientist secretary speaker specialist strategist superintendent supervisor svp teacher technician trainer
+  treasurer trustee vp writer`.split(/\s+/),
+)
+/** "Lead generation" is something sold, not someone's job. */
+const namesJob = (words: Word[]) => words.some((w, i) => JOB_WORDS.has(w.text) && !(w.text === 'lead' && /^gen/.test(words[i + 1]?.text ?? '')))
+/** Sides of a business that aren't lines of work in themselves. */
+const SIDES = new Set(
+  `account accounts alliances analytics and brand channel client commercial compliance corporate customer data development enterprise global
+  growth innovation international operations partnerships people performance procurement product programs quality regional research revenue
+  risk strategic strategy success supply talent`.split(/\s+/),
+)
+/** "VP, Marketing", "SVP, Strategic Account Sales": the part after says which side of the business. */
+const namesSide = (words: Word[]) => words.length > 0 && words.length <= 4 && words.every((w) => isLineOfWork(w.text) || SIDES.has(w.text))
 
 /** What joins a job to its employer: "Owner, Acme", "CEO @ Acme", "Founder at Acme"… */
 const JOINED = /(?:[,:;|@(/\-–—]\s*|\sat\s+)(?:the\s+)?$/i
 /** …and "Founder of Acme", which is also how a job is said ("Head of Sales"). */
 const JOINED_BY_OF = /\s(?:of|for)\s+(?:the\s+)?$/i
-const TRAILING = /(?:[\s,:;|@(/&+\-–—]+|\s(?:of|at|for|and|the))$/i
+const TRAILING = /(?:[\s,:;|@(/&+\-–—]+|\s(?:of|at|for|and|the|a|an|in|with|to))$/i
+/** Where one part of a title ends: punctuation, a spaced dash or slash, an emoji, " at ", or a capital I standing in for a bar. */
+const PART_ENDS = /\s*[,;:|(]\s*|\s*\/\/\s*|\s+[-–—/]\s+|\s*[\p{Extended_Pictographic}\p{So}][\p{Extended_Pictographic}\p{So}\p{M}\u200d]*\s*|\s+(?:at|@)\s+|@|\s+I\s+/gu
+/**
+ * Someone is the owner, founder or chief of an organisation, never of a
+ * side of one, so what follows "of" there is the organisation's name
+ * ("Owner of Simplicity Design", "COO of Hometown Marketing"), unless it's
+ * plainly a side after all ("President of Sales"). "Head of", "Director of"
+ * and "VP of" are followed by the job itself.
+ */
+const HEAD_OF_AN_ORGANISATION =
+  /\b(?:owner|co-?owner|founder|co-?founder|proprietor|principal|partner|(?<!vice[ -])president|chair(?:man|woman|person)?|managing director|ceo|coo|cfo|cto|cmo|cio|cro|chief [\p{L}]+(?: [\p{L}]+)? officer)\s+(?:of|for)\s+(?!the board\b)/iu
 
 /**
- * A job title without the employer's name in it. Many people write their
- * title, or their headline, as "Owner, Acme Marketing", "Founder of Acme" or
- * "CEO Acme Marketing: Chairman, Some Society"; the employer has its own
- * column, so the title stops where its name starts. The name counts when two
- * or more of its opening words are there ("Teak Media + Communication" for
- * Teak Media Communications), or all of a one-word name or its initials
- * after something that joins them (", ", " of ", " - "): never a plain space,
+ * A job title on its own: without the employer's name, another
+ * organisation's, or a slogan. Many people write their title, or their
+ * headline, as "Owner, Acme Marketing", "Founder of Acme" or "CEO Acme
+ * Marketing: Chairman, Some Society - Helping brands grow"; the employer
+ * has its own column.
+ *
+ * The title stops where the employer's name starts. The name counts when
+ * two or more of its opening words are there ("Teak Media + Communication"
+ * for Teak Media Communications), or all of a one-word name or its initials
+ * after something that joins them (", ", " of ", " - "), or straight after a
+ * job word ("Managing Director Colourmedia"): never after just any word,
  * which would take "Senior Curator" for a job at Curator. Words that name a
  * line of work count only as the whole name after punctuation or "at", so
  * "Director of Digital Marketing" at Digital Marketing Agency keeps its job.
- * "As CEO" loses its "As". A title that would be left empty stays as it was.
+ *
+ * Then it stops at the first part (after a comma, a dash, a colon…) that
+ * names no job and no side of the business, and at "of" after owner,
+ * founder and the like. A leading "As" or bullet goes. A title that would be
+ * left empty stays as it was.
  */
 export function titleAlone(title: string, company: string): string {
-  const opening = title.trim().replace(/^as\s+(?:an?\s+|the\s+)?(?=\S)/i, '')
+  const opening = title
+    .trim()
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .replace(/^as\s+(?:an?\s+|the\s+)?(?=\S)/i, '')
   // The name as people say it: without a leading "The" or a closing "Ltd".
   const said = wordsIn(company).filter((w, i) => !(i === 0 && w.text === 'the'))
   const name = said.length > 1 && LEGAL_ENDING.has(said.at(-1)!.text) ? said.slice(0, -1) : said
@@ -67,9 +109,31 @@ export function titleAlone(title: string, company: string): string {
     const written = opening.slice(words[i].at, words[i].at + name.length)
     const initials = name.length >= 3 && words[i].text === name.map((w) => w.text[0]).join('') && written === written.toUpperCase()
     const ordinary = run > 0 && name.slice(0, run).every((w) => isLineOfWork(w.text))
-    if (ordinary ? whole && joined : run >= 2 || (whole && name[0].text.length >= 3 && (joined || JOINED_BY_OF.test(before))) || (initials && joined)) cut = words[i].at
+    const afterJob = JOB_WORDS.has(words[i - 1].text) && /^\s+$/.test(opening.slice(words[i - 1].at + words[i - 1].text.length, words[i].at))
+    if (ordinary ? whole && joined : run >= 2 || (whole && name[0].text.length >= 3 && (joined || afterJob || JOINED_BY_OF.test(before))) || (initials && joined)) cut = words[i].at
   }
   let alone = cut === -1 ? opening : opening.slice(0, cut)
+  // "Acme Marketing Founder": the name first, then the job.
+  if (name.length >= 2 && words.length > name.length && name.every((w, i) => words[i].text === w.text) && !name.every((w) => isLineOfWork(w.text))) alone = alone.slice(words[name.length].at)
+
+  // Its parts, from the first that names a job to the last before one that
+  // names neither a job nor a side of the business: what comes before is a
+  // slogan, what comes after another organisation or a description.
+  const parts: Array<{ from: number; to: number; words: Word[] }> = []
+  let at = 0
+  for (const m of [...alone.matchAll(PART_ENDS), null]) {
+    const to = m ? m.index : alone.length
+    parts.push({ from: at, to, words: wordsIn(alone.slice(at, to)) })
+    at = m ? m.index + m[0].length : to
+  }
+  const spoken = parts.filter((p) => p.words.length)
+  const first = Math.max(0, spoken.findIndex((p) => namesJob(p.words)))
+  let last = first
+  while (spoken[last + 1] && (namesJob(spoken[last + 1].words) || namesSide(spoken[last + 1].words))) last++
+  if (spoken.length) alone = alone.slice(spoken[first].from, spoken[last].to)
+  const of = alone.match(HEAD_OF_AN_ORGANISATION)
+  if (of && !namesSide(wordsIn(alone.slice(of.index! + of[0].length)))) alone = alone.slice(0, of.index! + of[0].search(/\s+(?:of|for)\s+$/i))
+
   for (let before = ''; before !== alone; ) {
     before = alone
     alone = alone.replace(TRAILING, '')
