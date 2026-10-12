@@ -130,6 +130,9 @@ const LINE_OF_WORK = new Set(
 /** "The food industry", "hospitality sector": the same, said in full. */
 const SAID_IN_FULL = new Set(['industry', 'sector', 'field', 'trade', 'and', 'of', 'in', 'at'])
 
+/** Whether a word names a line of work ("marketing", "media") rather than anyone in particular. */
+export const isLineOfWork = (word: string) => LINE_OF_WORK.has(word.toLowerCase())
+
 const describesWork = (key: string) => {
   const words = key.split(' ')
   return words.length <= 4 && words.some((w) => LINE_OF_WORK.has(w)) && words.every((w) => LINE_OF_WORK.has(w) || SAID_IN_FULL.has(w))
