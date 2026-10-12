@@ -219,7 +219,15 @@ async function processPerson(
   )
   deps.db.addContactToList(listId, found.email)
 
+  // Where their profile is and the country on it, kept with the contact. A
+  // contact saved before these were kept gets them the next time they're saved.
+  const profile = {
+    ...(person.profileUrl ? { linkedin_url: person.profileUrl } : {}),
+    ...(person.country?.trim() ? { country: person.country.trim() } : {}),
+  }
   if (existing) {
+    const missing = Object.fromEntries(Object.entries(profile).filter(([key]) => !existing[key as keyof typeof profile]))
+    if (Object.keys(missing).length) deps.db.setContactProspectFields(found.email, missing)
     return { ...base, status: 'already_saved', email: found.email, emailStatus: existing.email_status ?? found.status }
   }
 
@@ -228,6 +236,7 @@ async function processPerson(
     source: held ? 'shared' : person.source,
     email_status: found.status,
     notice_status: 'pending',
+    ...profile,
   })
   deps.db.addDisclosure({
     contact_hash: emailHash(found.email),

@@ -176,6 +176,21 @@ describe('saveProspects', () => {
     expect(JSON.stringify(entry)).not.toMatch(/jane|smith|acme|linkedin/i)
   })
 
+  it("keeps their LinkedIn profile and country with the contact, and fills them in for one saved before they were kept", async () => {
+    const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe', 'bob.jones@acme.com': 'safe' }), db: fakeDb as any }
+    await saveProspects(1, [person('Jane', 'Smith')], deps)
+    expect(state.contacts[0]).toMatchObject({ email: 'jane.smith@acme.com', linkedin_url: 'https://www.linkedin.com/in/jane-smith', country: 'United Kingdom' })
+    // Someone whose country the search didn't give is saved without one, not with a blank.
+    await saveProspects(1, [person('Bob', 'Jones', { country: null })], deps)
+    expect(state.contacts[1]).toMatchObject({ email: 'bob.jones@acme.com', linkedin_url: 'https://www.linkedin.com/in/bob-jones' })
+    expect('country' in state.contacts[1]).toBe(false)
+    // Saved again later with the country known: only what was missing is added.
+    ;(state.contacts[1] as any).linkedin_url = 'https://www.linkedin.com/in/bob-the-first'
+    const again = await saveProspects(1, [person('Bob', 'Jones', { country: 'Ireland' })], deps)
+    expect(again.outcomes[0]).toMatchObject({ status: 'already_saved' })
+    expect(state.contacts[1]).toMatchObject({ linkedin_url: 'https://www.linkedin.com/in/bob-the-first', country: 'Ireland' })
+  })
+
   it('passes each newly saved contact on for the shared database, and nobody already saved', async () => {
     const contributed: unknown[] = []
     const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any, contribute: (...args: unknown[]) => void contributed.push(args) }

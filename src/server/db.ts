@@ -92,6 +92,9 @@ export interface DbSchema {
     source?: string
     /** Result of email finding for prospected contacts. */
     email_status?: EmailStatus
+    /** Their LinkedIn profile and the country on it, for contacts saved from prospect search (0.9.71+). */
+    linkedin_url?: string
+    country?: string
     /** Whether this person has been told we hold their details. Prospected contacts start `pending`. */
     notice_status?: NoticeStatus
     /**
@@ -1013,7 +1016,7 @@ class JsonDb {
   }
 
   /** Patches the prospecting fields on an existing contact without touching its status. */
-  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status'>>) {
+  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status' | 'linkedin_url' | 'country'>>) {
     const contact = this.getContact(email)
     if (!contact) return null
     Object.assign(contact, patch)

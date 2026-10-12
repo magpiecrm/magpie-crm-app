@@ -390,6 +390,20 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                 <span className="text-muted-foreground block font-medium mb-0.5">COMPANY</span>
                 <span className="font-bold text-foreground">{contact.attributes?.COMPANY || '—'}</span>
               </div>
+              <div>
+                <span className="text-muted-foreground block font-medium mb-0.5">COUNTRY</span>
+                <span className="font-bold text-foreground">{contact.country || '—'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block font-medium mb-0.5">LINKEDIN</span>
+                {contact.linkedinUrl ? (
+                  <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent hover:underline break-all">
+                    {contact.linkedinUrl.replace(/^https?:\/\/(www\.)?/, '')}
+                  </a>
+                ) : (
+                  <span className="font-bold text-foreground">—</span>
+                )}
+              </div>
               {fieldDefs.map(field => (
                 <div key={field.key}>
                   <span className="text-muted-foreground block font-medium mb-0.5">{field.label}</span>

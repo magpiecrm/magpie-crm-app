@@ -1,4 +1,5 @@
 import { db, type RecipientRecord } from './db'
+import type { ContactCustomValue } from '../features/contacts/contactFields'
 import { sendMail } from './nodemailer'
 import { encryptToken } from './crypto'
 import { notify } from './notify'
@@ -97,6 +98,29 @@ export async function getLists() {
   return { lists, count: lists.length }
 }
 
+/** A contact as the Contacts page gets it: what's shown, filtered on and exported. */
+function contactForPage(r: any) {
+  return {
+    email: r.email as string,
+    status: r.status as string,
+    createdAt: r.created_at as string,
+    attributes: {
+      FIRSTNAME: r.first_name || '',
+      LASTNAME: r.last_name || '',
+      JOB_TITLE: r.job_title || '',
+      COMPANY: r.company || '',
+    },
+    custom: (r.custom ?? {}) as Record<string, ContactCustomValue>,
+    /** Their company record, for linking to it. */
+    companyId: (r.company_id as string | null | undefined) ?? null,
+    /** For contacts saved from prospect search: their LinkedIn profile, its country, where they came from and how sure the email is. */
+    linkedinUrl: (r.linkedin_url as string | undefined) ?? '',
+    country: (r.country as string | undefined) ?? '',
+    source: (r.source as string | undefined) ?? '',
+    emailStatus: (r.email_status as string | undefined) ?? '',
+  }
+}
+
 export async function getContacts(limit?: number, offset?: number) {
   // Contacts added since companies were last read get theirs (sales/companies.ts).
   const { syncCompanies } = await import('./sales/companies')
@@ -111,20 +135,7 @@ export async function getContacts(limit?: number, offset?: number) {
   }
 
   const rows = db.query(query).all(...params) as any[]
-  const contacts = rows.map(r => ({
-    email: r.email,
-    status: r.status,
-    createdAt: r.created_at,
-    attributes: {
-      FIRSTNAME: r.first_name || '',
-      LASTNAME: r.last_name || '',
-      JOB_TITLE: r.job_title || '',
-      COMPANY: r.company || '',
-    },
-    custom: r.custom ?? {},
-    /** Their company record, for linking to it. */
-    companyId: (r.company_id as string | null | undefined) ?? null,
-  }))
+  const contacts = rows.map(contactForPage)
 
   const totalCount = (db.query('SELECT COUNT(*) as count FROM contacts').get() as { count: number }).count
 
@@ -139,18 +150,7 @@ export async function getListContacts(listId: number) {
     WHERE lc.list_id = ?
   `).all(listId) as any[]
 
-  const contacts = rows.map(r => ({
-    email: r.email,
-    status: r.status,
-    createdAt: r.created_at,
-    attributes: {
-      FIRSTNAME: r.first_name || '',
-      LASTNAME: r.last_name || '',
-      JOB_TITLE: r.job_title || '',
-      COMPANY: r.company || '',
-    },
-    custom: r.custom ?? {},
-  }))
+  const contacts = rows.map(contactForPage)
 
   return { contacts, count: contacts.length }
 }

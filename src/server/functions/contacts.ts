@@ -107,6 +107,8 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
           COMPANY: contact.company || '',
         },
         custom: (contact.custom ?? {}) as Record<string, ContactCustomValue>,
+        linkedinUrl: (contact.linkedin_url as string | undefined) ?? '',
+        country: (contact.country as string | undefined) ?? '',
       },
       fieldDefs: db.getContactFields(),
       lists,

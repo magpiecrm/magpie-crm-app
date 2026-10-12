@@ -16,6 +16,8 @@ export interface ExportableContact {
     COMPANY?: string
   }
   custom?: Record<string, ContactCustomValue>
+  country?: string
+  linkedinUrl?: string
 }
 
 /**
@@ -28,6 +30,8 @@ const contactExportColumns: ExportColumn<ExportableContact>[] = [
   { header: 'Last Name', value: c => c.attributes?.LASTNAME ?? '' },
   { header: 'Job Title', value: c => c.attributes?.JOB_TITLE ?? '' },
   { header: 'Company', value: c => c.attributes?.COMPANY ?? '' },
+  { header: 'Country', value: c => c.country ?? '' },
+  { header: 'LinkedIn URL', value: c => c.linkedinUrl ?? '' },
   { header: 'Status', value: c => c.status ?? '' },
   { header: 'Created At', value: c => c.createdAt ?? '' },
 ]

@@ -22,13 +22,16 @@ import {
   BellOff,
   AlertTriangle,
   HelpCircle,
-  Repeat
+  Repeat,
+  ExternalLink
 } from 'lucide-react'
 import { Avatar } from '../../../components/ui/Avatar'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { ContactDetails } from '../../../features/contacts/components/ContactDetails'
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
+import { ActiveFilters, AddFilterButton, newFilter } from '../../../features/contacts/components/ContactFilters'
+import { applyFilters, filterFields, isComplete, type ContactFilter } from '../../../features/contacts/contactFilters'
 import { Select } from '../../../components/ui/Select'
 import { EnrollDialog } from '../../../features/sequences/components/EnrollDialog'
 
@@ -87,6 +90,8 @@ function ContactsPage() {
   const [selectedListId, setSelectedListId] = useState<number | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [showListDropdown, setShowListDropdown] = useState(false)
+  const [filters, setFilters] = useState<ContactFilter[]>([])
+  const [showAddFilter, setShowAddFilter] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
   const [selectedEmails, setSelectedEmails] = useState<string[]>([])
@@ -180,24 +185,32 @@ function ContactsPage() {
 
   const isLoading = selectedListId !== null ? isLoadingListContacts : isLoadingAllContacts
 
-  // Client-side search filtering
+  // What can be filtered on: the built-in fields, with the values each has among these contacts, and the custom ones.
+  const fields = useMemo(() => filterFields(contactFields, rawContacts), [contactFields, rawContacts])
+  const activeFilters = useMemo(() => filters.filter((f) => isComplete(f, fields.find((x) => x.key === f.field))), [filters, fields])
+
+  // Client-side search and filtering
   const contacts = useMemo(() => {
-    if (!searchTerm.trim()) return rawContacts
+    const filtered = applyFilters(rawContacts as any[], filters, fields)
+    if (!searchTerm.trim()) return filtered
     const term = searchTerm.toLowerCase()
-    return rawContacts.filter((c: any) => {
+    return filtered.filter((c: any) => {
       const email = (c.email || '').toLowerCase()
       const firstName = (c.attributes?.FIRSTNAME || '').toLowerCase()
       const lastName = (c.attributes?.LASTNAME || '').toLowerCase()
       const company = (c.attributes?.COMPANY || '').toLowerCase()
       const jTitle = (c.attributes?.JOB_TITLE || '').toLowerCase()
-      return email.includes(term) || firstName.includes(term) || lastName.includes(term) || company.includes(term) || jTitle.includes(term)
+      const country = (c.country || '').toLowerCase()
+      return email.includes(term) || firstName.includes(term) || lastName.includes(term) || company.includes(term) || jTitle.includes(term) || country.includes(term)
     })
-  }, [rawContacts, searchTerm])
+  }, [rawContacts, searchTerm, filters, fields])
 
-  // Reset page when search or list changes
+  // Reset page when search, list or filters change. The filters are compared
+  // by what they say: the list itself is a new one on every render.
+  const filterKey = JSON.stringify(activeFilters.map((f) => [f.field, f.op, f.value]))
   useMemo(() => {
     setCurrentPage(1)
-  }, [searchTerm, selectedListId])
+  }, [searchTerm, selectedListId, filterKey])
 
   // Slice contacts for current page
   const paginatedContacts = useMemo(() => {
@@ -560,10 +573,7 @@ function ContactsPage() {
               </div>
             )}
           </div>
-          <button className="flex items-center gap-2 px-3 py-2 border border-border rounded-xl text-sm font-medium hover:bg-muted/40 transition-colors bg-card text-muted-foreground cursor-pointer">
-            <span>Add filter</span>
-            <ChevronDown className="w-4 h-4 opacity-75" />
-          </button>
+          <AddFilterButton fields={fields} open={showAddFilter} onOpenChange={setShowAddFilter} onAdd={(field) => setFilters((all) => [...all, newFilter(field)])} />
           {selectedListId !== null && (
             <button 
               onClick={() => setSelectedListId(null)}
@@ -615,15 +625,30 @@ function ContactsPage() {
               className="w-full md:w-64 pl-10 pr-4 py-2 border border-border rounded-xl text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
-          <button className="p-2 border border-border rounded-xl hover:bg-muted/40 transition-colors bg-card text-muted-foreground">
+          <button
+            type="button"
+            onClick={() => setShowAddFilter(true)}
+            aria-label="Add a filter"
+            title="Add a filter"
+            className={`relative p-2 border border-border rounded-xl hover:bg-muted/40 transition-colors bg-card cursor-pointer ${activeFilters.length ? 'text-accent' : 'text-muted-foreground'}`}
+          >
             <SlidersHorizontal className="w-4 h-4" />
+            {activeFilters.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-accent text-accent-foreground text-[10px] font-bold flex items-center justify-center">{activeFilters.length}</span>
+            )}
           </button>
         </div>
       </div>
 
+      <ActiveFilters filters={filters} fields={fields} onChange={setFilters} />
+
       {/* Contacts Count */}
       <div className="text-xs text-muted-foreground mb-4 font-medium">
-        {isLoading ? 'Loading contacts...' : `${contacts.length} contacts`}
+        {isLoading
+          ? 'Loading contacts...'
+          : activeFilters.length || searchTerm.trim()
+            ? `${contacts.length.toLocaleString()} of ${rawContacts.length.toLocaleString()} contacts`
+            : `${contacts.length.toLocaleString()} contacts`}
       </div>
 
       {/* Table Card */}
@@ -728,7 +753,7 @@ function ContactsPage() {
               <th className="px-6 py-4">Subscribed</th>
               <th className="px-6 py-4">Blocklisted</th>
               <th className="px-6 py-4">Email</th>
-              <th className="px-6 py-4">Landline</th>
+              <th className="px-6 py-4">Country</th>
               <th className="px-6 py-4">Creation Date</th>
             </tr>
           </thead>
@@ -777,7 +802,22 @@ function ContactsPage() {
                       <div className="flex items-center gap-3">
                         <Avatar name={fullName} />
                         <div>
-                          <p className="font-semibold text-foreground">{fullName}</p>
+                          <p className="font-semibold text-foreground flex items-center gap-1.5">
+                            {fullName}
+                            {contact.linkedinUrl && (
+                              <a
+                                href={contact.linkedinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                aria-label={`${fullName} on LinkedIn`}
+                                title="Open their LinkedIn profile"
+                                className="text-muted-foreground hover:text-accent"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </p>
                           {(contact.attributes?.JOB_TITLE || contact.attributes?.COMPANY) && (
                             <p className="text-xs text-muted-foreground">
                               {contact.attributes.JOB_TITLE}
@@ -793,7 +833,7 @@ function ContactsPage() {
                     </td>
                     <td className="px-6 py-4 text-muted-foreground">—</td>
                     <td className="px-6 py-4 font-medium text-foreground">{contact.email}</td>
-                    <td className="px-6 py-4 text-muted-foreground">—</td>
+                    <td className="px-6 py-4 text-muted-foreground">{contact.country || '—'}</td>
                     <td className="px-6 py-4 text-xs text-muted-foreground font-medium">
                       {new Date(contact.createdAt).toLocaleDateString(undefined, {
                         day: '2-digit',
