@@ -854,6 +854,10 @@ async function processBatch(
   // the title comes from the headline, and someone who has since left shows
   // up until a Reveal finds no address for them. In a companies-first search
   // the same goes for anyone whose headline names one of the companies.
+  // A name typed on a profile, with no company page behind it, says where
+  // someone works only when it could be a company's: LinkedIn's search files
+  // everyone who typed "clean" or "food industry" under a company of that name.
+  const typedAt = (p: PersonResult, name: string) => sameCompanyName(p.company, name) && (Boolean(p.companyRef) || isCompanyName(p.company))
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
     // A company search also finds people who list it without working there
     // (members of a society, say): with lookups free, everyone is checked.
@@ -861,7 +865,7 @@ async function processBatch(
     if (company && /^\d+$/.test(company.ref)) return company
     if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
     if (companySet?.size && p.company) {
-      for (const [ref, name] of companySet) if (sameCompanyName(p.company, name)) return { ref, name }
+      for (const [ref, name] of companySet) if (typedAt(p, name)) return { ref, name }
     }
     return null
   }
@@ -983,14 +987,14 @@ async function processBatch(
   // company can be dropped.
   if (company) {
     const atCompany = items.filter(
-      (p) => !refined.includes(p.profileUrl) || p.companyRef === company.ref || sameCompanyName(p.company, company.name),
+      (p) => !refined.includes(p.profileUrl) || p.companyRef === company.ref || typedAt(p, company.name),
     )
     tally.wrongCompany += items.length - atCompany.length
     items = atCompany
   } else if (companySet?.size) {
     // Someone who has moved on since LinkedIn indexed them isn't at one of them any more.
     const names = [...companySet.values()]
-    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || Boolean(p.companyRef && companySet.has(p.companyRef)) || names.some((n) => sameCompanyName(p.company, n))
+    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || Boolean(p.companyRef && companySet.has(p.companyRef)) || names.some((n) => typedAt(p, n))
     // Unless, with lookups free, where they do work fits the filters too.
     const fitting = free?.fits ? await employersFitting(items.filter((p) => !atOne(p)), source, free.fits) : new Map<string, CompanyResult>()
     const kept = items
@@ -1015,8 +1019,8 @@ async function processBatch(
   const several = new Set<string>()
   items = items.map((p) => {
     if (p.companyRef || p.companyDomain || p.previously === 'saved') return p
-    const searched = p.company.trim() ? [...(companySet ?? [])].find(([, name]) => sameCompanyName(p.company, name)) : undefined
-    const byName = searched || !p.company.trim() ? null : named(p.company)
+    const searched = p.company.trim() ? [...(companySet ?? [])].find(([, name]) => typedAt(p, name)) : undefined
+    const byName = searched || !isCompanyName(p.company) ? null : named(p.company)
     if (byName === 'several') several.add(p.profileUrl)
     const known = searched ? db.getProspectCompany(searched[0]) ?? { ref: searched[0], domain: null, slug: null } : byName === 'several' ? null : byName
     if (known) {

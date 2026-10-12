@@ -262,6 +262,28 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     ])
   })
 
+  it("doesn't place someone at a company because they typed what they do as their employer and a company goes by that word", async () => {
+    // An agency called Clean. LinkedIn's search files everyone who typed "clean" under it.
+    companyPage = { items: [{ ref: '55', name: 'Clean', domain: 'cleanagency.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' }], nextCursor: null, reportedTotal: null, warnings: [] }
+    profiles.eve = { title: 'Owner', seniority: 'owner', company: 'clean', companyRef: null }
+    profiles.fay = { title: 'Owner', seniority: 'owner', company: 'Clean.', companyRef: null }
+    profiles.gus = { title: 'Owner', seniority: 'owner', company: 'Food Industry', companyRef: null }
+    // Someone whose profile links the agency's own page does work there.
+    profiles.hal = { title: 'Owner', seniority: 'owner', company: 'Clean', companyRef: '55' }
+    try {
+      searchPage = pageOf(hit('eve', 'Owner'), hit('fay', 'Owner'), hit('gus', 'Owner'), hit('hal', 'Owner'))
+      const res = await searchPeople({ titles: ['Owner'], companySizes: ['11-50'], industries: ['Banking'] })
+      expect(res.items.map((p) => [p.firstName, p.companyRef])).toEqual([['hal', '55']])
+
+      // The same in a search inside one company, known here by its page name, so where people work is checked by name.
+      searchPage = pageOf(hit('eve', 'Owner'), hit('hal', 'Owner'))
+      const inside = await searchPeople({ titles: ['Owner'], company: { ref: 'clean-agency', name: 'Clean' } })
+      expect(inside.items.map((p) => p.firstName)).toEqual(['hal'])
+    } finally {
+      for (const h of ['eve', 'fay', 'gus', 'hal']) delete profiles[h]
+    }
+  })
+
   it("leaves out, before paying for them, people whose headline says they've left their job", async () => {
     searchPage = pageOf(hit('fay', 'Former CFO'), hit('gus', 'Ex-Googler, now Head of Sales'), hit('ana'), hit('hal', 'Open to Work'))
     const res = await searchPeople({ titles: ['Business Analyst'] })
@@ -950,12 +972,14 @@ describe("searchPeople with the host's shared database", () => {
       try {
         profiles.eve = { title: 'Analyst', seniority: null, company: 'Nowhere Much', companyRef: null }
         profiles.fay = { title: 'Analyst', seniority: null, company: 'Self-employed', companyRef: null }
-        searchPage = pageOf(hit('cat'), hit('eve'), hit('fay'))
+        profiles.gus = { title: 'Analyst', seniority: null, company: 'food industry', companyRef: null }
+        searchPage = pageOf(hit('cat'), hit('eve'), hit('fay'), hit('gus'))
         const res = await searchPeople({ titles: ['Business Analyst'] })
         expect(res.items.map((p) => [p.firstName, p.companyRef, p.companyDomain, p.noCompany ?? false])).toEqual([
           ['cat', null, 'catconsulting.co.uk', false],
           ['eve', null, null, true],
           ['fay', null, null, true],
+          ['gus', null, null, true],
         ])
         // The employer's name and country only; never for what isn't a company.
         expect(searched.sort()).toEqual(['Cat Consulting, from United Kingdom', 'Nowhere Much, from United Kingdom'])
@@ -963,6 +987,7 @@ describe("searchPeople with the host's shared database", () => {
       } finally {
         delete profiles.eve
         delete profiles.fay
+        delete profiles.gus
         unhost()
       }
     })

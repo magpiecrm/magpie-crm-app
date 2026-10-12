@@ -104,10 +104,46 @@ const NOT_A_COMPANY = new Set(
   ),
 )
 
-/** Whether an employer's name could be a company's, rather than "Self-employed" and the like. */
+/**
+ * Words people type as their employer to say what they do rather than who
+ * for: "clean", "food industry", "real estate". LinkedIn's search files
+ * them under a company page of that name, and there usually is one (an
+ * agency called Clean), so a name made only of these, typed in rather than
+ * linked to a page, places nobody anywhere.
+ */
+const LINE_OF_WORK = new Set(
+  `accounting acting actor advertising agriculture apparel architecture art artist arts author automotive aviation baking banking barber
+  beauty beverage blogger blogging bookkeeping building business care caregiver carpentry catering childcare cleaner cleaning clean clothing
+  coach coaching commerce communications construction consultancy consulting content cosmetics cosmetology crafts creative customer dental
+  design designer developer digital distribution driver driving ecommerce education electrical employed employment energy engineering
+  entertainment entrepreneur entrepreneurship events export family farm farming fashion film finance financial fitness food freelancing
+  gaming gas government hair handyman health healthcare home hospitality housekeeping hr import influencer insurance internet investing
+  investments investor it janitorial jewelry job jobs journalism landscaping law legal logistics maintenance management manufacturing
+  marketing me media medical military mining ministry music musician my myself nanny nonprofit nursing oil online other own owner painting
+  personal pharmacy photographer photography plumbing podcast pr printing production property publishing radio real estate recruiting
+  recruitment relations restaurant restaurants retail roofing sales salon school security service services shipping social software sports
+  staffing startup student teaching tech technology telecom telecommunications television tourism trader trading training transportation
+  travel trucking tutor tutoring tv video volunteer volunteering web wellness wholesale work working writer writing`
+    .split(/\s+/)
+    .filter(Boolean),
+)
+/** "The food industry", "hospitality sector": the same, said in full. */
+const SAID_IN_FULL = new Set(['industry', 'sector', 'field', 'trade', 'and', 'of', 'in', 'at'])
+
+const describesWork = (key: string) => {
+  const words = key.split(' ')
+  return words.length <= 4 && words.some((w) => LINE_OF_WORK.has(w)) && words.every((w) => LINE_OF_WORK.has(w) || SAID_IN_FULL.has(w))
+}
+
+/**
+ * Whether an employer's name, typed on a profile, could be a company's,
+ * rather than "Self-employed", "clean" and the like. Someone whose profile
+ * links a company's page works there whatever it's called; this is only for
+ * names with no page behind them.
+ */
 export const isCompanyName = (name: string) => {
   const key = companyKey(name)
-  return key.length >= 3 && !NOT_A_COMPANY.has(key)
+  return key.length >= 3 && !NOT_A_COMPANY.has(key) && !describesWork(key)
 }
 
 /** The page names a company's LinkedIn page might have, from its name: "Research Works Ltd" -> research-works-ltd, research-works. */
@@ -159,7 +195,7 @@ export const companyPageReader =
  */
 export async function findCompanyByName(name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null> {
   const key = companyKey(name)
-  if (!key || NOT_A_COMPANY.has(key)) return null
+  if (!key || NOT_A_COMPANY.has(key) || describesWork(key)) return null
   const now = Date.now()
   const before = guessed.get(key)
   if (before && now - before.at < GUESS_KEPT_MS) return before.found
