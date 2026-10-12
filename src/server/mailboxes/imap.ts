@@ -136,6 +136,26 @@ export const imapConnect: Connect = async (login) => {
   }
 }
 
+/** Whether a mail server is one of Zoho's: imap.zoho.com, imappro.zoho.eu, imappro.zohocloud.ca and so on. */
+export const isZohoHost = (host: string) => /(^|\.)(zoho\.[a-z.]+|zohocloud\.ca)$/i.test(host.trim())
+
+/**
+ * The Zoho IMAP servers to try for an address, likeliest first. Zoho keeps
+ * each account in one region (zoho.com, zoho.eu, zoho.in, …), with one
+ * server for business accounts on their own domain (imappro) and another
+ * for personal ones (imap), and a login only works at the right one. The
+ * region is the one the address's domain has its mail delivered to (`mx`,
+ * its MX hosts). Without that, the two commonest are tried.
+ */
+export function zohoHosts(mx: string[], asked?: string): string[] {
+  const base = mx.map((h) => /(?:^|\.)(zoho\.[a-z.]+|zohocloud\.ca)\.?$/i.exec(h.trim())?.[1]?.toLowerCase().replace(/\.$/, '')).find(Boolean)
+  const bases = base ? [base] : ['zoho.com', 'zoho.eu']
+  const hosts = bases.flatMap((b) => [`imappro.${b}`, `imap.${b}`])
+  // A server someone typed in themselves is tried first; the menu's own (imap.zoho.com) is only a placeholder.
+  const typed = asked && isZohoHost(asked) && asked.toLowerCase() !== 'imap.zoho.com' ? [asked.toLowerCase()] : []
+  return [...new Set([...typed, ...hosts])].slice(0, 4)
+}
+
 /** Whether an error from connecting means the login itself was refused. */
 export function isAuthFailure(err: unknown): boolean {
   const e = err as { authenticationFailed?: boolean; responseText?: string; message?: string }
@@ -146,9 +166,11 @@ export function isAuthFailure(err: unknown): boolean {
 export function describeError(err: unknown, host: string): string {
   const e = err as { code?: string; responseText?: string; message?: string }
   if (isAuthFailure(err)) {
-    return /gmail|googlemail/i.test(host)
-      ? 'Gmail refused the login. Use an app password (Google Account → Security → App passwords), not your normal password.'
-      : 'The mail server refused the login: check the address and password.'
+    if (/gmail|googlemail/i.test(host)) return 'Gmail refused the login. Use an app password (Google Account → Security → App passwords), not your normal password.'
+    if (isZohoHost(host)) {
+      return "Zoho refused the login. Check that IMAP access is switched on for this address (Zoho Mail → Settings → Mail Accounts → IMAP Access), that the login is the full email address, and, if two-factor sign-in is on, that this is an application-specific password (your Zoho account → Security → App Passwords), not your normal one."
+    }
+    return 'The mail server refused the login: check the address and password.'
   }
   if (e?.code === 'ENOTFOUND') return `There's no mail server at ${host}.`
   if (e?.code === 'ECONNREFUSED' || e?.code === 'ETIMEDOUT' || /timeout/i.test(e?.message ?? '')) return `Couldn't reach ${host}: check the server and port.`

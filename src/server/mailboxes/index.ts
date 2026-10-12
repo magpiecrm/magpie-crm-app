@@ -4,12 +4,13 @@
 // password is stored encrypted (CREDENTIALS_SECRET) and never shown again.
 
 import { randomUUID } from 'node:crypto'
+import { resolveMx } from 'node:dns/promises'
 import { db, type DbSchema, type MailboxRecord } from '../db'
 import { decryptToken, encryptToken } from '../crypto'
 import { env } from '../env'
 import { notify } from '../notify'
 import type { Enrollment, MailboxView } from '../../features/sequences/types'
-import { describeError, imapConnect, isAuthFailure, type Connect, type MailboxLogin } from './imap'
+import { describeError, imapConnect, isAuthFailure, isZohoHost, zohoHosts, type Connect, type MailboxLogin } from './imap'
 import { buildIndex, classifyInbound, isStopRequest, leadingText, matchReply, parseBounce } from './classify'
 
 /** How far back the first read of an inbox looks, and the most messages read in one go. */
@@ -48,6 +49,13 @@ export async function testLogin(login: MailboxLogin, connect: Connect = imapConn
   }
 }
 
+/** Where a domain has its mail delivered (its MX hosts); none when that can't be found out. */
+const mailHostsOf = async (domain: string): Promise<string[]> =>
+  resolveMx(domain).then(
+    (records) => records.map((r) => r.exchange),
+    () => [],
+  )
+
 export const mailboxes = {
   list: (): MailboxView[] => (db.data.mailboxes ?? []).map((m) => view(db.data, m)),
 
@@ -64,6 +72,7 @@ export const mailboxes = {
   save: async (
     input: { senderId: number; host: string; port: number; secure: boolean; user: string; password?: string },
     connect: Connect = imapConnect,
+    mailHosts: (domain: string) => Promise<string[]> = mailHostsOf,
   ): Promise<MailboxView> => {
     if (!db.data.senders.some((s) => s.id === input.senderId)) throw new Error('Sender not found')
     const existing = db.data.mailboxes?.find((m) => m.sender_id === input.senderId)
@@ -73,7 +82,22 @@ export const mailboxes = {
     if (/(^|\.)(outlook\.office365\.com|office365\.com)$/i.test(login.host)) {
       throw new Error("Microsoft 365 doesn't allow password logins to your inbox, so it can't be connected this way yet. Mark replies by hand for now.")
     }
-    const tested = await testLogin(login, connect)
+    const tested = await (async () => {
+      if (!isZohoHost(login.host)) return testLogin(login, connect)
+      // Zoho has a server for each region and kind of account, and a login only works at its own (imap.ts zohoHosts).
+      const domain = login.user.includes('@') ? login.user.slice(login.user.lastIndexOf('@') + 1) : ''
+      let last: Awaited<ReturnType<typeof testLogin>> | null = null
+      for (const host of zohoHosts(domain ? await mailHosts(domain) : [], login.host)) {
+        last = await testLogin({ ...login, host }, connect)
+        if (last.ok) {
+          login.host = host
+          return last
+        }
+        // Anything but a refused login (the server can't be reached, say) won't be different at the next one.
+        if (!last.authFailed) return last
+      }
+      return last!
+    })()
     if (!tested.ok) throw new Error(tested.error)
     return db.mutate((data) => {
       const at = now()

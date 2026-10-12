@@ -26,7 +26,7 @@ const { sequences } = await import('../sequences')
 const { runSequences } = await import('../sequences/engine')
 const { mailboxes, pollMailboxes } = await import('.')
 const { classifyInbound, isStopRequest, leadingText, parseBounce, buildIndex, matchReply } = await import('./classify')
-const { parseHeaderBlock, idsIn } = await import('./imap')
+const { parseHeaderBlock, idsIn, zohoHosts } = await import('./imap')
 const { encryptToken } = await import('../crypto')
 const { env } = await import('../env')
 type Msg = import('./imap').InboundMessage
@@ -231,6 +231,43 @@ describe('reading an inbox', () => {
     await runSequences(new Date(t0 + 27 * 60 * 60_000), () => 0)
     expect(sequences.get(id).sequence.status).toBe('active')
     expect(sent).toHaveLength(2)
+  })
+
+  it("connects a Zoho inbox at the server for its region and kind of account, whichever the form named", async () => {
+    // Zoho's servers: only the EU business one knows this login.
+    const tried: string[] = []
+    const zoho = (async (login: { host: string }) => {
+      tried.push(login.host)
+      if (login.host !== 'imappro.zoho.eu') throw Object.assign(new Error('Invalid credentials'), { authenticationFailed: true })
+      return { open: async () => ({ path: 'INBOX', uidValidity: '1', uidNext: 1 }), fetch: async () => [], source: async () => '', close: async () => {} }
+    }) as any
+    const eu = async () => ['mx.zoho.eu', 'mx2.zoho.eu']
+    const saved = await mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, zoho, eu)
+    expect(saved).toMatchObject({ status: 'ok', host: 'imappro.zoho.eu' })
+    // Where the address's own mail goes says the region: the US servers aren't tried at all.
+    expect(tried).toEqual(['imappro.zoho.eu'])
+
+    expect(zohoHosts(['mx.zoho.eu'])).toEqual(['imappro.zoho.eu', 'imap.zoho.eu'])
+    expect(zohoHosts(['mx.zohocloud.ca.'])).toEqual(['imappro.zohocloud.ca', 'imap.zohocloud.ca'])
+    // Mail delivered somewhere else, or nowhere we could find: the two commonest regions.
+    expect(zohoHosts(['aspmx.l.google.com'])).toEqual(['imappro.zoho.com', 'imap.zoho.com', 'imappro.zoho.eu', 'imap.zoho.eu'])
+    // A server typed in by hand comes first.
+    expect(zohoHosts(['mx.zoho.eu'], 'imap.zoho.in')).toEqual(['imap.zoho.in', 'imappro.zoho.eu', 'imap.zoho.eu'])
+
+    // Refused everywhere: says what Zoho needs, having tried each once.
+    tried.length = 0
+    await expect(mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'wrong' }, (async (login: { host: string }) => {
+      tried.push(login.host)
+      throw Object.assign(new Error('Invalid credentials'), { authenticationFailed: true })
+    }) as any, eu)).rejects.toThrow(/IMAP access is switched on.*application-specific password/)
+    expect(tried).toEqual(['imappro.zoho.eu', 'imap.zoho.eu'])
+    // A server that can't be reached isn't a reason to try the others.
+    tried.length = 0
+    await expect(mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'x' }, (async (login: { host: string }) => {
+      tried.push(login.host)
+      throw Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' })
+    }) as any, eu)).rejects.toThrow(/Couldn't reach imappro.zoho.eu/)
+    expect(tried).toEqual(['imappro.zoho.eu'])
   })
 
   it("won't connect an inbox whose login fails, and keeps the saved password when changing other details", async () => {

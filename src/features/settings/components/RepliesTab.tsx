@@ -23,7 +23,10 @@ const SERVICES = [
   { id: 'other', label: 'Another mail service (IMAP)', host: '', port: 993, secure: true },
 ] as const
 
-const serviceFor = (host: string) => SERVICES.find((s) => s.host && s.host === host)?.id ?? 'other'
+/** Zoho has a server for each region and kind of account; the app finds the right one when it connects. */
+const isZoho = (host: string) => /(^|\.)(zoho\.[a-z.]+|zohocloud\.ca)$/i.test(host)
+
+const serviceFor = (host: string) => (isZoho(host) ? 'zoho' : (SERVICES.find((s) => s.host && s.host === host)?.id ?? 'other'))
 
 function ago(iso: string | null): string {
   if (!iso) return 'not yet'
@@ -235,6 +238,20 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
               </ol>
             </Notice>
           )}
+          {service === 'zoho' && (
+            <Notice title="Before you connect a Zoho inbox:">
+              <ol className="list-decimal pl-4">
+                <li>
+                  Switch on IMAP for the address: in Zoho Mail, Settings → Mail Accounts → IMAP Access. It's off until you turn it on.
+                </li>
+                <li>
+                  If you sign in to Zoho with two-factor, make an application-specific password (your Zoho account → Security → App Passwords) and paste
+                  that below; your normal password is refused.
+                </li>
+                <li>Use the full email address as the login. The app finds the right Zoho server for your region by itself.</li>
+              </ol>
+            </Notice>
+          )}
           {custom && (
             <>
               <FieldGrid cols={3}>
@@ -255,7 +272,7 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
             <Field label="Login">
               <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT_CLASS} autoComplete="off" />
             </Field>
-            <Field label={service === 'gmail' ? 'App password' : 'Password'}>
+            <Field label={service === 'gmail' ? 'App password' : service === 'zoho' ? 'Password, or app password with two-factor' : 'Password'}>
               <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder={box ? 'Leave empty to keep the saved one' : ''} />
             </Field>
           </FieldGrid>
