@@ -44,7 +44,7 @@ export function EnrollDialog({ sequenceId, emails, onClose }: { sequenceId?: str
   const sequenceName = all.find((s) => s.id === target)?.name
 
   return (
-    <Dialog isOpen onClose={onClose} title="Add people to a sequence">
+    <Dialog isOpen onClose={onClose} title="Add people to a sequence" padded>
       {done !== null ? (
         <div className="space-y-4">
           <p className="text-sm text-foreground">

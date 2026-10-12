@@ -2,8 +2,11 @@ import type { ReactNode } from 'react'
 
 // What every Settings page is built from, so they all line up: one bordered
 // panel per page, divided into blocks. A block names itself in a narrow left
-// column and puts its controls in a right column of one fixed width, so every
-// field, list row and button on every page shares the same two edges.
+// column and puts its controls in a right column, so every field, list row
+// and button on every page shares the same two edges. The columns go by the
+// panel's own width, not the window's: beside each other where the panel has
+// room for both, stacked where it hasn't (a laptop with the sidebar open),
+// and the controls column stops growing at a width a form still reads well at.
 //
 //   <SettingsPanel>
 //     <SettingsBlock title="People" description="…">
@@ -20,13 +23,13 @@ import type { ReactNode } from 'react'
 
 /** The page's one bordered panel; its blocks are divided by hairlines. */
 export function SettingsPanel({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-md-m border border-border bg-card divide-y divide-border/70 ${className}`}>{children}</div>
+  return <div className={`@container rounded-md-m border border-border bg-card divide-y divide-border/70 ${className}`}>{children}</div>
 }
 
 /**
- * One block of a panel. On wide screens its title and explanation sit in the
- * left column beside the controls; on narrower ones they stack. The controls
- * column is the same width in every block.
+ * One block of a panel. Where the panel is wide enough its title and
+ * explanation sit in the left column beside the controls; where it isn't they
+ * stack. The controls column is the same width in every block.
  */
 export function SettingsBlock({
   title,
@@ -38,7 +41,7 @@ export function SettingsBlock({
   children?: ReactNode
 }) {
   return (
-    <section className="grid gap-x-8 gap-y-3 px-5 py-5 lg:grid-cols-[15rem_minmax(0,37.5rem)]">
+    <section className="grid gap-x-8 gap-y-3 px-5 py-5 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
       <div className="flex min-w-0 flex-col gap-1.5">
         <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-foreground">{title}</h3>
         {description && <div className="flex flex-col gap-2 text-xs leading-relaxed text-muted-foreground">{description}</div>}

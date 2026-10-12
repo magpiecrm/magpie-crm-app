@@ -7,8 +7,11 @@ export interface DialogProps {
   onClose: () => void
   title?: React.ReactNode
   children: React.ReactNode
+  /** Sizes the box, e.g. `max-w-2xl`. Without a `max-w-` here it's a small form's width, never the whole screen. */
   className?: string
   headerActions?: React.ReactNode
+  /** Pads and scrolls the content. Leave off when the content brings its own padding (most dialogs with a `p-6` form). */
+  padded?: boolean
 }
 
 export function Dialog({
@@ -18,6 +21,7 @@ export function Dialog({
   children,
   className = '',
   headerActions,
+  padded = false,
 }: DialogProps) {
   // Prevent body scrolling when open
   useEffect(() => {
@@ -50,7 +54,7 @@ export function Dialog({
 
       {/* Modal Dialog Shell */}
       <div
-        className={`bg-background border border-border rounded-2xl w-full max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl relative z-10 transition-all duration-200 ${className}`}
+        className={`bg-background border border-border rounded-2xl w-full max-h-[90dvh] flex flex-col overflow-hidden shadow-2xl relative z-10 transition-all duration-200 ${/\bmax-w-/.test(className) ? '' : 'max-w-lg'} ${className}`}
       >
         {/* Header */}
         <div className="px-4 sm:px-6 py-4 border-b border-border flex justify-between items-center bg-card shrink-0">
@@ -70,7 +74,7 @@ export function Dialog({
         </div>
 
         {/* Content Body */}
-        {children}
+        {padded ? <div className="overflow-y-auto p-4 sm:p-6">{children}</div> : children}
       </div>
     </div>
   )

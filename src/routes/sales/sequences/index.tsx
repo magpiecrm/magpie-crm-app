@@ -108,7 +108,7 @@ function NewSequenceDialog({ onClose }: { onClose: () => void }) {
     onSuccess: (s) => navigate({ to: '/sales/sequences/$id', params: { id: s.id } }),
   })
   return (
-    <Dialog isOpen onClose={onClose} title="New sequence">
+    <Dialog isOpen onClose={onClose} title="New sequence" padded>
       <form
         onSubmit={(e) => {
           e.preventDefault()

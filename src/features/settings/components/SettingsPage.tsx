@@ -74,7 +74,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   const currentStatus = statuses[current.id]
 
   return (
-    <div className="p-4 lg:p-8 flex flex-col gap-6">
+    // Centred once the window is wider than the menu and a full-width page together.
+    <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[84rem] mx-auto">
       <h1 className="lg:hidden text-2xl font-display text-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
@@ -133,8 +134,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         </nav>
         </aside>
 
-        {/* Every page is the same width: the panel's label column, its controls column and their padding. */}
-        <section className="flex-1 min-w-0 max-w-[57rem] flex flex-col gap-5">
+        {/* Every page is the same width: at its widest the panel's label column, its controls column and their padding (SettingsBlock). */}
+        <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
           <header className="flex flex-col gap-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>

@@ -185,7 +185,7 @@ function NewProposalDialog({ deal, onClose }: { deal: DealView; onClose: () => v
     </label>
   )
   return (
-    <Dialog isOpen onClose={onClose} title="New proposal">
+    <Dialog isOpen onClose={onClose} title="New proposal" padded>
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -258,7 +258,7 @@ function SendProposalDialog({
   })
   const toggle = (email: string) => setTo((cur) => (cur.includes(email) ? cur.filter((e) => e !== email) : [...cur, email]))
   return (
-    <Dialog isOpen onClose={onClose} title={`Email “${proposal.title}”`}>
+    <Dialog isOpen onClose={onClose} title={`Email “${proposal.title}”`} padded>
       {deal.contacts.length === 0 ? (
         <p className="text-sm text-muted-foreground">Add someone to this deal (People) to email it, or copy its link and send it yourself.</p>
       ) : (
