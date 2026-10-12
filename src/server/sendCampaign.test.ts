@@ -67,6 +67,7 @@ vi.mock('./db', () => ({
     getSurvey: (id: string) => state.surveys.find((x) => x.id === id) ?? null,
     campaignScheduledAt: () => null,
     campaignPacing: () => null,
+    campaignBatches: () => null,
     campaignTracksOpens: () => state.trackOpens !== false,
     campaignRecipientEmails: () => new Set(state.alreadySent),
     getGuessHold: () => state.hold,
