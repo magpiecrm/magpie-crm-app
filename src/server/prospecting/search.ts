@@ -398,7 +398,10 @@ const MAX_TOP_UPS = 10
  * After the first search, top-ups stop if fewer than this share of the people
  * whose profiles were paid for made it onto the page: filters that throw away
  * nearly everyone after the lookup (a narrow company size, say) would
- * otherwise spend a page's worth of credits on nobody.
+ * otherwise spend a page's worth of credits on nobody. Not where the host's
+ * lookups cost nothing (profileLookupsFree): there it only stopped a search
+ * after its first batch of companies, with a thousand more to look through,
+ * so the page's own budget and MAX_TOP_UPS end it instead.
  */
 const MIN_KEPT_SHARE = 0.2
 /** …judged once at least this many profiles have been paid for. */
@@ -1414,7 +1417,7 @@ export async function searchPeople(
         break
       }
       if (usable() >= target || !nextCursor || searches >= planned + MAX_TOP_UPS) break
-      if (searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
+      if (!free && searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
         wasteful = true
         break
       }

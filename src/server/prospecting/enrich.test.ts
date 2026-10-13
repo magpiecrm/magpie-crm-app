@@ -941,6 +941,30 @@ describe("searchPeople with the host's shared database", () => {
       }
     })
 
+    it("keeps searching when few of the people looked up are kept, as there are no credits to save by stopping", async () => {
+      free()
+      try {
+        // Page after page of twelve people found at Initech whose profiles all say they're at Acme now.
+        let page = 0
+        searchPeopleMock.mockClear()
+        searchPeopleMock.mockImplementation(async () => {
+          const n = page++
+          for (let i = 0; i < 12; i++) profiles[`q${n}x${i}`] = profiles.ben
+          return { ...pageOf(...Array.from({ length: 12 }, (_, i) => hit(`q${n}x${i}`))), nextCursor: `page-${n + 1}` }
+        })
+        const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'initech', name: 'Initech' } })
+        // Where lookups are paid for this stops after the first page (the test above); here it carries on to the most a page searches.
+        expect(searchPeopleMock.mock.calls.length).toBeGreaterThanOrEqual(11)
+        expect(res.items).toEqual([])
+        expect(res.warnings.join(' ')).not.toMatch(/to save credits/)
+        expect(res.nextCursor).toBeTruthy()
+      } finally {
+        for (const key of Object.keys(profiles)) if (/^q\d+x/.test(key)) delete profiles[key]
+        searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+        unhost()
+      }
+    })
+
     it("places someone whose profile doesn't link their employer at the page its name would have, and leaves them out when there's none", async () => {
       free()
       try {
