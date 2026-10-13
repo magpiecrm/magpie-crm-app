@@ -150,12 +150,15 @@ describe('campaign activity', () => {
     expect(recipients.find((r) => r.email === 's@x.test')).toMatchObject({ outcome: 'opened', opens: 1 })
     expect(recipients.find((r) => r.email === 't@x.test')).toMatchObject({ outcome: 'sent', opens: 0, clicks: 0 })
 
-    // Told again, or told of a later attempt: the first delivery stands.
-    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: id, at: later(1200) }, { email: 'r@x.test', campaignId: id, at: later(3000) }])).toBe(0)
-    // Without a campaign, it's the latest email to that address.
-    db.recordOpen('r@x.test', id, { at: later(1100) })
-    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: null, at: later(1000) }])).toBe(1)
-    expect((await emailService.getCampaignActivity(id)).recipients.find((r) => r.email === 'r@x.test')).toMatchObject({ outcome: 'opened', opens: 2 })
+    // Told the same again: nothing changes. A time from before the email was sent is an earlier send's.
+    const told = deliveries[0].at
+    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: id, at: told }, { email: 'r@x.test', campaignId: id, at: later(-600) }])).toBe(0)
+    // The host corrects itself: it was delivered 10 minutes earlier, so r's open was a person's after all.
+    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: id, at: later(600) }])).toBe(1)
+    expect((await emailService.getCampaignActivity(id)).recipients.find((r) => r.email === 'r@x.test')).toMatchObject({ outcome: 'opened', opens: 1 })
+    // …or later, which makes it the email arriving again. Without a campaign, it's the latest email to that address.
+    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: null, at: later(1200) }])).toBe(1)
+    expect((await emailService.getCampaignActivity(id)).recipients.find((r) => r.email === 'r@x.test')).toMatchObject({ outcome: 'sent', opens: 0 })
   })
 
   it('adds a hidden trap link to each email, which is not itself a tracked click', async () => {

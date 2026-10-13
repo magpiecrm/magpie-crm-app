@@ -564,6 +564,9 @@ interface DisclosureEntry {
   created_at: string
 }
 
+/** How far before its send an email's delivery may be timed: the mail server's clock isn't this one. */
+const DELIVERY_LEEWAY_MS = 60_000
+
 class JsonDb {
   public data: DbSchema
 
@@ -2310,7 +2313,10 @@ class JsonDb {
    * again from then, since what came "too soon" is measured from the
    * delivery, not the send. Without a campaign, it's the latest email sent to
    * that address. One save for the lot: there's one of these per email sent.
-   * Returns how many were recorded.
+   *
+   * An email is delivered once, so what the host says replaces what was
+   * recorded before (it can correct itself), except a time from before the
+   * email was sent, which is an earlier send's. Returns how many changed.
    */
   recordDeliveries(deliveries: Array<{ email: string; campaignId: number | null; at: string }>): number {
     let recorded = 0
@@ -2321,9 +2327,12 @@ class JsonDb {
         campaignId !== null
           ? this.recipientRecord(campaignId, email)
           : this.data.campaign_recipients.filter((cr) => cr.contact_email === normalized).sort((a, b) => (b.sent_at ?? '').localeCompare(a.sent_at ?? ''))[0]
-      // The first delivery stands: a later report for the same email is a repeat.
-      if (!record || (record.delivered_at && record.delivered_at <= at)) continue
-      record.delivered_at = at
+      if (!record) continue
+      const when = new Date(at).toISOString()
+      if (record.delivered_at === when) continue
+      // Sent again since: this is the delivery of the one before (a minute's leeway for clocks that differ).
+      if (record.sent_at && Date.parse(when) < Date.parse(record.sent_at) - DELIVERY_LEEWAY_MS) continue
+      record.delivered_at = when
       if (record.click_events) this.judgeClicks(record)
       this.judgeOpens(record)
       recorded++
