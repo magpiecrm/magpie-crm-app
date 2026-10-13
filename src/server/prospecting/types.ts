@@ -124,9 +124,9 @@ export interface PersonResult {
 }
 
 /**
- * People search results per page (per job title), in 25s. Full pages share
- * each 3-credit search among the most people; SocialFetch returns up to 50 a
- * request, so 75 and 100 take two.
+ * People shown on a page of search results, in 25s: the whole page, however
+ * many job titles the search has (each title is searched on its own and the
+ * page is shared between them).
  */
 export const PAGE_SIZES = [25, 50, 75, 100] as const
 
@@ -179,8 +179,9 @@ export interface PeopleFilters {
    */
   fromStart?: boolean
   /**
-   * Results per page. Asked of search.ts: per job title, in PAGE_SIZES. Asked
-   * of a source: per request (1-50), each costing the same whatever its size.
+   * Results per page. Asked of search.ts: people on the page in all, in
+   * PAGE_SIZES. Asked of a source: per job title's request (1-50), each
+   * costing the same whatever its size.
    */
   count?: number
   cursor?: string

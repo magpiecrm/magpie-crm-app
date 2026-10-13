@@ -94,13 +94,14 @@ const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 const sizeNeedsTerm = (f: PeopleForm) => !f.company && f.companySizes.length > 0 && f.industries.length === 0 && !f.keyword.trim()
 
 /**
- * Upper bound on one page, per title: 3 credits a search request (up to 50
- * results each) plus 3 per result's profile.
+ * Upper bound on one page: 3 credits for each job title's search request (up
+ * to 50 results each; the titles share the page between them) plus 3 for
+ * each person's profile.
  */
 function creditsPerPage(form: Pick<PeopleForm, 'titles' | 'count'>) {
   const titles = Math.max(1, Math.min(form.titles.length, 5))
   const count = pageSizeFor(form.count)
-  return titles * (Math.ceil(count / 50) * 3 + count * 3)
+  return titles * Math.ceil(Math.ceil(count / titles) / 50) * 3 + count * 3
 }
 
 interface StoredState {

@@ -136,6 +136,29 @@ describe('searchPeople with a plan allowance', () => {
     expect(res.warnings).toContain('Your plan has 1 prospect credit left this month, so this page shows at most that many people. Upgrade to get more.')
   })
 
+  it('takes results per page as the people on the page, however many job titles are searched', async () => {
+    // Five titles and a page of 25: each title's search is asked for five, not 25.
+    const titles = ['Founder', 'Owner', 'CEO', 'Managing Director', 'President']
+    const everyone = Array.from({ length: 30 }, (_, i) => `p${i}`)
+    for (const h of everyone) profiles[h] = { title: 'Founder', seniority: 'founder', company: 'Acme', companyRef: '7' }
+    try {
+      searchPage = pageOf(...everyone.map((h) => hit(h, 'Founder')))
+      const res = await searchPeople({ titles, count: 25 })
+      expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 5 })
+      // The searches came back with 30 between them: the page stops at the 25 asked for, and charges for those.
+      expect(res.items).toHaveLength(25)
+      expect(res.refined).toHaveLength(25)
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 25, prospectCredits: 25 })
+
+      // One title and a page of 50: all 50 from the one search.
+      searchPage = pageOf(hit('ana'))
+      await searchPeople({ titles: ['Business Analyst'], count: 50, fromStart: true })
+      expect((searchPeopleMock.mock.calls.at(-1) as unknown[])[1]).toMatchObject({ count: 50 })
+    } finally {
+      for (const h of everyone) delete profiles[h]
+    }
+  })
+
   it('stops before searching when none are left', async () => {
     allowance = { periodStart: '2026-10-15T00:00:00Z', periodEnd: null, upgradeUrl: null, limits: { prospects: 100 }, used: { ...{ prospects: 0, reveals: 0, emailsSent: 0 }, prospects: 100 } }
     const calls = searchPeopleMock.mock.calls.length

@@ -1204,14 +1204,14 @@ export async function searchPeople(
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
 
-  // Results per page apply to each job title, as the search itself does. The
-  // page offers them in 25s (PAGE_SIZES): full pages share each search's cost
-  // among the most people.
+  // Results per page is the people on the page, whatever the number of job
+  // titles: each title is its own search, and they share the page between
+  // them (a request is sized to what's still needed, split across the titles).
   const titles = new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   const slots = Math.min(MAX_TITLES_SEARCHED, Math.max(1, titles))
-  const perSlot = Math.min(PAGE_SIZES[PAGE_SIZES.length - 1], Math.max(1, filters.count ?? PAGE_SIZES[0]))
+  const asked = Math.min(PAGE_SIZES[PAGE_SIZES.length - 1], Math.max(1, filters.count ?? PAGE_SIZES[0]))
   // A credit per person shown, so a page asks for no more than are left.
-  const target = Math.min(perSlot * slots, Math.floor(left))
+  const target = Math.min(asked, Math.floor(left))
   // Requests the page takes before any top-up: over 50 a title needs two.
   const planned = Math.ceil(Math.ceil(target / slots) / MAX_PER_REQUEST)
 
@@ -1227,6 +1227,13 @@ export async function searchPeople(
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
+  // A batch can find a few more people than the page has room left for (each
+  // title's search is asked for a share of what's needed, rounded up): the
+  // page takes the first of them and stops at the number asked for.
+  const fitting = (found: PersonResult[]) => {
+    let room = target - usable()
+    return found.filter((p) => hidden(p) || room-- > 0)
+  }
 
   // A new search carries on from where the last one with these filters
   // stopped, so the same first pages aren't paid for and shown again.
@@ -1378,9 +1385,11 @@ export async function searchPeople(
       funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
-      items.push(...batch.items)
-      refined.push(...batch.refined)
-      if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
+      const taken = fitting(batch.items)
+      const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
+      items.push(...taken)
+      refined.push(...takenRefined)
+      if (taken.length) opts.onPeople?.({ items: taken, refined: takenRefined })
       lookedUp += batch.lookedUp.length
       shared += batch.shared
       spared += batch.spared
@@ -1413,9 +1422,11 @@ export async function searchPeople(
       for (const [companySet, people] of groups) {
         const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
         for (const p of batch.items) p.searchId = searchId
-        items.push(...batch.items)
-        refined.push(...batch.refined)
-        if (batch.items.length) opts.onPeople?.({ items: batch.items, refined: batch.refined })
+        const taken = fitting(batch.items)
+        const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
+        items.push(...taken)
+        refined.push(...takenRefined)
+        if (taken.length) opts.onPeople?.({ items: taken, refined: takenRefined })
         lookedUp += batch.lookedUp.length
         shared += batch.shared
         spared += batch.spared
@@ -1607,7 +1618,7 @@ export async function searchPeople(
   if (requests > planned) {
     details.push(`Some results were left out, so ${plural(requests - planned, 'more search page was', 'more search pages were')} run to fill this page (3 credits each).`)
   }
-  if (target < perSlot * slots) {
+  if (target < asked) {
     warnings.push(`Your plan has ${plural(Math.floor(left), 'prospect credit', 'prospect credits')} left this month, so this page shows at most that many people. Upgrade to get more.`)
   }
   if (wasteful) warnings.push(wastefulWarning(tally, items.length - usable(), lookedUp, company?.name))
