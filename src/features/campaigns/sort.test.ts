@@ -33,6 +33,15 @@ describe('sortCampaigns', () => {
     expect(names('recipients')).toEqual(['autumn', 'Spring', 'Summer', 'Draft idea'])
   })
 
+  it('puts a campaign that didn’t track opens last by open rate, not first or among the zeros', () => {
+    const untracked = { ...campaign(5, 'Plain text', { createdAt: '2026-07-01T09:00:00Z', sentAt: '2026-07-02T09:00:00Z' }, { sent: 50, delivered: 50, uniqueClicks: 10 }), trackOpens: false }
+    const nobody = campaign(6, 'Ignored', { createdAt: '2026-01-01T09:00:00Z', sentAt: '2026-01-02T09:00:00Z' }, { sent: 50, delivered: 50 })
+    const by = (sort: Parameters<typeof sortCampaigns>[1]) => sortCampaigns([untracked, ...all, nobody], sort).map((c) => c.name)
+    expect(by('openRate')).toEqual(['Summer', 'Spring', 'autumn', 'Ignored', 'Plain text', 'Draft idea'])
+    // Its other rates are real.
+    expect(by('clickRate')[0]).toBe('Plain text')
+  })
+
   it('orders by name whatever the capitals', () => {
     expect(names('name')).toEqual(['autumn', 'Draft idea', 'Spring', 'Summer'])
   })

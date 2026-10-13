@@ -21,24 +21,30 @@ interface Sortable {
   name?: string
   createdAt?: string | null
   sentAt?: string | null
+  trackOpens?: boolean
   statistics?: { globalStats?: Record<string, number | undefined> }
 }
 
 /** When a campaign last happened: when it was sent, or for one that hasn't been, when it was made. */
 const happened = (c: Sortable) => Date.parse(c.sentAt || c.createdAt || '') || 0
 
-/** A campaign's rates as shares of what was delivered (bounces, of what was sent); null where nothing has gone out to divide by. */
+/**
+ * A campaign's rates as shares of what was delivered (bounces, of what was
+ * sent); null where nothing has gone out to divide by, and for the open rate
+ * of a campaign that didn't track opens.
+ */
 function rates(c: Sortable) {
   const t = campaignTotals(c.statistics?.globalStats)
   const bounces = t.softBounces + t.hardBounces
   const delivered = t.delivered || Math.max(0, t.sent - bounces)
   const of = (n: number, whole: number) => (whole > 0 ? n / whole : null)
-  return { recipients: t.sent, openRate: of(t.opened, delivered), clickRate: of(t.clicked, delivered), unsubRate: of(t.unsubscribed, delivered), bounceRate: of(bounces, t.sent) }
+  return { recipients: t.sent, openRate: c.trackOpens === false ? null : of(t.opened, delivered), clickRate: of(t.clicked, delivered), unsubRate: of(t.unsubscribed, delivered), bounceRate: of(bounces, t.sent) }
 }
 
 /**
  * Campaigns in the chosen order, as a new list. Rates run highest first, and
- * campaigns with nothing sent yet go last, since they have no rate. Ties, and
+ * campaigns with nothing sent yet (or, by open rate, no open tracking) go
+ * last, since they have no rate. Ties, and
  * everything else, fall back to newest first.
  */
 export function sortCampaigns<T extends Sortable>(campaigns: T[], sort: CampaignSortId): T[] {

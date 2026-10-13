@@ -3,7 +3,7 @@ import { env } from '../env'
 import { getDescriptor } from './descriptors'
 import { htmlToText } from './plainText'
 import { campaignHeaders, providerError } from './types'
-import type { EmailProvider, NormalizedBounce, OutboundMessage, ProviderCredentials } from './types'
+import type { EmailProvider, NormalizedBounce, NormalizedDelivery, OutboundMessage, ProviderCredentials } from './types'
 
 // The transport is cached, but keyed on the credentials it was built from, so
 // editing SMTP settings in the UI rebuilds it. The previous module-level
@@ -70,9 +70,24 @@ function parseHostEvents(body: unknown): NormalizedBounce[] {
     .map((e) => ({ email: e.email, type: e.type, ...(typeof e.reason === 'string' ? { reason: e.reason } : {}) }))
 }
 
+/**
+ * The same host's word that an email reached the recipient's mail server,
+ * sent with its bounces:
+ *   { "events": [{ "email", "type": "delivered", "at", "campaign"? }] }
+ * `campaign` is the campaign's id, as the email's X-Campaign-ID said.
+ */
+function parseHostDeliveries(body: unknown): NormalizedDelivery[] {
+  const events = (body as any)?.events
+  if (!Array.isArray(events)) return []
+  return events
+    .filter((e) => e?.type === 'delivered' && typeof e.email === 'string' && e.email.includes('@') && typeof e.at === 'string' && !Number.isNaN(Date.parse(e.at)))
+    .map((e) => ({ email: e.email, at: new Date(e.at).toISOString(), campaignId: Number.isInteger(e.campaign) && e.campaign > 0 ? e.campaign : null }))
+}
+
 export const smtpProvider: EmailProvider = {
   descriptor: getDescriptor('smtp')!,
   parseWebhook: parseHostEvents,
+  parseDeliveries: parseHostDeliveries,
 
   async send(msg: OutboundMessage, creds: ProviderCredentials) {
     const mailOptions: any = {

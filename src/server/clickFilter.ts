@@ -14,12 +14,23 @@
 //   - one of RESCAN_CLICKS or more on one link, once the trap link has been
 //     followed: the scanner in front of that mailbox re-checking it.
 // Opens are judged the same way, except for the burst rule. Mail apps that
-// load images for people (Gmail's and Yahoo's image proxies) aren't flagged,
-// and Apple Mail loading every image as it arrives can't be told apart from a
-// real open, so opens stay a guide. Only the verdict is kept, never the user
-// agent itself.
+// load images for people (Gmail's and Yahoo's image proxies) aren't flagged
+// by name, and Apple Mail loading every image as it arrives can't be told
+// apart from a real open, so opens stay a guide. Only the verdict is kept,
+// never the user agent itself.
+//
+// "Too soon" is measured from when the email reached the recipient's mail
+// server, where the host says when that was (a hosted copy's mail server
+// paces what it sends, so an email can be delivered minutes or an hour after
+// the campaign handed it over). From then, an open inside
+// OPEN_TOO_SOON_MS is the mailbox provider or a scanner loading the images as
+// the email arrives: on MagpieCRM's own campaigns (2026-10), 35 of 40 "opens"
+// at Google came within a minute of delivery. Without a delivery time, it's
+// measured from the send, as before.
 
 export const TOO_SOON_MS = 10_000
+/** After a known delivery time, an image load this soon is the email arriving, not being read. */
+export const OPEN_TOO_SOON_MS = 60_000
 export const TRAP_WINDOW_MS = 60_000
 export const BURST_MS = 2_000
 /**
@@ -46,10 +57,18 @@ export function looksAutomated(userAgent: string | null | undefined): boolean {
   return !userAgent?.trim() || SCANNER_AGENT.test(userAgent)
 }
 
+/** When an email went out, for judging what came too soon after: its delivery where that's known, else its send. */
+export interface SentContext {
+  sentAt?: string | null
+  /** When the recipient's mail server took it, where the host reports that. */
+  deliveredAt?: string | null
+  trappedAt?: string | null
+}
+
 /** For each click, whether it was automated. */
-export function automatedClicks(events: ClickEvent[], ctx: { sentAt?: string | null; trappedAt?: string | null }): boolean[] {
+export function automatedClicks(events: ClickEvent[], ctx: SentContext): boolean[] {
   const time = (s: string) => Date.parse(s)
-  const sent = ctx.sentAt ? time(ctx.sentAt) : NaN
+  const sent = ctx.deliveredAt ? time(ctx.deliveredAt) : ctx.sentAt ? time(ctx.sentAt) : NaN
   const trapped = ctx.trappedAt ? time(ctx.trappedAt) : NaN
   const verdicts = events.map((e, i) => {
     const at = time(e.at)
@@ -71,12 +90,18 @@ export interface OpenEvent {
   bot?: true
 }
 
-/** For each open, whether it was automated: a scanner or script, too soon after sending, or around the trap link. */
-export function automatedOpens(events: OpenEvent[], ctx: { sentAt?: string | null; trappedAt?: string | null }): boolean[] {
+/**
+ * For each open, whether it was automated: a scanner or script, too soon
+ * after the email arrived (or, where that isn't known, was sent), or around
+ * the trap link.
+ */
+export function automatedOpens(events: OpenEvent[], ctx: SentContext): boolean[] {
+  const delivered = ctx.deliveredAt ? Date.parse(ctx.deliveredAt) : NaN
   const sent = ctx.sentAt ? Date.parse(ctx.sentAt) : NaN
   const trapped = ctx.trappedAt ? Date.parse(ctx.trappedAt) : NaN
   return events.map((e) => {
     const at = Date.parse(e.at)
-    return Boolean(e.bot) || (!Number.isNaN(sent) && at - sent < TOO_SOON_MS) || (!Number.isNaN(trapped) && Math.abs(at - trapped) <= TRAP_WINDOW_MS)
+    const tooSoon = !Number.isNaN(delivered) ? at - delivered < OPEN_TOO_SOON_MS : !Number.isNaN(sent) && at - sent < TOO_SOON_MS
+    return Boolean(e.bot) || tooSoon || (!Number.isNaN(trapped) && Math.abs(at - trapped) <= TRAP_WINDOW_MS)
   })
 }

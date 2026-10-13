@@ -7,50 +7,20 @@ import { Badge } from '../../../components/ui/Badge'
 import { campaignsFn } from '../../../server/functions'
 import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { sortCampaigns } from '../../../features/campaigns/sort'
+import { campaignSummary, summariseCampaigns } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import type { ExportColumn } from '../../../utils/export'
 
-/**
- * Campaign totals are in `globalStats`, but older campaigns only carry a
- * per-list `campaignStats` array — fall back to summing that when the globals
- * are empty.
- */
-function resolveCampaignStats(campaign: any) {
-  const globalStats = campaign.statistics?.globalStats || {}
-  const perList = campaign.statistics?.campaignStats || []
-
-  const totals = {
-    sent: globalStats.sent || 0,
-    opened: globalStats.uniqueViews || globalStats.viewed || 0,
-    clicked: globalStats.uniqueClicks || globalStats.clickers || 0,
-    unsubscribed: globalStats.unsubscriptions || 0,
-    complaints: globalStats.complaints || 0,
-    bounces: (globalStats.softBounces || 0) + (globalStats.hardBounces || 0),
-  }
-
-  if (totals.sent === 0 && perList.length > 0) {
-    const sum = (fn: (cs: any) => number) => perList.reduce((acc: number, cs: any) => acc + fn(cs), 0)
-    totals.sent = sum(cs => cs.sent || 0)
-    totals.opened = sum(cs => cs.uniqueViews || cs.viewed || 0)
-    totals.clicked = sum(cs => cs.uniqueClicks || cs.clickers || 0)
-    totals.unsubscribed = sum(cs => cs.unsubscriptions || 0)
-    totals.complaints = sum(cs => cs.complaints || 0)
-    totals.bounces = sum(cs => (cs.softBounces || 0) + (cs.hardBounces || 0))
-  }
-
-  return totals
-}
-
 const campaignExportColumns: ExportColumn<any>[] = [
   { header: 'ID', value: c => c.id },
   { header: 'Name', value: c => c.name },
-  { header: 'Recipients', value: c => resolveCampaignStats(c).sent },
-  { header: 'Opened', value: c => resolveCampaignStats(c).opened },
-  { header: 'Clicked', value: c => resolveCampaignStats(c).clicked },
-  { header: 'Unsubscribed', value: c => resolveCampaignStats(c).unsubscribed },
-  { header: 'Complaints', value: c => resolveCampaignStats(c).complaints },
-  { header: 'Bounces', value: c => resolveCampaignStats(c).bounces },
+  { header: 'Recipients', value: c => campaignSummary(c).sent },
+  { header: 'Opened', value: c => (campaignSummary(c).tracksOpens ? campaignSummary(c).opened : 'Not tracked') },
+  { header: 'Clicked', value: c => campaignSummary(c).clicked },
+  { header: 'Unsubscribed', value: c => campaignSummary(c).unsubscribed },
+  { header: 'Complaints', value: c => campaignSummary(c).complaints },
+  { header: 'Bounces', value: c => campaignSummary(c).bounces },
   { header: 'Sent Date', value: c => c.sentDate || c.createdAt || '' },
   { header: 'Status', value: c => c.status },
 ]
@@ -74,55 +44,6 @@ function formatDate(dateStr?: string) {
   hours = hours ? hours : 12 // the hour '0' should be '12'
   
   return `${day} ${month}, ${year} ${hours}:${minutes} ${ampm}`
-}
-
-/**
- * Campaign stats come in those two shapes, so fold both into one row of
- * stats. Shared by the desktop table and the mobile
- * card list.
- */
-function deriveCampaignStats(campaign: any) {
-  const globalStats = campaign.statistics?.globalStats || {}
-  const campaignStatsArray = campaign.statistics?.campaignStats || []
-
-  let sent = globalStats.sent || 0
-  let delivered = globalStats.delivered || 0
-  let opened = globalStats.uniqueViews || globalStats.viewed || 0
-  let clicked = globalStats.uniqueClicks || globalStats.clickers || 0
-  let unsubscribed = globalStats.unsubscriptions || 0
-  let complaints = globalStats.complaints || 0
-  let bounces = (globalStats.softBounces || 0) + (globalStats.hardBounces || 0)
-
-  if (sent === 0 && campaignStatsArray.length > 0) {
-    sent = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.sent || 0), 0)
-    delivered = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.delivered || 0), 0)
-    opened = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueViews || cs.viewed || 0), 0)
-    clicked = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueClicks || cs.clickers || 0), 0)
-    unsubscribed = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.unsubscriptions || 0), 0)
-    complaints = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.complaints || 0), 0)
-    bounces = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.softBounces || 0) + (cs.hardBounces || 0), 0)
-  }
-
-  if (delivered === 0 && sent > 0) {
-    delivered = Math.max(0, sent - bounces)
-  }
-
-  const rate = (n: number, of: number) => (of > 0 ? (n / of) * 100 : 0)
-
-  return {
-    sent,
-    delivered,
-    opened,
-    clicked,
-    unsubscribed,
-    complaints,
-    bounces,
-    openRate: rate(opened, delivered),
-    clickRate: rate(clicked, delivered),
-    unsubRate: rate(unsubscribed, delivered),
-    complaintRate: rate(complaints, delivered),
-    bounceRate: rate(bounces, sent),
-  }
 }
 
 function AnalyticsPage() {
@@ -149,63 +70,12 @@ function AnalyticsPage() {
     return cDate >= start && cDate <= end
   })
   
-  // Aggregate metrics
-  let totalCampaignsCount = 0
-  let totalSent = 0
-  let totalDelivered = 0
-  let totalOpened = 0
-  let totalClicked = 0
-  let totalUnsubscribed = 0
-  let totalComplaints = 0
-  let totalBounces = 0
-  let totalReplies = 0
-
-  filteredCampaigns.forEach((c: any) => {
-    if (c.status === 'sent' || c.status === 'suspended') {
-      totalCampaignsCount++
-    }
-
-    const globalStats = c.statistics?.globalStats || {}
-    const campaignStatsArray = c.statistics?.campaignStats || []
-
-    let cSent = globalStats.sent || 0
-    let cDelivered = globalStats.delivered || 0
-    let cOpened = globalStats.uniqueViews || globalStats.viewed || 0
-    let cClicked = globalStats.uniqueClicks || globalStats.clickers || 0
-    let cUnsubscribed = globalStats.unsubscriptions || 0
-    let cComplaints = globalStats.complaints || 0
-    let cBounces = (globalStats.softBounces || 0) + (globalStats.hardBounces || 0)
-
-    // Fallback: if stats missing in list, aggregate from campaignStats array
-    if (cSent === 0 && campaignStatsArray.length > 0) {
-      cSent = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.sent || 0), 0)
-      cDelivered = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.delivered || 0), 0)
-      cOpened = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueViews || cs.viewed || 0), 0)
-      cClicked = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueClicks || cs.clickers || 0), 0)
-      cUnsubscribed = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.unsubscriptions || 0), 0)
-      cComplaints = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.complaints || 0), 0)
-      cBounces = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.softBounces || 0) + (cs.hardBounces || 0), 0)
-    }
-
-    if (cDelivered === 0 && cSent > 0) {
-      cDelivered = cSent - cBounces
-      if (cDelivered < 0) cDelivered = 0
-    }
-
-    totalSent += cSent
-    totalDelivered += cDelivered
-    totalOpened += cOpened
-    totalClicked += cClicked
-    totalUnsubscribed += cUnsubscribed
-    totalComplaints += cComplaints
-    totalBounces += cBounces
-  })
-
-  // Rates based on standard metrics
-  const openRate = totalDelivered > 0 ? (totalOpened / totalDelivered) * 100 : 0
-  const clickRate = totalDelivered > 0 ? (totalClicked / totalDelivered) * 100 : 0
-  const unsubRate = totalDelivered > 0 ? (totalUnsubscribed / totalDelivered) * 100 : 0
-  const bounceRate = totalSent > 0 ? (totalBounces / totalSent) * 100 : 0
+  // Totals across the campaigns shown. Opens are divided by what was delivered in campaigns that track them.
+  const totals = summariseCampaigns(filteredCampaigns)
+  const totalCampaignsCount = filteredCampaigns.filter((c: any) => c.status === 'sent' || c.status === 'suspended').length
+  const { sent: totalSent, opened: totalOpened, clicked: totalClicked, unsubscribed: totalUnsubscribed, bounces: totalBounces } = totals
+  const { openRate, clickRate, unsubRate, bounceRate } = totals
+  const totalReplies = 0
 
   // Slice campaigns for current page
   const paginatedCampaigns = filteredCampaigns.slice(
@@ -340,11 +210,11 @@ function AnalyticsPage() {
                   <div className="p-4 flex flex-col justify-between h-24 bg-muted/5">
                     <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
                       Open Rate
-                      <span title="Unique opens / Delivered emails" className="inline-flex">
+                      <span title="Unique opens / Delivered emails, in campaigns that track opens" className="inline-flex">
                         <HelpCircle className="w-3.5 h-3.5 text-muted-foreground/40 cursor-help" />
                       </span>
                     </span>
-                    <span className="text-2xl font-semibold text-foreground font-display">{openRate.toFixed(2)}%</span>
+                    <span className="text-2xl font-semibold text-foreground font-display">{totals.trackedDelivered > 0 ? `${openRate.toFixed(2)}%` : '–'}</span>
                   </div>
                 </div>
 
@@ -424,10 +294,12 @@ function AnalyticsPage() {
                 </li>
               ) : (
                 paginatedCampaigns.map((campaign: any) => {
-                  const s = deriveCampaignStats(campaign)
+                  const s = campaignSummary(campaign)
                   const metrics = [
                     { label: 'Recipients', value: `${s.sent}`, sub: '100%', tone: 'text-foreground' },
-                    { label: 'Opened', value: `${s.opened}`, sub: `${s.openRate.toFixed(1)}%`, tone: 'text-indigo-500' },
+                    s.openRate === null
+                      ? { label: 'Opened', value: 'Not tracked', sub: '', tone: 'text-muted-foreground' }
+                      : { label: 'Opened', value: `${s.opened}`, sub: `${s.openRate.toFixed(1)}%`, tone: 'text-indigo-500' },
                     { label: 'Clicked', value: `${s.clicked}`, sub: `${s.clickRate.toFixed(1)}%`, tone: 'text-emerald-500' },
                     { label: 'Unsubscribed', value: `${s.unsubscribed}`, sub: `${s.unsubRate.toFixed(1)}%`, tone: 'text-foreground' },
                     { label: 'Complaints', value: `${s.complaints}`, sub: `${s.complaintRate.toFixed(1)}%`, tone: 'text-foreground' },
@@ -501,7 +373,7 @@ function AnalyticsPage() {
                         unsubRate: campaignUnsubRate,
                         complaintRate: campaignComplaintRate,
                         bounceRate: campaignBounceRate,
-                      } = deriveCampaignStats(campaign)
+                      } = campaignSummary(campaign)
 
                       return (
                         <tr key={campaign.id} className="hover:bg-muted/30 transition-colors text-sm">
@@ -520,10 +392,14 @@ function AnalyticsPage() {
                           {/* Opened */}
                           <td className="px-6 py-4">
                             <div className="flex flex-col">
-                              <div>
-                                <span className="text-indigo-500 font-semibold">{cOpened}</span>
-                                <span className="text-muted-foreground text-xs ml-1.5">{campaignOpenRate.toFixed(2)}%</span>
-                              </div>
+                              {campaignOpenRate === null ? (
+                                <span className="text-muted-foreground" title="This campaign was sent with open tracking off">Not tracked</span>
+                              ) : (
+                                <div>
+                                  <span className="text-indigo-500 font-semibold">{cOpened}</span>
+                                  <span className="text-muted-foreground text-xs ml-1.5">{campaignOpenRate.toFixed(2)}%</span>
+                                </div>
+                              )}
                               <span className="text-[10px] text-muted-foreground/60 hover:text-indigo-400 hover:underline cursor-pointer select-none mt-0.5">Details</span>
                             </div>
                           </td>

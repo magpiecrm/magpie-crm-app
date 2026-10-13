@@ -96,7 +96,11 @@ export const Route = createFileRoute('/api/webhooks/email/$provider')({
             db.updateRecipientBounceStatus(bounce.email, bounce.type)
           }
 
-          return Response.json({ success: true, processed: bounces.length })
+          // When each email arrived, where the provider says: counted only, since it's one per email sent.
+          const deliveries = PROVIDERS[providerId].parseDeliveries?.(body) ?? []
+          if (deliveries.length) console.log(`[WEBHOOK] ${providerId} ${db.recordDeliveries(deliveries)} of ${deliveries.length} deliveries recorded`)
+
+          return Response.json({ success: true, processed: bounces.length + deliveries.length })
         } catch (err: any) {
           console.error('[WEBHOOK] Failed to process bounce webhook:', err)
           return Response.json({ error: err.message }, { status: 500 })

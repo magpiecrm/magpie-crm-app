@@ -89,6 +89,14 @@ export interface NormalizedBounce {
   reason?: string
 }
 
+/** A provider's word that an email reached the recipient's mail server, and when. */
+export interface NormalizedDelivery {
+  email: string
+  at: string
+  /** The campaign it was, where the provider says; else it's taken as the latest email to that address. */
+  campaignId: number | null
+}
+
 export type ProviderCredentials = Record<string, string>
 
 export interface EmailProvider {
@@ -100,6 +108,12 @@ export interface EmailProvider {
    * analytics poller) simply omit this.
    */
   parseWebhook?(body: unknown): NormalizedBounce[]
+  /**
+   * The deliveries in the same webhook body, where the provider reports when
+   * each email was delivered (the host's mail server does). Opens and clicks
+   * are timed from then rather than from the send (clickFilter.ts).
+   */
+  parseDeliveries?(body: unknown): NormalizedDelivery[]
 }
 
 /**

@@ -47,10 +47,30 @@ describe('automatedClicks', () => {
   })
 })
 
+describe('automatedClicks, with a delivery time', () => {
+  it('times a click from the delivery rather than the send', () => {
+    const deliveredAt = at(2400)
+    expect(automatedClicks([{ url: 'a', at: at(2404) }, { url: 'a', at: at(2700) }], { sentAt, deliveredAt })).toEqual([true, false])
+    expect(automatedClicks([{ url: 'a', at: at(2404) }], { sentAt })).toEqual([false])
+  })
+})
+
 describe('automatedOpens', () => {
   it("marks loads as the email arrived, around the trap link, or by a script, but not a person's later on", () => {
     const events = [{ at: at(3) }, { at: at(95) }, { at: at(700), bot: true as const }, { at: at(1800) }]
     expect(automatedOpens(events, { sentAt, trappedAt: at(100) })).toEqual([true, true, true, false])
+  })
+
+  it('times an open from when the email was delivered, where that is known', () => {
+    // Handed over at 10:00, delivered 40 minutes later (the mail server paces what it sends).
+    const deliveredAt = at(2400)
+    const events = [{ at: at(2405) }, { at: at(2455) }, { at: at(2461) }, { at: at(9000) }]
+    expect(automatedOpens(events, { sentAt, deliveredAt })).toEqual([true, true, false, false])
+    // Without a delivery time, all four came long after the send.
+    expect(automatedOpens(events, { sentAt })).toEqual([false, false, false, false])
+    // A delivery straight away: the first minute is the email arriving, not the first ten seconds.
+    expect(automatedOpens([{ at: at(30) }, { at: at(90) }], { sentAt, deliveredAt: at(1) })).toEqual([true, false])
+    expect(automatedOpens([{ at: at(30) }], { sentAt })).toEqual([false])
   })
 
   it("doesn't count Gmail's or Yahoo's image proxies as scanners", () => {

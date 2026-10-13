@@ -155,6 +155,8 @@ export interface DbSchema {
     clicked_at: string | null
     /** When it went out. Missing on rows from before this was recorded. */
     sent_at?: string | null
+    /** When the recipient's mail server took it, where the host's mail server sends and says so (recordDeliveries). */
+    delivered_at?: string | null
     /** Every time the email's images loaded for a person (clickFilter.ts); `opened_at` and `last_opened_at` are theirs. */
     opens?: number
     last_opened_at?: string | null
@@ -1329,6 +1331,8 @@ class JsonDb {
         const existing = this.data.campaign_recipients[existingIdx]
         existing.status = status
         existing.sent_at = now
+        // Sent again: when the last one was delivered says nothing about this one.
+        delete existing.delivered_at
         if (status === 'bounced_soft') existing.bounced_at = now
       } else {
         this.data.campaign_recipients.push(record)
@@ -2246,7 +2250,7 @@ class JsonDb {
     const events = this.openEvents(record)
     events.push({ at: opts.at ?? new Date().toISOString(), ...(opts.automated ? { bot: true as const } : {}) })
     if (events.length > MAX_CLICK_EVENTS) {
-      const automated = automatedOpens(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })[0]
+      const automated = automatedOpens(events, { sentAt: record.sent_at, deliveredAt: record.delivered_at, trappedAt: record.trapped_at })[0]
       const oldest = events.shift()!
       const before = record.opens_before!
       if (automated) before.bots += 1
@@ -2273,7 +2277,7 @@ class JsonDb {
   private judgeOpens(record: RecipientRecord) {
     if (!record.open_events) return
     const before = record.opens_before ?? { opens: 0, first: null, last: null, bots: 0 }
-    const automated = automatedOpens(record.open_events, { sentAt: record.sent_at, trappedAt: record.trapped_at })
+    const automated = automatedOpens(record.open_events, { sentAt: record.sent_at, deliveredAt: record.delivered_at, trappedAt: record.trapped_at })
     const people = record.open_events.filter((_, i) => !automated[i]).map((e) => e.at)
     record.opens = before.opens + people.length
     record.bot_opens = before.bots + (record.open_events.length - people.length)
@@ -2300,6 +2304,34 @@ class JsonDb {
     this.save()
   }
 
+  /**
+   * The recipients' mail servers took these emails, each at its `at` (a
+   * hosted copy's mail server reports it): their opens and clicks are judged
+   * again from then, since what came "too soon" is measured from the
+   * delivery, not the send. Without a campaign, it's the latest email sent to
+   * that address. One save for the lot: there's one of these per email sent.
+   * Returns how many were recorded.
+   */
+  recordDeliveries(deliveries: Array<{ email: string; campaignId: number | null; at: string }>): number {
+    let recorded = 0
+    for (const { email, campaignId, at } of deliveries) {
+      if (Number.isNaN(Date.parse(at))) continue
+      const normalized = email.toLowerCase().trim()
+      const record =
+        campaignId !== null
+          ? this.recipientRecord(campaignId, email)
+          : this.data.campaign_recipients.filter((cr) => cr.contact_email === normalized).sort((a, b) => (b.sent_at ?? '').localeCompare(a.sent_at ?? ''))[0]
+      // The first delivery stands: a later report for the same email is a repeat.
+      if (!record || (record.delivered_at && record.delivered_at <= at)) continue
+      record.delivered_at = at
+      if (record.click_events) this.judgeClicks(record)
+      this.judgeOpens(record)
+      recorded++
+    }
+    if (recorded) this.save()
+    return recorded
+  }
+
   /** The email's hidden trap link was followed: clicks around then were automated. */
   recordTrap(email: string, campaignId: number, at = new Date().toISOString()) {
     const record = this.recipientRecord(campaignId, email)
@@ -2324,7 +2356,7 @@ class JsonDb {
   /** Moves the oldest click event into the totals from before, as judged now. */
   private foldOldestClick(record: RecipientRecord) {
     const events = record.click_events!
-    const automated = automatedClicks(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })[0]
+    const automated = automatedClicks(events, { sentAt: record.sent_at, deliveredAt: record.delivered_at, trappedAt: record.trapped_at })[0]
     const oldest = events.shift()!
     const before = record.clicks_before!
     if (automated) before.bots += 1
@@ -2339,7 +2371,7 @@ class JsonDb {
   private judgeClicks(record: RecipientRecord) {
     const events = record.click_events ?? []
     const before = record.clicks_before ?? { clicks: 0, links: {}, at: null, bots: 0 }
-    const automated = automatedClicks(events, { sentAt: record.sent_at, trappedAt: record.trapped_at })
+    const automated = automatedClicks(events, { sentAt: record.sent_at, deliveredAt: record.delivered_at, trappedAt: record.trapped_at })
     const people = events.filter((_, i) => !automated[i])
     record.clicks = before.clicks + people.length
     record.bot_clicks = before.bots + (events.length - people.length)

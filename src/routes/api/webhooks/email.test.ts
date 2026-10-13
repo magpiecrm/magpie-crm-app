@@ -88,6 +88,31 @@ describe("events from the host's mail server", () => {
   })
 })
 
+describe("deliveries from the host's mail server", () => {
+  it('records when each email was delivered, so an open as it arrived is not counted', async () => {
+    process.env.WEBHOOK_SECRET = 'hook-secret'
+    const sentAt = '2026-10-01T09:00:00.000Z'
+    const row = (email: string) => ({ campaign_id: 27, contact_email: email, status: 'sent', opened_at: null, clicked_at: null, sent_at: sentAt, opens: 0, clicks: 0 })
+    db.data.campaign_recipients.push(row('early@d.test'), row('reader@d.test'))
+    // Both opened a little after 09:30, half an hour after the campaign handed them over.
+    db.recordOpen('early@d.test', 27, { at: '2026-10-01T09:30:20.000Z' })
+    db.recordOpen('reader@d.test', 27, { at: '2026-10-01T09:31:30.000Z' })
+    const opened = (email: string) => db.data.campaign_recipients.find((r) => r.contact_email === email)?.status
+    expect([opened('early@d.test'), opened('reader@d.test')]).toEqual(['opened', 'opened'])
+
+    const events = [
+      { email: 'early@d.test', type: 'delivered', at: '2026-10-01T09:30:00.000Z', campaign: 27 },
+      { email: 'reader@d.test', type: 'delivered', at: '2026-10-01T09:30:00.000Z', campaign: 27 },
+      { email: 'early@d.test', type: 'delivered', at: 'yesterday' },
+      { email: 'not-an-address', type: 'delivered', at: '2026-10-01T09:30:00.000Z' },
+    ]
+    expect(await (await post({ events }, 'hook-secret', 'smtp')).json()).toMatchObject({ success: true, processed: 2 })
+    expect([opened('early@d.test'), opened('reader@d.test')]).toEqual(['sent', 'opened'])
+    // A delivery is neither a bounce nor a complaint.
+    expect(db.data.contacts.some((c) => c.email.endsWith('@d.test'))).toBe(false)
+  })
+})
+
 describe('webhook access', () => {
   it('is off until WEBHOOK_SECRET is set, then takes it as a bearer token or ?s=', async () => {
     delete process.env.WEBHOOK_SECRET

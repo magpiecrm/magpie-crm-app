@@ -131,6 +131,33 @@ describe('campaign activity', () => {
     expect(recipients.find((r) => r.email === 'q@x.test')).toMatchObject({ outcome: 'opened', opens: 2, automatedOpens: 0 })
   })
 
+  it('judges opens and clicks again once the host says when the email was delivered', async () => {
+    const id = await sentCampaign(['r@x.test', 's@x.test', 't@x.test'])
+    // All three look like people until the delivery time is known: 20 minutes after the send.
+    db.recordOpen('r@x.test', id, { at: later(1210) })
+    db.recordOpen('s@x.test', id, { at: later(1210) })
+    db.recordOpen('s@x.test', id, { at: later(5000) })
+    db.recordOpen('t@x.test', id, { at: later(1210) })
+    db.recordClick('t@x.test', id, 'https://acme.example/pricing', { at: later(1205) })
+    expect((await emailService.getCampaignStats(id)).globalStats).toMatchObject({ uniqueOpens: 3, uniqueClicks: 1 })
+
+    const deliveries = ['r@x.test', 'S@x.test ', 't@x.test'].map((email) => ({ email, campaignId: id, at: later(1200) }))
+    expect(db.recordDeliveries([...deliveries, { email: 'nobody@x.test', campaignId: id, at: later(1200) }, { email: 'r@x.test', campaignId: id, at: 'not a time' }])).toBe(3)
+    const { globalStats: s } = await emailService.getCampaignStats(id)
+    expect(s).toMatchObject({ uniqueOpens: 1, totalOpens: 1, automatedOpens: 3, uniqueClicks: 0 })
+    const { recipients } = await emailService.getCampaignActivity(id)
+    expect(recipients.find((r) => r.email === 'r@x.test')).toMatchObject({ outcome: 'sent', opens: 0, openedAt: null })
+    expect(recipients.find((r) => r.email === 's@x.test')).toMatchObject({ outcome: 'opened', opens: 1 })
+    expect(recipients.find((r) => r.email === 't@x.test')).toMatchObject({ outcome: 'sent', opens: 0, clicks: 0 })
+
+    // Told again, or told of a later attempt: the first delivery stands.
+    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: id, at: later(1200) }, { email: 'r@x.test', campaignId: id, at: later(3000) }])).toBe(0)
+    // Without a campaign, it's the latest email to that address.
+    db.recordOpen('r@x.test', id, { at: later(1100) })
+    expect(db.recordDeliveries([{ email: 'r@x.test', campaignId: null, at: later(1000) }])).toBe(1)
+    expect((await emailService.getCampaignActivity(id)).recipients.find((r) => r.email === 'r@x.test')).toMatchObject({ outcome: 'opened', opens: 2 })
+  })
+
   it('adds a hidden trap link to each email, which is not itself a tracked click', async () => {
     const { sendMail } = await import('./nodemailer')
     vi.mocked(sendMail).mockClear()

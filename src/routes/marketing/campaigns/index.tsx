@@ -8,6 +8,7 @@ import { campaignsFn, sendCampaignFn, deleteCampaignFn, duplicateCampaignFn } fr
 import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { CampaignWizard } from '../../../features/campaigns/components/CampaignWizard'
 import { sortCampaigns } from '../../../features/campaigns/sort'
+import { campaignSummary } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
 import { sentMessage } from '../../../features/campaigns/sendResult'
 
@@ -62,34 +63,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
   const isSending = campaign.status === 'sending'
   const showMetrics = isSent || isSuspended
 
-  // Calculate metrics
-  const globalStats = campaign.statistics?.globalStats || {}
-  const campaignStatsArray = campaign.statistics?.campaignStats || []
-
-  let cSent = globalStats.sent || 0
-  let cDelivered = globalStats.delivered || 0
-  let cOpened = globalStats.uniqueViews || globalStats.viewed || 0
-  let cClicked = globalStats.uniqueClicks || globalStats.clickers || 0
-  let cUnsubscribed = globalStats.unsubscriptions || 0
-  let cBounces = (globalStats.softBounces || 0) + (globalStats.hardBounces || 0)
-
-  if (cSent === 0 && campaignStatsArray.length > 0) {
-    cSent = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.sent || 0), 0)
-    cDelivered = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.delivered || 0), 0)
-    cOpened = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueViews || cs.viewed || 0), 0)
-    cClicked = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.uniqueClicks || cs.clickers || 0), 0)
-    cUnsubscribed = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.unsubscriptions || 0), 0)
-    cBounces = campaignStatsArray.reduce((acc: number, cs: any) => acc + (cs.softBounces || 0) + (cs.hardBounces || 0), 0)
-  }
-
-  if (cDelivered === 0 && cSent > 0) {
-    cDelivered = cSent - cBounces
-    if (cDelivered < 0) cDelivered = 0
-  }
-
-  const campaignOpenRate = cDelivered > 0 ? (cOpened / cDelivered) * 100 : 0
-  const campaignClickRate = cDelivered > 0 ? (cClicked / cDelivered) * 100 : 0
-  const campaignUnsubRate = cDelivered > 0 ? (cUnsubscribed / cDelivered) * 100 : 0
+  const { sent: cSent, opened: cOpened, clicked: cClicked, unsubscribed: cUnsubscribed, openRate: campaignOpenRate, clickRate: campaignClickRate, unsubRate: campaignUnsubRate } = campaignSummary(campaign)
 
   // The date that matters for the campaign's state: sent, scheduled, or created.
   const dateStr = isSent ? campaign.sentAt : isScheduled ? campaign.scheduledAt : campaign.createdAt
@@ -166,8 +140,8 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
         {/* Opens */}
         <div>
           <span className="text-[10px] font-semibold text-muted-foreground/75 uppercase tracking-wider block mb-1">Opens</span>
-          <span className="text-sm font-bold text-foreground block">{showMetrics ? cOpened.toLocaleString() : '-'}</span>
-          <span className="text-[11px] text-muted-foreground/60 block">{showMetrics ? `${campaignOpenRate.toFixed(2)}%` : '-'}</span>
+          <span className="text-sm font-bold text-foreground block">{!showMetrics ? '-' : campaignOpenRate === null ? 'Off' : cOpened.toLocaleString()}</span>
+          <span className="text-[11px] text-muted-foreground/60 block">{!showMetrics ? '-' : campaignOpenRate === null ? 'Not tracked' : `${campaignOpenRate.toFixed(2)}%`}</span>
         </div>
 
         {/* Clicks */}
