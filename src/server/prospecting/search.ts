@@ -120,6 +120,8 @@ const ENRICH_CONCURRENCY = 8
 const SHARED_FRESH_MS = 90 * 24 * 60 * 60_000
 
 type Db = typeof import('../db')['db']
+/** Where someone works, as far as matching it to a company goes: the name, and the company page if there is one. */
+type Employer = Pick<PersonResult, 'company' | 'companyRef'>
 
 interface Enriched {
   person: PersonResult
@@ -130,8 +132,12 @@ interface Enriched {
   unconfirmed?: boolean
 }
 
-/** One profile lookup (3 credits): the person's real current title and employer. */
-async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Promise<Enriched> {
+/**
+ * One profile lookup (3 credits): the person's real current title and
+ * employer. `searched`: whether an employer is one the search is for, which
+ * decides the job shown for someone who holds several.
+ */
+async function enrichOne(person: PersonResult, source: PeopleSource, db: Db, searched?: (job: Employer) => boolean): Promise<Enriched> {
   let profile: PersonResult | null
   try {
     profile = await source.getPerson(person.profileUrl)
@@ -141,7 +147,7 @@ async function enrichOne(person: PersonResult, source: PeopleSource, db: Db): Pr
     // already paid for; not marked checked, so saving can try again.
     return { person, refined: false, error: String(err?.message ?? err) }
   }
-  const refined = refineFromProfile(person, profile)
+  const refined = refineFromProfile(person, profile, searched)
   if (!refined) return { person: { ...person, profileChecked: true }, refined: false }
   return {
     refined: true,
@@ -857,7 +863,14 @@ async function processBatch(
   // A name typed on a profile, with no company page behind it, says where
   // someone works only when it could be a company's: LinkedIn's search files
   // everyone who typed "clean" or "food industry" under a company of that name.
-  const typedAt = (p: PersonResult, name: string) => sameCompanyName(p.company, name) && (Boolean(p.companyRef) || isCompanyName(p.company))
+  const typedAt = (p: Employer, name: string) => sameCompanyName(p.company, name) && (Boolean(p.companyRef) || isCompanyName(p.company))
+  // Whether an employer is one this search is for: the chosen company, or one of a companies-first batch.
+  const searchedNames = [...(companySet?.values() ?? [])]
+  const atSearched: ((e: Employer) => boolean) | undefined = company
+    ? (e) => e.companyRef === company.ref || typedAt(e, company.name)
+    : companySet?.size
+      ? (e) => Boolean(e.companyRef && companySet.has(e.companyRef)) || searchedNames.some((n) => typedAt(e, n))
+      : undefined
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
     // A company search also finds people who list it without working there
     // (members of a society, say): with lookups free, everyone is checked.
@@ -948,10 +961,10 @@ async function processBatch(
     // itself fails (no credits, API down) the rest would fail too. A profile
     // that simply lists no company page (freelancers, tiny firms) is normal
     // and doesn't stop the others.
-    const first = await enrichOne(toLookUp[0], source, db)
+    const first = await enrichOne(toLookUp[0], source, db, atSearched)
     const results = first.error
       ? [first]
-      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db)))]
+      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db, atSearched)))]
     const byUrl = new Map(results.map((r) => [r.person.profileUrl, r.person]))
     items = items.map((p) => byUrl.get(p.profileUrl) ?? p)
     for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
@@ -985,16 +998,13 @@ async function processBatch(
 
   // With the real employer known, people who don't work at the chosen
   // company can be dropped.
-  if (company) {
-    const atCompany = items.filter(
-      (p) => !refined.includes(p.profileUrl) || p.companyRef === company.ref || typedAt(p, company.name),
-    )
+  if (company && atSearched) {
+    const atCompany = items.filter((p) => !refined.includes(p.profileUrl) || atSearched(p))
     tally.wrongCompany += items.length - atCompany.length
     items = atCompany
-  } else if (companySet?.size) {
+  } else if (companySet?.size && atSearched) {
     // Someone who has moved on since LinkedIn indexed them isn't at one of them any more.
-    const names = [...companySet.values()]
-    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || Boolean(p.companyRef && companySet.has(p.companyRef)) || names.some((n) => typedAt(p, n))
+    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || atSearched(p)
     // Unless, with lookups free, where they do work fits the filters too.
     const fitting = free?.fits ? await employersFitting(items.filter((p) => !atOne(p)), source, free.fits) : new Map<string, CompanyResult>()
     const kept = items

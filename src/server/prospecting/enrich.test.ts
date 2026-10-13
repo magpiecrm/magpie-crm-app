@@ -226,6 +226,27 @@ describe('searchPeople profile lookups', () => {
     expect(res.warnings).toContain("1 person doesn't currently work at Acme and was left out.")
   })
 
+  it('keeps someone who holds several jobs when one of them is at the chosen company, and shows that job', async () => {
+    const ana = profiles.ana
+    // Her profile lists Barclays first; she also runs Acme.
+    profiles.ana = { ...ana, otherJobs: [{ title: 'Founder, Acme Ltd', company: 'Acme Ltd', companyRef: '7' }] }
+    try {
+      searchPage = pageOf(hit('ana'), hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'acme-ltd', name: 'Acme' } })
+      expect(res.items.map((p) => [p.firstName, p.title, p.company, p.companyRef, p.companyDomain, 'otherJobs' in p])).toEqual([
+        ['ana', 'Founder', 'Acme Ltd', '7', 'acme.com', false],
+        ['ben', 'Business Analyst', 'Acme', '7', 'acme.com', false],
+      ])
+      expect(res.warnings.join(' ')).not.toMatch(/currently work at Acme/)
+      // Searching Barclays instead, she's shown in the job there.
+      searchPage = pageOf(hit('ana'))
+      const there = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'barclays', name: 'Barclays' }, fromStart: true })
+      expect(there.items.map((p) => [p.title, p.company])).toEqual([['Lead Business Analyst', 'Barclays']])
+    } finally {
+      profiles.ana = ana
+    }
+  })
+
   it('keeps the results when profile lookups fail, instead of failing the search', async () => {
     searchPage = pageOf(hit('ana'), hit('ben'))
     getPerson.mockRejectedValueOnce(new Error('SocialFetch credits are exhausted.'))

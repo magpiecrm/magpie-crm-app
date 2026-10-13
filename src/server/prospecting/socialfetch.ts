@@ -36,6 +36,7 @@ import type {
   CompanyRef,
   CompanyResult,
   CompanySource,
+  CurrentJob,
   HeadcountBucket,
   Page,
   PeopleFilters,
@@ -355,6 +356,22 @@ export function mapPerson(p: any, opts: { fromProfile?: boolean } = {}): PersonR
   // falling back on the headline then put a slogan ("Helping teams ship")
   // over the title the search had matched.
   const title = str(current?.title) ?? str(sameJob?.title) ?? (opts.fromProfile ? '' : titleFromHeadline(headline)) ?? ''
+  // Someone can hold several jobs at once. The rest are kept beside the
+  // first on a profile's answer, so a search for people at one of their
+  // other employers doesn't take them for someone who works elsewhere.
+  const others: CurrentJob[] = []
+  if (opts.fromProfile && current) {
+    const listed: any[] = [current]
+    for (const position of positions) {
+      if (position?.isCurrent === false || listed.some((x) => sameEmployer(x, position))) continue
+      listed.push(position)
+      const titled = history.find((x) => str(x?.title) && sameEmployer(x, position))
+      const company = str(position?.organizationName) ?? str(position?.organization?.name) ?? ''
+      const companyRef = idOf(position?.organizationId) ?? idOf(position?.organization?.id) ?? companySlug(position) ?? idOf(titled?.organizationId) ?? companySlug(titled) ?? null
+      if (!company && !companyRef) continue
+      others.push({ title: str(position?.title) ?? str(titled?.title) ?? '', company, companyRef, companySlug: companySlug(position) ?? companySlug(titled) })
+    }
+  }
   return {
     profileUrl,
     firstName,
@@ -373,6 +390,7 @@ export function mapPerson(p: any, opts: { fromProfile?: boolean } = {}): PersonR
     // Only the country survives; the city-level label is dropped here.
     country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),
     source: SOURCE,
+    ...(others.length ? { otherJobs: others } : {}),
   }
 }
 

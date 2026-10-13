@@ -171,6 +171,49 @@ describe('a title from a profile lookup', () => {
   })
 })
 
+describe('someone who holds several jobs at once', () => {
+  // A board seat listed first, then their own firm (named only by its page), then a job that ended.
+  const several = () =>
+    rawPerson({
+      headline: 'Founder at Smith Advisory',
+      currentPositions: [
+        { title: 'Non-Executive Director', organizationName: 'Bigco plc', organizationId: '900', isCurrent: true },
+        { organizationName: 'Smith Advisory', organizationUrl: 'https://www.linkedin.com/company/smith-advisory/', isCurrent: true },
+      ],
+      positions: [
+        { title: 'Non-Executive Director', organizationName: 'Bigco plc', organizationId: '900', isCurrent: true },
+        { title: 'Founder & Principal', organizationName: 'Smith Advisory', organizationUrl: 'https://www.linkedin.com/company/smith-advisory/', isCurrent: true },
+        { title: 'Partner', organizationName: 'Oldfirm', organizationId: '5', isCurrent: false },
+      ],
+    })
+
+  it("keeps the current jobs after the first on a profile's answer, each once, and none on a search hit", () => {
+    const profile = mapPerson(several(), { fromProfile: true })!
+    expect([profile.title, profile.company, profile.companyRef]).toEqual(['Non-Executive Director', 'Bigco plc', '900'])
+    expect(profile.otherJobs).toEqual([{ title: 'Founder & Principal', company: 'Smith Advisory', companyRef: 'smith-advisory', companySlug: 'smith-advisory' }])
+    expect(mapPerson(several())!.otherJobs).toBeUndefined()
+    expect(mapPerson(rawPerson(), { fromProfile: true })!.otherJobs).toBeUndefined()
+  })
+
+  it('shows them in the job at a company the search was for, else the one their headline names, else the first', () => {
+    const profile = () => mapPerson(several(), { fromProfile: true })
+    // As the search found them: a headline, and no employer the search could link.
+    const found = { ...mapPerson(several())!, title: 'Founder', seniority: 'founder' as const, company: '', companyRef: null, companySlug: null }
+    // A search for people at Smith Advisory.
+    const searched = refineFromProfile(found, profile(), (job) => job.companyRef === 'smith-advisory')!
+    expect(searched).toMatchObject({ title: 'Founder & Principal', titleExact: true, seniority: 'founder', company: 'Smith Advisory', companyRef: 'smith-advisory', companySlug: 'smith-advisory' })
+    expect('otherJobs' in searched).toBe(false)
+    // A search for people at Bigco, where the first job is: nothing changes.
+    expect(refineFromProfile(found, profile(), (job) => job.companyRef === '900')).toMatchObject({ title: 'Non-Executive Director', company: 'Bigco plc', companyRef: '900' })
+    // No company searched (or none of theirs): the employer their headline named.
+    const named = { ...found, company: 'Smith Advisory Ltd' }
+    expect(refineFromProfile(named, profile())).toMatchObject({ title: 'Founder & Principal', company: 'Smith Advisory' })
+    expect(refineFromProfile(named, profile(), (job) => job.companyRef === 'somewhere-else')).toMatchObject({ company: 'Smith Advisory' })
+    // Nothing to go on: the first, as before.
+    expect(refineFromProfile(found, profile())).toMatchObject({ title: 'Non-Executive Director', company: 'Bigco plc' })
+  })
+})
+
 describe('mapping', () => {
   it('keeps only the allowed person fields', () => {
     const person = mapPerson(rawPerson())

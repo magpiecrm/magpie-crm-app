@@ -56,6 +56,14 @@ export interface CompanyResult {
   catchAll?: boolean
 }
 
+/** One of the jobs someone holds now: its title and employer (name, company page). */
+export interface CurrentJob {
+  title: string
+  company: string
+  companyRef: string | null
+  companySlug?: string | null
+}
+
 export interface PersonResult {
   profileUrl: string
   firstName: string
@@ -70,6 +78,14 @@ export interface PersonResult {
   companyDomain: string | null
   country: string | null
   source: SourceId
+  /**
+   * On a profile lookup's answer only (getPerson), for someone who holds
+   * several jobs at once: the current jobs after the first, which is the one
+   * `title` and `company` describe. A founder often lists their own firm
+   * second. refineFromProfile picks between them; a person shown, saved or
+   * sent anywhere never carries this.
+   */
+  otherJobs?: CurrentJob[]
   /**
    * Their profile has already been looked up (3 credits), whether or not it
    * listed a current job. Saving won't pay for the same lookup again.

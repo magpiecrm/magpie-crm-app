@@ -1,5 +1,7 @@
 import { isLineOfWork } from './companies'
-import type { PersonResult } from './types'
+import { classifySeniority } from './seniority'
+import { sameCompanyName } from './socialfetch'
+import type { CurrentJob, PersonResult } from './types'
 
 /**
  * A search result corrected from the person's profile: their current job's
@@ -10,19 +12,43 @@ import type { PersonResult } from './types'
  * says which it is). Either way the title is shown without the employer's
  * name in it (titleAlone). Null when the profile listed no current job,
  * which leaves the search result as it was.
+ *
+ * Someone who holds several jobs at once is shown in the one the search was
+ * about (currentJob): `searched` says whether an employer is one the search
+ * was for.
  */
-export function refineFromProfile(person: PersonResult, profile: PersonResult | null): PersonResult | null {
+export function refineFromProfile(person: PersonResult, profile: PersonResult | null, searched?: (job: Employer) => boolean): PersonResult | null {
   if (!profile || (!profile.title && !profile.company && !profile.companyRef)) return null
+  const job = currentJob(person, profile, searched)
   return {
     ...person,
-    title: titleAlone(profile.title || person.title, profile.company || person.company),
-    titleExact: Boolean(profile.title),
-    seniority: profile.title ? profile.seniority : person.seniority,
-    company: profile.company || person.company,
-    companyRef: profile.companyRef ?? person.companyRef,
-    companySlug: profile.companySlug ?? person.companySlug ?? null,
+    title: titleAlone(job.title || person.title, job.company || person.company),
+    titleExact: Boolean(job.title),
+    seniority: job.title ? classifySeniority(job.title) : person.seniority,
+    company: job.company || person.company,
+    companyRef: job.companyRef ?? person.companyRef,
+    companySlug: job.companySlug ?? person.companySlug ?? null,
     country: person.country ?? profile.country,
   }
+}
+
+type Employer = Pick<CurrentJob, 'company' | 'companyRef'>
+
+/**
+ * Which of someone's current jobs they're shown in. A profile lists them in
+ * its own order, and a founder's own firm is often second to a board seat or
+ * a teaching post: taking the first alone left them out of a search for
+ * people at their firm as "working somewhere else", after their profile had
+ * been paid for. So: the job at a company the search was for; else the one at
+ * the employer the search result named (their headline's); else the first.
+ */
+function currentJob(person: PersonResult, profile: PersonResult, searched?: (job: Employer) => boolean): CurrentJob {
+  const first: CurrentJob = { title: profile.title, company: profile.company, companyRef: profile.companyRef, companySlug: profile.companySlug }
+  if (!profile.otherJobs?.length) return first
+  const jobs = [first, ...profile.otherJobs]
+  const named = (job: Employer) =>
+    Boolean(person.companyRef && job.companyRef === person.companyRef) || Boolean(person.company.trim() && job.company && sameCompanyName(job.company, person.company))
+  return (searched && jobs.find(searched)) || jobs.find(named) || first
 }
 
 type Word = { text: string; at: number }
