@@ -226,6 +226,29 @@ describe('searchPeople profile lookups', () => {
     expect(res.warnings).toContain("1 person doesn't currently work at Acme and was left out.")
   })
 
+  it("doesn't take a short name shared by hundreds of firms for the company searched, nor a profile named for a business", async () => {
+    const saved = { ...profiles }
+    // Typed with no company page, as LinkedIn files them under MCS Management Consulting & Selection.
+    profiles.mia = { title: 'Owner', seniority: 'owner', company: 'MCS Inc', companyRef: null }
+    profiles.mo = { title: 'President', seniority: 'c_suite', company: 'mcs', companyRef: null }
+    profiles.max = { title: 'President', seniority: 'c_suite', company: 'MCS Management Corp', companyRef: null }
+    // Linking a page, or typing the firm's own longer name, still counts.
+    profiles.meg = { title: 'Founder', seniority: 'founder', company: 'MCS Management Consulting & Selection', companyRef: '4410' }
+    profiles.mel = { title: 'Partner', seniority: 'partner', company: 'MCS Management Consulting & Selection Ltd', companyRef: null }
+    profiles.biz = { title: 'Business Owner', seniority: 'owner', company: 'Business Exit Advisors', companyRef: null }
+    try {
+      searchPage = pageOf(...['mia', 'mo', 'max', 'meg', 'mel'].map((h) => hit(h, 'Owner')), { ...hit('biz', 'Owner'), firstName: 'Business', lastName: 'Exit Advisors' })
+      const res = await searchPeople({ titles: ['Owner'], company: { ref: 'mcs-consulting', name: 'MCS Management Consulting & Selection' } })
+      expect(res.items.map((p) => p.firstName)).toEqual(['meg', 'mel'])
+      // With no company chosen, the business's own profile still isn't shown as a person.
+      searchPage = pageOf({ ...hit('biz', 'Owner'), firstName: 'Business', lastName: 'Exit Advisors' }, hit('ana', 'Owner'))
+      const anyone = await searchPeople({ titles: ['Owner'], fromStart: true })
+      expect(anyone.items.map((p) => p.firstName)).toEqual(['ana'])
+    } finally {
+      for (const key of Object.keys(profiles)) if (!(key in saved)) delete profiles[key]
+    }
+  })
+
   it('keeps someone who holds several jobs when one of them is at the chosen company, and shows that job', async () => {
     const ana = profiles.ana
     // Her profile lists Barclays first; she also runs Acme.

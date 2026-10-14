@@ -149,6 +149,24 @@ export const isCompanyName = (name: string) => {
   return key.length >= 3 && !NOT_A_COMPANY.has(key) && !describesWork(key)
 }
 
+/**
+ * Whether an employer named on a profile is the company called `name`, by
+ * name alone. The same name, or one starting with the other ("Barclays UK"
+ * for Barclays), but only where what they share tells firms apart: at least
+ * four letters besides words for a line of work. LinkedIn files everyone who
+ * typed "MCS", "MCS Inc" or "MCS Management Corp" under a company page called
+ * MCS Management Consulting & Selection, and they work at hundreds of
+ * different MCSes. `linked`: the profile links a company page (whose id may
+ * be in another form than ours), so the same name exactly is enough.
+ */
+export function plainlySameCompany(employer: string, name: string, linked: boolean): boolean {
+  if (!sameCompanyName(employer, name)) return false
+  const [a, b] = [companyKey(employer), companyKey(name)]
+  if (linked && a === b) return true
+  const shared = a.length <= b.length ? a : b
+  return shared.split(' ').filter((w) => !isLineOfWork(w)).join('').length >= 4
+}
+
 /** The page names a company's LinkedIn page might have, from its name: "Research Works Ltd" -> research-works-ltd, research-works. */
 export function pageNamesFor(name: string): string[] {
   const full = name

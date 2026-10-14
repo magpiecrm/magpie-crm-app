@@ -8,7 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
-import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName } from './companies'
+import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName, plainlySameCompany } from './companies'
 import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
@@ -866,7 +866,7 @@ async function processBatch(
   // A name typed on a profile, with no company page behind it, says where
   // someone works only when it could be a company's: LinkedIn's search files
   // everyone who typed "clean" or "food industry" under a company of that name.
-  const typedAt = (p: Employer, name: string) => sameCompanyName(p.company, name) && (Boolean(p.companyRef) || isCompanyName(p.company))
+  const typedAt = (p: Employer, name: string) => plainlySameCompany(p.company, name, Boolean(p.companyRef)) && (Boolean(p.companyRef) || isCompanyName(p.company))
   // Whether an employer is one this search is for: the chosen company, or one of a companies-first batch.
   const searchedNames = [...(companySet?.values() ?? [])]
   const atSearched: ((e: Employer) => boolean) | undefined = company
@@ -997,6 +997,15 @@ async function processBatch(
     tally.inContacts += dropped.length
     tally.paidInContacts += dropped.filter((p) => refined.includes(p.profileUrl) && !fromShared.has(p.profileUrl)).length
     items = fresh
+  }
+
+  // A profile named for a business ("Business Exit Advisors", employer
+  // Business Exit Advisors) is the business's, not a person's: there's no
+  // name to work an address out from.
+  {
+    const people = items.filter((p) => !(p.company.trim() && companyKey(`${p.firstName} ${p.lastName}`) === companyKey(p.company)))
+    tally.noSurname += items.length - people.length
+    items = people
   }
 
   // With the real employer known, people who don't work at the chosen
