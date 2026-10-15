@@ -26,3 +26,6 @@ local_db.json
 /uploads/
 
 
+
+# Local agent instructions (operations, servers): never committed
+CLAUDE.local.md
