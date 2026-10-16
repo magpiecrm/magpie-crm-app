@@ -379,6 +379,12 @@ export interface DbSchema {
    */
   company_sites?: Record<string, { domain: string | null; at: string }>
   /**
+   * Hiring and funding signals found by this copy's own web searches
+   * (companySignals.ts), by company key (signals.ts signalKey): a signal or
+   * null for none found, and when. Company data only.
+   */
+  company_signals?: Record<string, Partial<Record<'hiring' | 'funding', { signal: import('./prospecting/types').Signal | null; at: string }>>>
+  /**
    * What each people search was for and what came of it (searchLog.ts):
    * filters, counts and how its people's email lookups ended. Never the
    * people. The newest 1,000, for 90 days.
@@ -821,6 +827,21 @@ class JsonDb {
     const sites = { ...(this.data.company_sites ?? {}), [key]: { domain, at: now.toISOString() } }
     const entries = Object.entries(sites)
     this.data.company_sites = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, 4_000)) : sites
+    this.save()
+  }
+
+  /** A hiring or funding signal this copy's own web search found for a company, or that it found none (companySignals.ts). */
+  getCompanySignal(key: string, kind: 'hiring' | 'funding'): { signal: import('./prospecting/types').Signal | null; at: string } | null {
+    return this.data.company_signals?.[key]?.[kind] ?? null
+  }
+
+  /** Remembers what a signal search found; the oldest companies go once there are 5,000. */
+  setCompanySignal(key: string, kind: 'hiring' | 'funding', signal: import('./prospecting/types').Signal | null, now = new Date()) {
+    const all = { ...(this.data.company_signals ?? {}) }
+    all[key] = { ...all[key], [kind]: { signal, at: now.toISOString() } }
+    const entries = Object.entries(all)
+    const newest = (e: (typeof entries)[number]) => [e[1].hiring?.at ?? '', e[1].funding?.at ?? ''].sort().at(-1)!
+    this.data.company_signals = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => newest(b).localeCompare(newest(a))).slice(0, 4_000)) : all
     this.save()
   }
 

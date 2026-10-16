@@ -88,6 +88,32 @@ export const searchPeopleFn = createServerFn({ method: 'POST' })
     return searchPeople(data)
   })
 
+const signalCompanyInput = z.object({
+  name: z.string().trim().min(1).max(300),
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(253)
+    .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/)
+    .nullable()
+    .optional(),
+  country: z.string().trim().max(100).nullable().optional(),
+})
+
+/**
+ * Hiring and funding signals for the companies on screen (companySignals.ts):
+ * what's known now, and which are still being looked up. Company data only.
+ */
+export const companySignalsFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { companies: z.input<typeof signalCompanyInput>[] }) => z.object({ companies: z.array(signalCompanyInput).max(50) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { companySignals } = await import('../prospecting/companySignals')
+    return companySignals(data.companies, { liveMax: 10, waitMs: 8_000 })
+  })
+
 // A person to reveal or save. Their signals and job start aren't read: zod
 // drops keys it doesn't name, so they never reach a contact or the host.
 const personInput = z.object({
@@ -195,6 +221,8 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       },
       /** The host's shared database of business contacts, when it has one open (sharedPeople.ts). */
       sharedDatabase: (await import('../prospecting/hostRules')).sharedDatabase(),
+      /** The hiring and funding signals this copy can look up (companySignals.ts): the page offers only these. */
+      webSignals: (await import('../prospecting/companySignals')).webSignalKinds(),
       reacher: {
         configured: verifier?.provider === 'reacher',
         // The host's IPs aren't a managed copy's business.

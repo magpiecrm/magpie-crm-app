@@ -4,8 +4,9 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type SignalKind } from './types'
-import { hasSignal, newInRoleSignal, withSignals } from './signals'
+import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type Signal, type SignalKind } from './types'
+import { hasSignal, newInRoleSignal, signalKey, withSignals } from './signals'
+import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companySignals'
 import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
@@ -491,6 +492,8 @@ interface CompanyFirstState {
   singles?: Array<[ref: string, name: string, people?: string]>
   /** The Warm filter: the workspace's warm companies have been queued (warmAccounts.ts), instead of searching for companies. */
   warm?: boolean
+  /** Hiring and funding filters: companies put back once to wait for their signals (screenBySignals). */
+  waited?: string[]
 }
 
 /**
@@ -623,6 +626,51 @@ function warmCompanies(db: Db, filters: PeopleFilters): Array<{ ref: string; nam
   })
 }
 
+/** What hiring and funding screening found, added up over a page (searchLog.ts counts). */
+interface SignalTally {
+  /** Companies left out for having none of the signals asked for. */
+  noSignal: number
+  /** Companies put back to wait for their signals to be looked up. */
+  waiting: number
+}
+
+/** How long a batch waits for its companies' signals to be looked up. */
+const SIGNALS_WAIT_MS = 20_000
+const SIGNALS_NEED_TERM = 'Hiring and Raised funding need an industry or keyword, to find the companies first.'
+
+/**
+ * A companies-first batch, keeping only companies with one of these signals
+ * (companySignals.ts): looked up now, waiting up to SIGNALS_WAIT_MS. One
+ * not looked up in time goes back to the end of the queue (`later`), once,
+ * and is left out the second time. Each kept company comes with its signals.
+ */
+async function screenBySignals(
+  batch: Array<[ref: string, name: string]>,
+  kinds: readonly WebSignalKind[],
+  db: Db,
+  waited: string[],
+  tally: SignalTally,
+): Promise<{ keep: Array<[string, string]>; signals: Signal[][]; later: Array<[string, string]> }> {
+  const known = new Map((db.data.prospect_companies ?? []).map((c) => [c.ref, c.domain]))
+  const list = batch.map(([ref, name]) => ({ ref, name, domain: known.get(ref) ?? null }))
+  const answer = await companySignals(list, { kinds, liveMax: list.length, waitMs: SIGNALS_WAIT_MS })
+  const keep: Array<[string, string]> = []
+  const signals: Signal[][] = []
+  const later: Array<[string, string]> = []
+  for (const c of list) {
+    const key = signalKey(c)
+    const found = (key ? answer.signals[key] : undefined)?.filter((s) => kinds.includes(s.kind as WebSignalKind)) ?? []
+    if (found.length) {
+      keep.push([c.ref, c.name])
+      signals.push(found)
+    } else if (key && answer.pending.includes(key) && !waited.includes(c.ref)) {
+      later.push([c.ref, c.name])
+      tally.waiting++
+    } else tally.noSignal++
+  }
+  return { keep, signals, later }
+}
+
 /** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
 function companyTerms(filters: PeopleFilters): Array<{ keyword: string; industry?: string }> {
   const keyword = filters.keyword?.trim()
@@ -645,6 +693,8 @@ async function companyFirstPage(
   count: number,
   /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
   screened?: { unverifiable: number; noDomain: number },
+  /** Hiring and funding filters: what screening left out, counted here. */
+  signalTally: SignalTally = { noSignal: 0, waiting: 0 },
 ): Promise<{
   page: Page<PersonResult>
   companies: Map<string, string>
@@ -655,11 +705,16 @@ async function companyFirstPage(
   splitCursor: string | null
   /** The batch has more people than this page (so more would need a lookup). */
   batchHasMore: boolean
+  /** Hiring and funding filters: the signals of the companies searched, by ref, for their people. */
+  signals: Map<string, Signal[]>
 }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
   // With the Warm filter, the companies are the workspace's warm ones: no company search.
   const warm = Boolean(filters.signals?.includes('warm'))
+  // Hiring and funding filters: each batch keeps only companies with one (screenBySignals). Warm takes them all.
+  const webKinds = warm ? [] : WEB_SIGNAL_KINDS.filter((k) => filters.signals?.includes(k))
+  const batchSignals = new Map<string, Signal[]>()
   const terms = warm ? [] : companyTerms(filters)
   const wantCountry = canonicalCountry(filters.country)
   let s = decodeState(cursor)
@@ -707,13 +762,22 @@ async function companyFirstPage(
       orgTotal: null,
       splitCursor: null,
       batchHasMore: false,
+      signals: batchSignals,
     }
   }
   // A few company pages at most, in case pages come back with none that fit.
   for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
     if (s.pending.length) {
       const pending = screened ? await withoutUnverifiable(s.pending, db, screened) : s.pending
-      s = { ...s, batch: pending.slice(0, MAX_COMPANIES_PER_SEARCH), pending: pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
+      const next = pending.slice(0, MAX_COMPANIES_PER_SEARCH)
+      if (webKinds.length) {
+        // Only companies with the signals asked for go on to the people search.
+        const r = await screenBySignals(next, webKinds, db, s.waited ?? [], signalTally)
+        s = { ...s, batch: r.keep, pending: [...pending.slice(MAX_COMPANIES_PER_SEARCH), ...r.later], waited: [...(s.waited ?? []), ...r.later.map(([ref]) => ref)].slice(-200), people: undefined }
+        r.keep.forEach(([ref], i) => batchSignals.set(ref, r.signals[i]))
+      } else {
+        s = { ...s, batch: next, pending: pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
+      }
       if (s.batch.length) break
       continue
     }
@@ -752,7 +816,7 @@ async function companyFirstPage(
   }
   const companies = new Map(s.batch)
   if (!s.batch.length) {
-    return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal, splitCursor: null, batchHasMore: false }
+    return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal, splitCursor: null, batchHasMore: false, signals: batchSignals }
   }
   const splitCursor =
     s.batch.length > 1 && !s.people
@@ -777,6 +841,7 @@ async function companyFirstPage(
     orgTotal,
     splitCursor,
     batchHasMore: Boolean(page.nextCursor),
+    signals: batchSignals,
   }
 }
 
@@ -1261,8 +1326,10 @@ export async function searchPeople(
   // Only people with one of these signals (signals.ts). Warm chooses the companies first, from the workspace's own.
   const kinds: SignalKind[] = filters.signals ?? []
   const warmFirst = !company && kinds.includes('warm')
-  const companyFirst = !company && (Boolean(filters.companySizes?.length) || warmFirst)
-  if (companyFirst && !warmFirst && !companyTerms(filters).length) throw new Error(SIZE_NEEDS_TERM)
+  // Hiring and funding are about a company: the companies are found first, and kept only with one.
+  const webFirst = !company && !warmFirst && kinds.some((k) => (WEB_SIGNAL_KINDS as readonly SignalKind[]).includes(k))
+  const companyFirst = !company && (Boolean(filters.companySizes?.length) || warmFirst || webFirst)
+  if (companyFirst && !warmFirst && !companyTerms(filters).length) throw new Error(filters.companySizes?.length ? SIZE_NEEDS_TERM : SIGNALS_NEED_TERM)
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
@@ -1360,15 +1427,23 @@ export async function searchPeople(
     found: number
     orgTotal: number | null
     screened: { unverifiable: number; noDomain: number }
+    /** Hiring and funding filters: the signals of the companies searched, by ref. */
+    signals?: Map<string, Signal[]>
   }
+  // Hiring and funding filters: companies left out, and put back to wait, over the page,
+  // and the signals of those searched, for the people found there.
+  const signalTally = { noSignal: 0, waiting: 0 }
+  const companySignalsByRef = new Map<string, Signal[]>()
+  const withCompanySignals = (found: PersonResult[]) =>
+    companySignalsByRef.size ? found.map((p) => (p.companyRef && companySignalsByRef.has(p.companyRef) ? withSignals(p, companySignalsByRef.get(p.companyRef)!) : p)) : found
   const fetchPage = async (at: string | undefined, count: number): Promise<Fetched> => {
     const sc = { unverifiable: 0, noDomain: 0 }
     if (!companyFirst) {
       const page = await source.searchPeople(company ?? null, { ...filters, cursor: at, count })
       return { page, splitCursor: null, batchHasMore: false, orgSearches: 0, found: 0, orgTotal: null, screened: sc }
     }
-    const r = await companyFirstPage(source, db, filters, at, count, hideUnverifiable ? sc : undefined)
-    return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc }
+    const r = await companyFirstPage(source, db, filters, at, count, hideUnverifiable ? sc : undefined, signalTally)
+    return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc, signals: r.signals }
   }
   // The next search page, started while this one's profiles are looked up
   // (only when the page certainly needs it), and any started but not used:
@@ -1410,6 +1485,7 @@ export async function searchPeople(
         break
       }
       const { page, companySet, splitCursor } = r
+      r.signals?.forEach((signals, ref) => companySignalsByRef.set(ref, signals))
       let splitWhen: ((toLookUp: number) => boolean) | undefined
       // Searching companies one at a time saves lookups, which are nothing to save when free.
       if (splitCursor && !free) {
@@ -1463,7 +1539,7 @@ export async function searchPeople(
       funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
-      const taken = fitting(withSignalsAsked(batch.items))
+      const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
       const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
       items.push(...taken)
       refined.push(...takenRefined)
@@ -1500,7 +1576,7 @@ export async function searchPeople(
       for (const [companySet, people] of groups) {
         const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
         for (const p of batch.items) p.searchId = searchId
-        const taken = fitting(withSignalsAsked(batch.items))
+        const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
         const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
         items.push(...taken)
         refined.push(...takenRefined)
@@ -1566,6 +1642,10 @@ export async function searchPeople(
     lookupsSpared: spared,
     prospectCredits: usable(),
     noSignal: tally.noSignal,
+    companiesNoSignal: signalTally.noSignal,
+    companiesSignalWaiting: signalTally.waiting,
+    signalHiring: items.filter((p) => p.signals?.some((x) => x.kind === 'hiring')).length,
+    signalFunding: items.filter((p) => p.signals?.some((x) => x.kind === 'funding')).length,
     signalWarm: items.filter((p) => p.signals?.some((x) => x.kind === 'warm')).length,
     signalNewInRole: items.filter((p) => p.signals?.some((x) => x.kind === 'new_in_role')).length,
     roleStartMonth: tally.roleStartMonth,
@@ -1636,6 +1716,9 @@ export async function searchPeople(
   })
   if (tally.noSignal > 0) {
     details.push(`${plural(tally.noSignal, 'person was', 'people were')} left out for having none of the signals chosen.`)
+  }
+  if (signalTally.noSignal > 0) {
+    details.push(`${plural(signalTally.noSignal, 'company was', 'companies were')} passed over for showing none of the signals chosen, before anyone there was searched for.`)
   }
   if (warmFirst) {
     // Warm companies known only by their domain can't be searched inside: say how many.

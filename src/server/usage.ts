@@ -96,6 +96,8 @@ const USAGE_COUNTERS = [
   'sharedEmails',
   /** Emails accepted by the sending provider (campaigns, tests and one-offs). */
   'emailsSent',
+  /** Web searches this copy ran itself for hiring and funding signals (companySignals.ts; a hosted copy's host runs its own). */
+  'signalSearches',
   /**
    * How each finished email lookup ended (by Reveal or when saving), one
    * counter per outcome: `lookupVerified`, and the reasons no address was

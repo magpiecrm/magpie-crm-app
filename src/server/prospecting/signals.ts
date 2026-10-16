@@ -50,8 +50,12 @@ export function newInRoleSignal(startedOn: string | null | undefined, now = new 
   return { kind: 'new_in_role', label: `New in role · since ${MONTHS[month - 1]} ${year}`, at: startedOn!, source: 'linkedin' }
 }
 
-/** What a company's signals are filed under: its domain, or its name and country where the domain isn't known. */
-export function signalKey(c: { domain?: string | null; name?: string | null; country?: string | null }): string | null {
+/**
+ * What a company's signals are filed under: its domain, or its name where the
+ * domain isn't known. Not its country: a person's country and their
+ * employer's can differ, and the same company must find the same answer.
+ */
+export function signalKey(c: { domain?: string | null; name?: string | null }): string | null {
   const domain = c.domain?.trim().toLowerCase().replace(/^www\./, '')
   if (domain) return domain
   const name = (c.name ?? '')
@@ -62,7 +66,7 @@ export function signalKey(c: { domain?: string | null; name?: string | null; cou
     .replace(/\b(ltd|limited|llc|inc|plc|gmbh|corp|corporation|co|group|holdings|the)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-  return name ? `name:${name}|${(c.country ?? '').trim().toLowerCase()}` : null
+  return name ? `name:${name}` : null
 }
 
 /** Signals added to what's there, one of each kind: a later one of a kind replaces the earlier. */

@@ -40,7 +40,7 @@ describe('newInRoleSignal', () => {
 describe('signalKey', () => {
   it('files a company by its domain, else its name and country', () => {
     expect(signalKey({ domain: 'WWW.Acme.com' })).toBe('acme.com')
-    expect(signalKey({ name: 'The Acme Group Ltd.', country: 'United Kingdom' })).toBe('name:acme|united kingdom')
+    expect(signalKey({ name: 'The Acme Group Ltd.' })).toBe('name:acme')
     expect(signalKey({ name: '' })).toBeNull()
   })
 })

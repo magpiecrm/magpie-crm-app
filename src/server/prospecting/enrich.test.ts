@@ -79,6 +79,18 @@ vi.mock('../db', () => ({
     setCompanySite: (key: string, domain: string | null) => void companySites.set(key, { domain, at: new Date().toISOString() }),
   },
 }))
+// Hiring and funding answers by company key (companySignals.ts), and what was asked.
+let webSignalAnswers: Record<string, any[]> = {}
+const companySignalsMock = vi.fn(async (companies: Array<{ name: string; domain?: string | null }>) => {
+  const { signalKey } = await import('./signals')
+  const signals: Record<string, any[]> = {}
+  for (const c of companies) {
+    const key = signalKey(c)!
+    if (webSignalAnswers[key]) signals[key] = webSignalAnswers[key]
+  }
+  return { signals, pending: [] as string[] }
+})
+vi.mock('./companySignals', async (original) => ({ ...(await original<any>()), companySignals: (...args: any[]) => (companySignalsMock as any)(...args) }))
 const positions = new Map<string, string>()
 // What each search was for and what came of it (searchLog.ts).
 const searchLog: any[] = []
@@ -125,6 +137,8 @@ beforeEach(() => {
   prospectCompanies = []
   recipients = []
   forgetWarmIndex()
+  webSignalAnswers = {}
+  companySignalsMock.mockClear()
   catchAllDomains = new Set()
   silentDomains = new Set()
   recordUsage.mockClear()
@@ -362,6 +376,33 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     const small = await searchPeople({ titles: ['Business Analyst'], signals: ['warm'], companySizes: ['1-10'], fromStart: true })
     expect(searchPeopleMock).not.toHaveBeenCalled()
     expect(small.items).toEqual([])
+  })
+
+  it('with Hiring chosen, finds companies first and searches only those hiring, giving their people the badge', async () => {
+    const hiring = { kind: 'hiring', label: 'Hiring · 4 open roles', source: 'web' }
+    companyPage = {
+      items: [
+        { ref: '42', name: 'Barclays', domain: 'barclays.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' },
+        { ref: '7', name: 'Acme', domain: 'acme.com', industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' },
+      ],
+      nextCursor: null,
+      reportedTotal: null,
+      warnings: [],
+    }
+    prospectCompanies = [
+      { ref: '42', name: 'Barclays', domain: 'barclays.com' },
+      { ref: '7', name: 'Acme', domain: 'acme.com' },
+    ]
+    webSignalAnswers = { 'acme.com': [hiring] }
+    searchPeopleMock.mockClear()
+    searchPage = pageOf(hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'], industries: ['Banking'], signals: ['hiring'] })
+    // Only Acme is searched inside.
+    expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ companyRefs: ['7'] })
+    expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.label)])).toEqual([['ben', ['Hiring · 4 open roles']]])
+    expect(res.warnings).toContain('1 company was passed over for showing none of the signals chosen, before anyone there was searched for.')
+    // Without an industry or keyword there are no companies to find.
+    await expect(searchPeople({ titles: ['Business Analyst'], signals: ['hiring'] })).rejects.toThrow(/need an industry or keyword/)
   })
 
   it('with New in role chosen, keeps only people whose job started lately, and counts the rest', async () => {

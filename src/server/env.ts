@@ -87,6 +87,13 @@ export const env = {
   webSearch: {
     apiKey: () => readEnv('WEB_SEARCH_API_KEY'),
     url: () => readEnv('WEB_SEARCH_URL') || 'https://data.decodo.com/v1/scrape',
+    /**
+     * SIGNAL_LOOKUPS=on: look up hiring and funding signals for prospect
+     * search with this copy's own web search key (two searches a company,
+     * cached). Off unless set, as each costs a search. A hosted copy uses
+     * its host's instead.
+     */
+    signals: () => readEnv('SIGNAL_LOOKUPS')?.toLowerCase() === 'on',
   },
   // Anthropic API key for the copilot (bring your own key). Normally saved in
   // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).

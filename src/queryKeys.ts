@@ -13,6 +13,8 @@ export const queryKeys = {
     reveals: () => ['prospects', 'reveals'] as const,
     companies: (filters: unknown) => ['prospects', 'companies', filters] as const,
     people: (filters: unknown) => ['prospects', 'people', filters] as const,
+    /** Hiring and funding signals for the companies on screen, by company key. */
+    signals: (keys: string[]) => ['prospects', 'signals', keys] as const,
     job: (id: string) => ['prospects', 'job', id] as const,
     personas: () => ['prospects', 'personas'] as const,
     persona: (id: string) => ['prospects', 'personas', id] as const,

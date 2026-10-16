@@ -19,7 +19,8 @@ export interface WebResult {
   description: string
 }
 
-export type WebSearch = (query: string, country?: string | null) => Promise<WebResult[]>
+/** `recent: 'year'`: results from the past year only (Google's own filter). */
+export type WebSearch = (query: string, country?: string | null, opts?: { recent?: 'year' }) => Promise<WebResult[]>
 
 const TIMEOUT_MS = 30_000
 const MAX_RESULTS = 8
@@ -36,13 +37,13 @@ function organic(list: unknown): WebResult[] {
 }
 
 /** Google results through Decodo's Web Scraping API. Throws when it can't be reached or refuses. */
-export async function decodoSearch(apiKey: string, query: string, opts: { url?: string; fetchImpl?: typeof fetch; country?: string | null } = {}): Promise<WebResult[]> {
+export async function decodoSearch(apiKey: string, query: string, opts: { url?: string; fetchImpl?: typeof fetch; country?: string | null; recent?: 'year' } = {}): Promise<WebResult[]> {
   // Only a country we know by name: anything else would be searched from nowhere in particular anyway.
   const geo = canonicalCountry(opts.country)
   const res = await (opts.fetchImpl ?? fetch)(opts.url ?? 'https://data.decodo.com/v1/scrape', {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ target: 'google_search', query, parse: true, ...(geo ? { geo } : {}) }),
+    body: JSON.stringify({ target: 'google_search', query, parse: true, ...(geo ? { geo } : {}), ...(opts.recent === 'year' ? { google_tbs: 'qdr:y' } : {}) }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`Web search answered ${res.status}`)
@@ -56,11 +57,11 @@ export function webSearcher(fetchImpl: typeof fetch = fetch): WebSearch | null {
   const secret = env.reacher.secret()
   if (env.prospectingManaged()) {
     if (!hostWebSearch() || !hostUrl || !secret) return null
-    return async (query, country) => {
+    return async (query, country, opts) => {
       const res = await fetchImpl(`${hostUrl}/v1/web-search`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-reacher-secret': secret },
-        body: JSON.stringify({ query, ...(country ? { country } : {}) }),
+        body: JSON.stringify({ query, ...(country ? { country } : {}), ...(opts?.recent ? { recent: opts.recent } : {}) }),
         signal: AbortSignal.timeout(TIMEOUT_MS + 5_000),
       })
       if (!res.ok) throw new Error(`Web search answered ${res.status}`)
@@ -68,5 +69,5 @@ export function webSearcher(fetchImpl: typeof fetch = fetch): WebSearch | null {
     }
   }
   const key = env.webSearch.apiKey()
-  return key ? (query, country) => decodoSearch(key, query, { url: env.webSearch.url(), fetchImpl, country }) : null
+  return key ? (query, country, opts) => decodoSearch(key, query, { url: env.webSearch.url(), fetchImpl, country, recent: opts?.recent }) : null
 }

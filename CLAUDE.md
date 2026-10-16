@@ -56,7 +56,13 @@ key), with the app's actions as tools.
     people, forms and proposals at a company in the last 90 days; the Warm
     filter searches inside those companies first) and `new_in_role` (the
     shown job's start, a year or month from the profile, held in memory with
-    the result like its title and never saved, sent or logged). Company
+    the result like its title and never saved, sent or logged), plus `hiring`
+    and `funding` from one web search each per company (`webSignals.ts`
+    reads them, strict about which company and how recent;
+    `companySignals.ts` asks the host, or with SIGNAL_LOOKUPS=on uses the
+    copy's own key, cached in `company_signals`). Badges load after the
+    results show (`useCompanySignals`); the Hiring and Funding filters find
+    companies first and screen each batch before searching for people. Company
     staff counts from company pages are kept over time
     (`prospect_companies.headcount_history`) for a later growth signal. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.

@@ -42,6 +42,8 @@ interface HostAnswer {
   profileLookupsFree: boolean
   /** The host runs a web search this copy can use to find a company's website (webSearch.ts). */
   webSearch: boolean
+  /** The host looks up hiring and funding signals for this copy's searches (companySignals.ts). */
+  signals: boolean
 }
 
 export interface SharedDatabase {
@@ -138,6 +140,11 @@ export function hostWebSearch(): boolean {
   return env.prospectingManaged() && g.__hostRules?.webSearch === true
 }
 
+/** Whether the host looks up hiring and funding signals for this copy (companySignals.ts). */
+export function hostSignals(): boolean {
+  return env.prospectingManaged() && g.__hostRules?.signals === true
+}
+
 export function profileLookupsFree(): boolean {
   return env.prospectingManaged() && g.__hostRules?.profileLookupsFree === true
 }
@@ -174,6 +181,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       pool: sharedDatabaseFrom(body?.pool),
       profileLookupsFree: body?.profileLookupsFree === true,
       webSearch: body?.webSearch === true,
+      signals: body?.signals === true,
     }
     g.__hostRules = answer
     return answer

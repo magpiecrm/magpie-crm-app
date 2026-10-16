@@ -43,6 +43,7 @@ import {
   type SignalKind,
 } from '../../../server/prospecting/types'
 import { signalScore } from '../../../server/prospecting/signals'
+import { useCompanySignals } from '../useCompanySignals'
 import { parseSeniorityLabel } from '../../../server/prospecting/seniority'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
@@ -94,7 +95,13 @@ interface PeopleForm {
 const SEARCH_SIGNALS: Array<{ kind: SignalKind; label: string; hint: string }> = [
   { kind: 'warm', label: 'Warm accounts', hint: 'Companies where your emails, forms or proposals found interest in the last 90 days. Searched first; needs no industry or keyword.' },
   { kind: 'new_in_role', label: 'New in role', hint: 'Started their job in the last 6 months, from their profile.' },
+  { kind: 'hiring', label: 'Hiring', hint: 'Jobs open on their careers page or a job board lately. Companies are found first, so this needs an industry or keyword.' },
+  { kind: 'funding', label: 'Raised funding', hint: 'A funding round in the news in the last year. Companies are found first, so this needs an industry or keyword.' },
 ]
+/** Signals about the company found on the web: they choose the companies first, which needs something to search companies by. */
+const WEB_KINDS: SignalKind[] = ['hiring', 'funding']
+const signalsNeedTerm = (f: PeopleForm) =>
+  !f.company && f.signals.some((k) => WEB_KINDS.includes(k)) && !f.signals.includes('warm') && f.industries.length === 0 && !f.keyword.trim()
 
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
@@ -326,6 +333,12 @@ export function ProspectSearch() {
         setFormError('Enter a job title or keyword, or pick a company.')
         return
       }
+      // Companies hiring or funded are found first too.
+      if (signalsNeedTerm(peopleForm)) {
+        setFormError('Hiring and Raised funding need an industry or keyword, to find the companies first.')
+        setExpanded((prev) => ({ ...prev, peopleIndustry: true }))
+        return
+      }
       // Companies of a size are found first, and finding companies needs something to search by.
       if (sizeNeedsTerm(peopleForm)) {
         setFormError('Company size needs an industry or keyword, to find companies of that size first.')
@@ -428,7 +441,10 @@ export function ProspectSearch() {
       return next
     })
 
-  const companyItems = companies.data?.pages.flatMap((p) => p.items) ?? []
+  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  // Hiring and funding, where this copy can look them up (its host, or its own web search key).
+  const webSignals: Array<'hiring' | 'funding'> = status?.webSignals ?? []
+  const companyItems = useCompanySignals(companies.data?.pages.flatMap((p) => p.items) ?? [], webSignals.length > 0 && mode === 'companies')
   // While a page is being searched, the people it has found so far follow the pages already done.
   const searching = people.isFetching ? live : null
   const donePeople = people.data?.pages.flatMap((p) => p.items) ?? []
@@ -438,7 +454,6 @@ export function ProspectSearch() {
   // People at companies that accept every address can't get a verified
   // email, so while verified-only is on they're hidden (with a count and a
   // way to show them). Shares the sidebar's status query.
-  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   // Run by the host: credits are the host's business, and verification outcomes stay short.
   const hosted = Boolean(status?.managed)
   const verifiedOnly = status?.verification?.verifiedOnly ?? true
@@ -467,7 +482,9 @@ export function ProspectSearch() {
   const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail || p.noAnswer || p.noCompany)
   const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
   const hiding = hiddenCount > 0 && !showHidden
-  const unsorted = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople
+  // Hiring and funding badges, fetched for the companies on screen once they're showing.
+  const withWebSignals = useCompanySignals(hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople, webSignals.length > 0 && !searching)
+  const unsorted = withWebSignals
   // People with stronger signals first, when chosen; otherwise in the order they were found.
   const peopleItems = signalsFirst ? [...unsorted].sort((a, b) => signalScore(b.signals) - signalScore(a.signals)) : unsorted
   // Titles checked against profiles, by the search itself or the button.
@@ -715,7 +732,7 @@ export function ProspectSearch() {
 
       <FilterAccordion label="Signals" icon={<Flame className="w-4 h-4" />} isOpen={!!expanded.signals} onToggle={() => toggleSection('signals')} badgeCount={peopleForm.signals.length}>
         <div className="space-y-2">
-          {SEARCH_SIGNALS.map((s) => (
+          {SEARCH_SIGNALS.filter((s) => !WEB_KINDS.includes(s.kind) || webSignals.includes(s.kind as 'hiring' | 'funding')).map((s) => (
             <label key={s.kind} className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer">
               <input
                 type="checkbox"

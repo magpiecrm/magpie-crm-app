@@ -3,8 +3,8 @@ import { defineTool } from '../types'
 import { stringOrArray } from './shared'
 import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../../prospecting/types'
 
-// Only the kinds a copy has today; hiring, funding and growing come with the host's company signals.
-const SEARCH_SIGNALS = ['warm', 'new_in_role'] as const
+// The kinds a search can ask for; growing comes once there's staff-count history to judge it by.
+const SEARCH_SIGNALS = ['warm', 'new_in_role', 'hiring', 'funding'] as const
 
 /**
  * Everyday business shorthand that has no counterpart in LinkedIn's taxonomy.
@@ -154,7 +154,7 @@ export const prospectTools = [
         .array(z.enum(SEARCH_SIGNALS))
         .optional()
         .describe(
-          'Only people with one of these signals. "warm": at companies where the user\'s own emails, forms or proposals found interest in the last 90 days (searched first, needs no keyword). "new_in_role": started their job lately, from their profile.',
+          'Only people with one of these signals. "warm": at companies where the user\'s own emails, forms or proposals found interest in the last 90 days (searched first, needs no keyword). "new_in_role": started their job lately, from their profile. "hiring" (jobs open lately) and "funding" (a round in the news in the last year): companies are found first, so these need `industries` or `keyword`, and only work where prospectingStatus says this copy can look them up.',
         ),
       count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('People on a page of results, in all: 25, 50, 75 or 100, whatever the number of job titles. Defaults to 25; each result uses about one to two prospect credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
