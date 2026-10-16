@@ -5,6 +5,7 @@ import { Badge } from '../../../components/ui/Badge'
 import type { RevealResult } from '../../../server/prospecting/reveal'
 import type { PersonResult, Seniority } from '../../../server/prospecting/types'
 import { EmailStatusBadge } from './EmailStatusBadge'
+import { SignalBadges } from './SignalBadges'
 
 export type RevealState = { status: 'loading' } | { status: 'error'; message: string } | RevealResult
 
@@ -308,6 +309,7 @@ export function PeopleResults({
               <p className="font-semibold text-foreground text-sm truncate">{p.firstName} {p.lastName}</p>
               <p className="text-xs text-muted-foreground"><TitleText person={p} refined={refined.has(p.profileUrl)} /></p>
               <p className="text-xs text-foreground truncate mt-0.5">{p.company}{p.country ? ` · ${p.country}` : ''}</p>
+              <SignalBadges signals={p.signals} />
               {p.seniority && <div className="mt-1.5"><Badge>{SENIORITY_LABEL[p.seniority]}</Badge></div>}
               <div className="mt-2"><EmailCell
                   person={p}
@@ -369,7 +371,10 @@ export function PeopleResults({
                 <TitleText person={p} refined={refined.has(p.profileUrl)} />
               </td>
               <td className="px-3 py-3">{p.seniority ? <Badge>{SENIORITY_LABEL[p.seniority]}</Badge> : <span className="text-xs text-muted-foreground">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-foreground">{p.company || '—'}</td>
+              <td className="px-3 py-3 text-sm text-foreground">
+                {p.company || '—'}
+                <SignalBadges signals={p.signals} />
+              </td>
               <td className="px-3 py-3 text-xs text-foreground">{p.country ?? '—'}</td>
               <td className="px-3 py-3">
                 <EmailCell

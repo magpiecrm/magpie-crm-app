@@ -50,7 +50,15 @@ key), with the app's actions as tools.
     has switched searching on, any hosted copy's search also asks it which of
     the people found it already holds (by profile hash): their job and
     employer then come from the host instead of a profile lookup, and their
-    email from the host on Reveal or save (`PersonResult.shared`). API keys and base URLs come from
+    email from the host on Reveal or save (`PersonResult.shared`). Intent
+    signals (`signals.ts`) mark results and can filter a search: `warm`
+    (`warmAccounts.ts`, the workspace's own replies, clicks, opens by two
+    people, forms and proposals at a company in the last 90 days; the Warm
+    filter searches inside those companies first) and `new_in_role` (the
+    shown job's start, a year or month from the profile, held in memory with
+    the result like its title and never saved, sent or logged). Company
+    staff counts from company pages are kept over time
+    (`prospect_companies.headcount_history`) for a later growth signal. API keys and base URLs come from
     `src/server/env.ts`; do not read `process.env` directly in new server code.
   - `usage.ts` — monthly usage counts (searches, prospects, email lookups,
     emails found, contacts saved, emails sent), shown on Settings → Overview

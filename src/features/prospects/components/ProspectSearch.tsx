@@ -12,6 +12,7 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Flame,
   UserCheck,
   Users2,
   X,
@@ -39,7 +40,9 @@ import {
   type Page,
   type PersonResult,
   type Seniority,
+  type SignalKind,
 } from '../../../server/prospecting/types'
+import { signalScore } from '../../../server/prospecting/signals'
 import { parseSeniorityLabel } from '../../../server/prospecting/seniority'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
@@ -81,17 +84,25 @@ interface PeopleForm {
   companySizes: HeadcountBucket[]
   /** Also show people who are already contacts; off, they're left out. */
   includeContacts: boolean
+  /** Only people with one of these signals (server/prospecting/signals.ts). */
+  signals: SignalKind[]
   /** Results per page. Each result's profile is looked up, so this drives cost. */
   count: number
 }
 
+/** The signals a search can ask for today, with what each means. Hiring, funding and growth come with the host's company signals. */
+const SEARCH_SIGNALS: Array<{ kind: SignalKind; label: string; hint: string }> = [
+  { kind: 'warm', label: 'Warm accounts', hint: 'Companies where your emails, forms or proposals found interest in the last 90 days. Searched first; needs no industry or keyword.' },
+  { kind: 'new_in_role', label: 'New in role', hint: 'Started their job in the last 6 months, from their profile.' },
+]
+
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, count: PAGE_SIZES[0] }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, signals: [], count: PAGE_SIZES[0] }
 const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
 /** A size with no company chosen is searched companies first, which needs an industry or keyword to find them by. */
-const sizeNeedsTerm = (f: PeopleForm) => !f.company && f.companySizes.length > 0 && f.industries.length === 0 && !f.keyword.trim()
+const sizeNeedsTerm = (f: PeopleForm) => !f.company && f.companySizes.length > 0 && f.industries.length === 0 && !f.keyword.trim() && !f.signals.includes('warm')
 
 /**
  * Upper bound on one page: 3 credits for each job title's search request (up
@@ -149,6 +160,7 @@ export function ProspectSearch() {
   const [mode, setMode] = useState<Mode>('people')
   const [companyForm, setCompanyForm] = useState(EMPTY_COMPANY_FORM)
   const [peopleForm, setPeopleForm] = useState(EMPTY_PEOPLE_FORM)
+  const [signalsFirst, setSignalsFirst] = useState(false)
   const [companySearch, setCompanySearch] = useState<CompanyForm | null>(null)
   const [peopleSearch, setPeopleSearch] = useState<PeopleSearch | null>(null)
   const [restored, setRestored] = useState(false)
@@ -235,6 +247,7 @@ export function ProspectSearch() {
           industries: peopleSearch!.industries?.length ? peopleSearch!.industries : undefined,
           companySizes: peopleSearch!.company || !peopleSearch!.companySizes?.length ? undefined : peopleSearch!.companySizes,
           includeContacts: peopleSearch!.includeContacts || undefined,
+          signals: peopleSearch!.signals?.length ? peopleSearch!.signals : undefined,
           // Only the first page: Load more carries on from its own cursor.
           fromStart: (!pageParam && peopleSearch!.fromStart) || undefined,
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
@@ -454,7 +467,9 @@ export function ProspectSearch() {
   const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail || p.noAnswer || p.noCompany)
   const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
   const hiding = hiddenCount > 0 && !showHidden
-  const peopleItems = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople
+  const unsorted = hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople
+  // People with stronger signals first, when chosen; otherwise in the order they were found.
+  const peopleItems = signalsFirst ? [...unsorted].sort((a, b) => signalScore(b.signals) - signalScore(a.signals)) : unsorted
   // Titles checked against profiles, by the search itself or the button.
   // Results whose title and company came from their profile (✓ in the table).
   const refined = new Set([...(people.data?.pages.flatMap((p) => p.refined ?? []) ?? []), ...(searching?.refined ?? [])])
@@ -495,6 +510,7 @@ export function ProspectSearch() {
         (peopleForm.seniorities.length ? 1 : 0) +
         (peopleForm.industries.length ? 1 : 0) +
         (peopleForm.companySizes.length ? 1 : 0) +
+        (peopleForm.signals.length ? 1 : 0) +
         (peopleForm.includeContacts ? 1 : 0)
 
   const companyFilters = (
@@ -694,6 +710,38 @@ export function ProspectSearch() {
             : sizeNeedsTerm(peopleForm)
               ? 'Add an industry or keyword too: companies of this size are found first, then the people who work there.'
               : 'Companies of this size are found first, then the people who work there, so no credits go on people at other sizes.'}
+        </p>
+      </FilterAccordion>
+
+      <FilterAccordion label="Signals" icon={<Flame className="w-4 h-4" />} isOpen={!!expanded.signals} onToggle={() => toggleSection('signals')} badgeCount={peopleForm.signals.length}>
+        <div className="space-y-2">
+          {SEARCH_SIGNALS.map((s) => (
+            <label key={s.kind} className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                className="rounded border-border text-accent focus:ring-accent mt-0.5"
+                checked={peopleForm.signals.includes(s.kind)}
+                disabled={Boolean(peopleForm.company) && s.kind === 'warm'}
+                onChange={(e) =>
+                  setPeopleForm({
+                    ...peopleForm,
+                    signals: e.target.checked ? [...peopleForm.signals, s.kind] : peopleForm.signals.filter((x) => x !== s.kind),
+                  })
+                }
+              />
+              <span>
+                {s.label}
+                <span className="block text-[10px] text-muted-foreground leading-snug">{s.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <label className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
+          <input type="checkbox" className="rounded border-border text-accent focus:ring-accent" checked={signalsFirst} onChange={(e) => setSignalsFirst(e.target.checked)} />
+          Show people with signals first
+        </label>
+        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+          With none ticked, every result still shows its signals. Ticking one keeps only people who have at least one of those ticked.
         </p>
       </FilterAccordion>
 

@@ -333,6 +333,12 @@ export interface DbSchema {
     headcount?: number | null
     /** LinkedIn company page name, for the 1-credit company lookup. */
     slug?: string | null
+    /**
+     * Its company page's own staff count over time, at least 25 days apart
+     * (the last 8): what the "growing" signal is judged from (signals.ts).
+     * Company data, not personal.
+     */
+    headcount_history?: Array<{ at: string; n: number }>
     updated_at: string
   }>
   email_domains?: EmailDomainRecord[]
@@ -567,6 +573,9 @@ interface DisclosureEntry {
 /** How far before its send an email's delivery may be timed: the mail server's clock isn't this one. */
 const DELIVERY_LEEWAY_MS = 60_000
 
+/** How far apart a company's staff counts are kept (prospect_companies headcount_history). */
+const HEADCOUNT_SNAPSHOT_GAP_MS = 25 * 86_400_000
+
 class JsonDb {
   public data: DbSchema
 
@@ -678,15 +687,23 @@ class JsonDb {
       page_checked?: boolean
       headcount?: number | null
       slug?: string | null
+      /** `headcount` is the company page's own count, not a size range's: it's kept in the company's history. */
+      headcount_exact?: boolean
     }>,
   ) {
     const list = this.data.prospect_companies!
     const now = new Date().toISOString()
-    for (const entry of entries) {
+    for (const { headcount_exact, ...entry } of entries) {
       const existing = list.find((c) => c.ref === entry.ref)
+      const snapshot = headcount_exact && typeof entry.headcount === 'number' ? { at: now, n: entry.headcount } : null
       if (!existing) {
-        list.push({ ...entry, updated_at: now })
+        list.push({ ...entry, ...(snapshot ? { headcount_history: [snapshot] } : {}), updated_at: now })
         continue
+      }
+      if (snapshot) {
+        const history = existing.headcount_history ?? []
+        const last = history.at(-1)
+        if (!last || Date.parse(now) - Date.parse(last.at) >= HEADCOUNT_SNAPSHOT_GAP_MS) existing.headcount_history = [...history, snapshot].slice(-8)
       }
       // A domain the user typed in wins over whatever the provider says later,
       // and a search hit without a website doesn't erase one we already know.

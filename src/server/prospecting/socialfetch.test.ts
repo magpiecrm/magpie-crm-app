@@ -214,6 +214,33 @@ describe('someone who holds several jobs at once', () => {
   })
 })
 
+describe('when someone started their job', () => {
+  const dated = (over: Record<string, unknown> = {}) =>
+    rawPerson({
+      currentPositions: [
+        { title: 'Non-Executive Director', organizationName: 'Bigco plc', organizationId: '900', isCurrent: true, startedOn: '2019-04' },
+        { title: 'Founder', organizationName: 'Smith Advisory', organizationId: '901', isCurrent: true, startedOn: '2026-08-12' },
+      ],
+      ...over,
+    })
+
+  it("keeps the start of each current job, as a month, on a profile's answer only", () => {
+    const profile = mapPerson(dated(), { fromProfile: true })!
+    expect(profile.roleStartedOn).toBe('2019-04')
+    expect(profile.otherJobs?.[0]).toMatchObject({ company: 'Smith Advisory', startedOn: '2026-08' })
+    expect(mapPerson(dated())!.roleStartedOn).toBeUndefined()
+    // SocialFetch's own shape, a year and a month.
+    const theirs = mapPerson(rawPerson({ currentPositions: [{ title: 'CFO', organizationName: 'Acme', isCurrent: true, startDate: { year: 2025, month: 11 } }] }), { fromProfile: true })!
+    expect(theirs.roleStartedOn).toBe('2025-11')
+  })
+
+  it('follows the job shown when someone holds several', () => {
+    const found = { ...mapPerson(dated())!, company: '', companyRef: null, companySlug: null }
+    expect(refineFromProfile(found, mapPerson(dated(), { fromProfile: true }), (job) => job.companyRef === '901')).toMatchObject({ company: 'Smith Advisory', roleStartedOn: '2026-08' })
+    expect(refineFromProfile(found, mapPerson(dated(), { fromProfile: true }))).toMatchObject({ company: 'Bigco plc', roleStartedOn: '2019-04' })
+  })
+})
+
 describe('mapping', () => {
   it('keeps only the allowed person fields', () => {
     const person = mapPerson(rawPerson())

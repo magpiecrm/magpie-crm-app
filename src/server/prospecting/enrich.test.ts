@@ -72,7 +72,7 @@ vi.mock('../db', () => ({
     addSearchLog: (entry: any) => void searchLog.push(entry),
     getProspectingSettings: () => prospectingSettings,
     getUnverifiable: () => unverifiable,
-    data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies } },
+    data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies }, get campaign_recipients() { return recipients } },
     getSearchPosition: (key: string) => positions.get(key) ?? null,
     setSearchPosition: (key: string, cursor: string | null) => (cursor ? positions.set(key, cursor) : positions.delete(key)),
     getCompanySite: (key: string) => companySites.get(key) ?? null,
@@ -85,7 +85,9 @@ const searchLog: any[] = []
 const companySites = new Map<string, { domain: string | null; at: string }>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
-let prospectCompanies: Array<{ ref: string; name: string; domain: string | null }> = []
+let prospectCompanies: Array<{ ref: string; name: string; domain: string | null; headcount?: number | null }> = []
+// Campaign results, for the Warm signal (warmAccounts.ts).
+let recipients: any[] = []
 const recordUsage = vi.fn()
 vi.mock('../usage', async (original) => {
   const actual: any = await original()
@@ -94,6 +96,7 @@ vi.mock('../usage', async (original) => {
 
 const { searchPeople, searchCompanies } = await import('./search')
 const { forgetCompanyGuesses } = await import('./companies')
+const { forgetWarmIndex } = await import('./warmAccounts')
 const { hashesFor, emailHash, profileHash } = await import('./suppression')
 
 const hit = (handle: string, title = 'Business Analyst'): PersonResult => ({
@@ -120,6 +123,8 @@ beforeEach(() => {
   disclosures = []
   contacts = []
   prospectCompanies = []
+  recipients = []
+  forgetWarmIndex()
   catchAllDomains = new Set()
   silentDomains = new Set()
   recordUsage.mockClear()
@@ -327,6 +332,51 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
       ['eve', '42'],
       ['ana', '42'],
     ])
+  })
+
+  it('marks people at a company where the workspace found interest, and with Warm chosen searches only those companies', async () => {
+    const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    recipients = [{ campaign_id: 1, contact_email: 'someone@acme.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+    prospectCompanies = [{ ref: '7', name: 'Acme', domain: 'acme.com', headcount: 30 }]
+    searchPage = pageOf(hit('ana'), hit('ben'))
+    const res = await searchPeople({ titles: ['Business Analyst'] })
+    // Ben's profile says Acme (ref 7): its domain is acme.com, where someone clicked.
+    expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.label) ?? []])).toEqual([
+      ['ana', []],
+      ['ben', ['Warm · 1 click']],
+    ])
+
+    // Warm chosen: no company search; the people search is inside Acme.
+    searchCompaniesMock.mockClear()
+    searchPeopleMock.mockClear()
+    searchPage = pageOf(hit('ben'))
+    const warm = await searchPeople({ titles: ['Business Analyst'], signals: ['warm'], fromStart: true })
+    expect(searchCompaniesMock).not.toHaveBeenCalled()
+    expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ companyRefs: ['7'] })
+    expect(warm.items.map((p) => p.firstName)).toEqual(['ben'])
+    expect(warm.warnings.join(' ')).toMatch(/Searched inside your warm companies: 1 company/)
+    expect(warm.warnings.join(' ')).toMatch(/That's everyone at your warm companies: 1 person of the 25 asked for/)
+    expect(warm.warnings.join(' ')).not.toMatch(/Every company matching/)
+    // A size the warm company isn't: nothing to search, said plainly.
+    searchPeopleMock.mockClear()
+    const small = await searchPeople({ titles: ['Business Analyst'], signals: ['warm'], companySizes: ['1-10'], fromStart: true })
+    expect(searchPeopleMock).not.toHaveBeenCalled()
+    expect(small.items).toEqual([])
+  })
+
+  it('with New in role chosen, keeps only people whose job started lately, and counts the rest', async () => {
+    const thisMonth = new Date().toISOString().slice(0, 7)
+    const ana = profiles.ana
+    profiles.ana = { ...ana, roleStartedOn: thisMonth }
+    try {
+      searchPage = pageOf(hit('ana'), hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'], signals: ['new_in_role'] })
+      expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+      expect(res.items[0].signals?.[0]).toMatchObject({ kind: 'new_in_role', at: thisMonth })
+      expect(res.warnings).toContain('1 person was left out for having none of the signals chosen.')
+    } finally {
+      profiles.ana = ana
+    }
   })
 
   it("doesn't place someone at a company because they typed what they do as their employer and a company goes by that word", async () => {

@@ -37,6 +37,30 @@ export const HEADCOUNT_BUCKETS = [
 ] as const
 export type HeadcountBucket = (typeof HEADCOUNT_BUCKETS)[number]
 
+/**
+ * Signs that a company, or a person there, may be in the market now
+ * (signals.ts). `warm`: the workspace's own email, forms or proposals found
+ * interest there. `new_in_role`: the person started their job lately.
+ * `hiring`, `funding`, `growing`: from the web and LinkedIn's company pages.
+ */
+export const SIGNAL_KINDS = ['warm', 'new_in_role', 'hiring', 'funding', 'growing'] as const
+export type SignalKind = (typeof SIGNAL_KINDS)[number]
+/** Kinds about a company, which apply to everyone there. */
+export const COMPANY_SIGNAL_KINDS: readonly SignalKind[] = ['warm', 'hiring', 'funding', 'growing']
+
+export interface Signal {
+  kind: SignalKind
+  /** What a badge says: "Warm · 2 people clicked", "New in role · since Mar 2026". */
+  label: string
+  /** More, for the badge's tooltip. Counts only, never who. */
+  detail?: string
+  /** When it happened (a date or a month), where that's known. */
+  at?: string | null
+  /** Where it was seen: a careers page or an article, or the company's page in the app. */
+  url?: string | null
+  source: 'workspace' | 'linkedin' | 'web'
+}
+
 export interface CompanyResult {
   /** Provider's stable identifier for the company (numeric LinkedIn org id when known). */
   ref: string
@@ -54,6 +78,10 @@ export interface CompanyResult {
    * there can be verified. From the domain cache; no check is run for it.
    */
   catchAll?: boolean
+  /** Its signals (signals.ts), where there are any. */
+  signals?: Signal[]
+  /** `headcount` is the company page's own count, not the bottom of a size range: what growth is measured from. */
+  headcountExact?: boolean
 }
 
 /** One of the jobs someone holds now: its title and employer (name, company page). */
@@ -62,6 +90,8 @@ export interface CurrentJob {
   company: string
   companyRef: string | null
   companySlug?: string | null
+  /** When they started it, as their profile says: a year ("2026") or a month ("2026-03"), never the day. */
+  startedOn?: string | null
 }
 
 export interface PersonResult {
@@ -137,6 +167,14 @@ export interface PersonResult {
    * to give their verified email. Hosted copies only.
    */
   shared?: string
+  /**
+   * When they started the job shown, from their profile: a year or a month,
+   * never the day. In memory only, like the rest of a search result: never
+   * saved with a contact, sent to the host or logged (signals.ts).
+   */
+  roleStartedOn?: string
+  /** Their signals, and their company's (signals.ts), where there are any. */
+  signals?: Signal[]
 }
 
 /**
@@ -182,6 +220,12 @@ export interface PeopleFilters {
    * the page.
    */
   includeContacts?: boolean
+  /**
+   * Only people with at least one of these signals (signals.ts). Kinds about
+   * a company (warm, hiring, funding, growing) choose the companies first;
+   * new in role is judged from each person's profile.
+   */
+  signals?: SignalKind[]
   /**
    * LinkedIn company ids to search inside (up to 20), for a search that
    * found companies of the chosen size first. Set by search.ts, not the page.

@@ -61,6 +61,7 @@ export async function companyWebsite(
       page_checked: true,
       headcount: company?.headcount ?? null,
       slug: pageSlug,
+      headcount_exact: company?.headcountExact,
     }])
     return company?.domain ?? null
   })()
@@ -197,7 +198,7 @@ export const forgetCompanyGuesses = () => guessed.clear()
 async function companyAtPage(pageName: string, name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null> {
   const company = await source.getCompany(pageName, pageName, { pageOnly: true })
   if (!company || companyKey(company.name) !== companyKey(name) || !sameCompanyName(company.name, name)) return null
-  db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: company.domain, domain_source: 'socialfetch', page_checked: true, headcount: company.headcount, slug: pageName }])
+  db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: company.domain, domain_source: 'socialfetch', page_checked: true, headcount: company.headcount, slug: pageName, headcount_exact: company.headcountExact }])
   return { ref: company.ref, name: company.name, domain: company.domain, slug: pageName }
 }
 

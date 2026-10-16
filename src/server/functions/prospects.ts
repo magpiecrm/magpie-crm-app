@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../prospecting/types'
+import { HEADCOUNT_BUCKETS, SIGNAL_KINDS, SENIORITY_LEVELS } from '../prospecting/types'
 
 const EMAIL_STATUSES = ['verified', 'format_confirmed', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
 
@@ -70,6 +70,8 @@ export const peopleSearchInput = z.object({
   industries: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   companySizes: z.array(z.enum(HEADCOUNT_BUCKETS)).max(HEADCOUNT_BUCKETS.length).optional(),
   includeContacts: z.boolean().optional(),
+  // Only people with one of these signals (signals.ts).
+  signals: z.array(z.enum(SIGNAL_KINDS)).max(SIGNAL_KINDS.length).optional(),
   fromStart: z.boolean().optional(),
   // The page offers 25, 50, 75 or 100 (PAGE_SIZES).
   count: z.number().int().min(1).max(100).optional(),
@@ -86,6 +88,8 @@ export const searchPeopleFn = createServerFn({ method: 'POST' })
     return searchPeople(data)
   })
 
+// A person to reveal or save. Their signals and job start aren't read: zod
+// drops keys it doesn't name, so they never reach a contact or the host.
 const personInput = z.object({
   profileUrl: z.string().trim().url().max(500),
   firstName: z.string().trim().max(200),

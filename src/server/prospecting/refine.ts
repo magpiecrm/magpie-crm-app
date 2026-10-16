@@ -29,6 +29,8 @@ export function refineFromProfile(person: PersonResult, profile: PersonResult | 
     companyRef: job.companyRef ?? person.companyRef,
     companySlug: job.companySlug ?? person.companySlug ?? null,
     country: person.country ?? profile.country,
+    // The start of the job shown, not of their others (signals.ts: new in role).
+    ...(job.startedOn ? { roleStartedOn: job.startedOn } : {}),
   }
 }
 
@@ -43,7 +45,7 @@ type Employer = Pick<CurrentJob, 'company' | 'companyRef'>
  * the employer the search result named (their headline's); else the first.
  */
 function currentJob(person: PersonResult, profile: PersonResult, searched?: (job: Employer) => boolean): CurrentJob {
-  const first: CurrentJob = { title: profile.title, company: profile.company, companyRef: profile.companyRef, companySlug: profile.companySlug }
+  const first: CurrentJob = { title: profile.title, company: profile.company, companyRef: profile.companyRef, companySlug: profile.companySlug, startedOn: profile.roleStartedOn }
   if (!profile.otherJobs?.length) return first
   const jobs = [first, ...profile.otherJobs]
   const named = (job: Employer) =>

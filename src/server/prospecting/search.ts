@@ -4,7 +4,9 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult } from './types'
+import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type SignalKind } from './types'
+import { hasSignal, newInRoleSignal, withSignals } from './signals'
+import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
@@ -41,6 +43,12 @@ export async function searchCompanies(filters: CompanyFilters): Promise<Page<Com
   const unmarked = page.items.filter((c) => !c.catchAll && !(c.domain && worthIt(c.domain)))
   const shared = await sharedCatchAll(unmarked.map((c) => ({ ref: c.ref, domain: c.domain })))
   unmarked.forEach((c, i) => shared[i] && (c.catchAll = true))
+  // Companies where the workspace's own email, forms or proposals found interest lately (warmAccounts.ts).
+  const warm = warmIndex(db.data)
+  for (const company of page.items) {
+    const signal = warmFor(warm, { domain: company.domain, ref: company.ref })
+    if (signal) company.signals = [signal]
+  }
 
   // Companies and domains are non-personal, so they're cached globally.
   db.upsertProspectCompanies(
@@ -448,6 +456,11 @@ interface Tally {
   skippedOtherEmployer: number
   /** Taken as working at the company searched, with no profile lookup (knownEmployer). */
   noLookup: number
+  /** Signals filter (signals.ts): left out for having none of the signals asked for. */
+  noSignal: number
+  /** Profiles that said when the job shown started: to the month, or only the year. */
+  roleStartMonth: number
+  roleStartYear: number
 }
 
 type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies' | 'getCompany'>>
@@ -476,6 +489,8 @@ interface CompanyFirstState {
   people?: string
   /** Companies to search one at a time (a batch split up), with each one's cursor. */
   singles?: Array<[ref: string, name: string, people?: string]>
+  /** The Warm filter: the workspace's warm companies have been queued (warmAccounts.ts), instead of searching for companies. */
+  warm?: boolean
 }
 
 /**
@@ -595,6 +610,19 @@ async function withoutUnverifiable(companies: Array<[ref: string, name: string]>
   return keep
 }
 
+/**
+ * The Warm filter's companies: the workspace's warm ones with a LinkedIn id,
+ * most recent first, of the chosen sizes where their staff count is known.
+ */
+function warmCompanies(db: Db, filters: PeopleFilters): Array<{ ref: string; name: string }> {
+  const sizes = filters.companySizes ?? []
+  const headcount = new Map((db.data.prospect_companies ?? []).map((c) => [c.ref, c.headcount ?? null]))
+  return warmTargets(warmIndex(db.data)).filter((c) => {
+    const n = headcount.get(c.ref)
+    return !sizes.length || n === null || n === undefined || inHeadcountBuckets(n, sizes)
+  })
+}
+
 /** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
 function companyTerms(filters: PeopleFilters): Array<{ keyword: string; industry?: string }> {
   const keyword = filters.keyword?.trim()
@@ -630,14 +658,16 @@ async function companyFirstPage(
 }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
-  const terms = companyTerms(filters)
+  // With the Warm filter, the companies are the workspace's warm ones: no company search.
+  const warm = Boolean(filters.signals?.includes('warm'))
+  const terms = warm ? [] : companyTerms(filters)
   const wantCountry = canonicalCountry(filters.country)
   let s = decodeState(cursor)
   let orgSearches = 0
   let found = 0
   let orgTotal: number | null = null
   const hasMore = (next: CompanyFirstState) =>
-    next.batch.length > 0 || next.pending.length > 0 || Boolean(next.singles?.length) || next.orgCursor !== undefined || next.term < terms.length
+    next.batch.length > 0 || next.pending.length > 0 || Boolean(next.singles?.length) || next.orgCursor !== undefined || next.term < terms.length || (warm && !next.warm)
 
   // Companies split from a batch: a few searched at once, each on its own, so
   // everyone found is known to work there and no profile is looked up.
@@ -685,6 +715,13 @@ async function companyFirstPage(
       const pending = screened ? await withoutUnverifiable(s.pending, db, screened) : s.pending
       s = { ...s, batch: pending.slice(0, MAX_COMPANIES_PER_SEARCH), pending: pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
       if (s.batch.length) break
+      continue
+    }
+    if (warm) {
+      if (s.warm) break
+      const targets = warmCompanies(db, filters)
+      found += targets.length
+      s = { ...s, warm: true, pending: targets.map((c) => [c.ref, c.name] as [string, string]) }
       continue
     }
     const term = terms[s.term]
@@ -1176,6 +1213,15 @@ async function processBatch(
     markKnown()
   }
 
+  // Signals (signals.ts): new in role from the profile, and warm from the
+  // workspace's own engagement, the person's own for someone already a contact.
+  const warm = warmIndex(db.data)
+  items = items.map((p) => {
+    if (p.roleStartedOn) p.roleStartedOn.length > 4 ? tally.roleStartMonth++ : tally.roleStartYear++
+    const own = p.previously === 'saved' && p.email ? warm.byEmail.get(p.email.toLowerCase()) : undefined
+    return withSignals(p, [newInRoleSignal(p.roleStartedOn), own ? warmSignal(own, true) : warmFor(warm, { domain: p.companyDomain, ref: p.companyRef })])
+  })
+
   const shown = new Set(items.map((p) => p.profileUrl))
   return {
     items,
@@ -1212,8 +1258,11 @@ export async function searchPeople(
   const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
   const source: Source = getSource()
-  const companyFirst = !company && Boolean(filters.companySizes?.length)
-  if (companyFirst && !companyTerms(filters).length) throw new Error(SIZE_NEEDS_TERM)
+  // Only people with one of these signals (signals.ts). Warm chooses the companies first, from the workspace's own.
+  const kinds: SignalKind[] = filters.signals ?? []
+  const warmFirst = !company && kinds.includes('warm')
+  const companyFirst = !company && (Boolean(filters.companySizes?.length) || warmFirst)
+  if (companyFirst && !warmFirst && !companyTerms(filters).length) throw new Error(SIZE_NEEDS_TERM)
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
@@ -1245,13 +1294,20 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, roleStartMonth: 0, roleStartYear: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
   // A batch can find a few more people than the page has room left for (each
   // title's search is asked for a share of what's needed, rounded up): the
   // page takes the first of them and stops at the number asked for.
+  // The signals filter: people with none of the signals asked for are left out, and counted.
+  const withSignalsAsked = (found: PersonResult[]) => {
+    if (!kinds.length) return found
+    const kept = found.filter((p) => hasSignal(p, kinds))
+    tally.noSignal += found.length - kept.length
+    return kept
+  }
   const fitting = (found: PersonResult[]) => {
     let room = target - usable()
     return found.filter((p) => hidden(p) || room-- > 0)
@@ -1407,7 +1463,7 @@ export async function searchPeople(
       funnel.repeats += page.items.length - fresh.length
       fresh.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
-      const taken = fitting(batch.items)
+      const taken = fitting(withSignalsAsked(batch.items))
       const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
       items.push(...taken)
       refined.push(...takenRefined)
@@ -1444,7 +1500,7 @@ export async function searchPeople(
       for (const [companySet, people] of groups) {
         const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
         for (const p of batch.items) p.searchId = searchId
-        const taken = fitting(batch.items)
+        const taken = fitting(withSignalsAsked(batch.items))
         const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
         items.push(...taken)
         refined.push(...takenRefined)
@@ -1509,6 +1565,11 @@ export async function searchPeople(
     fromSharedDatabase: shared,
     lookupsSpared: spared,
     prospectCredits: usable(),
+    noSignal: tally.noSignal,
+    signalWarm: items.filter((p) => p.signals?.some((x) => x.kind === 'warm')).length,
+    signalNewInRole: items.filter((p) => p.signals?.some((x) => x.kind === 'new_in_role')).length,
+    roleStartMonth: tally.roleStartMonth,
+    roleStartYear: tally.roleStartYear,
   }
   console.log(
     `[Prospecting] Search funnel ${JSON.stringify({
@@ -1520,6 +1581,7 @@ export async function searchPeople(
         country: filters.country,
         keyword: filters.keyword || undefined,
         company: company?.name,
+        signals: kinds.length ? kinds : undefined,
         page,
       },
       ...counts,
@@ -1537,6 +1599,7 @@ export async function searchPeople(
       country: filters.country?.trim() || null,
       company: company?.name ?? null,
       keyword: Boolean(filters.keyword?.trim()),
+      ...(kinds.length ? { signals: kinds } : {}),
       page,
     },
     counts: Object.fromEntries(Object.entries(counts).filter((e): e is [string, number] => typeof e[1] === 'number')),
@@ -1571,7 +1634,18 @@ export async function searchPeople(
     searchCompaniesUnverifiable: screened.unverifiable,
     searchCompaniesNoDomain: screened.noDomain,
   })
-  if (companyFirst && companiesFound) {
+  if (tally.noSignal > 0) {
+    details.push(`${plural(tally.noSignal, 'person was', 'people were')} left out for having none of the signals chosen.`)
+  }
+  if (warmFirst) {
+    // Warm companies known only by their domain can't be searched inside: say how many.
+    const noRef = warmWithoutRef(warmIndex(db.data))
+    details.push(
+      companiesFound
+        ? `Searched inside your warm companies: ${plural(companiesFound, 'company', 'companies')} where your emails, forms or proposals found interest in the last 90 days.${noRef ? ` ${plural(noRef, 'other has', 'others have')} no LinkedIn company page we know, so couldn't be searched.` : ''}`
+        : `None of your warm companies has a LinkedIn company page we know, so there's nowhere to search${noRef ? ` (${plural(noRef, 'warm company', 'warm companies')} known only by email domain)` : ''}. Saving people from prospect search links their companies.`,
+    )
+  } else if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)
   }
   if (split.companies) {
@@ -1651,6 +1725,8 @@ export async function searchPeople(
     warnings.push(`The people data source is busy right now, so this page stopped at ${usable()} of the ${target} asked for. Load more in a minute to carry on.`)
   } else if (!lookupError && usable() < target && nextCursor && !wasteful) {
     details.push(`Found ${usable()} of ${target} after ${plural(searches, 'search', 'searches')}. Load more to keep looking.`)
+  } else if (!lookupError && usable() < target && companyFirst && !nextCursor && !wasteful && warmFirst) {
+    warnings.push(`That's everyone at your warm companies: ${plural(usable(), 'person', 'people')} of the ${target} asked for. More job titles, or fewer filters, find more there.`)
   } else if (!lookupError && usable() < target && companyFirst && !nextCursor && !wasteful) {
     // The companies ran out: a small market, not a broken search. Say how small, and what widens it.
     const size = org.total !== null && org.total < 1000 ? `${org.total.toLocaleString('en-GB')} ${org.total === 1 ? 'company matches' : 'companies match'}` : 'Every company matching'
@@ -1673,6 +1749,7 @@ function wastefulWarning(tally: Tally, hidden: number, lookedUp: number, company
   const reasons: Array<[number, string, string]> = [
     [tally.wrongCompany, companyName ? `Working somewhere other than ${companyName}` : 'Their current employer', 'Try other job titles.'],
     [hidden, "Emails that can't be verified", 'Settings → Prospect search can show these people, marked as unverifiable.'],
+    [tally.noSignal, 'Having none of the signals chosen', 'Fewer signals, or none, finds more people.'],
   ]
   const [n, why, next] = reasons.sort((a, b) => b[0] - a[0])[0]
   const left = n > 0 ? `${why} left out ${n} of the ${lookedUp} people whose profiles were checked` : `Most of the ${lookedUp} people whose profiles were checked were left out`
@@ -1691,6 +1768,8 @@ function searchPositionKey(input: PeopleFilters & { company?: { ref: string; nam
     industries: sorted(input.industries),
     sizes: input.company ? [] : sorted(input.companySizes),
     includeContacts: Boolean(input.includeContacts),
+    // Only when used, so searches from before signals keep their place.
+    ...(input.signals?.length ? { signals: sorted(input.signals) } : {}),
   })
   return createHash('sha256').update(key).digest('base64url').slice(0, 32)
 }

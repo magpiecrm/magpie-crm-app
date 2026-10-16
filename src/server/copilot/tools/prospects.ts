@@ -3,6 +3,9 @@ import { defineTool } from '../types'
 import { stringOrArray } from './shared'
 import { HEADCOUNT_BUCKETS, SENIORITY_LEVELS } from '../../prospecting/types'
 
+// Only the kinds a copy has today; hiring, funding and growing come with the host's company signals.
+const SEARCH_SIGNALS = ['warm', 'new_in_role'] as const
+
 /**
  * Everyday business shorthand that has no counterpart in LinkedIn's taxonomy.
  * Without this the model asks for "ecommerce" or "SaaS", gets nothing back, and
@@ -117,6 +120,7 @@ export const prospectTools = [
           industry: c.industry,
           headcount: c.headcount,
           country: c.country,
+          ...(c.signals?.length ? { signals: c.signals.map((s) => s.label) } : {}),
         })),
       }
     },
@@ -146,6 +150,12 @@ export const prospectTools = [
         .boolean()
         .optional()
         .describe('Also show people who are already contacts. Off by default: they are left out, since the user usually wants new people.'),
+      signals: z
+        .array(z.enum(SEARCH_SIGNALS))
+        .optional()
+        .describe(
+          'Only people with one of these signals. "warm": at companies where the user\'s own emails, forms or proposals found interest in the last 90 days (searched first, needs no keyword). "new_in_role": started their job lately, from their profile.',
+        ),
       count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('People on a page of results, in all: 25, 50, 75 or 100, whatever the number of job titles. Defaults to 25; each result uses about one to two prospect credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),
     },
@@ -170,6 +180,7 @@ export const prospectTools = [
           seniority: p.seniority,
           company: p.company,
           country: p.country,
+          ...(p.signals?.length ? { signals: p.signals.map((s) => s.label) } : {}),
         })),
       }
     },

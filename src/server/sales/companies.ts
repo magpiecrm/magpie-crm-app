@@ -23,7 +23,7 @@ const FREE_MAIL_DOMAINS = new Set([
 type Contact = DbSchema['contacts'][number]
 
 const domainOf = (email: string) => email.split('@')[1]?.trim().toLowerCase() || null
-const workDomain = (email: string) => {
+export const workDomain = (email: string) => {
   const d = domainOf(email)
   return d && !FREE_MAIL_DOMAINS.has(d) ? d : null
 }

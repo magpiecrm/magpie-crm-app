@@ -4,6 +4,7 @@ import { ArrowRight, Building2, ExternalLink, Globe } from 'lucide-react'
 import { Badge } from '../../../components/ui/Badge'
 import { setCompanyDomainFn } from '../../../server/functions'
 import type { CompanyResult } from '../../../server/prospecting/types'
+import { SignalBadges } from './SignalBadges'
 
 interface Props {
   companies: CompanyResult[]
@@ -89,6 +90,7 @@ export function CompanyResults({ companies, onFindPeople, onDomainSet }: Props) 
             <div className="min-w-0 flex-1 space-y-1">
               <p className="font-semibold text-foreground text-sm truncate">{c.name}</p>
               {c.catchAll && <CatchAllBadge />}
+              <SignalBadges signals={c.signals} />
               <p className="text-xs text-muted-foreground truncate">
                 {[c.industry, c.headcount !== null ? `${formatHeadcount(c.headcount)} staff` : null, c.country].filter(Boolean).join(' · ')}
               </p>
@@ -130,6 +132,7 @@ export function CompanyResults({ companies, onFindPeople, onDomainSet }: Props) 
                 </div>
                 {c.companyType && <p className="text-[11px] text-muted-foreground">{c.companyType}</p>}
                 {c.catchAll && <div className="mt-1"><CatchAllBadge /></div>}
+                <SignalBadges signals={c.signals} />
               </td>
               <td className="px-6 py-3"><DomainCell company={c} onDomainSet={onDomainSet} /></td>
               <td className="px-6 py-3 text-xs text-foreground">{c.industry ?? '—'}</td>

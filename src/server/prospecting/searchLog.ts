@@ -27,6 +27,8 @@ export interface SearchLogEntry {
     company: string | null
     /** Whether a keyword was used; what it was isn't kept. */
     keyword: boolean
+    /** The signals asked for (signals.ts), where any were. */
+    signals?: string[]
     /** A first page, one carried on from where the last stopped, or Load more. */
     page: 'first' | 'resumed' | 'more'
   }

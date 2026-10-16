@@ -29,6 +29,7 @@ import { env } from '../env'
 import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
+import { monthOf } from './signals'
 import { createSearchPool, searchPoolKey, type HeldHits, type Hit } from './searchPool'
 import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
 import type {
@@ -309,6 +310,8 @@ function mapCompanyPage(d: any, ref: string): CompanyResult | null {
     country: str(c?.location?.country),
     linkedinUrl: str(c?.companyUrl) ?? str(c?.url) ?? null,
     source: SOURCE,
+    // The page's own count, not the bottom of a range: what headcount growth is measured from.
+    ...(num(d?.metrics?.employees) !== null ? { headcountExact: true } : {}),
   }
 }
 
@@ -369,9 +372,12 @@ export function mapPerson(p: any, opts: { fromProfile?: boolean } = {}): PersonR
       const company = str(position?.organizationName) ?? str(position?.organization?.name) ?? ''
       const companyRef = idOf(position?.organizationId) ?? idOf(position?.organization?.id) ?? companySlug(position) ?? idOf(titled?.organizationId) ?? companySlug(titled) ?? null
       if (!company && !companyRef) continue
-      others.push({ title: str(position?.title) ?? str(titled?.title) ?? '', company, companyRef, companySlug: companySlug(position) ?? companySlug(titled) })
+      const startedOn = startOf(position) ?? startOf(titled)
+      others.push({ title: str(position?.title) ?? str(titled?.title) ?? '', company, companyRef, companySlug: companySlug(position) ?? companySlug(titled), ...(startedOn ? { startedOn } : {}) })
     }
   }
+  // When they started the job shown, from a profile only: a year or a month (signals.ts).
+  const roleStartedOn = opts.fromProfile && current ? (startOf(current) ?? startOf(sameJob)) : null
   return {
     profileUrl,
     firstName,
@@ -391,7 +397,24 @@ export function mapPerson(p: any, opts: { fromProfile?: boolean } = {}): PersonR
     country: str(p?.geo?.country) ?? str(p?.geoCountry) ?? countryFromLocation(p?.location),
     source: SOURCE,
     ...(others.length ? { otherJobs: others } : {}),
+    ...(roleStartedOn ? { roleStartedOn } : {}),
   }
+}
+
+/**
+ * A job's start, as a year or a month: the host's page reader gives
+ * `startedOn`; other shapes ({ year, month }, an ISO date) are read the same
+ * way. Never the day.
+ */
+function startOf(position: any): string | null {
+  const raw = position?.startedOn ?? position?.startDate ?? position?.start ?? position?.timePeriod?.startDate
+  if (raw && typeof raw === 'object') {
+    const year = num(raw.year)
+    if (!year) return null
+    const month = num(raw.month)
+    return monthOf(month ? `${year}-${month}` : year)
+  }
+  return monthOf(raw)
 }
 
 /** Two position records for the same employer: by id, page or name. */
