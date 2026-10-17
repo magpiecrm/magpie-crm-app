@@ -34,18 +34,21 @@ const TERMS_PER_QUERY = 8
 const NAMES_PER_QUERY = 4
 /** Most Google pages one call fetches, and how many at once. */
 const MAX_PAGES_PER_CALL = 9
-const PAGES_AT_ONCE = 3
+const PAGES_AT_ONCE = 6
 /** People with a title searched a page usually brings: how many pages are fetched at once for what's still needed. */
 const PEOPLE_PER_PAGE = 7
 /** A page with fewer profiles than this is the last its query has. */
 const PROFILES_FOR_MORE = 5
 /**
- * A page that doesn't come back: a second copy is sent if the first hasn't
- * answered in HEDGE_MS (an answer usually takes 2-4 seconds, a failure about
- * 10), and if both fail, another round after a pause, three rounds in all.
+ * Each page is asked for twice at once, and if both fail, again, three rounds
+ * in all. An answer takes 2-4 seconds and a failure about 10 (Decodo's own
+ * retries), and failures aren't paid for, so asking twice costs a little more
+ * (when both answer) and saves the 10 seconds a failure would cost: on hq
+ * (2026-10-17) a second copy only after 4 seconds, and pauses between rounds,
+ * made a page of people take 86 seconds of searching.
  */
-const HEDGE_MS = 4_000
-const ROUND_PAUSES_MS = [0, 2_000, 5_000]
+const HEDGE_MS = 0
+const ROUND_PAUSES_MS = [0, 500, 1_500]
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -283,28 +286,39 @@ export function createWebSource(
           entries = [{ pos: next, hits: held.items, more: held.hasMore }]
         } else {
           if (pages >= MAX_PAGES_PER_CALL) break
-          const step = plan[next.step]
+          // The next pages in the plan, fetched at once: more of this query while it's a deep one, and the
+          // first page of each query after it, so a companies-first search's batches of names (two pages
+          // deep at most) are asked for together rather than in turn. A shallow query's second page waits
+          // for its first to show there's more.
           const from: Position = next
+          const shallow = plan[from.step].maxPage <= 2
           const need = Math.ceil((want - onTitle()) / PEOPLE_PER_PAGE)
-          const span = Math.max(1, Math.min(PAGES_AT_ONCE, need, MAX_PAGES_PER_CALL - pages, step.maxPage - from.page + 1))
-          const positions = Array.from({ length: span }, (_, i) => ({ step: from.step, page: from.page + i, offset: 0 }))
-          const fetched = await Promise.all(positions.map((p) => fetchPage(step, p.page, country, tally)))
+          const span = Math.max(1, Math.min(PAGES_AT_ONCE, shallow ? Number.POSITIVE_INFINITY : need, MAX_PAGES_PER_CALL - pages))
+          const positions: Position[] = []
+          for (let p: Position | null = from; p && positions.length < span; ) {
+            positions.push(p)
+            const step: Step = plan[p.step]
+            p = p.page < step.maxPage && step.maxPage > 2 ? { step: p.step, page: p.page + 1, offset: 0 } : p.step + 1 < plan.length ? { step: p.step + 1, page: 1, offset: 0 } : null
+          }
+          const fetched = await Promise.all(positions.map((p) => fetchPage(plan[p.step], p.page, country, tally)))
           entries = fetched.map((results, i) => {
             if (!results) return { pos: positions[i], hits: null, more: false }
             pages++
             const { hits, profiles } = readPage(results)
             if (!profiles) emptyPages++
             // Carrying on part-way through a page whose held hits were lost: the hits already used are passed over.
-            return { pos: i === 0 ? from : positions[i], hits: i === 0 && from.offset ? hits.slice(from.offset) : hits, more: profiles >= PROFILES_FOR_MORE }
+            return { pos: positions[i], hits: i === 0 && from.offset ? hits.slice(from.offset) : hits, more: profiles >= PROFILES_FOR_MORE }
           })
         }
-        // Hits are taken page by page until there are enough. Where that stops (enough people, a page that
-        // failed, or the end of a query), the search carries on next time; pages fetched past that point in
-        // the same query are held for then.
+        // Hits are taken in plan order until there are enough. Where that stops (enough people, a page that
+        // failed), the search carries on next time; pages fetched beyond that point are held for then, and
+        // those of a query that ran out before them are dropped.
+        const ahead = (pos: Position) => next !== null && (pos.step > next.step || (pos.step === next.step && pos.page > next.page))
         let stopped = false
         for (const e of entries) {
-          if (stopped) {
-            if (e.hits && next && e.pos.step === next.step) hold(e.pos, e.hits, e.more)
+          const due = !stopped && next !== null && e.pos.step === next.step && e.pos.page === next.page
+          if (!due) {
+            if (e.hits?.length && ahead(e.pos)) hold(e.pos, e.hits, e.more)
             continue
           }
           if (!e.hits) {
@@ -322,8 +336,6 @@ export function createWebSource(
             continue
           }
           next = after(e.pos, e.more)
-          // The query ran out on this page: the rest of the pages fetched with it have nothing more.
-          if (!e.more) stopped = true
         }
       }
       if (!pages && !used.length && failedPage) {

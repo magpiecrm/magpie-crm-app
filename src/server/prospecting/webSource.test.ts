@@ -140,6 +140,23 @@ describe('searchPeople', () => {
     expect(result.items[0]).toMatchObject({ company: 'Larkspur Labs', companyRef: '42' })
   })
 
+  it('asks for the batches of companies found first all at once, not in turn', async () => {
+    let inFlight = 0
+    let most = 0
+    const search: WebSearch = async (query) => {
+      inFlight++
+      most = Math.max(most, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return page(query, 2)
+    }
+    const names = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [String(i), `Firm ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + i)}`]))
+    // No second copies here (hedgeMs), so what's in flight at once is pages.
+    const result = await createWebSource(search, lookups, { hedgeMs: 1_000, pausesMs: [0] }).searchPeople(null, { titles: ['Founder'], companyRefs: Object.keys(names), companyNames: names, count: 25 })
+    expect(most).toBe(5)
+    expect(result.funnel?.webPages).toBe(5)
+  })
+
   it('hands profile lookups to the other source', async () => {
     const { search } = fakeSearch(() => [])
     await createWebSource(search, lookups, fast).getPerson('https://www.linkedin.com/in/someone')
