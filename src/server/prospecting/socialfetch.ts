@@ -538,7 +538,9 @@ export function leaderMatcher(department: string): (headline: string | null | un
  * Departments whose leaders also go by another department's name, searched
  * too. Checked 2026-10-03 at 60 US software companies: "Revenue" found 8
  * leaders (Chief Revenue Officer, VP of Revenue) that "Sales" didn't, beside
- * its 19; "CRO" on its own found none that either missed.
+ * its 19; "CRO" on its own found none that either missed. Not at companies of
+ * 50 staff or fewer (`small`), which rarely have revenue leaders: there it
+ * was a third of a page's searches for nobody (hq, 2026-10-16).
  */
 const ALSO_LEADS: Record<string, string[]> = { sales: ['Revenue'] }
 
@@ -553,7 +555,7 @@ interface TitleQuery {
   leaders: string[]
 }
 
-function titleQueries(titles: string[]): TitleQuery[] {
+function titleQueries(titles: string[], opts: { small?: boolean } = {}): TitleQuery[] {
   const out = new Map<string, TitleQuery>()
   for (const title of titles) {
     const department = title ? leadershipDepartment(title) : null
@@ -561,7 +563,7 @@ function titleQueries(titles: string[]): TitleQuery[] {
       if (!out.has(title)) out.set(title, { key: title, search: title, roles: title ? titleRoles(title) : null, leaders: [] })
       continue
     }
-    for (const search of [department, ...(ALSO_LEADS[norm(department)] ?? [])]) {
+    for (const search of [department, ...(opts.small ? [] : (ALSO_LEADS[norm(department)] ?? []))]) {
       const key = `leaders:${norm(search)}`
       const query = out.get(key) ?? { key, search, roles: leaderRoles(search), leaders: [] }
       if (!query.leaders.includes(title)) query.leaders.push(title)
@@ -572,9 +574,18 @@ function titleQueries(titles: string[]): TitleQuery[] {
 }
 
 /** People-search requests one page takes for these job titles (titleQueries): several leadership titles can share one, and sales leaders take two. */
-export function searchesForTitles(titles: string[] | undefined): number {
+export function searchesForTitles(titles: string[] | undefined, opts: { small?: boolean } = {}): number {
   const unique = [...new Set((titles ?? []).map((t) => t.trim()).filter(Boolean))].slice(0, MAX_TITLES)
-  return Math.max(1, titleQueries(unique).length)
+  return Math.max(1, titleQueries(unique, opts).length)
+}
+
+/** Only companies of 50 staff or fewer: no searching for the leaders that only bigger ones have (ALSO_LEADS). */
+export const onlySmallCompanies = (sizes: readonly string[] | undefined) => Boolean(sizes?.length) && sizes!.every((s) => s === '1-10' || s === '11-50')
+
+/** Whether a job title is one of these searched for, however it's worded: as a search's title check reads a headline. */
+export function fitsTitles(titles: string[]): (title: string) => boolean {
+  const queries = titleQueries([...new Set(titles.map((t) => t.trim()).filter(Boolean))])
+  return (title) => queries.some((q) => (q.roles?.(title) ?? []).length > 0)
 }
 
 /** "Senior Business Analyst at Barclays | Agile" -> "Senior Business Analyst". */
@@ -864,7 +875,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const pageSize = Math.min(50, Math.max(1, Math.round(filters.count ?? PAGE_SIZE)))
       const prior = decodeCursor(filters.cursor)
       // On a follow-up page only titles with a cursor left are re-queried.
-      const queries = titleQueries(slots)
+      const queries = titleQueries(slots, { small: filters.smallCompanies })
       const active = prior ? queries.filter((q) => prior[q.key]) : queries
       if (!filters.cursor) {
         // One note per set of leadership titles: "searched "Sales" and "Revenue"".

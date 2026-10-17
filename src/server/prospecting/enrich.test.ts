@@ -268,18 +268,23 @@ describe('searchPeople profile lookups', () => {
     }
   })
 
-  it('keeps someone who holds several jobs when one of them is at the chosen company, and shows that job', async () => {
+  it('keeps someone who holds several jobs when one at the chosen company has a title searched for, and shows that job', async () => {
     const ana = profiles.ana
-    // Her profile lists Barclays first; she also runs Acme.
-    profiles.ana = { ...ana, otherJobs: [{ title: 'Founder, Acme Ltd', company: 'Acme Ltd', companyRef: '7' }] }
+    // Her profile lists Barclays first; she's also an analyst at Acme.
+    profiles.ana = { ...ana, otherJobs: [{ title: 'Business Analyst, Acme Ltd', company: 'Acme Ltd', companyRef: '7' }] }
     try {
       searchPage = pageOf(hit('ana'), hit('ben'))
       const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'acme-ltd', name: 'Acme' } })
       expect(res.items.map((p) => [p.firstName, p.title, p.company, p.companyRef, p.companyDomain, 'otherJobs' in p])).toEqual([
-        ['ana', 'Founder', 'Acme Ltd', '7', 'acme.com', false],
+        ['ana', 'Business Analyst', 'Acme Ltd', '7', 'acme.com', false],
         ['ben', 'Business Analyst', 'Acme', '7', 'acme.com', false],
       ])
       expect(res.warnings.join(' ')).not.toMatch(/currently work at Acme/)
+      // A second job there with another title, that her headline doesn't name: maybe one she never ended, so not taken.
+      profiles.ana = { ...ana, otherJobs: [{ title: 'Founder, Acme Ltd', company: 'Acme Ltd', companyRef: '7' }] }
+      searchPage = pageOf(hit('ana'), hit('ben'))
+      const stale = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'acme-ltd', name: 'Acme' }, fromStart: true })
+      expect(stale.items.map((p) => p.firstName)).toEqual(['ben'])
       // Searching Barclays instead, she's shown in the job there.
       searchPage = pageOf(hit('ana'))
       const there = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'barclays', name: 'Barclays' }, fromStart: true })

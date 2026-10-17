@@ -16,7 +16,7 @@ import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
-import { companyKey, inHeadcountBuckets, meterCredits, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
+import { companyKey, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -146,7 +146,14 @@ interface Enriched {
  * employer. `searched`: whether an employer is one the search is for, which
  * decides the job shown for someone who holds several.
  */
-async function enrichOne(person: PersonResult, source: PeopleSource, db: Db, searched?: (job: Employer) => boolean): Promise<Enriched> {
+async function enrichOne(
+  person: PersonResult,
+  source: PeopleSource,
+  db: Db,
+  searched?: (job: Employer) => boolean,
+  /** Whether a job title is one searched for, and a count of which job was taken (refineFromProfile). */
+  opts: { titleFits?: (title: string) => boolean; noted?: (how: 'other' | 'refused') => void } = {},
+): Promise<Enriched> {
   let profile: PersonResult | null
   try {
     profile = await source.getPerson(person.profileUrl)
@@ -156,7 +163,7 @@ async function enrichOne(person: PersonResult, source: PeopleSource, db: Db, sea
     // already paid for; not marked checked, so saving can try again.
     return { person, refined: false, error: String(err?.message ?? err) }
   }
-  const refined = refineFromProfile(person, profile, searched)
+  const refined = refineFromProfile(person, profile, searched, opts)
   if (!refined) return { person: { ...person, profileChecked: true }, refined: false }
   return {
     refined: true,
@@ -459,6 +466,9 @@ interface Tally {
   noLookup: number
   /** Signals filter (signals.ts): left out for having none of the signals asked for. */
   noSignal: number
+  /** Profiles whose job at a company searched wasn't their first: taken (its title fits, or their headline names it), or refused. */
+  otherJob: number
+  otherJobRefused: number
   /** Profiles that said when the job shown started: to the month, or only the year. */
   roleStartMonth: number
   roleStartYear: number
@@ -727,10 +737,10 @@ async function companyFirstPage(
   // Companies split from a batch: a few searched at once, each on its own, so
   // everyone found is known to work there and no profile is looked up.
   if (!s.batch.length && s.singles?.length) {
-    const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / searchesForTitles(filters.titles))))
+    const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) }))))
     const pages = await Promise.all(
       now.map(([ref, name, people]) =>
-        source.searchPeople({ ref, name }, { titles: filters.titles, seniorities: filters.seniorities, country: filters.country, count, cursor: people }),
+        source.searchPeople({ ref, name }, { titles: filters.titles, seniorities: filters.seniorities, country: filters.country, count, cursor: people, smallCompanies: onlySmallCompanies(filters.companySizes) }),
       ),
     )
     const items: PersonResult[] = []
@@ -829,6 +839,7 @@ async function companyFirstPage(
     country: filters.country,
     companyRefs: s.batch.map(([ref]) => ref),
     companyNames: Object.fromEntries(s.batch),
+    smallCompanies: onlySmallCompanies(filters.companySizes),
     count,
     cursor: s.people,
   })
@@ -906,6 +917,8 @@ async function processBatch(
    * the companies searched is kept when it `fits` the filters.
    */
   free?: { fits: ((company: CompanyResult) => boolean) | null },
+  /** Whether a job title is one searched for: a second current job at a company searched is taken only with this or the headline's word (refine.ts). */
+  titleFits?: (title: string) => boolean,
 ): Promise<{
   items: PersonResult[]
   refined: string[]
@@ -1066,10 +1079,12 @@ async function processBatch(
     // itself fails (no credits, API down) the rest would fail too. A profile
     // that simply lists no company page (freelancers, tiny firms) is normal
     // and doesn't stop the others.
-    const first = await enrichOne(toLookUp[0], source, db, atSearched)
+    // Which of someone's jobs was taken, counted: another at a company searched, or one refused for want of evidence.
+    const jobs = { titleFits, noted: (how: 'other' | 'refused') => void (how === 'other' ? tally.otherJob++ : tally.otherJobRefused++) }
+    const first = await enrichOne(toLookUp[0], source, db, atSearched, jobs)
     const results = first.error
       ? [first]
-      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db, atSearched)))]
+      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db, atSearched, jobs)))]
     const byUrl = new Map(results.map((r) => [r.person.profileUrl, r.person]))
     items = items.map((p) => byUrl.get(p.profileUrl) ?? p)
     for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
@@ -1323,6 +1338,8 @@ export async function searchPeople(
   const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
   const source: Source = getSource()
+  // Whether a job title is one searched for, for choosing between someone's current jobs (refine.ts).
+  const titleFits = filters.titles?.length ? fitsTitles(filters.titles) : undefined
   // Only people with one of these signals (signals.ts). Warm chooses the companies first, from the workspace's own.
   const kinds: SignalKind[] = filters.signals ?? []
   const warmFirst = !company && kinds.includes('warm')
@@ -1361,7 +1378,7 @@ export async function searchPeople(
   const tally: Tally = {
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, roleStartMonth: 0, roleStartYear: 0,
+    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1492,7 +1509,7 @@ export async function searchPeople(
         // A batch with more people than this page is likely to need more lookups than it shows.
         const batchSize = r.companySet?.size ?? 0
         const more = r.batchHasMore
-        splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * searchesForTitles(filters.titles)
+        splitWhen = (toLookUp) => toLookUp * (more ? 2 : 1) > batchSize * searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) })
       }
       orgSearches += r.orgSearches
       companiesFound += r.found
@@ -1524,7 +1541,7 @@ export async function searchPeople(
         ahead = { cursor: nextCursor!, fetched }
       }
 
-      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free)
+      const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free, titleFits)
       if (batch.split && splitCursor) {
         // Searched again one company at a time: its people come back from those searches.
         split.batches++
@@ -1574,7 +1591,7 @@ export async function searchPeople(
       for (const { person, companySet } of heldBack) groups.set(companySet, [...(groups.get(companySet) ?? []), person])
       heldBack = []
       for (const [companySet, people] of groups) {
-        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free)
+        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free, titleFits)
         for (const p of batch.items) p.searchId = searchId
         const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
         const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
@@ -1642,6 +1659,8 @@ export async function searchPeople(
     lookupsSpared: spared,
     prospectCredits: usable(),
     noSignal: tally.noSignal,
+    otherJobTaken: tally.otherJob,
+    otherJobRefused: tally.otherJobRefused,
     companiesNoSignal: signalTally.noSignal,
     companiesSignalWaiting: signalTally.waiting,
     signalHiring: items.filter((p) => p.signals?.some((x) => x.kind === 'hiring')).length,

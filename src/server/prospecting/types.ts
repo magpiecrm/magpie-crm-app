@@ -233,6 +233,8 @@ export interface PeopleFilters {
   companyRefs?: string[]
   /** Those companies' names, by id, so a headline naming one ("Founder, Acme") says where someone works. */
   companyNames?: Record<string, string>
+  /** Those companies all have 50 staff or fewer, so leaders only bigger ones have aren't searched for. Set by search.ts. */
+  smallCompanies?: boolean
   /**
    * Start at the top of the results. Otherwise a new search (no cursor) with
    * the same filters as an earlier one carries on from where that one stopped.

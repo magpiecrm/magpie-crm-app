@@ -8,9 +8,12 @@ import {
   leaderMatcher,
   leaderRoles,
   leadershipDepartment,
+  fitsTitles,
   mapPerson,
   meterCredits,
+  onlySmallCompanies,
   sameCompanyName,
+  searchesForTitles,
   titleFromHeadline,
   titleMatcher,
   titleRoles,
@@ -195,14 +198,21 @@ describe('someone who holds several jobs at once', () => {
     expect(mapPerson(rawPerson(), { fromProfile: true })!.otherJobs).toBeUndefined()
   })
 
-  it('shows them in the job at a company the search was for, else the one their headline names, else the first', () => {
+  it('shows them in the job at a company the search was for when its title fits the search or their headline names it, else the first', () => {
     const profile = () => mapPerson(several(), { fromProfile: true })
     // As the search found them: a headline, and no employer the search could link.
     const found = { ...mapPerson(several())!, title: 'Founder', seniority: 'founder' as const, company: '', companyRef: null, companySlug: null }
-    // A search for people at Smith Advisory.
-    const searched = refineFromProfile(found, profile(), (job) => job.companyRef === 'smith-advisory')!
+    const atSmith = (job: { companyRef: string | null }) => job.companyRef === 'smith-advisory'
+    const noted: string[] = []
+    // A search for founders at Smith Advisory: the job there is a founder's, so it's theirs.
+    const searched = refineFromProfile(found, profile(), atSmith, { titleFits: fitsTitles(['Founder']), noted: (how) => noted.push(how) })!
     expect(searched).toMatchObject({ title: 'Founder & Principal', titleExact: true, seniority: 'founder', company: 'Smith Advisory', companyRef: 'smith-advisory', companySlug: 'smith-advisory' })
     expect('otherJobs' in searched).toBe(false)
+    // A search there for sales managers: nothing says that second job is real (people rarely end old ones), so it isn't taken.
+    expect(refineFromProfile(found, profile(), atSmith, { titleFits: fitsTitles(['Sales Manager']), noted: (how) => noted.push(how) })).toMatchObject({ company: 'Bigco plc' })
+    // Unless their headline names it.
+    expect(refineFromProfile({ ...found, company: 'Smith Advisory' }, profile(), atSmith, { titleFits: fitsTitles(['Sales Manager']) })).toMatchObject({ company: 'Smith Advisory' })
+    expect(noted).toEqual(['other', 'refused'])
     // A search for people at Bigco, where the first job is: nothing changes.
     expect(refineFromProfile(found, profile(), (job) => job.companyRef === '900')).toMatchObject({ title: 'Non-Executive Director', company: 'Bigco plc', companyRef: '900' })
     // No company searched (or none of theirs): the employer their headline named.
@@ -236,7 +246,7 @@ describe('when someone started their job', () => {
 
   it('follows the job shown when someone holds several', () => {
     const found = { ...mapPerson(dated())!, company: '', companyRef: null, companySlug: null }
-    expect(refineFromProfile(found, mapPerson(dated(), { fromProfile: true }), (job) => job.companyRef === '901')).toMatchObject({ company: 'Smith Advisory', roleStartedOn: '2026-08' })
+    expect(refineFromProfile(found, mapPerson(dated(), { fromProfile: true }), (job) => job.companyRef === '901', { titleFits: fitsTitles(['Founder']) })).toMatchObject({ company: 'Smith Advisory', roleStartedOn: '2026-08' })
     expect(refineFromProfile(found, mapPerson(dated(), { fromProfile: true }))).toMatchObject({ company: 'Bigco plc', roleStartedOn: '2019-04' })
   })
 })
@@ -458,6 +468,18 @@ describe('searchPeople', () => {
     expect(page.details).toContain(
       'For "Sales leaders", searched "Sales" and "Revenue" and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
     )
+  })
+
+  it('searches only "Sales" for sales leaders at companies of 50 staff or fewer, which rarely have revenue leaders', async () => {
+    const f = fakeFetch([envelope({ lookupStatus: 'found', people: [searchHit('a', 'Ann', 'Lee', 'Sales Director at Acme', 'Austin, Texas, United States')], page: { hasMore: false } })])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales leaders', 'Head of Sales'], companyRefs: ['101'], smallCompanies: true, count: 25 })
+    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Sales'])
+    expect(page.items.map((p) => p.firstName)).toEqual(['Ann'])
+    expect(searchesForTitles(['Sales leaders', 'Sales Manager'])).toBe(3)
+    expect(searchesForTitles(['Sales leaders', 'Sales Manager'], { small: true })).toBe(2)
+    expect(onlySmallCompanies(['1-10', '11-50'])).toBe(true)
+    expect(onlySmallCompanies(['11-50', '51-200'])).toBe(false)
+    expect(onlySmallCompanies([])).toBe(false)
   })
 
   it('maps real search hits: title and employer from the headline, country from the location label', async () => {

@@ -17,9 +17,19 @@ import type { CurrentJob, PersonResult } from './types'
  * about (currentJob): `searched` says whether an employer is one the search
  * was for.
  */
-export function refineFromProfile(person: PersonResult, profile: PersonResult | null, searched?: (job: Employer) => boolean): PersonResult | null {
+export function refineFromProfile(
+  person: PersonResult,
+  profile: PersonResult | null,
+  searched?: (job: Employer) => boolean,
+  opts: {
+    /** Whether a job title is one the search was for (socialfetch.ts fitsTitles). */
+    titleFits?: (title: string) => boolean
+    /** Hears which job was taken: another of theirs at a company searched, or one there refused for want of evidence. */
+    noted?: (how: 'other' | 'refused') => void
+  } = {},
+): PersonResult | null {
   if (!profile || (!profile.title && !profile.company && !profile.companyRef)) return null
-  const job = currentJob(person, profile, searched)
+  const job = currentJob(person, profile, searched, opts)
   return {
     ...person,
     title: titleAlone(job.title || person.title, job.company || person.company),
@@ -41,16 +51,33 @@ type Employer = Pick<CurrentJob, 'company' | 'companyRef'>
  * its own order, and a founder's own firm is often second to a board seat or
  * a teaching post: taking the first alone left them out of a search for
  * people at their firm as "working somewhere else", after their profile had
- * been paid for. So: the job at a company the search was for; else the one at
- * the employer the search result named (their headline's); else the first.
+ * been paid for. So the job at a company the search was for is taken when
+ * it's their first, or when something else says it's real: its title is one
+ * searched for, or their headline names that employer. People rarely end
+ * old jobs on LinkedIn, and a forgotten one at the company searched, taken
+ * on its own, had emails guessed at a company they'd left (0.9.85-0.9.89).
+ * Otherwise the job at the employer their headline named; else the first.
  */
-function currentJob(person: PersonResult, profile: PersonResult, searched?: (job: Employer) => boolean): CurrentJob {
+function currentJob(
+  person: PersonResult,
+  profile: PersonResult,
+  searched: ((job: Employer) => boolean) | undefined,
+  opts: { titleFits?: (title: string) => boolean; noted?: (how: 'other' | 'refused') => void },
+): CurrentJob {
   const first: CurrentJob = { title: profile.title, company: profile.company, companyRef: profile.companyRef, companySlug: profile.companySlug, startedOn: profile.roleStartedOn }
   if (!profile.otherJobs?.length) return first
   const jobs = [first, ...profile.otherJobs]
   const named = (job: Employer) =>
     Boolean(person.companyRef && job.companyRef === person.companyRef) || Boolean(person.company.trim() && job.company && sameCompanyName(job.company, person.company))
-  return (searched && jobs.find(searched)) || jobs.find(named) || first
+  if (searched && !searched(first)) {
+    const other = profile.otherJobs.find(searched)
+    if (other && (named(other) || Boolean(other.title && opts.titleFits?.(other.title)))) {
+      opts.noted?.('other')
+      return other
+    }
+    if (other) opts.noted?.('refused')
+  }
+  return (searched?.(first) ? first : undefined) ?? jobs.find(named) ?? first
 }
 
 type Word = { text: string; at: number }
