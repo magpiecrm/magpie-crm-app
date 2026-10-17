@@ -129,7 +129,7 @@ const personInput = z.object({
   companySlug: z.string().trim().max(200).nullable().optional(),
   companyDomain: z.string().trim().max(253).nullable(),
   country: z.string().trim().max(100).nullable(),
-  source: z.literal('socialfetch'),
+  source: z.enum(['socialfetch', 'web']),
   profileChecked: z.boolean().optional(),
   previously: z.enum(['saved', 'revealed']).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),

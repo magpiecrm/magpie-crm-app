@@ -611,7 +611,7 @@ function relatedRolesFor(title: string): ((headline: string | null) => string[])
 }
 
 /** What's searched for one job title: the title itself, or for a leadership title its department (leadershipDepartment). */
-interface TitleQuery {
+export interface TitleQuery {
   /** Its cursor and held results go under this. */
   key: string
   search: string
@@ -623,7 +623,7 @@ interface TitleQuery {
   leaders: string[]
 }
 
-function titleQueries(titles: string[], opts: { small?: boolean } = {}): TitleQuery[] {
+export function titleQueries(titles: string[], opts: { small?: boolean } = {}): TitleQuery[] {
   const out = new Map<string, TitleQuery>()
   for (const title of titles) {
     const department = title ? leadershipDepartment(title) : null

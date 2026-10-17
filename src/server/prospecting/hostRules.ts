@@ -46,6 +46,8 @@ interface HostAnswer {
   signals: boolean
   /** Small companies may be searched once with no job title (search.ts); on unless the host turns it off. */
   noTitleBatches: boolean
+  /** People are found by the host's web search of public LinkedIn profiles (webSource.ts) rather than SocialFetch's people search. */
+  webPeopleSearch: boolean
 }
 
 export interface SharedDatabase {
@@ -147,6 +149,11 @@ export function hostSignals(): boolean {
   return env.prospectingManaged() && g.__hostRules?.signals === true
 }
 
+/** Whether the host has people found by its web search of public LinkedIn profiles (webSource.ts). */
+export function hostWebPeopleSearch(): boolean {
+  return env.prospectingManaged() && g.__hostRules?.webSearch === true && g.__hostRules?.webPeopleSearch === true
+}
+
 /** Whether small companies may be searched once with no job title (search.ts): on unless a host has turned it off. */
 export function noTitleBatches(): boolean {
   return g.__hostRules?.noTitleBatches !== false
@@ -190,6 +197,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       webSearch: body?.webSearch === true,
       signals: body?.signals === true,
       noTitleBatches: body?.noTitleBatches !== false,
+      webPeopleSearch: body?.peopleSearch === 'web',
     }
     g.__hostRules = answer
     return answer

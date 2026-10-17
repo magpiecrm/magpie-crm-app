@@ -8,7 +8,11 @@
 // posts, education, follower counts and detailed location never get past the
 // connector.
 
-type SourceId = 'socialfetch'
+/** Where a person or company was found: SocialFetch's search, or a search engine's index of public LinkedIn profiles (webSource.ts). */
+export type SourceId = 'socialfetch' | 'web'
+
+/** Found by prospect search, by either source. */
+export const fromProspectSearch = (source: string | null | undefined): boolean => source === 'socialfetch' || source === 'web'
 
 export const SENIORITY_LEVELS = [
   'owner',
@@ -327,6 +331,10 @@ export interface Page<T> {
     onTitle?: number
     /** The companies were searched once with no title (PeopleFilters.noTitle). */
     noTitle?: boolean
+    /** Web search (webSource.ts): result pages fetched, the tries they took, and the answers paid for. */
+    webPages?: number
+    webTries?: number
+    webPaid?: number
   }
 }
 

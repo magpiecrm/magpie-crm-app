@@ -7,6 +7,7 @@
 // in-flight progress (contacts already saved stay saved).
 
 import { refineFromProfile } from './refine'
+import { profileLookupsFree } from './hostRules'
 import crypto from 'crypto'
 import { domainForPerson, type DomainSource } from './companies'
 import { findEmailCounted, type FinderDeps, type FindResult } from './emailFinder'
@@ -99,6 +100,8 @@ export function getJob(id: string): ProspectJob | null {
 async function withEmployer(person: PersonResult, deps: SaveDeps, gate: LookupGate): Promise<PersonResult> {
   // Already known, or already paid for during search.
   if (person.companyDomain || person.companyRef || person.profileChecked) return person
+  // A web search result that named their employer (webSource.ts) says enough where lookups cost credits.
+  if (person.source === 'web' && person.company.trim() && !profileLookupsFree()) return person
   // Only the first lookup in a job runs blind; the rest wait for it and are
   // skipped only if the lookup itself failed (no credits, API down). A
   // profile without a company page is normal and doesn't stop the others.

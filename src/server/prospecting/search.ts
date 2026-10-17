@@ -467,6 +467,11 @@ interface Tally {
   skippedOtherEmployer: number
   /** Taken as working at the company searched, with no profile lookup (knownEmployer). */
   noLookup: number
+  /**
+   * Found by web search (webSource.ts), whose result named their employer, and kept with it: their
+   * profile couldn't be read, or lookups cost credits and the result said enough.
+   */
+  employerFromListing: number
   /** Signals filter (signals.ts): left out for having none of the signals asked for. */
   noSignal: number
   /** Profiles whose job at a company searched wasn't their first: taken (its title fits, or their headline names it), or refused. */
@@ -870,6 +875,11 @@ async function companyFirstPage(
       funnel.uniqueOffTitle! += f?.uniqueOffTitle ?? f?.offTitle ?? 0
       funnel.emptyRequests! += f?.emptyRequests ?? 0
       funnel.joinerRetries! += f?.joinerRetries ?? 0
+      if (f?.webPages) {
+        funnel.webPages = (funnel.webPages ?? 0) + f.webPages
+        funnel.webTries = (funnel.webTries ?? 0) + (f.webTries ?? 0)
+        funnel.webPaid = (funnel.webPaid ?? 0) + (f.webPaid ?? 0)
+      }
       f?.onlyByTitle?.forEach((n, j) => (funnel.onlyByTitle![j] = (funnel.onlyByTitle![j] ?? 0) + n))
       if (page.nextCursor) carryOn.push([ref, name, page.nextCursor])
     })
@@ -1239,7 +1249,14 @@ async function processBatch(
   // Those whose profile would otherwise have been paid for.
   const spared = [...fromShared].filter((url) => !noLookup.has(url))
 
-  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl))
+  // A web search result (webSource.ts) usually names the employer, unlike a SocialFetch hit. Where
+  // lookups cost credits that's taken as it stands; where they're free, the profile is still read for
+  // their current job, and if it can't be, the result's employer is kept rather than the person left out.
+  const listedEmployer = (p: PersonResult) => p.source === 'web' && Boolean(p.company.trim())
+  const fromListing = new Set(
+    free ? [] : items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
+  )
+  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && !fromListing.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {
     Object.assign(tally, counted)
     return { items: [], refined: [], lookedUp: [], shared: 0, spared: 0, split: true, unconfirmed: [] }
@@ -1278,26 +1295,35 @@ async function processBatch(
     for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
     // Nothing is known of where they work, so they aren't shown: the page
     // finds others instead, and asks about them again if it runs short.
-    unconfirmed = results.filter((r) => r.unconfirmed).map((r) => r.person)
-    unconfirmed.forEach((p) => notRead.add(p.profileUrl))
-    if (notRead.size) items = items.filter((p) => !notRead.has(p.profileUrl))
+    // Unless a web search result said where (listedEmployer).
+    results.filter((r) => r.unconfirmed).forEach((r) => notRead.add(r.person.profileUrl))
+    const listed = results.filter((r) => r.unconfirmed && listedEmployer(r.person)).map((r) => r.person.profileUrl)
+    listed.forEach((url) => fromListing.add(url))
+    unconfirmed = results.filter((r) => r.unconfirmed && !listedEmployer(r.person)).map((r) => r.person)
+    if (unconfirmed.length) {
+      const dropped = new Set(unconfirmed.map((p) => p.profileUrl))
+      items = items.filter((p) => !dropped.has(p.profileUrl))
+    }
     if (first.error) {
       lookupError = first.error
     } else {
       const failed = results.filter((r) => r.error)
       tally.failed += failed.length
       tally.failedError ??= failed[0]?.error
-      tally.noJob += results.length - refined.length - failed.length - unconfirmed.length
+      tally.noJob += results.length - refined.length - failed.length - unconfirmed.length - listed.length
     }
   }
   // Their employer is known as surely as from a lookup, so the checks below apply to them too.
   refined.push(...spared)
+  tally.employerFromListing += fromListing.size
+  // Where they work is known, from their profile or a web search result: what's placed and marked below.
+  const placeable = (p: PersonResult) => Boolean(p.profileChecked) || fromListing.has(p.profileUrl)
 
   // Contacts added another way (imported, a form) only show up once their
   // employer is known: the same name at the same company.
-  if (!includeContacts && (refined.length > 0 || noLookup.size > 0)) {
+  if (!includeContacts && (refined.length > 0 || noLookup.size > 0 || fromListing.size > 0)) {
     const isContact = contactMatcher(db)
-    const fresh = items.filter((p) => !((refined.includes(p.profileUrl) || noLookup.has(p.profileUrl)) && isContact(p)))
+    const fresh = items.filter((p) => !((refined.includes(p.profileUrl) || noLookup.has(p.profileUrl) || fromListing.has(p.profileUrl)) && isContact(p)))
     const dropped = items.filter((p) => !fresh.includes(p))
     tally.inContacts += dropped.length
     tally.paidInContacts += dropped.filter((p) => refined.includes(p.profileUrl) && !fromShared.has(p.profileUrl)).length
@@ -1364,7 +1390,7 @@ async function processBatch(
   // With the host's lookups free, the rest are worth a look at the page each
   // employer's name would have (findCompanyByName): many people type their
   // employer in rather than pick its page. Otherwise that waits for a reveal.
-  const unplaced = items.filter((p) => !p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
+  const unplaced = items.filter((p) => !p.companyRef && !p.companyDomain && p.previously !== 'saved' && placeable(p))
   const getCompany = source.getCompany?.bind(source)
   const searchWeb = webSearcher()
   for (const p of items) if (p.previously !== 'saved') testSoon(p.companyDomain)
@@ -1404,7 +1430,7 @@ async function processBatch(
   // and a company with no website on its page is looked for on the web.
   // Where there's none to be found, its people are marked like those with no
   // company page; a page that couldn't be read says nothing either way.
-  const unsited = free && getCompany ? items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked) : []
+  const unsited = free && getCompany ? items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && placeable(p)) : []
   const sites = new Map<string, { domain: string | null; searched: boolean }>()
   const readOne = async (p: PersonResult) => {
     const ref = p.companyRef!
@@ -1450,7 +1476,7 @@ async function processBatch(
   }
 
   items = items.map((p) => {
-    if (p.previously === 'saved' || !p.profileChecked || p.companyDomain) return p
+    if (p.previously === 'saved' || !placeable(p) || p.companyDomain) return p
     if (p.companyRef) {
       const site = unsited.includes(p) ? sites.get(p.companyRef) : undefined
       if (!site) return p
@@ -1629,7 +1655,7 @@ export async function searchPeople(
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
     employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
-    wrongCompanySameSlug: 0, siteLookupFailed: 0,
+    wrongCompanySameSlug: 0, siteLookupFailed: 0, employerFromListing: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1757,7 +1783,7 @@ export async function searchPeople(
   // Companies-first: batches searched, the companies in them, and those of fewer than 10.
   const batches = { searched: 0, companies: 0, small: 0 }
   // From each page's own counts (socialfetch.ts): people counted once, empty requests, and so on.
-  const once = { hits: 0, offTitle: 0, empty: 0, joinerRetries: 0 }
+  const once = { hits: 0, offTitle: 0, empty: 0, joinerRetries: 0, webPages: 0, webTries: 0, webPaid: 0 }
   const onlyByTitle: number[] = []
   await meterCredits(async (spent) => {
     for (;;) {
@@ -1860,6 +1886,9 @@ export async function searchPeople(
       once.offTitle += page.funnel?.uniqueOffTitle ?? page.funnel?.offTitle ?? 0
       once.empty += page.funnel?.emptyRequests ?? 0
       once.joinerRetries += page.funnel?.joinerRetries ?? 0
+      once.webPages += page.funnel?.webPages ?? 0
+      once.webTries += page.funnel?.webTries ?? 0
+      once.webPaid += page.funnel?.webPaid ?? 0
       page.funnel?.onlyByTitle?.forEach((n, i) => (onlyByTitle[i] = (onlyByTitle[i] ?? 0) + n))
       unseen.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
@@ -1988,6 +2017,7 @@ export async function searchPeople(
     searchesRun: searches,
     emptySearches: once.empty,
     joinerRetries: once.joinerRetries,
+    ...(once.webTries ? { webPages: once.webPages, webTries: once.webTries, webPaid: once.webPaid } : {}),
     batchesSearched: batches.searched,
     noTitleBatches: noTitleSearches,
     companiesInBatches: batches.companies,
@@ -2013,6 +2043,7 @@ export async function searchPeople(
     wrongCompanySameSlug: tally.wrongCompanySameSlug,
     boughtNoJob: tally.noJob,
     profileUnconfirmed: tally.unconfirmed,
+    employerFromListing: tally.employerFromListing,
     employerByName: tally.employerByName,
     employerByPageGuess: tally.employerByGuess,
     employerByWebSearch: tally.employerBySite,

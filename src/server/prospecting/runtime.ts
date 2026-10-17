@@ -7,17 +7,20 @@ import type { FinderDeps } from './emailFinder'
 import { ProxyRouter, type RouterOptions } from './proxyRouter'
 import { suggestMailDomain } from './mailDomainHint'
 import { checkEmail } from './reacher'
-import { getActiveVerifier, getProxyConfigs, getVerificationDailyCap, requireSocialFetchKey } from './settings'
+import { getActiveVerifier, getProxyConfigs, getVerificationDailyCap, isSocialFetchConfigured, requireSocialFetchKey } from './settings'
 import { verificationPauseReason } from './senderHealthMonitor'
 import { createSocialFetchSource, type JoinerStore } from './socialfetch'
 import { db } from '../db'
 import { withProfileCache } from './profileCache'
-import type { CompanySource, PeopleSource } from './types'
-import { hostCheckShare, prospectingRules, type CheckShare } from './hostRules'
+import { CompanyUnconfirmed, ProfileUnconfirmed, type CompanySource, type PeopleSource } from './types'
+import { hostCheckShare, hostWebPeopleSearch, prospectingRules, type CheckShare } from './hostRules'
+import { createWebSource } from './webSource'
+import { webSearcher } from './webSearch'
 import { env } from '../env'
 import { cachedSharedFormat, sharedFormat } from './sharedFormats'
 
 let source: (CompanySource & PeopleSource) | null = null
+let sourceKind = ''
 let router: ProxyRouter | null = null
 let routerKey = ''
 
@@ -33,10 +36,49 @@ const joinerStore: JoinerStore = {
   },
 }
 
+/**
+ * Lookups for a copy with web people search and no SocialFetch key (nor a
+ * host to answer them): nothing can be looked up, so every profile and
+ * company page is unconfirmed, and people keep what the search said.
+ */
+const noLookups: CompanySource & PeopleSource = {
+  searchCompanies: async () => {
+    throw new Error('Company search needs a data source. Search for people by job title instead.')
+  },
+  getCompany: async () => {
+    throw new CompanyUnconfirmed()
+  },
+  searchPeople: async () => {
+    throw new Error('No people search is set up.')
+  },
+  getPerson: async () => {
+    throw new ProfileUnconfirmed()
+  },
+}
+
+/**
+ * People are found by web search of public LinkedIn profiles (webSource.ts):
+ * where the host has switched it on for a hosted copy, or a copy with its own
+ * web search key sets PEOPLE_SEARCH=web.
+ */
+function webPeopleSearch(): boolean {
+  return env.prospectingManaged() ? hostWebPeopleSearch() : env.webSearch.people() && Boolean(env.webSearch.apiKey())
+}
+
 export function getSource(): CompanySource & PeopleSource {
-  // Profile lookups are remembered for a day (in memory only), so a person who
-  // turns up again isn't paid for twice.
-  source ??= withProfileCache(createSocialFetchSource(fetch, requireSocialFetchKey, { joiner: joinerStore }))
+  // The host's switch can change while the copy runs (hostRules.ts), so the source is built for the current one.
+  const kind = webPeopleSearch() ? 'web' : 'socialfetch'
+  if (!source || kind !== sourceKind) {
+    const socialfetch = createSocialFetchSource(fetch, requireSocialFetchKey, { joiner: joinerStore })
+    const search = kind === 'web' ? webSearcher() : null
+    // Profile and company lookups (and company search) still go to SocialFetch's API: in a hosted
+    // copy, the host, which answers them from LinkedIn's public pages.
+    const lookups = env.prospectingManaged() || isSocialFetchConfigured() ? socialfetch : noLookups
+    // Profile lookups are remembered for a day (in memory only), so a person who
+    // turns up again isn't paid for twice.
+    source = withProfileCache(search ? createWebSource(search, lookups) : socialfetch)
+    sourceKind = kind
+  }
   return source
 }
 

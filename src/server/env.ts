@@ -94,6 +94,13 @@ export const env = {
      * its host's instead.
      */
     signals: () => readEnv('SIGNAL_LOOKUPS')?.toLowerCase() === 'on',
+    /**
+     * PEOPLE_SEARCH=web: find people from the public LinkedIn profiles a web
+     * search has indexed (prospecting/webSource.ts) instead of SocialFetch's
+     * people search, with this copy's own web search key. A hosted copy
+     * follows its host instead.
+     */
+    people: () => readEnv('PEOPLE_SEARCH')?.toLowerCase() === 'web',
   },
   // Anthropic API key for the copilot (bring your own key). Normally saved in
   // Settings → Copilot; this env var is the fallback (see copilot/settings.ts).

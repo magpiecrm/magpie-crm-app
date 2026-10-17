@@ -18,7 +18,14 @@ key), with the app's actions as tools.
     the only data connector, behind the `CompanySource`/`PeopleSource`
     interfaces in `types.ts`; it maps responses down to the few allowed fields
     (name, title, seniority, company, domain, country, profile URL) and nothing
-    else. `emailFinder.ts` + `patterns.ts` generate and verify addresses via the
+    else. `webSource.ts` can take over people search instead (where a host
+    sends `peopleSearch: 'web'`, or a copy sets `PEOPLE_SEARCH=web` with its
+    own `WEB_SEARCH_API_KEY`): it searches Google, through Decodo, for public
+    LinkedIn profiles (`site:linkedin.com/in`), reads each result's name,
+    title, employer and country (`linkedinResults.ts`), and retries the
+    searches Decodo can't get; profile and company lookups still go through
+    `socialfetch.ts` (in a hosted copy, the host's public-page reader).
+    `emailFinder.ts` + `patterns.ts` generate and verify addresses via the
     self-hosted verification server (`reacher.ts`), through `proxyRouter.ts`, which holds
     the per-IP and per-company rate limits and pauses listed IPs.
     `reveal.ts` finds one
