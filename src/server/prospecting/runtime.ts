@@ -9,7 +9,8 @@ import { suggestMailDomain } from './mailDomainHint'
 import { checkEmail } from './reacher'
 import { getActiveVerifier, getProxyConfigs, getVerificationDailyCap, requireSocialFetchKey } from './settings'
 import { verificationPauseReason } from './senderHealthMonitor'
-import { createSocialFetchSource } from './socialfetch'
+import { createSocialFetchSource, type JoinerStore } from './socialfetch'
+import { db } from '../db'
 import { withProfileCache } from './profileCache'
 import type { CompanySource, PeopleSource } from './types'
 import { hostCheckShare, prospectingRules, type CheckShare } from './hostRules'
@@ -20,10 +21,22 @@ let source: (CompanySource & PeopleSource) | null = null
 let router: ProxyRouter | null = null
 let routerKey = ''
 
+/** How SocialFetch takes multi-word titles, kept in the prospecting settings so a restart doesn't pay to find out again. */
+const joinerStore: JoinerStore = {
+  get() {
+    const kept = db.getProspectingSettings()?.title_joiner
+    return kept ? { joiner: kept.joiner, confirmedAt: kept.confirmed_at } : null
+  },
+  set({ joiner, confirmedAt }) {
+    const current = db.getProspectingSettings()
+    db.saveProspectingSettings({ ...current, title_joiner: { joiner, confirmed_at: confirmedAt }, updated_at: current?.updated_at ?? new Date().toISOString() })
+  },
+}
+
 export function getSource(): CompanySource & PeopleSource {
   // Profile lookups are remembered for a day (in memory only), so a person who
   // turns up again isn't paid for twice.
-  source ??= withProfileCache(createSocialFetchSource(fetch, requireSocialFetchKey))
+  source ??= withProfileCache(createSocialFetchSource(fetch, requireSocialFetchKey, { joiner: joinerStore }))
   return source
 }
 

@@ -154,6 +154,13 @@ export interface PersonResult {
    */
   noCompany?: boolean
   /**
+   * What was known of their mail domain when they were shown (company data):
+   * an email format learned there, tested and not accepting every address,
+   * known to accept every address, take no email or not answer (`deadEnd`),
+   * or not tested yet. Counted against how their lookup ends (searchLog.ts).
+   */
+  mailCheck?: 'pattern' | 'tested' | 'deadEnd' | 'untested'
+  /**
    * Already a contact (`saved`: details and email come from the contact, and
    * the profile isn't looked up again) or revealed before (`revealed`).
    */
@@ -281,7 +288,20 @@ export interface Page<T> {
    * the search funnel log.
    */
   /** Where a page's people went: `related` of them have a related role, not a title searched (relatedRoles). */
-  funnel?: { hits: number; offTitle: number; filteredOut: number; related?: number }
+  funnel?: {
+    hits: number
+    offTitle: number
+    filteredOut: number
+    related?: number
+    /** People across a page's requests counted once each: everyone, and those without a title searched. */
+    uniqueHits?: number
+    uniqueOffTitle?: number
+    /** Paid requests that returned nobody, and multi-word titles tried the other way (socialfetch.ts titleJoiner). */
+    emptyRequests?: number
+    joinerRetries?: number
+    /** By the place of each title searched: people with a title searched that only that title's request found. */
+    onlyByTitle?: number[]
+  }
 }
 
 export interface CompanySource {

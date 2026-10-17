@@ -8,8 +8,9 @@
 
 import { refineFromProfile } from './refine'
 import crypto from 'crypto'
-import { domainForPerson } from './companies'
-import { findEmailCounted, type FinderDeps } from './emailFinder'
+import { domainForPerson, type DomainSource } from './companies'
+import { findEmailCounted, type FinderDeps, type FindResult } from './emailFinder'
+import { recordFinderStats } from './finderStats'
 import { isPacing } from './proxyRouter'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import { handsOver, ProfileUnconfirmed, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
@@ -122,8 +123,8 @@ interface LookupGate {
   first: Promise<boolean> | null
 }
 
-function resolveDomain(person: PersonResult, deps: SaveDeps): Promise<string | null> {
-  return domainForPerson(person, deps.source, deps.db)
+function resolveDomain(person: PersonResult, deps: SaveDeps, how: { source?: DomainSource } = {}): Promise<string | null> {
+  return domainForPerson(person, deps.source, deps.db, undefined, how)
 }
 
 async function processPerson(
@@ -157,6 +158,10 @@ async function processPerson(
     !person.email && person.shared && deps.sharedEmail && (deps.sharedFree || remaining('reveals') >= 1) ? await deps.sharedEmail(person.shared) : null
 
   let found: { email: string | null; status: EmailStatus; greylisted: boolean; detail?: string; reason?: string; outcome?: LookupOutcome }
+  // For the search log and the finder's counts: where the domain came from, its staff count, and whether the finder ran.
+  const how: { source?: DomainSource } = {}
+  let headcount: number | null | undefined = null
+  let looked = false
   if (person.email) {
     found = { email: person.email.toLowerCase().trim(), status: person.emailStatus ?? 'unverified', greylisted: false }
   } else if (held) {
@@ -166,11 +171,11 @@ async function processPerson(
     if (remaining('reveals') < 1) {
       return { ...base, status: 'limit', message: "Your plan's email reveals for this month are used up. Upgrade to get more." }
     }
-    const domain = await resolveDomain(person, deps)
+    const domain = await resolveDomain(person, deps, how)
     if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
     if (!domain) {
       recordLookup('noDomain')
-      void noteSearchLookup(person.searchId, 'noDomain')
+      void noteSearchLookup(person.searchId, 'noDomain', { source: how.source, check: person.mailCheck })
       return {
         ...base,
         status: 'no_domain',
@@ -179,9 +184,10 @@ async function processPerson(
           : "Couldn't find where they currently work, so there's no email domain.",
       }
     }
-    const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
+    headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
     try {
       found = await findEmailCounted(person, domain, deps.finder, { headcount })
+      looked = true
     } catch (err) {
       // Held back only by pacing: tried again at the end, like a greylisted check.
       if (isPacing(err) && !final) return { ...base, status: 'retrying' }
@@ -193,7 +199,8 @@ async function processPerson(
   // Counted once it's final: a greylisted first try is retried at the end.
   if (found.outcome) {
     recordLookup(found.outcome)
-    void noteSearchLookup(person.searchId, found.outcome)
+    if (looked) void recordFinderStats(person, found as FindResult, headcount)
+    void noteSearchLookup(person.searchId, found.outcome, { source: how.source, check: person.mailCheck })
   }
   // Nothing handed over, for a reason no retry changes: remembered, so later
   // searches can leave them out (unverifiable.ts).

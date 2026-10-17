@@ -412,6 +412,8 @@ export interface DbSchema {
    * SocialFetch API key and the verification server's secret; the rest isn't sensitive.
    */
   prospecting_settings?: ProspectingSettingsRecord
+  /** The email finder's counts by month (prospecting/finderStats.ts): kinds and counts only. */
+  finder_stats?: Record<string, Record<string, number>>
   /**
    * Copilot settings from Settings → Copilot. `secrets` is an AES-256-GCM blob
    * (see copilot/settings.ts) holding the Anthropic API key.
@@ -485,6 +487,12 @@ export interface ProspectingSettingsRecord {
    * until a replacement is ready). Only applies to this exact domain.
    */
   listed_domain_override?: string | null
+  /**
+   * How SocialFetch takes a multi-word job title's words (prospecting/
+   * socialfetch.ts), once a search has found someone with it, so a restart
+   * doesn't pay to find out again.
+   */
+  title_joiner?: { joiner: '_' | ' '; confirmed_at: string }
   updated_at: string
 }
 
@@ -852,12 +860,23 @@ class JsonDb {
     this.save()
   }
 
+  /** Adds to a month's email finder counts (prospecting/finderStats.ts); the last 13 months are kept. */
+  addFinderStats(month: string, deltas: Record<string, number>) {
+    const stats = (this.data.finder_stats ??= {})
+    const row = (stats[month] ??= {})
+    for (const [key, n] of Object.entries(deltas)) row[key] = (row[key] ?? 0) + n
+    for (const old of Object.keys(stats).sort().slice(0, -13)) delete stats[old]
+    this.save()
+  }
+
   /** Counts how an email lookup ended against the search that showed the person. */
-  noteSearchLookup(id: string, outcome: string) {
+  noteSearchLookup(id: string, outcome: string, how: { source?: string; check?: string } = {}) {
     const entry = this.data.search_log?.find((e) => e.id === id)
     if (!entry) return
-    const lookups = entry.lookups as Record<string, number>
-    lookups[outcome] = (lookups[outcome] ?? 0) + 1
+    const add = (into: Record<string, number>) => void (into[outcome] = (into[outcome] ?? 0) + 1)
+    add(entry.lookups as Record<string, number>)
+    if (how.source) add(((entry.lookupsBySource ??= {})[how.source] ??= {}) as Record<string, number>)
+    add(((entry.lookupsByCheck ??= {})[how.check ?? 'none'] ??= {}) as Record<string, number>)
     this.save()
   }
 

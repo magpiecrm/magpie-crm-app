@@ -248,18 +248,23 @@ export async function findCompanyByName(name: string, source: Pick<CompanySource
  * jlr.com -> jaguarlandrover.com), even over one already attached to a search
  * result from before the correction.
  */
+/** Where a lookup's domain came from, for the search log (searchLog.ts lookupsBySource). */
+export type DomainSource = 'user' | 'search' | 'name' | 'page' | 'web'
+
 export async function domainForPerson(
   person: PersonResult,
   source: CompanySource,
   db: Db,
   /** A web search to fall back on (webSearch.ts); this copy's own unless given, and none when it has none. */
   search: WebSearch | null = webSearcher(),
+  /** Set to where the domain came from. */
+  how: { source?: DomainSource } = {},
 ): Promise<string | null> {
   if (person.companyRef) {
     const cached = db.getProspectCompany(person.companyRef)
-    if (cached?.domain_source === 'user' && cached.domain) return cached.domain
+    if (cached?.domain_source === 'user' && cached.domain) return (how.source = 'user'), cached.domain
   }
-  if (person.companyDomain) return normaliseDomain(person.companyDomain)
+  if (person.companyDomain) return (how.source = 'search'), normaliseDomain(person.companyDomain)
   // An employer named without its company page: the one company we know by that name, if there is one.
   // Or, when we know none by it, the page its name would have, if it turns out to be that company's.
   let named: KnownCompany | null = null
@@ -267,13 +272,15 @@ export async function domainForPerson(
     const known = companyNamer(db)(person.company)
     named = known === 'several' ? null : (known ?? (await findCompanyByName(person.company, source, db)))
   }
-  if (named?.domain_source === 'user' && named.domain) return named.domain
+  if (named?.domain_source === 'user' && named.domain) return (how.source = 'user'), named.domain
   const ref = person.companyRef ?? named?.ref ?? null
   let domain = ref ? await resolveCompanyDomain(ref, person.company, source, db, person.companySlug ?? named?.slug) : null
+  if (domain) how.source = person.companyRef ? 'page' : 'name'
   // No company page, or none with a website: the company's own site by web search, when it's plainly theirs.
   // Or, for an employer with no page we know of, off the page the search turns up.
   if (!domain && search && isCompanyName(named?.name ?? person.company)) {
     domain = await findCompanySite(named?.name ?? person.company, person.country, search, db, Date.now(), ref ? undefined : companyPageReader(person.company, source, db))
+    if (domain) how.source = 'web'
   }
   // Which company a lookup stopped at for want of a website, for the log. Company
   // data only: an employer without a company page is named by nothing, since

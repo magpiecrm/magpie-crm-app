@@ -104,6 +104,36 @@ describe('titleMatcher', () => {
   })
 })
 
+describe("roles that only share a title's words", () => {
+  it('counts a Cofounder as a founder, and leaves out a Product Owner, an assistant to the CEO and a Vice President', () => {
+    expect(titleMatcher('Founder')('Cofounder | Brightly')).toBe(true)
+    expect(titleMatcher('Founder')('Co-Founder at Lava')).toBe(true)
+    expect(titleMatcher('Founder')("Founder's Associate at Acme")).toBe(false)
+    expect(titleMatcher('Founder')('Founder in Residence')).toBe(false)
+    expect(titleMatcher('Owner')('Product Owner')).toBe(false)
+    expect(titleMatcher('Owner')('Owner, Smith & Co')).toBe(true)
+    expect(titleMatcher('CEO')('Executive Assistant to the CEO')).toBe(false)
+    expect(titleMatcher('CEO')('Founder & CEO')).toBe(true)
+    expect(titleMatcher('President')('Vice President, Sales')).toBe(false)
+    expect(titleMatcher('President')('President & CEO')).toBe(true)
+    expect(titleMatcher('Vice President')('Vice President, Sales')).toBe(true)
+    expect(leaderMatcher('Sales')('Assistant to the VP of Sales')).toBe(false)
+    // Small business owners are owners.
+    expect(titleMatcher('Owner')('Small Business Owner')).toBe(true)
+    expect(titleMatcher('CEO')('Senior Executive Assistant & Office Manager to the CEO')).toBe(false)
+    expect(titleMatcher('Founder')('Founder’s Office')).toBe(false)
+  })
+
+  it('never leaves out the title searched for itself, however it is spelt', () => {
+    expect(titleMatcher('Product Owner')('Senior Product Owner at Acme')).toBe(true)
+    expect(titleMatcher('Executive Assistant')('Executive Assistant to the CEO')).toBe(true)
+    expect(titleMatcher('Chief of Staff')('Chief of Staff to the Founder')).toBe(true)
+    expect(titleMatcher("Founder's Associate")("Founder's Associate")).toBe(true)
+    expect(titleMatcher('Co-founder')('Cofounder, Brightly')).toBe(true)
+    expect(titleMatcher('Cofounder')('Co-Founder at X')).toBe(true)
+  })
+})
+
 describe('the title a result shows', () => {
   const searchHit = (handle: string, headline: string) => ({
     profileUrl: `https://www.linkedin.com/in/${handle}`,
@@ -733,6 +763,103 @@ describe('searchPeople', () => {
     expect(f.calls[2].searchParams.get('start')).toBe('1')
     expect(second.items[0].firstName).toBe('Pat')
     expect(second.nextCursor).toBeNull()
+  })
+
+  it('reads every hit against all the titles searched, and counts people once across the requests', async () => {
+    const f = fakeFetch([
+      // The request for Founders, then the one for CEOs: founders turn up in both.
+      envelope({ people: [searchHit('a', 'A', 'One', 'Founder at Acme', 'London'), searchHit('x', 'X', 'Ex', 'Designer', 'London')], page: { hasMore: false } }),
+      envelope({
+        people: [
+          searchHit('b', 'B', 'Two', 'Co-founder & Chief Executive', 'London'),
+          searchHit('c', 'C', 'Three', 'Cofounder, Brightly', 'London'),
+          searchHit('x', 'X', 'Ex', 'Designer', 'London'),
+        ],
+        page: { hasMore: false },
+      }),
+    ])
+    const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Founder', 'CEO'], companyRefs: ['1', '2'] })
+    expect(page.items.map((p) => p.firstName).sort()).toEqual(['A', 'B', 'C'])
+    expect(page.funnel).toMatchObject({ hits: 5, offTitle: 2, uniqueHits: 4, uniqueOffTitle: 1, emptyRequests: 0 })
+    // A was found only by the request for Founders; B and C only by the one for CEOs.
+    expect(page.funnel?.onlyByTitle).toEqual([1, 2])
+  })
+
+  it('fills a page with people who have the title, passing over the others in between at no cost', async () => {
+    const f = fakeFetch([
+      envelope({
+        people: [
+          searchHit('o1', 'Off1', 'X', 'Designer', 'London'),
+          searchHit('o2', 'Off2', 'X', 'Designer', 'London'),
+          searchHit('n1', 'On1', 'X', 'Founder', 'London'),
+          searchHit('o3', 'Off3', 'X', 'Designer', 'London'),
+          searchHit('n2', 'On2', 'X', 'Founder', 'London'),
+          searchHit('n3', 'On3', 'X', 'Founder', 'London'),
+        ],
+        page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 6 },
+      }),
+      envelope({ people: [], page: { kind: 'offset', hasMore: false, start: 6, returnedCount: 0 } }),
+    ])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchPeople(null, { titles: ['Founder'], count: 2 })
+    expect(first.items.map((p) => p.firstName)).toEqual(['On1', 'On2'])
+    const next = await source.searchPeople(null, { titles: ['Founder'], count: 2, cursor: first.nextCursor! })
+    expect(next.items.map((p) => p.firstName)).toEqual(['On3'])
+    expect(f.calls).toHaveLength(1)
+    // Once they're used up, SocialFetch is asked again from after the last one.
+    await source.searchPeople(null, { titles: ['Founder'], count: 2, cursor: next.nextCursor! })
+    expect(f.calls[1].searchParams.get('start')).toBe('6')
+  })
+
+  it("doesn't serve held people to a search for a different set of titles, which would read them differently", async () => {
+    const thirty = () =>
+      envelope({
+        people: Array.from({ length: 30 }, (_, i) => searchHit(`f${i}`, `F${i}`, 'X', i % 2 ? 'Owner' : 'Founder', 'London')),
+        page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 30 },
+      })
+    const f = fakeFetch([thirty(), thirty()])
+    const source = createSocialFetchSource(f.impl)
+    const first = await source.searchPeople(null, { titles: ['Founder'], count: 5 })
+    const same = await source.searchPeople(null, { titles: ['Founder'], count: 5, cursor: first.nextCursor! })
+    expect(same.requests).toBe(0)
+    expect(f.calls).toHaveLength(1)
+    await source.searchPeople(null, { titles: ['Founder', 'Owner'], count: 5, cursor: same.nextCursor! })
+    expect(f.calls).toHaveLength(2)
+  })
+
+  it('keeps the way multi-word titles work across restarts, and checks it again only after a week', async () => {
+    let kept: { joiner: '_' | ' '; confirmedAt: string } | null = null
+    const store = { get: () => kept, set: (v: { joiner: '_' | ' '; confirmedAt: string }) => void (kept = v) }
+    const nobody = () => envelope({ people: [], page: { hasMore: false } })
+    const f = fakeFetch([nobody(), envelope({ people: [searchHit('a', 'A', 'One', 'Business Analyst', 'London')], page: { hasMore: false } })])
+    await createSocialFetchSource(f.impl, undefined, { joiner: store }).searchPeople(null, { titles: ['Business Analyst'] })
+    expect(kept).toMatchObject({ joiner: ' ' })
+    // After a restart: spaces straight away, and finding nobody isn't tried the other way.
+    const g = fakeFetch([nobody()])
+    const page = await createSocialFetchSource(g.impl, undefined, { joiner: store }).searchPeople(null, { titles: ['Sales Manager'] })
+    expect(g.calls.map((c) => c.searchParams.get('title'))).toEqual(['Sales Manager'])
+    expect(page.funnel).toMatchObject({ emptyRequests: 1, joinerRetries: 0 })
+    // A week on, an empty result is tried the other way, once.
+    kept = { ...kept!, confirmedAt: new Date(Date.now() - 8 * 86_400_000).toISOString() }
+    const h = fakeFetch([nobody(), nobody(), nobody()])
+    const source = createSocialFetchSource(h.impl, undefined, { joiner: store })
+    const rechecked = await source.searchPeople(null, { titles: ['Sales Manager'] })
+    expect(h.calls.map((c) => c.searchParams.get('title'))).toEqual(['Sales Manager', 'Sales_Manager'])
+    expect(rechecked.funnel).toMatchObject({ emptyRequests: 2, joinerRetries: 1 })
+    // Not again the same day.
+    await source.searchPeople(null, { titles: ['Pastry Chef'] })
+    expect(h.calls).toHaveLength(3)
+  })
+
+  it("never checks a kept title joiner the other way while it keeps finding people", async () => {
+    let kept: { joiner: '_' | ' '; confirmedAt: string } | null = { joiner: ' ', confirmedAt: new Date(Date.now() - 8 * 86_400_000).toISOString() }
+    const store = { get: () => kept, set: (v: { joiner: '_' | ' '; confirmedAt: string }) => void (kept = v) }
+    const f = fakeFetch([envelope({ people: [searchHit('a', 'A', 'One', 'Business Analyst', 'London')], page: { hasMore: false } }), envelope({ people: [], page: { hasMore: false } })])
+    const source = createSocialFetchSource(f.impl, undefined, { joiner: store })
+    await source.searchPeople(null, { titles: ['Business Analyst'] })
+    expect(Date.now() - Date.parse(kept!.confirmedAt)).toBeLessThan(60_000)
+    await source.searchPeople(null, { titles: ['Pastry Chef'] })
+    expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Business Analyst', 'Pastry Chef'])
   })
 
   it('filters by seniority derived from the title', async () => {

@@ -435,6 +435,21 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     }
   })
 
+  it("doesn't show someone again on Load more whom an earlier page of the same search showed", async () => {
+    // Found by one title's request on the first page and another's on the next.
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(hit('ana')), nextCursor: 'p2' }))
+    searchPeopleMock.mockImplementationOnce(async () => ({ ...pageOf(hit('ana'), hit('ben')), nextCursor: null }))
+    try {
+      const first = await searchPeople({ titles: ['Business Analyst'], count: 1, fromStart: true })
+      expect(first.items.map((p) => p.firstName)).toEqual(['ana'])
+      const more = await searchPeople({ titles: ['Business Analyst'], count: 1, cursor: first.nextCursor! })
+      expect(more.items.map((p) => p.firstName)).toEqual(['ben'])
+    } finally {
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    }
+  })
+
   it('fills a short page with people in related roles, after the exact matches and marked, unless that’s switched off', async () => {
     const ben = profiles.ben
     profiles.ben = { ...ben, title: 'Sales Executive' }
@@ -1122,14 +1137,43 @@ describe("searchPeople with the host's shared database", () => {
           for (let i = 0; i < 12; i++) profiles[`q${n}x${i}`] = profiles.ben
           return { ...pageOf(...Array.from({ length: 12 }, (_, i) => hit(`q${n}x${i}`))), nextCursor: `page-${n + 1}` }
         })
+        getPerson.mockClear()
         const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'initech', name: 'Initech' } })
-        // Where lookups are paid for this stops after the first page (the test above); here it carries on to the most a page searches.
-        expect(searchPeopleMock.mock.calls.length).toBeGreaterThanOrEqual(11)
+        // Where lookups are paid for this stops after the first page (the test above); here it carries on
+        // until it has read three pages' worth of profiles (75 for a page of 25), and stops soon after.
+        expect(searchPeopleMock.mock.calls.length).toBeGreaterThanOrEqual(7)
+        expect(getPerson.mock.calls.length).toBeGreaterThanOrEqual(75)
+        expect(getPerson.mock.calls.length).toBeLessThanOrEqual(75 + 24)
         expect(res.items).toEqual([])
         expect(res.warnings.join(' ')).not.toMatch(/to save credits/)
         expect(res.nextCursor).toBeTruthy()
       } finally {
         for (const key of Object.keys(profiles)) if (/^q\d+x/.test(key)) delete profiles[key]
+        searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+        unhost()
+      }
+    })
+
+    it('uses a search page it started ahead and paid for, rather than stopping without it', async () => {
+      // Every search finds twelve people. The page reaches its most profiles read (75 for a page of
+      // 25) with the next search already started, which it then uses: Load more won't pay for it again.
+      free()
+      let n = 0
+      searchPeopleMock.mockClear()
+      searchPeopleMock.mockImplementation(async () => {
+        const i = n++
+        for (let j = 0; j < 12; j++) profiles[`pf${i}x${j}`] = profiles.ben
+        return { ...pageOf(...Array.from({ length: 12 }, (_, j) => hit(`pf${i}x${j}`))), nextCursor: `page-${i + 1}`, requests: 1 }
+      })
+      try {
+        const res = await searchPeople({ titles: ['Business Analyst'], company: { ref: 'initech', name: 'Initech' } })
+        const calls = searchPeopleMock.mock.calls.length
+        // Initech's people all work at Acme now, so nobody is kept: with lookups free the page searches until its limits.
+        expect(res.items).toEqual([])
+        // The last search it ran is the one it carries on from: none was started and dropped.
+        expect(res.nextCursor).toBe(`page-${calls}`)
+      } finally {
+        for (const key of Object.keys(profiles)) if (/^pf\d+x/.test(key)) delete profiles[key]
         searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
         unhost()
       }
@@ -1488,4 +1532,50 @@ describe('searchPeople with a company size finds companies first', () => {
     expect(refs[1]).toEqual(['1020', '1021', '1022', '1023', '1024'])
     expect(first.nextCursor).toBeNull()
   })
+
+  it('keeps the cursor of a search with companies waiting well inside what Load more accepts', async () => {
+    // Long company names, a page of companies held and more to come: the most a cursor carries.
+    searchCompaniesMock.mockImplementation(async () => ({
+      items: Array.from({ length: 25 }, (_, i) => org(String(3_000_000_000 + Math.floor(Math.random() * 1e9) + i), `${'Very Long Company Name Holdings International '.repeat(2)}${i}`, 'United Kingdom')),
+      nextCursor: 'org-more',
+      reportedTotal: null,
+      warnings: [],
+    }) as any)
+    try {
+      searchPage = pageOf()
+      const res = await searchPeople({ titles: ['Founder', 'Owner', 'CEO', 'Managing Director', 'President'], companySizes: ['1-10'], keyword: 'fintech', count: 25 })
+      expect(res.nextCursor).toBeTruthy()
+      // The search API takes cursors of up to 20,000 characters (functions/prospects.ts).
+      expect(res.nextCursor!.length).toBeLessThan(10_000)
+    } finally {
+      searchCompaniesMock.mockImplementation(async () => structuredClone(companyPage))
+    }
+  })
+
+  it('fills each batch to twenty companies from the next page of companies, instead of searching the few left over alone', async () => {
+    // Pages of 15 companies: 20 per batch means the first batch takes 5 from the second page.
+    let call = 0
+    searchCompaniesMock.mockImplementation(async () => {
+      const page = call++
+      return {
+        items: Array.from({ length: 15 }, (_, i) => org(String(2000 + page * 15 + i), `Co${page}-${i}`, 'United Kingdom')),
+        nextCursor: page < 2 ? `org-${page + 1}` : null,
+        reportedTotal: null,
+        warnings: [],
+      } as any
+    })
+    try {
+      searchPage = pageOf()
+      searchPeopleMock.mockClear()
+      const res = await searchPeople({ titles: ['Founder'], companySizes: ['11-50'], keyword: 'fintech', country: 'United Kingdom', count: 25 })
+      const refs = searchPeopleMock.mock.calls.map((c) => ((c as unknown[])[1] as { companyRefs: string[] }).companyRefs)
+      // 45 companies: batches of 20, 20 and the last 5, never a batch of a few with more to come.
+      expect(refs.map((r) => r.length)).toEqual([20, 20, 5])
+      expect(new Set(refs.flat()).size).toBe(45)
+      expect(res.nextCursor).toBeNull()
+    } finally {
+      searchCompaniesMock.mockImplementation(async () => structuredClone(companyPage))
+    }
+  })
+
 })

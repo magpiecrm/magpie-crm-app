@@ -3,6 +3,8 @@
 // Pure functions only — no I/O — so the ranking can be unit-tested against
 // awkward names (accents, hyphens, apostrophes, particles like "van der").
 
+import { JOB_WORDS } from './jobWords'
+
 /**
  * Local-part patterns, most likely first. Order follows Sendburg's 2025 study
  * of 336,782 B2B work emails (send-burg.com/research/b2b-email-formats):
@@ -67,10 +69,22 @@ export function foldName(raw: string): string {
   return s
 }
 
-/** Strips bracketed notes, post-comma credentials and emoji. */
+/**
+ * A tagline after the name: "Doe | Growth Marketing", "Doe • Coach", or
+ * "Doe - Founder" (a spaced dash only when what follows names a job, so the
+ * double-barrelled "Smith - Jones" keeps both halves).
+ */
+function withoutTagline(raw: string): string {
+  // A middle dot only with spaces round it: in Catalan names (Col·lell) it's part of the name.
+  const cut = raw.split(/\s*[|•]\s*|\s+·\s+/)[0]
+  const dash = cut.match(/^(.*?\S)\s+[-–—]\s+(.+)$/)
+  if (dash && dash[2].toLowerCase().split(/[^a-z]+/).some((w) => JOB_WORDS.has(w))) return dash[1]
+  return cut
+}
+
+/** Strips bracketed notes, post-comma credentials, taglines and emoji. */
 function cleanNameField(raw: string): string {
-  return raw
-    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+  return withoutTagline(raw.replace(/\([^)]*\)|\[[^\]]*\]/g, ' '))
     .split(',')[0]
     .replace(/[^\p{L}\p{M}\s'’‘`´.-]/gu, ' ')
 }
@@ -108,6 +122,31 @@ function partVariants(parts: string[]): string[] {
   return out
 }
 
+/** A surname's words without job words after it: "Doe CEO" is Doe. The surname itself, particles and all ("de Chair"), stays. */
+function withoutJobWords(last: string[]): string[] {
+  const surname = last.findIndex((t) => !PARTICLES.has(t))
+  return last.filter((t, i) => i <= surname || !JOB_WORDS.has(t))
+}
+
+/**
+ * What's awkward about a name for guessing its mailbox, for the finder's
+ * counts (finderStats.ts): kinds only, never the name.
+ */
+export function nameShapes(firstName: string, lastName: string): string[] {
+  const raw = `${firstName} ${lastName}`
+  const shapes: string[] = []
+  if (/-/.test(raw.replace(/\s[-–—]\s/g, ' '))) shapes.push('hyphen')
+  // Letters beyond plain ASCII (José, Müller), not emoji, curly apostrophes or dashes.
+  if (/[\p{L}\p{M}]/u.test(raw.replace(/[\x00-\x7f]/g, ''))) shapes.push('accent')
+  if (/[()[\]"“”]/.test(raw)) shapes.push('bracket')
+  const tokensOfLast = tokens(lastName)
+  const last = withoutJobWords(tokensOfLast)
+  if (withoutTagline(lastName) !== lastName || last.length < tokensOfLast.length) shapes.push('tagline')
+  if (last.some((t) => PARTICLES.has(t))) shapes.push('particle')
+  else if (last.length > 1) shapes.push('multiword')
+  return shapes.length ? shapes : ['plain']
+}
+
 export interface NameVariants {
   first: string[]
   last: string[]
@@ -125,6 +164,8 @@ export function nameVariants(firstName: string, lastName: string): NameVariants 
     lastTokens = firstTokens.slice(1)
     firstTokens = firstTokens.slice(0, 1)
   }
+  // A job after the surname ("Doe CEO") is a tagline; a surname that is a job word ("Dean", "de Chair") stays.
+  lastTokens = withoutJobWords(lastTokens)
   // A middle name is rarely in the mailbox: "Mary Ann" -> mary, maryann.
   const first = partVariants(firstTokens.slice(0, 1))
   if (firstTokens.length > 1) {

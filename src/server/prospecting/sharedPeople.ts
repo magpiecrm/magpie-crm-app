@@ -94,7 +94,8 @@ export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getPr
           .slice(0, taken)
           .reverse()
           .find((c) => c.created_at < due[taken].created_at)?.created_at
-  if (until) db.saveProspectingSettings({ ...(settings ?? { updated_at: new Date().toISOString() }), shared_offered_until: until })
+  // Read again: the settings may have changed while the host was asked (a confirmed title joiner, say).
+  if (until) db.saveProspectingSettings({ ...(db.getProspectingSettings() ?? { updated_at: new Date().toISOString() }), shared_offered_until: until })
   return Number(body.accepted) || 0
 }
 

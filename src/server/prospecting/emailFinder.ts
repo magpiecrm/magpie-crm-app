@@ -241,6 +241,12 @@ export interface FindResult {
   domainProblem?: boolean
   /** A domain that does take email, from the company's DNS, to offer the user. */
   suggestedDomain?: string
+  /**
+   * For a verified address: which of the candidates tried it was (0 first),
+   * its format, and what set the order: a format learned at the company, one
+   * its known addresses point to, or the general ranking.
+   */
+  verifiedAt?: { index: number; pattern: string; ranked: 'learned' | 'evidence' | 'general' }
 }
 
 type Verifier = NonNullable<FinderDeps['verifier']>
@@ -333,7 +339,7 @@ function nameProbe(): string {
   return `${word()}.${word()}`
 }
 
-function trustedPattern(rec: EmailDomainRecord | null, now: number): string | null {
+export function trustedPattern(rec: EmailDomainRecord | null, now: number): string | null {
   if (!rec?.pattern || rec.pattern_confidence < TRUSTED_CONFIDENCE) return null
   return isStale(rec.pattern_verified_at, DOMAIN_REFRESH_MS, now) ? null : rec.pattern
 }
@@ -484,8 +490,10 @@ export async function findEmail(
   const known = trustedPattern(rec, deps.now())
   const shared = known ? null : ((await deps.sharedFormat?.(domain, opts.headcount).catch(() => null)) ?? null)
   const evidence = known ? null : weighFormats(deps.knownAddresses?.(domain) ?? [], opts.headcount, shared)
+  const evidenceFirst = evidence && evidence.confidence >= EVIDENCE_FIRST ? evidence.pattern : null
+  const ranked = known ? ('learned' as const) : evidenceFirst ? ('evidence' as const) : ('general' as const)
   const candidates: Candidate[] = generateCandidates(person.firstName, person.lastName, domain, {
-    knownPattern: known ?? (evidence && evidence.confidence >= EVIDENCE_FIRST ? evidence.pattern : null),
+    knownPattern: known ?? evidenceFirst,
     max: MAX_CHECKS_PER_PERSON,
   })
   if (candidates.length === 0) {
@@ -586,7 +594,7 @@ export async function findEmail(
 
     if (result.reachability === 'safe') {
       learnPattern(domain, candidate.pattern, deps)
-      return done({ email: candidate.email, status: 'verified', outcome: 'verified', greylisted: false })
+      return done({ email: candidate.email, status: 'verified', outcome: 'verified', greylisted: false, verifiedAt: { index: candidates.indexOf(candidate), pattern: candidate.pattern, ranked } })
     }
     if (result.reachability === 'risky') {
       anyDefinite = true

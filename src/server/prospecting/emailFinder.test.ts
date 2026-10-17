@@ -84,7 +84,7 @@ describe('findEmail', () => {
   it('stops at the first safe candidate and learns only the pattern', async () => {
     const { deps, domains, candidateChecks } = setup({ mailbox: { 'jsmith@acme.com': 'safe' } })
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result).toEqual({ email: 'jsmith@acme.com', status: 'verified', outcome: 'verified', greylisted: false })
+    expect(result).toEqual({ email: 'jsmith@acme.com', status: 'verified', outcome: 'verified', greylisted: false, verifiedAt: { index: 1, pattern: '{f}{last}', ranked: 'general' } })
     expect(candidateChecks()).toEqual(['jane.smith@acme.com', 'jsmith@acme.com'])
 
     const rec = domains.get('acme.com')!

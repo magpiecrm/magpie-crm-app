@@ -30,7 +30,7 @@ import { canonicalCountry, geoIdForCountry } from './geo'
 import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
 import { monthOf } from './signals'
-import { createSearchPool, searchPoolKey, type HeldHits, type Hit } from './searchPool'
+import { createSearchPool, isOffTitle, searchPoolKey, type HeldHits, type Hit } from './searchPool'
 import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
 import type {
   CompanyFilters,
@@ -465,6 +465,36 @@ function rolesIn(headline: string): string[] {
 }
 
 /**
+ * Someone working for the person with the title, not holding it: "Assistant
+ * to the CEO", "Senior Executive Assistant & Office Manager to the CEO",
+ * "Chief of Staff to the Founder".
+ */
+const ASSISTANT_TO = /^(?:(?:senior|sr|lead|group|global|executive|personal|virtual|and|&)\s+)*(?:assistant|ea|pa|chief of staff)\b.*?\s(?:to|of)\b/i
+
+/**
+ * Roles that have a searched title's words but aren't that job: a Product
+ * Owner isn't a business owner, a Founder's Associate isn't a founder, an
+ * assistant to the CEO isn't the CEO, and a Vice President isn't the
+ * President. Never what's searched for itself: a search for Product Owners
+ * or Executive Assistants finds them.
+ */
+function notTheTitle(base: string): RegExp[] {
+  const out: RegExp[] = []
+  if (!/\b(?:assistant|ea|pa|chief of staff)\b/.test(base)) out.push(ASSISTANT_TO)
+  if (/\bowner\b/.test(base) && !/\b(?:product|process|service)\s+owner\b/.test(base)) out.push(/\b(?:product|process|service)\s+owner\b/i)
+  if (/\bfounder\b/.test(base) && !/\b(?:associate|office|residence)\b/.test(base)) {
+    out.push(/\bfounder'?s?\s+(?:associate|office)\b|\bfounder\s+in\s+residence\b/i)
+  }
+  if (/\bpresident\b/.test(base) && !/\b(?:vice|vp)\b/.test(base)) out.push(/\bvice[- ]?president\b/i)
+  return out
+}
+
+/** Words written more than one way in headlines: a Cofounder and a Co-founder are founders, whichever is searched for. */
+const WORD_FORMS: Record<string, string> = { founder: '(?:co[- ]?)?founder' }
+/** One spelling for searching: "Co-founder" and "Cofounder" search as "Founder", which finds both. */
+const sameWord = (s: string) => s.replace(/\bco[- ]?founder/g, 'founder').replace(/[’‘]/g, "'")
+
+/**
  * The parts of a headline that name the job title searched for: every word
  * of it (or of its usual abbreviation or long form) in one part, before any
  * " at <company>". "Sales Manager" fits "Regional Sales Manager" and
@@ -474,7 +504,7 @@ function rolesIn(headline: string): string[] {
  * whatever their headline opens with.
  */
 export function titleRoles(title: string): (headline: string | null | undefined) => string[] {
-  const base = norm(title).replace(/\s+/g, ' ')
+  const base = sameWord(norm(title).replace(/\s+/g, ' '))
   const forms = new Set([base])
   for (const [short, long] of SAME_TITLE) {
     const s = new RegExp(`\\b${short}\\b`)
@@ -486,10 +516,14 @@ export function titleRoles(title: string): (headline: string | null | undefined)
       form
         .split(' ')
         .filter((w) => w && !TITLE_FILLER.has(w))
-        .map((w) => new RegExp(w.length <= 4 ? `\\b${escapeRegExp(w)}\\b` : `\\b${escapeRegExp(w)}`, 'i')),
+        .map((w) => new RegExp(WORD_FORMS[w] ? `\\b${WORD_FORMS[w]}` : w.length <= 4 ? `\\b${escapeRegExp(w)}\\b` : `\\b${escapeRegExp(w)}`, 'i')),
     )
     .filter((words) => words.length > 0)
-  return (headline) => (headline ? rolesIn(headline).filter((role) => patterns.some((words) => words.every((w) => w.test(role)))) : [])
+  const not = notTheTitle(base)
+  return (headline) =>
+    headline
+      ? rolesIn(headline).filter((role) => patterns.some((words) => words.every((w) => w.test(role))) && !not.some((n) => n.test(role.replace(/[’‘]/g, "'"))))
+      : []
 }
 
 /** Whether a headline names the job title searched for (titleRoles). */
@@ -525,7 +559,7 @@ export function leadershipDepartment(title: string): string | null {
 /** A headline's leadership roles in the department: "VP of Sales", "Sales Director", "Head of Sales & Partnerships". */
 export function leaderRoles(department: string): (headline: string | null | undefined) => string[] {
   const inDepartment = titleMatcher(department)
-  return (headline) => (headline ? rolesIn(headline).filter((role) => LEADER_WORDS.test(role) && inDepartment(role)) : [])
+  return (headline) => (headline ? rolesIn(headline).filter((role) => LEADER_WORDS.test(role) && inDepartment(role) && !ASSISTANT_TO.test(role)) : [])
 }
 
 /** Whether a headline has a leadership role in the department (leaderRoles). */
@@ -737,6 +771,16 @@ export function startFrom(cursor: string | null | undefined): number {
   }
 }
 
+/** A short, stable tag for a string (FNV-1a): keeps keys small. Not for anything secret. */
+function shortHash(text: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(36)
+}
+
 function encodeCursor(map: Record<string, string>): string | null {
   return Object.keys(map).length ? Buffer.from(JSON.stringify(map)).toString('base64url') : null
 }
@@ -759,11 +803,21 @@ function envKey(): string {
   return key
 }
 
+/** Where the confirmed title joiner is kept between restarts (runtime.ts: the prospecting settings). */
+export interface JoinerStore {
+  get(): { joiner: '_' | ' '; confirmedAt: string } | null
+  set(value: { joiner: '_' | ' '; confirmedAt: string }): void
+}
+
+const DAY_MS = 86_400_000
+/** A kept joiner is tried the other way again after this long, if a multi-word title then finds nobody: at most once a day. */
+const JOINER_RECHECK_MS = 7 * DAY_MS
+
 /**
  * `getApiKey` is read on every request, so a key saved in Settings takes
  * effect immediately without rebuilding the source.
  */
-export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () => string = envKey): CompanySource & PeopleSource {
+export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () => string = envKey, opts: { joiner?: JoinerStore } = {}): CompanySource & PeopleSource {
   const get = <T>(path: string, params: Record<string, string | number | undefined>) =>
     request<T>(path, params, fetchImpl, getApiKey())
   const pool = createSearchPool()
@@ -772,9 +826,31 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
   // How a multi-word title's words are joined in `title`: underscores work
   // today, spaces once SocialFetch's fix is out. Until a multi-word search has
   // found someone, one that finds nobody is tried once the other way, and
-  // whichever works is kept.
-  let titleJoiner: '_' | ' ' = '_'
-  let joinerConfirmed = false
+  // whichever works is kept, across restarts (opts.joiner). A kept one is
+  // checked again only after a week, when a multi-word title finds nobody.
+  const kept = (() => {
+    try {
+      return opts.joiner?.get() ?? null
+    } catch {
+      return null
+    }
+  })()
+  let titleJoiner: '_' | ' ' = kept?.joiner ?? '_'
+  let joinerConfirmed = Boolean(kept)
+  let confirmedAt = kept ? Date.parse(kept.confirmedAt) || 0 : 0
+  let recheckedAt = 0
+  const confirmJoiner = (joiner: '_' | ' ') => {
+    const changed = !joinerConfirmed || joiner !== titleJoiner || Date.now() - confirmedAt > DAY_MS
+    titleJoiner = joiner
+    joinerConfirmed = true
+    if (!changed) return
+    confirmedAt = Date.now()
+    try {
+      opts.joiner?.set({ joiner, confirmedAt: new Date(confirmedAt).toISOString() })
+    } catch {
+      // Not kept: found out again after a restart.
+    }
+  }
   return {
     async searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
       // Industry, size and country are filtered by SocialFetch itself where it
@@ -949,6 +1025,17 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         return named.find((c) => h.includes(` ${c.key} `)) ?? null
       }
 
+      // Every hit is read against all the titles searched, whichever title's request found it:
+      // a Founder returned by the search for CEOs is still a founder.
+      const anyRoles = queries.some((q) => q.roles)
+        ? (headline: string | null) => [...new Set(queries.flatMap((q) => q.roles?.(headline) ?? []))]
+        : null
+      const anyRelated = queries.some((q) => q.related)
+        ? (headline: string | null) => [...new Set(queries.flatMap((q) => q.related?.(headline) ?? []))]
+        : null
+      // Held hits were sorted by that reading, so they're only taken by a search reading them the same way.
+      const scope = shortHash(JSON.stringify([queries.map((q) => q.key).sort(), filters.relatedRoles !== false]))
+
       const readPeople = (res: any, asked: number, rolesFor: TitleQuery['roles'], relatedFor: TitleQuery['related']): Hit[] => {
         const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
@@ -962,7 +1049,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const roles = person && rolesFor ? rolesFor(headline) : null
           // Not the title searched, but a role in the same department: kept for filling a short page.
           const related = roles && !roles.length && filters.relatedRoles !== false && relatedFor ? relatedFor(headline) : []
-          if (roles && !roles.length && !related.length) return 'off-title'
+          if (person && roles && !roles.length && !related.length) return { offTitle: person.profileUrl }
           const at = person && namedIn(headline)
           const found = at ? { ...person, company: at.name, companyRef: at.ref } : person
           const hit = found && related.length ? { ...found, relatedRoles: related } : found
@@ -991,29 +1078,37 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         }
         const start = startFrom(position)
         // Held results are read through the query's own title check, so the key says which.
-        const poolKey = (at: number) => searchPoolKey({ ...params, match: query.key }, at)
+        const poolKey = (at: number) => searchPoolKey({ ...params, match: `${query.key}|${scope}` }, at)
         let hits: HeldHits | null = pool.take(poolKey(start))
         let requests = 0
+        let empty = 0
+        let joinerRetry = false
         if (!hits) {
           let res = await get<any>('/v2/linkedin/people/search', { ...params, count: FETCH_SIZE, start: start || undefined })
           requests = 1
           const found = (r: any) => (Array.isArray(r.data?.people) ? r.data.people.length : 0)
-          if (multiWord && !joinerConfirmed && start === 0) {
-            if (found(res) > 0) joinerConfirmed = true
-            else {
+          if (found(res) === 0) empty = 1
+          if (multiWord && start === 0) {
+            const recheck = joinerConfirmed && Date.now() - confirmedAt > JOINER_RECHECK_MS && Date.now() - recheckedAt > DAY_MS
+            // Finding someone confirms the joiner again (written at most once a day), so one that
+            // keeps working is never checked the other way.
+            if (found(res) > 0) confirmJoiner(titleJoiner)
+            else if (!joinerConfirmed || recheck) {
+              if (recheck) recheckedAt = Date.now()
               const other = titleJoiner === '_' ? ' ' : '_'
               const retry = await get<any>('/v2/linkedin/people/search', { ...params, title: titleParam(other), count: FETCH_SIZE })
               requests = 2
+              joinerRetry = true
               if (found(retry) > 0) {
-                titleJoiner = other
-                joinerConfirmed = true
+                confirmJoiner(other)
                 params.title = titleParam(other)
                 res = retry
-              }
+                empty = 0
+              } else empty = 2
             }
           }
           const page = res.data?.page
-          const people = readPeople(res, FETCH_SIZE, query.roles, query.related)
+          const people = readPeople(res, FETCH_SIZE, anyRoles, anyRelated)
           hits = {
             items: people,
             hasMore: Boolean(page?.hasMore),
@@ -1022,13 +1117,20 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             at: Date.now(),
           }
         }
-        const used = hits.items.slice(0, pageSize).map((p) => (p && p !== 'off-title' ? { ...p } : p))
-        const rest = hits.items.slice(pageSize)
+        // A page takes `pageSize` people with a title searched; off-title and unreadable hits in
+        // between cost nothing to pass over, and people in related roles come along for a short page.
+        let walked = 0
+        for (let taken = 0; walked < hits.items.length && taken < pageSize; walked++) {
+          const h = hits.items[walked]
+          if (h && !isOffTitle(h) && !h.relatedRoles?.length) taken++
+        }
+        const used = hits.items.slice(0, walked).map((p) => (p && !isOffTitle(p) ? { ...p } : p))
+        const rest = hits.items.slice(walked)
         // Part-way through held people, the offset is their place; after the last, SocialFetch's own.
         const nextStart = rest.length ? start + used.length : Math.max(hits.end, start + used.length)
         pool.put(poolKey(nextStart), { ...hits, items: rest })
         const more = used.length > 0 && (rest.length > 0 || hits.hasMore) && nextStart <= MAX_START
-        return { title: query.key, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests }
+        return { title: query.key, people: used, next: more ? `start:${nextStart}` : null, reportedTotal: hits.reportedTotal, requests, empty, joinerRetry }
       }
 
       const settled = await Promise.allSettled(active.map((q) => fetchTitle(q, prior?.[q.key])))
@@ -1049,6 +1151,9 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       let unreadable = 0
       let offTitle = 0
       let relatedRoles = 0
+      // Off-title people once each across the titles' requests, and which requests found each person with a title.
+      const offTitlePeople = new Set<string>()
+      const foundBy = new Map<string, Set<string>>()
 
       for (const { title, people: found, next, reportedTotal: total } of ok) {
         if (next) nextCursors[title] = next
@@ -1058,10 +1163,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             unreadable++
             continue
           }
-          if (hit === 'off-title') {
+          if (isOffTitle(hit)) {
             offTitle++
+            offTitlePeople.add(hit.offTitle)
             continue
           }
+          if (hit.roles?.length) foundBy.set(hit.profileUrl, (foundBy.get(hit.profileUrl) ?? new Set()).add(title))
           const { roles = [], relatedRoles: related = [], ...person } = hit
           // Found under a second title too: both show. Found under one by its title, it isn't only related.
           const before = seen.get(person.profileUrl)
@@ -1149,6 +1256,17 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         details.push(`${people_(hidden)} didn't match your seniority or country filters and ${hidden === 1 ? 'is' : 'are'} hidden.`)
       }
 
+      // People with a title searched that only one title's request found, by the place of that
+      // title in the search (a department's leaders count under the first title they stand for).
+      const onlyBy = slots.map(() => 0)
+      for (const keys of foundBy.values()) {
+        if (keys.size !== 1) continue
+        const q = queries.find((x) => x.key === [...keys][0])
+        const at = q ? slots.indexOf(q.leaders[0] ?? q.key) : -1
+        if (at >= 0) onlyBy[at]++
+      }
+      for (const url of seen.keys()) offTitlePeople.delete(url)
+
       return {
         items: filtered,
         nextCursor: encodeCursor(nextCursors),
@@ -1156,7 +1274,17 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         warnings,
         details,
         requests: ok.reduce((n, t) => n + t.requests, 0),
-        funnel: { hits: ok.reduce((n, t) => n + t.people.length, 0), offTitle, filteredOut: hidden, related: relatedRoles },
+        funnel: {
+          hits: ok.reduce((n, t) => n + t.people.length, 0),
+          offTitle,
+          filteredOut: hidden,
+          related: relatedRoles,
+          uniqueHits: seen.size + offTitlePeople.size + unreadable,
+          uniqueOffTitle: offTitlePeople.size,
+          emptyRequests: ok.reduce((n, t) => n + t.empty, 0),
+          joinerRetries: ok.filter((t) => t.joinerRetry).length,
+          onlyByTitle: onlyBy,
+        },
       }
     },
 

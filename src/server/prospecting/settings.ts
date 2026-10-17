@@ -214,6 +214,8 @@ export function saveProspectingSettings(input: SaveProspectingInput) {
   }
 
   db.saveProspectingSettings({
+    // What the form doesn't edit is kept (the title joiner, the shared database's place).
+    ...current,
     secrets: Object.keys(next).length ? encryptToken(next, env.credentialsSecret()) : undefined,
     verification_provider: input.verificationProvider ?? (current?.verification_provider === 'none' ? 'none' : current?.verification_provider === 'reacher' ? 'reacher' : undefined),
     verified_only: input.verifiedOnly ?? current?.verified_only,

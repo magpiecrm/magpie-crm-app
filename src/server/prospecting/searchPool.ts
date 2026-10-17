@@ -16,10 +16,14 @@ const HOUR = 3_600_000
 /**
  * A search hit: the person (with the parts of their headline that name the
  * job searched for, which become the title shown), null for a record that
- * couldn't be read, or 'off-title' for someone whose headline doesn't name
- * the job. Each keeps its place in the offsets.
+ * couldn't be read, or an off-title marker for someone whose headline doesn't
+ * name the job (their profile link, so they're counted once across a page's
+ * searches). Each keeps its place in the offsets.
  */
-export type Hit = (PersonResult & { roles?: string[]; relatedRoles?: string[] }) | null | 'off-title'
+export type OffTitle = { offTitle: string }
+export type Hit = (PersonResult & { roles?: string[]; relatedRoles?: string[] }) | null | OffTitle
+
+export const isOffTitle = (hit: Hit | undefined): hit is OffTitle => Boolean(hit && 'offTitle' in hit)
 
 export interface HeldHits<H = Hit> {
   /** The hits in search order. */

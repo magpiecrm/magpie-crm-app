@@ -38,6 +38,10 @@ export interface SearchLogEntry {
   stop?: string
   /** How the email lookups for people this search showed ended, by outcome. */
   lookups: Partial<Record<LookupOutcome, number>>
+  /** The same, by where the domain looked at came from (companies.ts DomainSource). */
+  lookupsBySource?: Record<string, Partial<Record<LookupOutcome, number>>>
+  /** The same, by what was known of the domain when the person was shown (PersonResult.mailCheck). */
+  lookupsByCheck?: Record<string, Partial<Record<LookupOutcome, number>>>
 }
 
 /** A short id for one search: random, and meaning nothing by itself. */
@@ -53,12 +57,16 @@ export async function logSearch(entry: Omit<SearchLogEntry, 'lookups'>) {
   }
 }
 
-/** Adds how one email lookup ended to the search that showed the person, if it's still in the log. */
-export async function noteSearchLookup(searchId: string | null | undefined, outcome: LookupOutcome) {
+/**
+ * Adds how one email lookup ended to the search that showed the person, if
+ * it's still in the log, with where its domain came from and what was known
+ * of that domain when they were shown (categories, nothing about the person).
+ */
+export async function noteSearchLookup(searchId: string | null | undefined, outcome: LookupOutcome, how: { source?: string; check?: string } = {}) {
   if (!searchId) return
   try {
     const { db } = await import('../db')
-    db.noteSearchLookup(searchId, outcome)
+    db.noteSearchLookup(searchId, outcome, how)
   } catch (err: any) {
     console.error('[Prospecting] Failed to note a lookup against its search:', err?.message ?? err)
   }

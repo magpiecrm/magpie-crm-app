@@ -32,7 +32,10 @@ key), with the app's actions as tools.
     holds the search hits a page didn't use for 1h, so the next page or
     top-up doesn't pay for another request, and `searchRuns.ts` holds a
     search while it runs, and for 1h if it finished with nobody there, so
-    asking again joins it rather than running and charging a second one. An employer with no LinkedIn
+    asking again joins it rather than running and charging a second one.
+    `search.ts` also keeps, for 1h, the keyed hashes (not the links) of
+    the profiles a search has shown, so its later pages don't show or
+    charge anyone twice. An employer with no LinkedIn
     company page gets its website from a web search instead
     (`companySite.ts`, through `webSearch.ts`: the copy's own
     `WEB_SEARCH_API_KEY`, or its host's): only a domain that is plainly the

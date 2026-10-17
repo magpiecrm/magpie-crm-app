@@ -136,6 +136,7 @@ const personInput = z.object({
   emailStatus: z.enum(EMAIL_STATUSES).optional(),
   shared: z.string().max(200).optional(),
   searchId: z.string().max(40).optional(),
+  mailCheck: z.enum(['pattern', 'tested', 'deadEnd', 'untested']).optional(),
 })
 
 /**

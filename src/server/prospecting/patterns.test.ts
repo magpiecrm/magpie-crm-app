@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyPattern, foldName, generateCandidates, inferPattern, nameVariants } from './patterns'
+import { applyPattern, foldName, generateCandidates, inferPattern, nameShapes, nameVariants } from './patterns'
 import { classifySeniority, parseSeniorityLabel } from './seniority'
 
 const locals = (first: string, last: string, opts?: Parameters<typeof generateCandidates>[3]) =>
@@ -103,6 +103,35 @@ describe('generateCandidates', () => {
 
   it('works for accented and apostrophe names end to end', () => {
     expect(generateCandidates('Siobhán', "O'Néill", 'acme.ie')[0].email).toBe('siobhan.oneill@acme.ie')
+  })
+})
+
+describe('taglines in a name', () => {
+  it('leaves out what follows the name in its field, keeping surnames that happen to be job words', () => {
+    expect(locals('Jane', 'Doe - Founder', { max: 2 })).toEqual(['jane.doe', 'jdoe'])
+    expect(locals('Jane', 'Doe | Growth Marketing', { max: 2 })).toEqual(['jane.doe', 'jdoe'])
+    expect(locals('Jane', 'Doe • Coach', { max: 2 })).toEqual(['jane.doe', 'jdoe'])
+    expect(locals('Jane', 'Doe CEO', { max: 2 })).toEqual(['jane.doe', 'jdoe'])
+    expect(locals('Jane Doe CEO', '', { max: 2 })).toEqual(['jane.doe', 'jdoe'])
+    // A spaced dash between two surnames is a double-barrelled name, and Dean is a surname.
+    expect(nameVariants('Jane', 'Smith - Jones').last).toContain('smith')
+    expect(locals('Jane', 'Dean', { max: 1 })).toEqual(['jane.dean'])
+    // A surname with a particle keeps its job word; a Catalan middle dot is part of the name.
+    expect(locals('Jane', 'de Chair', { max: 1 })).toEqual(['jane.dechair'])
+    expect(locals('Marcel', 'Col·lell', { max: 1 })).toEqual(['marcel.collell'])
+    expect(locals('Jane', 'Doe · Coach', { max: 1 })).toEqual(['jane.doe'])
+  })
+
+  it('names the shape of a name for the finder\'s counts, never the name', () => {
+    expect(nameShapes('Jane', 'Doe')).toEqual(['plain'])
+    expect(nameShapes('Anna', 'Smith-Jones')).toEqual(['hyphen'])
+    expect(nameShapes('José', 'Müller')).toEqual(['accent'])
+    expect(nameShapes('Sean', 'O’Brien')).toEqual(['plain'])
+    expect(nameShapes('Jane', 'Doe 🚀')).toEqual(['plain'])
+    expect(nameShapes('Jonathan (Jon)', 'Smith')).toEqual(['bracket'])
+    expect(nameShapes('Jane', 'Doe - Founder')).toEqual(['tagline'])
+    expect(nameShapes('Ludwig', 'van Beethoven')).toEqual(['particle'])
+    expect(nameShapes('Maria', 'García López')).toEqual(['accent', 'multiword'])
   })
 })
 

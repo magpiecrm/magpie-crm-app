@@ -1,4 +1,5 @@
 import { isLineOfWork } from './companies'
+import { JOB_WORDS } from './jobWords'
 import { classifySeniority } from './seniority'
 import { sameCompanyName } from './socialfetch'
 import type { CurrentJob, PersonResult } from './types'
@@ -88,14 +89,6 @@ const wordsIn = (s: string): Word[] =>
 const LEGAL_ENDING = new Set(['ltd', 'limited', 'llc', 'llp', 'inc', 'plc', 'gmbh', 'corp', 'corporation'])
 
 /** Words a job is named with. A part of a title with none of them is a company's name or a slogan. */
-const JOB_WORDS = new Set(
-  `accountant administrator adviser advisor agent analyst architect artist assistant associate attorney author broker buyer ceo cfo chair
-  chairman chairperson chairwoman chief cio cmo coach cofounder consultant controller coo coordinator copywriter counsel creator cro cto dean
-  designer developer director editor engineer entrepreneur evp executive founder head instructor investor lawyer lead leader manager marketer
-  md member mentor officer operator owner partner planner president principal producer professor proprietor publisher recruiter rep
-  representative researcher scientist secretary speaker specialist strategist superintendent supervisor svp teacher technician trainer
-  treasurer trustee vp writer`.split(/\s+/),
-)
 /** "Lead generation" is something sold, not someone's job. */
 const namesJob = (words: Word[]) => words.some((w, i) => JOB_WORDS.has(w.text) && !(w.text === 'lead' && /^gen/.test(words[i + 1]?.text ?? '')))
 /** Sides of a business that aren't lines of work in themselves. */

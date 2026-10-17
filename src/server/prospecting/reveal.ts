@@ -8,8 +8,9 @@
 // not stored; it goes back to the browser and is only kept if the person is
 // then saved.
 
-import { domainForPerson } from './companies'
+import { domainForPerson, type DomainSource } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
+import { recordFinderStats } from './finderStats'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import { handsOver, type CompanySource, type EmailStatus, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
@@ -82,10 +83,12 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   }
   if (fromShared && deps.sharedFree) requireAllowance('reveals')
 
-  const domain = await domainForPerson(person, deps.source, deps.db)
+  const how: { source?: DomainSource } = {}
+  const domain = await domainForPerson(person, deps.source, deps.db, undefined, how)
+  const noted = { source: how.source, check: person.mailCheck }
   if (!domain) {
     recordLookup('noDomain')
-    void noteSearchLookup(person.searchId, 'noDomain')
+    void noteSearchLookup(person.searchId, 'noDomain', noted)
     return {
       status: 'no_domain',
       message: person.companyRef ? "Their company's website isn't known." : "We don't know where they work.",
@@ -104,7 +107,8 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   }
   recordUsage({ emailLookups: 1 })
   recordLookup(found.outcome)
-  void noteSearchLookup(person.searchId, found.outcome)
+  void recordFinderStats(person, found, headcount)
+  void noteSearchLookup(person.searchId, found.outcome, noted)
   if (!found.email) {
     return {
       status: 'not_found',

@@ -8,7 +8,7 @@ import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult
 import { hasSignal, newInRoleSignal, signalKey, withSignals } from './signals'
 import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companySignals'
 import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
-import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden } from './emailFinder'
+import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
 import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName, plainlySameCompany } from './companies'
@@ -472,6 +472,8 @@ interface Tally {
   /** Profiles that said when the job shown started: to the month, or only the year. */
   roleStartMonth: number
   roleStartYear: number
+  /** Left out as working elsewhere, though their employer's page name is that of a company searched (counts whether matching pages by name is worth doing). */
+  wrongCompanySameSlug: number
 }
 
 type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies' | 'getCompany'>>
@@ -717,6 +719,8 @@ async function companyFirstPage(
   batchHasMore: boolean
   /** Hiring and funding filters: the signals of the companies searched, by ref, for their people. */
   signals: Map<string, Signal[]>
+  /** This page is a newly filled batch's first (not a later page of it, nor companies searched one at a time). */
+  firstOfBatch?: boolean
 }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
@@ -744,15 +748,22 @@ async function companyFirstPage(
       ),
     )
     const items: PersonResult[] = []
-    const funnel = { hits: 0, offTitle: 0, filteredOut: 0 }
+    const funnel: NonNullable<Page<PersonResult>['funnel']> = { hits: 0, offTitle: 0, filteredOut: 0, related: 0, uniqueHits: 0, uniqueOffTitle: 0, emptyRequests: 0, joinerRetries: 0, onlyByTitle: [] }
     const carryOn: NonNullable<CompanyFirstState['singles']> = []
     pages.forEach((page, i) => {
       const [ref, name] = now[i]
       // Anyone whose headline names another employer was left out by the search.
       for (const p of page.items) items.push({ ...p, company: name, companyRef: ref })
-      funnel.hits += page.funnel?.hits ?? page.items.length
-      funnel.offTitle += page.funnel?.offTitle ?? 0
-      funnel.filteredOut += page.funnel?.filteredOut ?? 0
+      const f = page.funnel
+      funnel.hits += f?.hits ?? page.items.length
+      funnel.offTitle += f?.offTitle ?? 0
+      funnel.filteredOut += f?.filteredOut ?? 0
+      funnel.related! += f?.related ?? 0
+      funnel.uniqueHits! += f?.uniqueHits ?? f?.hits ?? page.items.length
+      funnel.uniqueOffTitle! += f?.uniqueOffTitle ?? f?.offTitle ?? 0
+      funnel.emptyRequests! += f?.emptyRequests ?? 0
+      funnel.joinerRetries! += f?.joinerRetries ?? 0
+      f?.onlyByTitle?.forEach((n, j) => (funnel.onlyByTitle![j] = (funnel.onlyByTitle![j] ?? 0) + n))
       if (page.nextCursor) carryOn.push([ref, name, page.nextCursor])
     })
     const next: CompanyFirstState = { ...s, singles: [...carryOn, ...s.singles.slice(now.length)] }
@@ -775,20 +786,42 @@ async function companyFirstPage(
       signals: batchSignals,
     }
   }
-  // A few company pages at most, in case pages come back with none that fit.
-  for (let guard = 0; guard < 4 && !s.batch.length; guard++) {
-    if (s.pending.length) {
+  // The batch is filled to MAX_COMPANIES_PER_SEARCH before its people are searched: a people
+  // search costs the same for 2 companies as for 20, so the few left over from one page of
+  // companies wait for the next page (usually held already, at no cost) instead of being
+  // searched on their own. A few company pages at most, in case pages come back with none that fit.
+  const filling: Array<[string, string]> = []
+  // Companies put back to wait for their signals: not taken again while this batch fills.
+  const deferred: Array<[string, string]> = []
+  let signalScreens = 0
+  const canFind = () => !warm && Boolean(source.searchCompanies) && (s.orgCursor !== undefined || s.term < terms.length)
+  for (let guard = 0; guard < 6 && !s.batch.length; guard++) {
+    const room = MAX_COMPANIES_PER_SEARCH - filling.length
+    // Hiring and funding: each screening waits up to SIGNALS_WAIT_MS, so a batch fills from two at most.
+    if (webKinds.length > 0 && signalScreens >= 2) {
+      if (filling.length) s = { ...s, batch: filling.splice(0), people: undefined }
+      break
+    }
+    if (s.pending.length && (s.pending.length >= room || !canFind())) {
       const pending = screened ? await withoutUnverifiable(s.pending, db, screened) : s.pending
-      const next = pending.slice(0, MAX_COMPANIES_PER_SEARCH)
+      const next = pending.slice(0, room)
       if (webKinds.length) {
         // Only companies with the signals asked for go on to the people search.
+        signalScreens++
         const r = await screenBySignals(next, webKinds, db, s.waited ?? [], signalTally)
-        s = { ...s, batch: r.keep, pending: [...pending.slice(MAX_COMPANIES_PER_SEARCH), ...r.later], waited: [...(s.waited ?? []), ...r.later.map(([ref]) => ref)].slice(-200), people: undefined }
+        filling.push(...r.keep)
+        deferred.push(...r.later)
+        s = { ...s, pending: pending.slice(next.length), waited: [...(s.waited ?? []), ...r.later.map(([ref]) => ref)].slice(-200) }
         r.keep.forEach(([ref], i) => batchSignals.set(ref, r.signals[i]))
       } else {
-        s = { ...s, batch: next, pending: pending.slice(MAX_COMPANIES_PER_SEARCH), people: undefined }
+        filling.push(...next)
+        s = { ...s, pending: pending.slice(next.length) }
       }
-      if (s.batch.length) break
+      // Full, or as full as it will get.
+      if (filling.length >= MAX_COMPANIES_PER_SEARCH || (!s.pending.length && !canFind())) {
+        s = { ...s, batch: filling.splice(0), people: undefined }
+        break
+      }
       continue
     }
     if (warm) {
@@ -817,13 +850,20 @@ async function companyFirstPage(
       screened.unverifiable += r.unverifiable
       screened.noDomain += r.noDomain
     }
+    // Added to those still waiting, which carry over from the last page of companies (or industry);
+    // a company found again (under a second industry, say) isn't queued twice.
+    const queued = new Set([...s.pending, ...filling, ...deferred].map(([ref]) => ref))
+    const added = fits.filter((c) => !queued.has(c.ref) && (queued.add(c.ref), true)).map((c) => [c.ref, c.name] as [string, string])
     s = {
       ...s,
-      pending: fits.map((c) => [c.ref, c.name] as [string, string]),
+      pending: [...s.pending, ...added],
       orgCursor: res.nextCursor ?? undefined,
       term: res.nextCursor ? s.term : s.term + 1,
     }
   }
+  // Whatever filled before the tries ran out is searched; companies waiting for their signals go back at the end.
+  if (!s.batch.length && filling.length) s = { ...s, batch: filling.splice(0), people: undefined }
+  if (deferred.length) s = { ...s, pending: [...s.pending, ...deferred] }
   const companies = new Map(s.batch)
   if (!s.batch.length) {
     // No batch after a few tries (the companies found were all left out): carry on from here if
@@ -844,6 +884,7 @@ async function companyFirstPage(
       ? encodeState({ ...s, batch: [], people: undefined, singles: [...s.batch.map(([ref, name]) => [ref, name] as [string, string]), ...(s.singles ?? [])] })
       : null
 
+  const firstOfBatch = !s.people
   const page = await source.searchPeople(null, {
     titles: filters.titles,
     seniorities: filters.seniorities,
@@ -864,6 +905,7 @@ async function companyFirstPage(
     splitCursor,
     batchHasMore: Boolean(page.nextCursor),
     signals: batchSignals,
+    firstOfBatch,
   }
 }
 
@@ -1154,6 +1196,11 @@ async function processBatch(
         return at ? { ...p, company: at.name, companyDomain: at.domain ?? p.companyDomain } : p
       })
     tally.wrongCompany += items.length - kept.length
+    // Of those, any whose employer's page name is a searched company's (a name written differently, not a move).
+    if (kept.length < items.length) {
+      const slugs = new Set((db.data.prospect_companies ?? []).filter((c) => companySet.has(c.ref) && c.slug).map((c) => c.slug!.toLowerCase()))
+      tally.wrongCompanySameSlug += items.filter((p) => !kept.some((k) => k.profileUrl === p.profileUrl) && p.companyRef && slugs.has(p.companyRef.toLowerCase())).length
+    }
     items = kept
   }
 
@@ -1303,6 +1350,23 @@ async function processBatch(
     tally.domainsUnchecked += untested.length - answered
     markKnown()
   }
+  // What was known of each one's mail domain as they were shown (company data): an email
+  // format learned there, tested and not accepting every address, known to accept every
+  // address, take no email or not answer, or not tested yet.
+  {
+    const now = Date.now()
+    for (const p of items) {
+      if (!p.companyDomain) continue
+      const rec = known(p.companyDomain.toLowerCase().trim())
+      p.mailCheck = trustedPattern(rec, now)
+        ? 'pattern'
+        : p.catchAll || p.noMail || p.noAnswer || rec?.catch_all === true || rec?.accepts_mail === false
+          ? 'deadEnd'
+          : rec?.catch_all === false
+            ? 'tested'
+            : 'untested'
+    }
+  }
 
   // Signals (signals.ts): new in role from the profile, and warm from the
   // workspace's own engagement, the person's own for someone already a contact.
@@ -1378,8 +1442,16 @@ export async function searchPeople(
   const asked = Math.min(PAGE_SIZES[PAGE_SIZES.length - 1], Math.max(1, filters.count ?? PAGE_SIZES[0]))
   // A credit per person shown, so a page asks for no more than are left.
   const target = Math.min(asked, Math.floor(left))
-  // Requests the page takes before any top-up: over 50 a title needs two.
+  // Searches the page takes before any top-up: over 50 a title needs two.
   const planned = Math.ceil(Math.ceil(target / slots) / MAX_PER_REQUEST)
+  // Paid requests one of those searches takes: one per job title searched (several leadership
+  // titles can share one). The page's limits count paid requests, people and company searches
+  // alike, so a search served from held results (searchPool.ts) doesn't use one up.
+  const perSearch = searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) })
+  const capFor = (searchesAllowed: number) => searchesAllowed * perSearch
+  // A hard stop on searches however little they cost, and with lookups free, on profiles read.
+  const MAX_SEARCHES = 3 * (planned + MAX_TOP_UPS)
+  const maxReads = 3 * target
 
   const items: PersonResult[] = []
   const refined: string[] = []
@@ -1390,6 +1462,7 @@ export async function searchPeople(
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
     employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
+    wrongCompanySameSlug: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1413,6 +1486,9 @@ export async function searchPeople(
   const positionKey = searchPositionKey(input)
   const saved = !filters.cursor && !fromStart ? db.getSearchPosition(positionKey) : null
   let cursor = filters.cursor ?? saved ?? undefined
+  // Carrying on (Load more, or where the last search stopped): nobody it already showed is shown again.
+  const shownHashes = shownFor(positionKey, Boolean(cursor))
+  const hashOf = (p: PersonResult) => profileHash(p.profileUrl) ?? p.profileUrl
   let nextCursor: string | null = null
   let reportedTotal: number | null = null
   let searches = 0
@@ -1462,6 +1538,7 @@ export async function searchPeople(
     screened: { unverifiable: number; noDomain: number }
     /** Hiring and funding filters: the signals of the companies searched, by ref. */
     signals?: Map<string, Signal[]>
+    firstOfBatch?: boolean
   }
   // Hiring and funding filters: companies left out, and put back to wait, over the page,
   // and the signals of those searched, for the people found there.
@@ -1476,7 +1553,7 @@ export async function searchPeople(
       return { page, splitCursor: null, batchHasMore: false, orgSearches: 0, found: 0, orgTotal: null, screened: sc }
     }
     const r = await companyFirstPage(source, db, filters, at, count, hideUnverifiable ? sc : undefined, signalTally)
-    return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc, signals: r.signals }
+    return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc, signals: r.signals, firstOfBatch: r.firstOfBatch }
   }
   // The next search page, started while this one's profiles are looked up
   // (only when the page certainly needs it), and any started but not used:
@@ -1486,11 +1563,32 @@ export async function searchPeople(
   const unused: Promise<unknown>[] = []
   const dropAhead = () => {
     if (!ahead) return
+    prefetch.dropped++
     unused.push(ahead.fetched.then((r) => ((requests += r.page.requests ?? 1), (orgSearches += r.orgSearches)), () => {}))
     ahead = null
   }
   // What a full page normally costs: its searches and a profile lookup per person.
   const pageBudget = planned * 3 + target * 3
+  // Paid requests so far, and why the page would stop now that it has had its share (null: it carries on).
+  const paid = () => requests + orgSearches
+  const capped = (spent: () => number): string | null =>
+    paid() >= capFor(planned + MAX_TOP_UPS) || searches >= MAX_SEARCHES
+      ? 'most top-ups'
+      : free && lookedUp >= maxReads
+        ? 'most reads'
+        : paid() >= capFor(planned + TOP_UPS) && spent() >= pageBudget
+          ? 'budget'
+          : null
+  // Set when the page has had its share but a search started ahead was already paid for: that
+  // one is used (not thrown away and paid for again on Load more), and then the page stops.
+  let finishing: string | null = null
+  // Search pages started ahead and used, or dropped unused.
+  const prefetch = { used: 0, dropped: 0 }
+  // Companies-first: batches searched, the companies in them, and those of fewer than 10.
+  const batches = { searched: 0, companies: 0, small: 0 }
+  // From each page's own counts (socialfetch.ts): people counted once, empty requests, and so on.
+  const once = { hits: 0, offTitle: 0, empty: 0, joinerRetries: 0 }
+  const onlyByTitle: number[] = []
   await meterCredits(async (spent) => {
     for (;;) {
       const need = target - usable()
@@ -1500,6 +1598,7 @@ export async function searchPeople(
         if (ahead && ahead.cursor === cursor) {
           const { fetched } = ahead
           ahead = null
+          prefetch.used++
           r = await fetched
         } else {
           dropAhead()
@@ -1541,18 +1640,22 @@ export async function searchPeople(
         details.push(...(page.details ?? []))
       }
       nextCursor = page.nextCursor
-      const unseen = page.items.filter((p) => !seen.has(p.profileUrl))
+      const unseen = page.items.filter((p) => !seen.has(p.profileUrl) && !shownHashes.has(hashOf(p)))
       // People in a related role, not a title searched: held back to fill the page if it ends short.
       const fresh = unseen.filter((p) => !p.related)
       for (const person of unseen) if (person.related) relatedHeld.push({ person, companySet })
 
       // Even with everyone here shown the page won't be full, so the next
       // search page starts now rather than after these profiles are looked up.
+      // Not when the page has had its share, or when this search's own cost would end it.
       const certain =
         nextCursor &&
+        !finishing &&
         usable() + fresh.length < target &&
-        searches < planned + MAX_TOP_UPS &&
-        !(searches >= planned + TOP_UPS && spent() >= pageBudget)
+        paid() + perSearch <= capFor(planned + MAX_TOP_UPS) &&
+        searches + 1 < MAX_SEARCHES &&
+        !(free && lookedUp >= maxReads) &&
+        !(paid() + perSearch >= capFor(planned + TOP_UPS) && spent() + perSearch * 3 >= pageBudget)
       if (certain) {
         // Sized for what's still needed if everyone here is shown.
         const fetched = fetchPage(nextCursor!, Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil((need - fresh.length) / slots))))
@@ -1561,6 +1664,12 @@ export async function searchPeople(
       }
 
       const batch = await processBatch(fresh, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, splitWhen, free, titleFits)
+      // Batches of companies as they were filled: each once, unless it was split to search its companies one at a time.
+      if (r.firstOfBatch && companySet?.size && !(batch.split && splitCursor)) {
+        batches.searched++
+        batches.companies += companySet.size
+        if (companySet.size < 10) batches.small++
+      }
       if (batch.split && splitCursor) {
         // Searched again one company at a time: its people come back from those searches.
         split.batches++
@@ -1573,6 +1682,11 @@ export async function searchPeople(
       funnel.offTitle += page.funnel?.offTitle ?? 0
       funnel.filteredOut += page.funnel?.filteredOut ?? 0
       funnel.repeats += page.items.length - unseen.length
+      once.hits += page.funnel?.uniqueHits ?? page.funnel?.hits ?? page.items.length
+      once.offTitle += page.funnel?.uniqueOffTitle ?? page.funnel?.offTitle ?? 0
+      once.empty += page.funnel?.emptyRequests ?? 0
+      once.joinerRetries += page.funnel?.joinerRetries ?? 0
+      page.funnel?.onlyByTitle?.forEach((n, i) => (onlyByTitle[i] = (onlyByTitle[i] ?? 0) + n))
       unseen.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
       const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
@@ -1601,8 +1715,8 @@ export async function searchPeople(
         stop = 'nothing more'
         break
       }
-      if (searches >= planned + MAX_TOP_UPS) {
-        stop = 'most top-ups'
+      if (finishing) {
+        stop = finishing
         break
       }
       if (!free && searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
@@ -1610,9 +1724,14 @@ export async function searchPeople(
         stop = 'few kept'
         break
       }
-      if (searches >= planned + TOP_UPS && spent() >= pageBudget) {
-        stop = 'budget'
-        break
+      const reason = capped(spent)
+      if (reason) {
+        // The next search was started ahead and paid for: it's used, then the page stops.
+        if (ahead && ahead.cursor === nextCursor) finishing = reason
+        else {
+          stop = reason
+          break
+        }
       }
       cursor = nextCursor
     }
@@ -1673,6 +1792,9 @@ export async function searchPeople(
 
   // Where to carry on next time; at the end of the results, back to the top.
   if (!lookupError) db.setSearchPosition(positionKey, nextCursor)
+  for (const p of items) shownHashes.add(hashOf(p))
+  if (nextCursor) keepShown(positionKey, shownHashes)
+  else shownBefore.delete(positionKey)
 
   // Where the people it returned went. Filters and counts only, nothing personal:
   // one line in the log, and one in the search log a host can read (searchLog.ts).
@@ -1687,18 +1809,31 @@ export async function searchPeople(
     batchesSplit: split.batches,
     companiesSearchedAlone: split.companies,
     peopleSearches: requests,
+    searchesRun: searches,
+    emptySearches: once.empty,
+    joinerRetries: once.joinerRetries,
+    batchesSearched: batches.searched,
+    companiesInBatches: batches.companies,
+    smallBatches: batches.small,
+    prefetchUsed: prefetch.used,
+    prefetchDropped: prefetch.dropped,
     hits: funnel.hits,
     offTitle: funnel.offTitle,
+    uniqueHits: once.hits,
+    uniqueOffTitle: once.offTitle,
+    ...Object.fromEntries(onlyByTitle.map((n, i) => [`onlyByTitle_${i}`, n])),
     seniorityOrCountry: funnel.filteredOut,
     repeats: funnel.repeats,
     headlineLeft: tally.skippedNotWorking,
     headlineOtherEmployer: tally.skippedOtherEmployer,
     inContacts: tally.inContacts,
+    paidInContacts: tally.paidInContacts,
     noSurname: tally.noSurname,
     knownUnverifiable: tally.skippedUnverifiable,
     noLookupNeeded: tally.noLookup,
     profilesBought: lookedUp,
     boughtWrongCompany: tally.wrongCompany,
+    wrongCompanySameSlug: tally.wrongCompanySameSlug,
     boughtNoJob: tally.noJob,
     profileUnconfirmed: tally.unconfirmed,
     employerByName: tally.employerByName,
@@ -1925,6 +2060,28 @@ function wastefulWarning(tally: Tally, hidden: number, lookedUp: number, company
 }
 
 /** The same filters give the same key, whatever order titles or options were picked in. */
+/**
+ * Who a search with these filters has shown in the last hour, by the keyed
+ * hash of their profile link (suppression.ts; never the link), so someone
+ * found again on a later page, by another job title's request, isn't shown or
+ * charged twice. In memory only, for at most MAX_SHOWN_SEARCHES searches.
+ */
+const SHOWN_TTL_MS = 3_600_000
+const MAX_SHOWN_SEARCHES = 200
+const shownBefore = new Map<string, { at: number; hashes: Set<string> }>()
+
+function shownFor(positionKey: string, carriesOn: boolean): Set<string> {
+  const held = shownBefore.get(positionKey)
+  return carriesOn && held && Date.now() - held.at < SHOWN_TTL_MS ? held.hashes : new Set()
+}
+
+function keepShown(positionKey: string, hashes: Set<string>) {
+  shownBefore.delete(positionKey)
+  shownBefore.set(positionKey, { at: Date.now(), hashes })
+  for (const [key, held] of shownBefore) if (Date.now() - held.at >= SHOWN_TTL_MS) shownBefore.delete(key)
+  while (shownBefore.size > MAX_SHOWN_SEARCHES) shownBefore.delete(shownBefore.keys().next().value!)
+}
+
 function searchPositionKey(input: PeopleFilters & { company?: { ref: string; name: string } | null }): string {
   const sorted = (xs?: string[]) => [...(xs ?? [])].map((x) => x.trim().toLowerCase()).filter(Boolean).sort()
   const key = JSON.stringify({
