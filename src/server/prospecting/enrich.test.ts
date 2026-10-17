@@ -63,7 +63,11 @@ vi.mock('../db', () => ({
   db: {
     getAllowance: () => allowance,
     getProspectCompany: (ref: string) =>
-      ref === '42' ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 } : ref === '7' ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 } : null,
+      ref === '42'
+        ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 }
+        : ref === '7'
+          ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 }
+          : (prospectCompanies.find((c: { ref: string }) => c.ref === ref) ?? null),
     getSuppressionHashes: () => suppressedHashes,
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     knownAddressesAt: () => [],
@@ -71,6 +75,7 @@ vi.mock('../db', () => ({
     upsertProspectCompanies: () => {},
     addSearchLog: (entry: any) => void searchLog.push(entry),
     getProspectingSettings: () => prospectingSettings,
+    saveProspectingSettings: (s: typeof prospectingSettings) => void (prospectingSettings = s),
     getUnverifiable: () => unverifiable,
     data: { get contacts() { return contacts }, get prospect_companies() { return prospectCompanies }, get campaign_recipients() { return recipients } },
     getSearchPosition: (key: string) => positions.get(key) ?? null,
@@ -1531,6 +1536,31 @@ describe('searchPeople with a company size finds companies first', () => {
     const refs = searchPeopleMock.mock.calls.map((c) => ((c as unknown[])[1] as { companyRefs: string[] }).companyRefs)
     expect(refs[1]).toEqual(['1020', '1021', '1022', '1023', '1024'])
     expect(first.nextCursor).toBeNull()
+  })
+
+  it('searches a batch of tiny companies once with no title, and one with a bigger company a title at a time', async () => {
+    const tiny = Array.from({ length: 4 }, (_, i) => org(String(5000 + i), `Tiny${i}`, 'United Kingdom'))
+    prospectCompanies = tiny.map((c) => ({ ref: c.ref, name: c.name, domain: null, headcount: 6 }))
+    companyPage = { items: tiny, nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf()
+    try {
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Founder', 'Owner', 'CEO'], companySizes: ['1-10'], keyword: 'fintech', fromStart: true })
+      // One request asked for what the page needs (25), not a third of it per title.
+      expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ noTitle: true, count: 25 })
+      // One of 40 staff in the batch: a request a title, as before.
+      prospectCompanies = [...prospectCompanies.slice(1), { ref: '5000', name: 'Tiny0', domain: null, headcount: 40 }]
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Founder', 'Owner', 'CEO'], companySizes: ['1-10'], keyword: 'fintech', fromStart: true })
+      expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ noTitle: false })
+      // With a single title there's nothing to save.
+      prospectCompanies = tiny.map((c) => ({ ref: c.ref, name: c.name, domain: null, headcount: 6 }))
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Founder'], companySizes: ['1-10'], keyword: 'fintech', fromStart: true })
+      expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ noTitle: false })
+    } finally {
+      prospectCompanies = []
+    }
   })
 
   it('keeps the cursor of a search with companies waiting well inside what Load more accepts', async () => {

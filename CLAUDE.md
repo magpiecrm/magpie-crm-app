@@ -33,6 +33,9 @@ key), with the app's actions as tools.
     top-up doesn't pay for another request, and `searchRuns.ts` holds a
     search while it runs, and for 1h if it finished with nobody there, so
     asking again joins it rather than running and charging a second one.
+    A batch of tiny companies is searched once with no job title, keeping
+    those a title's own request would have (`PeopleFilters.noTitle`; a host
+    can turn it off).
     `search.ts` also keeps, for 1h, the keyed hashes (not the links) of
     the profiles a search has shown, so its later pages don't show or
     charge anyone twice. An employer with no LinkedIn

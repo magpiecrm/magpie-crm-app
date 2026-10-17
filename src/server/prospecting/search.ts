@@ -11,12 +11,13 @@ import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './w
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
 import { sharedCatchAll } from './sharedCatchAll'
+import { noTitleBatches } from './hostRules'
 import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName, plainlySameCompany } from './companies'
 import { findCompanySite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
-import { companyKey, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
+import { companyKey, cursorIsNoTitle, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
@@ -683,6 +684,40 @@ async function screenBySignals(
   return { keep, signals, later }
 }
 
+/**
+ * Whether a batch of companies is searched once with no job title
+ * (PeopleFilters.noTitle) instead of once a title: only where every company
+ * has 10 staff or fewer (by the staff count kept from company search, or the
+ * size searched for), and few enough work at them all for that to cost less
+ * (members ≤ 50 × (title requests − 1)). Checked against the live API
+ * (2026-10-17): at two batches of 20 companies of 2-10 staff, two requests a
+ * batch found 36 of the 40 founders and owners the five title requests found,
+ * and 2 the title requests missed.
+ */
+function searchedWithoutTitle(refs: string[], filters: PeopleFilters, db: Db, fromSizeSearch: boolean): boolean {
+  const requests = searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) })
+  if (!noTitleBatches() || requests < 2 || !filters.titles?.length) return false
+  // A staff count not known is taken as the size searched for only for companies that search found by it (not warm ones).
+  const onlyTiny = fromSizeSearch && filters.companySizes?.length === 1 && filters.companySizes[0] === '1-10'
+  let members = 0
+  for (const ref of refs) {
+    const staff = db.getProspectCompany(ref)?.headcount ?? (onlyTiny ? 10 : null)
+    if (staff === null || staff === undefined || staff > 10) return false
+    members += staff
+  }
+  return members <= MAX_PER_REQUEST * (requests - 1)
+}
+
+/** The same for one company searched on its own: one request brings everyone at a company of up to 50. */
+function singleWithoutTitle(ref: string, filters: PeopleFilters, db: Db, fromSizeSearch: boolean): boolean {
+  const requests = searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) })
+  if (!noTitleBatches() || requests < 2 || !filters.titles?.length) return false
+  const sizes = fromSizeSearch ? (filters.companySizes ?? []) : []
+  const top = sizes.length && sizes.every((s) => s === '1-10' || s === '11-50') ? (sizes.includes('11-50') ? 50 : 10) : null
+  const staff = db.getProspectCompany(ref)?.headcount ?? top
+  return staff !== null && staff !== undefined && staff <= MAX_PER_REQUEST
+}
+
 /** The company searches to run: one per chosen industry (by name, filtered to it), else the keyword. */
 function companyTerms(filters: PeopleFilters): Array<{ keyword: string; industry?: string }> {
   const keyword = filters.keyword?.trim()
@@ -702,7 +737,9 @@ async function companyFirstPage(
   db: Db,
   filters: PeopleFilters,
   cursor: string | undefined,
+  /** People each title's request is asked for, and the people the page still needs (all of it for a request with no title). */
   count: number,
+  need: number,
   /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
   screened?: { unverifiable: number; noDomain: number },
   /** Hiring and funding filters: what screening left out, counted here. */
@@ -743,9 +780,23 @@ async function companyFirstPage(
   if (!s.batch.length && s.singles?.length) {
     const now = s.singles.slice(0, Math.max(1, Math.floor(SINGLE_REQUESTS_AT_ONCE / searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) }))))
     const pages = await Promise.all(
-      now.map(([ref, name, people]) =>
-        source.searchPeople({ ref, name }, { titles: filters.titles, seniorities: filters.seniorities, country: filters.country, count, cursor: people, smallCompanies: onlySmallCompanies(filters.companySizes) }),
-      ),
+      now.map(([ref, name, people]) => {
+        // A small company is searched once for everyone there rather than once a title (carrying on the way it began),
+        // and that one request takes what the page still needs.
+        const noTitle = people ? cursorIsNoTitle(people) : singleWithoutTitle(ref, filters, db, !warm)
+        return source.searchPeople(
+          { ref, name },
+          {
+            titles: filters.titles,
+            seniorities: filters.seniorities,
+            country: filters.country,
+            count: noTitle ? Math.min(MAX_PER_REQUEST, Math.max(1, need)) : count,
+            cursor: people,
+            smallCompanies: onlySmallCompanies(filters.companySizes),
+            noTitle,
+          },
+        )
+      }),
     )
     const items: PersonResult[] = []
     const funnel: NonNullable<Page<PersonResult>['funnel']> = { hits: 0, offTitle: 0, filteredOut: 0, related: 0, uniqueHits: 0, uniqueOffTitle: 0, emptyRequests: 0, joinerRetries: 0, onlyByTitle: [] }
@@ -885,6 +936,9 @@ async function companyFirstPage(
       : null
 
   const firstOfBatch = !s.people
+  // A batch of small enough companies is searched once for everyone there rather than once a title,
+  // its later pages carrying on the way its first began; that one request takes what the page still needs.
+  const noTitle = s.people ? cursorIsNoTitle(s.people) : searchedWithoutTitle(s.batch.map(([ref]) => ref), filters, db, !warm)
   const page = await source.searchPeople(null, {
     titles: filters.titles,
     seniorities: filters.seniorities,
@@ -892,8 +946,9 @@ async function companyFirstPage(
     companyRefs: s.batch.map(([ref]) => ref),
     companyNames: Object.fromEntries(s.batch),
     smallCompanies: onlySmallCompanies(filters.companySizes),
-    count,
+    count: noTitle ? Math.min(MAX_PER_REQUEST, Math.max(1, need)) : count,
     cursor: s.people,
+    noTitle,
   })
   const next: CompanyFirstState = page.nextCursor ? { ...s, people: page.nextCursor } : { ...s, batch: [], people: undefined }
   return {
@@ -1430,6 +1485,8 @@ export async function searchPeople(
   // companies-first search someone working elsewhere is kept if that fits.
   const { profileLookupsFree } = await import('./hostRules')
   const free = profileLookupsFree() ? { fits: companyFirst ? (c: CompanyResult) => fitsFilters(c, filters) : null } : undefined
+  // Batches searched once with no job title (searchedWithoutTitle).
+  let noTitleSearches = 0
   // A plan's prospect credits: less than one left stops here, before anything is paid for.
   const left = remaining('prospects')
   if (left < 1) requireAllowance('prospects')
@@ -1546,13 +1603,13 @@ export async function searchPeople(
   const companySignalsByRef = new Map<string, Signal[]>()
   const withCompanySignals = (found: PersonResult[]) =>
     companySignalsByRef.size ? found.map((p) => (p.companyRef && companySignalsByRef.has(p.companyRef) ? withSignals(p, companySignalsByRef.get(p.companyRef)!) : p)) : found
-  const fetchPage = async (at: string | undefined, count: number): Promise<Fetched> => {
+  const fetchPage = async (at: string | undefined, count: number, need: number): Promise<Fetched> => {
     const sc = { unverifiable: 0, noDomain: 0 }
     if (!companyFirst) {
       const page = await source.searchPeople(company ?? null, { ...filters, cursor: at, count })
       return { page, splitCursor: null, batchHasMore: false, orgSearches: 0, found: 0, orgTotal: null, screened: sc }
     }
-    const r = await companyFirstPage(source, db, filters, at, count, hideUnverifiable ? sc : undefined, signalTally)
+    const r = await companyFirstPage(source, db, filters, at, count, need, hideUnverifiable ? sc : undefined, signalTally)
     return { page: r.page, companySet: r.companies, splitCursor: r.splitCursor, batchHasMore: r.batchHasMore, orgSearches: r.orgSearches, found: r.found, orgTotal: r.orgTotal, screened: sc, signals: r.signals, firstOfBatch: r.firstOfBatch }
   }
   // The next search page, started while this one's profiles are looked up
@@ -1602,7 +1659,7 @@ export async function searchPeople(
           r = await fetched
         } else {
           dropAhead()
-          r = await fetchPage(cursor, count)
+          r = await fetchPage(cursor, count, need)
         }
       } catch (err) {
         // SocialFetch failed partway (busy or down, after its own retries):
@@ -1658,7 +1715,7 @@ export async function searchPeople(
         !(paid() + perSearch >= capFor(planned + TOP_UPS) && spent() + perSearch * 3 >= pageBudget)
       if (certain) {
         // Sized for what's still needed if everyone here is shown.
-        const fetched = fetchPage(nextCursor!, Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil((need - fresh.length) / slots))))
+        const fetched = fetchPage(nextCursor!, Math.min(MAX_PER_REQUEST, Math.max(1, Math.ceil((need - fresh.length) / slots))), Math.max(1, need - fresh.length))
         fetched.catch(() => {})
         ahead = { cursor: nextCursor!, fetched }
       }
@@ -1669,6 +1726,7 @@ export async function searchPeople(
         batches.searched++
         batches.companies += companySet.size
         if (companySet.size < 10) batches.small++
+        if (page.funnel?.noTitle) noTitleSearches++
       }
       if (batch.split && splitCursor) {
         // Searched again one company at a time: its people come back from those searches.
@@ -1813,6 +1871,7 @@ export async function searchPeople(
     emptySearches: once.empty,
     joinerRetries: once.joinerRetries,
     batchesSearched: batches.searched,
+    noTitleBatches: noTitleSearches,
     companiesInBatches: batches.companies,
     smallBatches: batches.small,
     prefetchUsed: prefetch.used,

@@ -862,6 +862,81 @@ describe('searchPeople', () => {
     expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Business Analyst', 'Pastry Chef'])
   })
 
+  describe('small companies searched once with no job title', () => {
+    it('asks once for everyone there and keeps those a title request would have, carrying on the same way', async () => {
+      const f = fakeFetch([
+        envelope({
+          people: [
+            searchHit('a', 'A', 'One', 'Founder at Acme', 'London'),
+            searchHit('b', 'B', 'Two', 'Designer', 'London'),
+            searchHit('c', 'C', 'Three', 'Owner | Brightly', 'London'),
+          ],
+          page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 3 },
+        }),
+        envelope({ people: [searchHit('d', 'D', 'Four', 'CEO', 'London')], page: { kind: 'offset', hasMore: false, start: 3, returnedCount: 1 } }),
+      ])
+      const source = createSocialFetchSource(f.impl)
+      const first = await source.searchPeople(null, { titles: ['Founder', 'Owner', 'CEO'], companyRefs: ['1', '2'], noTitle: true, count: 2 })
+      expect(f.calls[0].searchParams.has('title')).toBe(false)
+      expect(f.calls[0].searchParams.get('currentCompany')).toBe('1,2')
+      expect(first.items.map((p) => p.firstName)).toEqual(['A', 'C'])
+      expect(first.requests).toBe(1)
+      expect(first.funnel).toMatchObject({ noTitle: true, offTitle: 1 })
+      expect(first.details?.join(' ')).toMatch(/searched once for everyone/)
+      // The next page goes on with no title, whatever it's asked.
+      const next = await source.searchPeople(null, { titles: ['Founder', 'Owner', 'CEO'], companyRefs: ['1', '2'], count: 2, cursor: first.nextCursor! })
+      expect(f.calls[1].searchParams.has('title')).toBe(false)
+      expect(f.calls[1].searchParams.get('start')).toBe('3')
+      expect(next.items.map((p) => p.firstName)).toEqual(['D'])
+    })
+
+    it("keeps leaders and related roles only from the department searched, as the department's own request would", async () => {
+      const f = fakeFetch([
+        envelope({
+          people: [
+            searchHit('a', 'A', 'One', 'VP of Sales', 'London'),
+            searchHit('b', 'B', 'Two', 'Sales Executive', 'London'),
+            searchHit('c', 'C', 'Three', 'Account Executive', 'London'),
+          ],
+          page: { hasMore: false },
+        }),
+      ])
+      const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales leaders', 'Founder'], companyRefs: ['1'], noTitle: true, smallCompanies: true })
+      expect(page.items.map((p) => [p.firstName, p.related ?? false])).toEqual([
+        ['A', false],
+        ['B', true],
+      ])
+    })
+
+    it('keeps a job title called "all" apart from a search with no title', async () => {
+      const f = fakeFetch([
+        envelope({ people: [searchHit('a', 'A', 'One', 'All', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 1 } }),
+        envelope({ people: [searchHit('b', 'B', 'Two', 'Founder', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 1 } }),
+        envelope({ people: [], page: { hasMore: false } }),
+        envelope({ people: [], page: { hasMore: false } }),
+      ])
+      const source = createSocialFetchSource(f.impl)
+      const first = await source.searchPeople(null, { titles: ['all', 'Founder'], companyRefs: ['1'], count: 1 })
+      await source.searchPeople(null, { titles: ['all', 'Founder'], companyRefs: ['1'], count: 1, cursor: first.nextCursor! })
+      expect(f.calls.slice(2).map((c) => c.searchParams.get('title')).sort()).toEqual(['Founder', 'all'])
+    })
+
+    it('carries on a search begun with a request a title as it began, and never without companies', async () => {
+      const f = fakeFetch([
+        envelope({ people: [searchHit('a', 'A', 'One', 'Founder', 'London')], page: { kind: 'offset', hasMore: true, start: 0, returnedCount: 1 } }),
+        envelope({ people: [], page: { hasMore: false } }),
+        envelope({ people: [], page: { hasMore: false } }),
+      ])
+      const source = createSocialFetchSource(f.impl)
+      const first = await source.searchPeople(null, { titles: ['Founder'], companyRefs: ['1'], count: 1 })
+      await source.searchPeople(null, { titles: ['Founder'], companyRefs: ['1'], count: 1, cursor: first.nextCursor!, noTitle: true })
+      expect(f.calls[1].searchParams.get('title')).toBe('Founder')
+      // A search across LinkedIn, not inside chosen companies, always asks by title.
+      await source.searchPeople(null, { titles: ['Founder'], noTitle: true })
+      expect(f.calls[2].searchParams.get('title')).toBe('Founder')
+    })
+  })
+
   it('filters by seniority derived from the title', async () => {
     const f = fakeFetch([
       envelope({

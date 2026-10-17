@@ -44,6 +44,8 @@ interface HostAnswer {
   webSearch: boolean
   /** The host looks up hiring and funding signals for this copy's searches (companySignals.ts). */
   signals: boolean
+  /** Small companies may be searched once with no job title (search.ts); on unless the host turns it off. */
+  noTitleBatches: boolean
 }
 
 export interface SharedDatabase {
@@ -145,6 +147,11 @@ export function hostSignals(): boolean {
   return env.prospectingManaged() && g.__hostRules?.signals === true
 }
 
+/** Whether small companies may be searched once with no job title (search.ts): on unless a host has turned it off. */
+export function noTitleBatches(): boolean {
+  return g.__hostRules?.noTitleBatches !== false
+}
+
 export function profileLookupsFree(): boolean {
   return env.prospectingManaged() && g.__hostRules?.profileLookupsFree === true
 }
@@ -182,6 +189,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       profileLookupsFree: body?.profileLookupsFree === true,
       webSearch: body?.webSearch === true,
       signals: body?.signals === true,
+      noTitleBatches: body?.noTitleBatches !== false,
     }
     g.__hostRules = answer
     return answer

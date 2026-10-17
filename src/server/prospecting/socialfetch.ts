@@ -70,7 +70,8 @@ const FETCH_SIZE = 50
 /**
  * Company ids one people search takes in `currentCompany`, comma-separated.
  * Checked against the live API (2026-09-28): two companies searched together
- * return exactly the people each returns alone.
+ * return exactly the people each returns alone. 40 are refused (400,
+ * 2026-10-17), so batches stay at 20.
  */
 export const MAX_COMPANIES_PER_SEARCH = 20
 
@@ -803,6 +804,12 @@ function envKey(): string {
   return key
 }
 
+/** The cursor key of a search with no job title asked for (PeopleFilters.noTitle): not one a title can have. */
+const NO_TITLE_KEY = ':notitle'
+
+/** Whether a people-search cursor carries on a search with no job title asked for. */
+export const cursorIsNoTitle = (cursor: string | null | undefined) => Boolean(cursor && decodeCursor(cursor)?.[NO_TITLE_KEY])
+
 /** Where the confirmed title joiner is kept between restarts (runtime.ts: the prospecting settings). */
 export interface JoinerStore {
   get(): { joiner: '_' | ' '; confirmedAt: string } | null
@@ -983,9 +990,15 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
 
       const pageSize = Math.min(50, Math.max(1, Math.round(filters.count ?? PAGE_SIZE)))
       const prior = decodeCursor(filters.cursor)
-      // On a follow-up page only titles with a cursor left are re-queried.
+      // The titles as they're read (every hit is checked against all of them), and as they're asked
+      // for: one request each, or one with no title at all (PeopleFilters.noTitle). A follow-up page
+      // carries on the way its cursor began, so a search saved before a change goes on as it was.
       const queries = titleQueries(slots, { small: filters.smallCompanies })
-      const active = prior ? queries.filter((q) => prior[q.key]) : queries
+      const inside = Boolean(filters.companyRefs?.some(numericId) || (company && numericId(company.ref)))
+      const noTitle = titles.length > 0 && inside && (prior ? Boolean(prior[NO_TITLE_KEY]) : Boolean(filters.noTitle))
+      const requested = noTitle ? [{ key: NO_TITLE_KEY, search: '', roles: null, related: null, leaders: [] } satisfies TitleQuery] : queries
+      // On a follow-up page only titles with a cursor left are re-queried.
+      const active = prior ? requested.filter((q) => prior[q.key]) : requested
       if (!filters.cursor) {
         // One note per set of leadership titles: "searched "Sales" and "Revenue"".
         const searched = new Map<string, string[]>()
@@ -998,6 +1011,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             `For ${asked}, searched ${words.join(' and ')} and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.`,
           )
         }
+        if (noTitle) details.push('So few people work at these companies that they were searched once for everyone, keeping those with the job titles searched, rather than once a title.')
       }
       const industry = industryCodes(filters.industries)
       // A chosen company with a LinkedIn id is searched by it; otherwise its
@@ -1033,6 +1047,16 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       const anyRelated = queries.some((q) => q.related)
         ? (headline: string | null) => [...new Set(queries.flatMap((q) => q.related?.(headline) ?? []))]
         : null
+      // With no title asked for, a hit counts for a title only if that title's own request would have
+      // brought it back (its headline names what was asked: the title, or the leaders' department), so
+      // the people kept are those the title requests keep, and related roles only come from departments searched.
+      const viaTitle = queries.map((q) => ({ q, fits: q.search ? titleMatcher(q.search) : () => true }))
+      const readRoles = noTitle
+        ? (headline: string | null) => [...new Set(viaTitle.filter((v) => v.fits(headline)).flatMap((v) => v.q.roles?.(headline) ?? []))]
+        : anyRoles
+      const readRelated = noTitle
+        ? (headline: string | null) => [...new Set(viaTitle.filter((v) => v.fits(headline)).flatMap((v) => v.q.related?.(headline) ?? []))]
+        : anyRelated
       // Held hits were sorted by that reading, so they're only taken by a search reading them the same way.
       const scope = shortHash(JSON.stringify([queries.map((q) => q.key).sort(), filters.relatedRoles !== false]))
 
@@ -1108,7 +1132,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             }
           }
           const page = res.data?.page
-          const people = readPeople(res, FETCH_SIZE, anyRoles, anyRelated)
+          const people = readPeople(res, FETCH_SIZE, readRoles, readRelated)
           hits = {
             items: people,
             hasMore: Boolean(page?.hasMore),
@@ -1284,6 +1308,8 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           emptyRequests: ok.reduce((n, t) => n + t.empty, 0),
           joinerRetries: ok.filter((t) => t.joinerRetry).length,
           onlyByTitle: onlyBy,
+          onTitle: foundBy.size,
+          ...(noTitle ? { noTitle: true } : {}),
         },
       }
     },

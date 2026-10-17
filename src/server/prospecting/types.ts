@@ -239,14 +239,22 @@ export interface PeopleFilters {
    */
   signals?: SignalKind[]
   /**
-   * LinkedIn company ids to search inside (up to 20), for a search that
-   * found companies of the chosen size first. Set by search.ts, not the page.
+   * LinkedIn company ids to search inside (up to 20; SocialFetch refuses 40),
+   * for a search that found companies of the chosen size first. Set by
+   * search.ts, not the page.
    */
   companyRefs?: string[]
   /** Those companies' names, by id, so a headline naming one ("Founder, Acme") says where someone works. */
   companyNames?: Record<string, string>
   /** Those companies all have 50 staff or fewer, so leaders only bigger ones have aren't searched for. Set by search.ts. */
   smallCompanies?: boolean
+  /**
+   * Search the companies (or company) once with no job title, and keep
+   * those with a title searched, instead of one request per title: cheaper
+   * where so few people work there that one request brings them all.
+   * Set by search.ts; a follow-up page carries on the way its cursor began.
+   */
+  noTitle?: boolean
   /**
    * When too few people have the titles searched, fill the page with people
    * in related roles in the same department (a Sales Executive for "Sales
@@ -299,8 +307,12 @@ export interface Page<T> {
     /** Paid requests that returned nobody, and multi-word titles tried the other way (socialfetch.ts titleJoiner). */
     emptyRequests?: number
     joinerRetries?: number
-    /** By the place of each title searched: people with a title searched that only that title's request found. */
+    /** By the place of each title searched: of the people a page took, those with a title searched that only that title's request found. */
     onlyByTitle?: number[]
+    /** People with a title searched, once each. */
+    onTitle?: number
+    /** The companies were searched once with no title (PeopleFilters.noTitle). */
+    noTitle?: boolean
   }
 }
 
