@@ -28,6 +28,12 @@ export interface CheckResult {
   outcome: CheckOutcome
   /** The verification server's SMTP error message, if any. Server replies only, no address. */
   detail?: string
+  /**
+   * The host held the check back for its own limits (it answers 429 or 503,
+   * from 0.9.95): nothing was asked of the company's mail server, so the
+   * finder waits or stops rather than taking this as the server's silence.
+   */
+  hostLimit?: { code: 'busy' | 'daily_cap' | 'paused'; message: string }
 }
 
 const TIMEOUT_MS = 60_000
@@ -109,7 +115,8 @@ export async function checkEmail(
     }
   }
 
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  // `x-magpie-limits`: we read a host's own limits said as such (429/503 with a code), so it may answer them that way.
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'x-magpie-limits': '1' }
   if (config.secret) headers['x-reacher-secret'] = config.secret
 
   const controller = new AbortController()
@@ -121,6 +128,27 @@ export async function checkEmail(
       body: JSON.stringify(body),
       signal: controller.signal,
     })
+    if (res.status === 429 || res.status === 503) {
+      // The host's own limits, said so (not the company's mail server): `minute`/`busy` is
+      // pacing, worth waiting for; `day` is this account's share for today; `paused` its checks
+      // stopped for now. A 429 from anywhere else counts as pacing only for a short wait.
+      const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
+      const code = body?.error?.code
+      const wait = Number(res.headers.get('retry-after'))
+      const message = typeof body?.error?.message === 'string' ? body.error.message : 'The verification server is busy. Try again in a minute.'
+      const hostLimit =
+        code === 'minute' || code === 'busy' || (res.status === 429 && !code && Number.isFinite(wait) && wait > 0 && wait <= 60)
+          ? { code: 'busy' as const, message }
+          : code === 'day'
+            ? { code: 'daily_cap' as const, message }
+            : code === 'paused'
+              ? { code: 'paused' as const, message }
+              : null
+      if (hostLimit) {
+        console.warn(`[Verifier] check_email held back by the host (${hostLimit.code})`)
+        return { reachability: 'unknown', isCatchAll: null, outcome: 'ok', detail: message, hostLimit }
+      }
+    }
     if (!res.ok) {
       // Status only: the response can echo the address back.
       console.warn(`[Verifier] check_email ${res.status}`)

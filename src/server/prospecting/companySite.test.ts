@@ -88,7 +88,8 @@ describe('a company’s website from a web search', () => {
     // A page that isn't theirs, or lists no website, is a miss like any other; one that couldn't be read is asked about again.
     expect(await findCompanySite('Nowhere Much', null, async () => [result('https://www.linkedin.com/company/nm', 'Nowhere Much')], db, Date.now(), async () => null)).toBeNull()
     expect(kept.get('nowhere much')).toMatchObject({ domain: null })
-    expect(await findCompanySite('Elsewhere Much', null, async () => [result('https://www.linkedin.com/company/em', 'Elsewhere Much')], db, Date.now(), async () => Promise.reject(new Error('not read')))).toBeNull()
+    // Couldn't be read: nothing learned (undefined, not null), so it isn't taken as having no website.
+    expect(await findCompanySite('Elsewhere Much', null, async () => [result('https://www.linkedin.com/company/em', 'Elsewhere Much')], db, Date.now(), async () => Promise.reject(new Error('not read')))).toBeUndefined()
     expect(kept.has('elsewhere much')).toBe(false)
   })
 
@@ -117,7 +118,7 @@ describe('a company’s website from a web search', () => {
     // Nothing found is asked about again after a month; a search that failed, next time.
     expect(await findCompanySite('Nowhere Much', null, search, db, Date.now() + 31 * 86_400_000)).toBeNull()
     expect(asked).toHaveLength(3)
-    expect(await findCompanySite('Broken Search Co', null, async () => Promise.reject(new Error('down')), db)).toBeNull()
+    expect(await findCompanySite('Broken Search Co', null, async () => Promise.reject(new Error('down')), db)).toBeUndefined()
     expect(kept.has('broken search')).toBe(false)
   })
 })

@@ -21,11 +21,26 @@ import { isPacing } from './proxyRouter'
 
 /** How soon the page tries a Reveal again that verification pacing held back. */
 export const PACING_RETRY_MS = 20_000
+/** How soon a Reveal is tried again whose company's mail server asked us to try later (greylisting). */
+export const GREYLIST_RETRY_MS = 5 * 60_000
+
+/**
+ * Reveals waiting to try once more the addresses their company's mail server
+ * greylisted: by the keyed hash of the person's profile, the keyed hashes of
+ * those addresses and the domain, never the link or an address. In memory,
+ * for half an hour.
+ */
+const greylistRetries = new Map<string, { emails: string[]; domain: string; at: number }>()
+const GREYLIST_KEPT_MS = 30 * 60_000
 
 export type RevealResult =
   | { status: 'found'; email: string; emailStatus: EmailStatus; domain: string; greylisted: boolean; note?: string }
-  /** Held back only by verification pacing: nothing was checked or used, and the page tries again in `retryInMs`. */
-  | { status: 'waiting'; message: string; retryInMs: number }
+  /**
+   * Held back by verification pacing (nothing was checked or used), or by a
+   * mail server that asked us to try again later (`greylisted`: nothing is
+   * counted until the retry): the page tries again in `retryInMs`.
+   */
+  | { status: 'waiting'; message: string; retryInMs: number; greylisted?: boolean }
   | {
       /** `unconfirmed`: a likely address exists but wasn't verified, so it's withheld. */
       status: 'not_found' | 'no_domain' | 'unavailable' | 'unconfirmed'
@@ -98,12 +113,42 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return unavailable
 
   const headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
+  // A retry after greylisting checks only the format the mail server asked us to try again.
+  const retryKey = profileHash(person.profileUrl)
+  for (const [key, held] of greylistRetries) if (Date.now() - held.at > GREYLIST_KEPT_MS) greylistRetries.delete(key)
+  const retry = retryKey ? greylistRetries.get(retryKey) : undefined
+  const retrying = retry && retry.domain === domain ? retry : undefined
+  // Asked again before the mail server's wait is over (a second tab, say): still waiting, the retry kept.
+  if (retrying && Date.now() - retrying.at < GREYLIST_RETRY_MS) {
+    return {
+      status: 'waiting',
+      message: "Their company's mail server asked us to try again in a few minutes, so this tries once more then.",
+      retryInMs: GREYLIST_RETRY_MS - (Date.now() - retrying.at),
+      greylisted: true,
+    }
+  }
+  if (retryKey) greylistRetries.delete(retryKey)
   let found: Awaited<ReturnType<typeof findEmailCounted>>
   try {
-    found = await findEmailCounted(person, domain, deps.finder, { headcount })
+    const retryOnly = retrying ? (email: string) => retrying.emails.includes(emailHash(email)) : undefined
+    found = await findEmailCounted(person, domain, deps.finder, { headcount, ...(retryOnly ? { retrying: retryOnly } : {}) })
   } catch (err) {
-    if (isPacing(err)) return { status: 'waiting', message: err.message, retryInMs: PACING_RETRY_MS }
+    if (isPacing(err)) {
+      if (retryKey && retrying) greylistRetries.set(retryKey, retrying)
+      return { status: 'waiting', message: err.message, retryInMs: PACING_RETRY_MS }
+    }
     throw err
+  }
+  // Greylisted the first time: tried once more in a few minutes, and nothing is counted until then.
+  if (found.outcome === 'greylisted' && found.greylistedEmails?.length && !retrying && retryKey) {
+    greylistRetries.set(retryKey, { emails: found.greylistedEmails.map((e) => emailHash(e)), domain, at: Date.now() })
+    while (greylistRetries.size > 500) greylistRetries.delete(greylistRetries.keys().next().value!)
+    return {
+      status: 'waiting',
+      message: "Their company's mail server asked us to try again in a few minutes, so this tries once more then.",
+      retryInMs: GREYLIST_RETRY_MS,
+      greylisted: true,
+    }
   }
   recordUsage({ emailLookups: 1 })
   recordLookup(found.outcome)

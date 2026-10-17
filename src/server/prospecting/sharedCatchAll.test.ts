@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { sharedCatchAll } from './sharedCatchAll'
+import { sharedCatchAll, sharedCatchAllVerdicts } from './sharedCatchAll'
 
 const saved = { ...process.env }
 afterEach(() => {
@@ -49,5 +49,24 @@ describe('sharedCatchAll', () => {
       throw new Error('timeout')
     }) as unknown as typeof fetch
     expect(await sharedCatchAll([{ ref: '1', domain: null }], throwing)).toEqual([false])
+  })
+
+  it('passes on the host\'s no and not-known as well as its yes, with when it found out', async () => {
+    hosted()
+    const { fetchImpl } = host(() =>
+      Response.json({
+        companies: [
+          { catchAll: true, checkedAt: '2026-10-01T00:00:00.000Z', confirmed: true },
+          { catchAll: false, checkedAt: '2026-09-01T00:00:00.000Z', confirmed: false },
+          { catchAll: null },
+        ],
+      }),
+    )
+    expect(await sharedCatchAllVerdicts([{ ref: '1', domain: 'a.test' }, { ref: null, domain: null }, { ref: '2', domain: 'b.test' }, { ref: '3', domain: 'c.test' }], fetchImpl)).toEqual([
+      { catchAll: true, checkedAt: '2026-10-01T00:00:00.000Z', confirmed: true },
+      null,
+      { catchAll: false, checkedAt: '2026-09-01T00:00:00.000Z', confirmed: false },
+      { catchAll: null },
+    ])
   })
 })

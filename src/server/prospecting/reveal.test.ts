@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FinderDeps } from './emailFinder'
+import type { CheckResult } from './reacher'
 import type { CompanySource, PersonResult } from './types'
 
 // Reveal against an in-memory db, a fake company source and a fake verification server.
@@ -37,7 +38,7 @@ const source: CompanySource = {
   })),
 }
 
-const check = vi.fn(async (email: string) => ({
+const check = vi.fn(async (email: string): Promise<CheckResult> => ({
   reachability: email === 'jane.smith@acme.com' ? ('safe' as const) : ('invalid' as const),
   isCatchAll: null,
   outcome: 'ok' as const,
@@ -268,5 +269,80 @@ describe('revealEmail', () => {
     expect(res.status).toBe('unconfirmed')
     expect(res.status !== 'found' && res.status !== 'waiting' && res.unverifiable).toBeFalsy()
     expect(state.unverifiable).toEqual([])
+  })
+
+  it("waits when the host holds the check back for its own limits, instead of taking it for the company's silence", async () => {
+    check.mockImplementationOnce(async () => ({
+      reachability: 'unknown' as const,
+      isCatchAll: null,
+      outcome: 'ok' as const,
+      hostLimit: { code: 'busy' as const, message: 'Your account is checking a lot of addresses right now. Try again in a minute.' },
+    }))
+    const res = await revealEmail({ ...jane, companyDomain: 'pace.test' }, { source, finder, db: fakeDb as any })
+    expect(res.status).toBe('waiting')
+    expect(lookups).toEqual([])
+  })
+
+  it('tries a greylisted address once more a few minutes later, that address alone, and counts the lookup once', async () => {
+    // The mail server greylists jane.smith@ the first time, then takes it.
+    let first = true
+    check.mockImplementation(async (email: string) => {
+      if (email === 'jane.smith@grey.test' && first) {
+        first = false
+        return { reachability: 'unknown' as const, isCatchAll: null, outcome: 'greylisted' as const }
+      }
+      return { reachability: email === 'jane.smith@grey.test' ? ('safe' as const) : ('invalid' as const), isCatchAll: null, outcome: 'ok' as const }
+    })
+    try {
+      const wait = await revealEmail({ ...jane, companyDomain: 'grey.test' }, { source, finder, db: fakeDb as any })
+      expect(wait).toMatchObject({ status: 'waiting', greylisted: true, retryInMs: 5 * 60_000 })
+      expect(lookups).toEqual([])
+      // Asked again straight away (another tab): still waiting, nothing checked, the retry kept.
+      check.mockClear()
+      expect(await revealEmail({ ...jane, companyDomain: 'grey.test' }, { source, finder, db: fakeDb as any })).toMatchObject({ status: 'waiting', greylisted: true })
+      expect(check).not.toHaveBeenCalled()
+      // Five minutes on.
+      const later = Date.now() + 5 * 60_000 + 1
+      vi.spyOn(Date, 'now').mockReturnValue(later)
+      const found = await revealEmail({ ...jane, companyDomain: 'grey.test' }, { source, finder, db: fakeDb as any })
+      expect(found).toMatchObject({ status: 'found', email: 'jane.smith@grey.test' })
+      // Only the greylisted address was asked about again (after the domain's own made-up check).
+      expect(check.mock.calls.map((c) => c[0]).filter((e) => !/^[0-9a-f]{18}@|^[a-z]+\.[a-z]+@grey/.test(e) || e === 'jane.smith@grey.test')).toEqual(['jane.smith@grey.test'])
+      expect(lookups).toEqual(['verified'])
+    } finally {
+      vi.restoreAllMocks()
+      check.mockImplementation(async (email: string) => ({
+        reachability: email === 'jane.smith@acme.com' ? ('safe' as const) : ('invalid' as const),
+        isCatchAll: null,
+        outcome: 'ok' as const,
+      }))
+    }
+  })
+
+  it("never takes a greylisted address that's refused on the retry as everyone there rejected, nor remembers them", async () => {
+    let first = true
+    check.mockImplementation(async (email: string) => {
+      if (email === 'jane.smith@refuse.test' && first) {
+        first = false
+        return { reachability: 'unknown' as const, isCatchAll: null, outcome: 'greylisted' as const }
+      }
+      return { reachability: 'invalid' as const, isCatchAll: null, outcome: 'ok' as const }
+    })
+    try {
+      expect(await revealEmail({ ...jane, companyDomain: 'refuse.test' }, { source, finder, db: fakeDb as any })).toMatchObject({ status: 'waiting' })
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60_000 + 1)
+      const res = await revealEmail({ ...jane, companyDomain: 'refuse.test' }, { source, finder, db: fakeDb as any })
+      expect(res.status).toBe('not_found')
+      expect(res.status !== 'found' && res.status !== 'waiting' && res.unverifiable).toBeFalsy()
+      expect(state.unverifiable).toEqual([])
+      expect(lookups).toEqual(['greylisted'])
+    } finally {
+      vi.restoreAllMocks()
+      check.mockImplementation(async (email: string) => ({
+        reachability: email === 'jane.smith@acme.com' ? ('safe' as const) : ('invalid' as const),
+        isCatchAll: null,
+        outcome: 'ok' as const,
+      }))
+    }
   })
 })

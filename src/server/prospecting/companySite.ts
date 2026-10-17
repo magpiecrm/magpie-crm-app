@@ -198,14 +198,24 @@ export function whyNoSite(name: string, results: WebResult[]): string {
 }
 
 // One search for several people at the same employer.
-const inflight = new Map<string, Promise<string | null>>()
+const inflight = new Map<string, Promise<string | null | undefined>>()
 
 /** Reads a LinkedIn company page for its website: null when the page isn't this company's or lists none, and throws when it couldn't be read. */
 export type CompanyPageReader = (pageName: string) => Promise<string | null>
 
+/** Whether a web search for this company's name lately found no website that's plainly theirs (kept as company_sites). */
+export function knownToHaveNoSite(name: string, db: Pick<Db, 'getCompanySite'>, now = Date.now()): boolean {
+  const key = companyKey(name)
+  if (key.length < 3) return false
+  const kept = db.getCompanySite(key)
+  return Boolean(kept && !kept.domain && now - new Date(kept.at).getTime() < NOT_FOUND_KEPT_MS)
+}
+
 /**
- * A company's website domain from a web search for its name, or null. Asks
- * once per name and remembers the answer; a search that fails is tried
+ * A company's website domain from a web search for its name, or null when
+ * there's none that's plainly theirs. Asks once per name and remembers the
+ * answer. Undefined when nothing could be learned (the search failed, or the
+ * LinkedIn page it turned up couldn't be read): not remembered, and tried
  * again next time. With `page`, a LinkedIn company page the search turns up
  * is read for the website when no result is the site itself.
  */
@@ -216,7 +226,7 @@ export async function findCompanySite(
   db: Pick<Db, 'getCompanySite' | 'setCompanySite'>,
   now = Date.now(),
   page?: CompanyPageReader,
-): Promise<string | null> {
+): Promise<string | null | undefined> {
   const key = companyKey(name)
   if (key.length < 3) return null
   const kept = db.getCompanySite(key)
@@ -229,7 +239,7 @@ export async function findCompanySite(
       results = await search(plainName(name), country)
     } catch (err: any) {
       console.warn(`[CompanySite] web search failed: ${err?.message ?? err}`)
-      return null
+      return undefined
     }
     let domain = siteFromResults(name, results)
     const pageName = domain || !page ? null : companyPageFromResults(name, results)
@@ -239,7 +249,7 @@ export async function findCompanySite(
       } catch {
         // The page couldn't be read just now: nothing learned, so nothing remembered.
         console.log('[CompanySite] web search found their LinkedIn page, which could not be read')
-        return null
+        return undefined
       }
     }
     db.setCompanySite(key, domain)

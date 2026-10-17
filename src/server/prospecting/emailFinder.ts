@@ -241,6 +241,8 @@ export interface FindResult {
   domainProblem?: boolean
   /** A domain that does take email, from the company's DNS, to offer the user. */
   suggestedDomain?: string
+  /** The addresses its mail server asked us to try again later, for one retry of those alone (kept by Reveal as keyed hashes). */
+  greylistedEmails?: string[]
   /**
    * For a verified address: which of the candidates tried it was (0 first),
    * its format, and what set the order: a format learned at the company, one
@@ -273,6 +275,12 @@ async function verify(
       throw err
     }
     result = await verifier.check(email, lease, provider)
+    // Held back by the host's own limits: nothing was asked, so nothing is learned about the company
+    // (the caller decides whether that's a wait, or no answer).
+    if (result.hostLimit) {
+      lease.report('ok', false)
+      return { result, exhausted: false }
+    }
     lease.report(result.outcome, result.reachability === 'invalid')
     if (!refusedIp(result.outcome)) break
   }
@@ -379,11 +387,16 @@ async function prepareDomain(domain: string, deps: FinderDeps, lane = ''): Promi
       recheckAt <= now
     ) {
       const provider = rec.mx_provider ?? 'other'
-      const first = probeVerdict((await verify(deps.verifier, `${hexProbe()}@${domain}`, domain, provider)).result)
+      const probe = (await verify(deps.verifier, `${hexProbe()}@${domain}`, domain, provider)).result
+      // Our host's limits, not the company's: nothing is recorded, and the caller waits or carries on.
+      if (probe?.hostLimit) throw new VerificationLimitError(probe.hostLimit.message, probe.hostLimit.code)
+      const first = probeVerdict(probe)
       const checkedAt = new Date(now).toISOString()
       if (first.catchAll === true) {
         // Confirm in a separate session before writing off every address there.
-        const second = probeVerdict((await verify(deps.verifier, `${nameProbe()}@${domain}`, domain, provider)).result)
+        const confirming = (await verify(deps.verifier, `${nameProbe()}@${domain}`, domain, provider)).result
+        if (confirming?.hostLimit) throw new VerificationLimitError(confirming.hostLimit.message, confirming.hostLimit.code)
+        const second = probeVerdict(confirming)
         rec = deps.updateDomain(domain, second.catchAll === false
           ? { catch_all: false, catch_all_source: null, catch_all_confirmed: false, catch_all_checked_at: checkedAt, catch_all_recheck_at: null }
           : { catch_all: true, catch_all_source: first.source, catch_all_confirmed: second.catchAll === true, catch_all_checked_at: checkedAt, catch_all_recheck_at: null })
@@ -452,7 +465,12 @@ export async function findEmail(
   person: { firstName: string; lastName: string },
   rawDomain: string,
   deps: FinderDeps,
-  opts: { headcount?: number | null } = {},
+  /**
+   * `retrying`: check only the addresses this says are worth it, in order (a
+   * retry of those its mail server greylisted, by their keyed hashes); then
+   * a retry that confirms nothing is still a greylisting, never a rejection.
+   */
+  opts: { headcount?: number | null; retrying?: (email: string) => boolean } = {},
 ): Promise<FindResult> {
   if (surnameHidden(person.lastName)) {
     return {
@@ -566,8 +584,20 @@ export async function findEmail(
     return r
   }
 
-  for (const candidate of candidates) {
+  const again = opts.retrying ? candidates.filter((c) => opts.retrying!(c.email)) : []
+  const greylistedEmails: string[] = []
+  // Cut short by our host's limits: what was asked says nothing about the rest.
+  let heldBack = false
+  for (const candidate of again.length ? again : candidates) {
     const { result, exhausted } = await verify(deps.verifier, candidate.email, domain, rec.mx_provider ?? 'other')
+    // Held back by our host's limits. Before anything was asked, the lookup waits; part way
+    // through it ends as no answer, rather than start again and ask the company twice.
+    if (result?.hostLimit) {
+      if (tried === 0) throw new VerificationLimitError(result.hostLimit.message, result.hostLimit.code)
+      lastProblem = result.hostLimit.message
+      heldBack = true
+      break
+    }
     if (!result) {
       lastProblem = REFUSED_EVERYWHERE
       refusedUs = true
@@ -606,6 +636,7 @@ export async function findEmail(
       }
     } else if (result.outcome === 'greylisted') {
       greylisted = true
+      greylistedEmails.push(candidate.email)
     }
 
     if (exhausted && result.reachability === 'unknown') {
@@ -630,8 +661,8 @@ export async function findEmail(
       detail: 'The mail server accepted this address but flagged it as risky.',
     })
   }
-  // Nothing definite came back (greylisting, timeouts): keep the best guess.
-  if (!anyDefinite || greylisted) {
+  // Nothing definite came back (greylisting, timeouts, our limits): keep the best guess.
+  if (!anyDefinite || greylisted || heldBack) {
     const reason = greylisted
       ? `${domain}'s mail server asked us to try again later, so no address could be confirmed yet.`
       : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}, so no address could be confirmed.`
@@ -640,11 +671,22 @@ export async function findEmail(
       status: 'unverified',
       outcome: greylisted ? 'greylisted' : blockedUs ? 'blocked' : refusedUs ? 'refused' : 'noAnswer',
       greylisted,
+      ...(greylistedEmails.length ? { greylistedEmails } : {}),
       confidence,
       reason,
       detail: greylisted
         ? `${domain}'s mail server asked us to try again later. ${likelihood}`
         : `${domain}'s mail server couldn't be checked${lastProblem ? ` (${lastProblem.replace(/\.$/, '')})` : ''}${tried ? `, so we stopped after ${tried} ${tried === 1 ? 'try' : 'tries'}` : ''}. ${likelihood}`,
+    })
+  }
+  // A retry of greylisted addresses that confirms none says nothing about the rest: still a greylisting.
+  if (again.length) {
+    return done({
+      email: null,
+      status: 'not_found',
+      outcome: 'greylisted',
+      greylisted: true,
+      detail: `${domain}'s mail server still wouldn't confirm an address after we waited, so none could be confirmed.`,
     })
   }
   return done({ email: null, status: 'not_found', outcome: 'rejected', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })

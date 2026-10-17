@@ -184,7 +184,7 @@ export function pageNamesFor(name: string): string[] {
 // Names asked about lately and what came of it, so several people at one
 // employer cost one look. In memory only: an employer's name can be a
 // person's ("Jane Smith Consulting").
-const guessed = new Map<string, { at: number; found: Promise<KnownCompany | null> }>()
+const guessed = new Map<string, { at: number; found: Promise<KnownCompany | null | undefined> }>()
 const GUESS_KEPT_MS = 24 * 60 * 60_000
 /** For tests: forget what's been asked about. */
 export const forgetCompanyGuesses = () => guessed.clear()
@@ -213,9 +213,10 @@ export const companyPageReader =
  * it: asks for the page its name would have, and takes it only when the
  * page's own name is the same. Many people type their employer in rather
  * than pick its page, so the page often exists all the same. Found ones go
- * in the company cache; nothing is learned from a page the host couldn't read.
+ * in the company cache; nothing is learned from a page the host couldn't
+ * read, which is undefined (try again later) rather than null (no page).
  */
-export async function findCompanyByName(name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null> {
+export async function findCompanyByName(name: string, source: Pick<CompanySource, 'getCompany'>, db: Db): Promise<KnownCompany | null | undefined> {
   const key = companyKey(name)
   if (!key || NOT_A_COMPANY.has(key) || describesWork(key)) return null
   const now = Date.now()
@@ -229,7 +230,7 @@ export async function findCompanyByName(name: string, source: Pick<CompanySource
       } catch (err) {
         if (err instanceof CompanyUnconfirmed) {
           guessed.delete(key)
-          return null
+          return undefined
         }
         throw err
       }
@@ -270,7 +271,7 @@ export async function domainForPerson(
   let named: KnownCompany | null = null
   if (!person.companyRef && person.company.trim()) {
     const known = companyNamer(db)(person.company)
-    named = known === 'several' ? null : (known ?? (await findCompanyByName(person.company, source, db)))
+    named = known === 'several' ? null : (known ?? (await findCompanyByName(person.company, source, db)) ?? null)
   }
   if (named?.domain_source === 'user' && named.domain) return (how.source = 'user'), named.domain
   const ref = person.companyRef ?? named?.ref ?? null
@@ -279,7 +280,7 @@ export async function domainForPerson(
   // No company page, or none with a website: the company's own site by web search, when it's plainly theirs.
   // Or, for an employer with no page we know of, off the page the search turns up.
   if (!domain && search && isCompanyName(named?.name ?? person.company)) {
-    domain = await findCompanySite(named?.name ?? person.company, person.country, search, db, Date.now(), ref ? undefined : companyPageReader(person.company, source, db))
+    domain = (await findCompanySite(named?.name ?? person.company, person.country, search, db, Date.now(), ref ? undefined : companyPageReader(person.company, source, db))) ?? null
     if (domain) how.source = 'web'
   }
   // Which company a lookup stopped at for want of a website, for the log. Company

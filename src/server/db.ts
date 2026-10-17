@@ -560,7 +560,7 @@ export interface EmailDomainRecord {
    * accepted (`probe_accepted`), or a guess's check (`candidate_flag`).
    * Missing on records flagged before this was kept.
    */
-  catch_all_source?: 'reacher_flag' | 'probe_accepted' | 'candidate_flag' | null
+  catch_all_source?: 'reacher_flag' | 'probe_accepted' | 'candidate_flag' | 'shared' | null
   /** A second made-up address, in a separate session, was accepted too. */
   catch_all_confirmed?: boolean
   /** The catch-all test was inconclusive; don't repeat it before this. */

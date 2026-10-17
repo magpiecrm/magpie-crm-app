@@ -10,10 +10,10 @@ import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companyS
 import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
 import { unverifiableHashes } from './unverifiable'
-import { sharedCatchAll } from './sharedCatchAll'
+import { sharedCatchAll, sharedCatchAllVerdicts, type SharedVerdict } from './sharedCatchAll'
 import { noTitleBatches } from './hostRules'
 import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName, plainlySameCompany } from './companies'
-import { findCompanySite } from './companySite'
+import { findCompanySite, knownToHaveNoSite } from './companySite'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
@@ -475,6 +475,8 @@ interface Tally {
   roleStartYear: number
   /** Left out as working elsewhere, though their employer's page name is that of a company searched (counts whether matching pages by name is worth doing). */
   wrongCompanySameSlug: number
+  /** Left out because their employer's website couldn't be looked for (a web search or page read that failed twice), not because it has none. */
+  siteLookupFailed: number
 }
 
 type Source = PeopleSource & Partial<Pick<CompanySource, 'searchCompanies' | 'getCompany'>>
@@ -556,17 +558,22 @@ const SCREEN_MS = 2_000
  * threw away most of every page, and paid for more company searches to
  * refill it.
  */
-async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ keep: CompanyResult[]; unverifiable: number; noDomain: number }> {
+async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ keep: CompanyResult[]; unverifiable: number; noDomain: number; noWebsite: number }> {
   const worthIt = await formatConfirmedAt(db)
   const now = Date.now()
   const known = (d: string) => db.getEmailDomain(d)
+  const canSearchWeb = Boolean(webSearcher())
   const out: Set<string> = new Set()
   let unverifiable = 0
   let noDomain = 0
+  let noWebsite = 0
   const unknown: Array<{ ref: string; domain: string }> = []
   for (const c of companies) {
     const domain = (c.domain ?? db.getProspectCompany(c.ref)?.domain ?? '').toLowerCase().replace(/^www\./, '')
-    if (!domain) {
+    if (!domain && knownWithoutWebsite(db.getProspectCompany(c.ref), db, canSearchWeb, now)) {
+      out.add(c.ref)
+      noWebsite++
+    } else if (!domain) {
       noDomain++
     } else if (worthIt(domain)) {
       continue
@@ -577,10 +584,12 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
       unknown.push({ ref: c.ref, domain })
     }
   }
-  // In a hosted copy, companies another copy there has found out about.
-  const shared = await sharedCatchAll(unknown.map(({ ref, domain }) => ({ ref, domain })))
+  // In a hosted copy, companies another copy there has found out about: kept here, and not checked again.
+  const shared = await sharedCatchAllVerdicts(unknown.map(({ ref, domain }) => ({ ref, domain })))
   const toCheck = unknown.filter((u, i) => {
-    if (!shared[i]) return true
+    keepSharedVerdict(db, u.domain, shared[i])
+    if (shared[i]?.catchAll === false && shared[i]?.checkedAt) return false
+    if (shared[i]?.catchAll !== true) return true
     out.add(u.ref)
     unverifiable++
     return false
@@ -606,7 +615,44 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
       }
     }
   }
-  return { keep: companies.filter((c) => !out.has(c.ref)), unverifiable, noDomain }
+  return { keep: companies.filter((c) => !out.has(c.ref)), unverifiable, noDomain, noWebsite }
+}
+
+/** The most a batch waits for its failed website lookups to be tried again. */
+const RETRY_MS = 15_000
+
+/**
+ * A company known to have no website to find an email on: its LinkedIn page
+ * was read and lists none, and either this copy has no web search to look
+ * further or one lately found none that's plainly theirs. Its people would
+ * be hidden after their profiles were read, so they're left out before.
+ */
+function knownWithoutWebsite(row: { name: string; domain: string | null; page_checked?: boolean } | null | undefined, db: Db, canSearchWeb: boolean, now = Date.now()): boolean {
+  if (!row?.page_checked || row.domain) return false
+  return !canSearchWeb || knownToHaveNoSite(row.name, db, now)
+}
+
+/**
+ * What the host knows of a domain this copy also knows, kept here with when
+ * the host found out (never as now, so it's kept no longer than the host
+ * would): no made-up address need be checked there, and its people can be
+ * hidden or marked tested before anyone sees them. Not when this copy's own
+ * answer is newer.
+ */
+function keepSharedVerdict(db: Db, domain: string | null | undefined, verdict: SharedVerdict | null) {
+  if (!domain || verdict?.catchAll === null || verdict?.catchAll === undefined || !verdict.checkedAt) return
+  // An unconfirmed "accepts every address" isn't kept: a Reveal there still makes the confirming check.
+  if (verdict.catchAll && !verdict.confirmed) return
+  const d = domain.toLowerCase().trim().replace(/^www\./, '')
+  const rec = db.getEmailDomain(d)
+  if (rec?.catch_all_checked_at && rec.catch_all_checked_at >= verdict.checkedAt) return
+  db.upsertEmailDomain(d, {
+    catch_all: verdict.catchAll,
+    catch_all_source: verdict.catchAll ? 'shared' : null,
+    catch_all_confirmed: Boolean(verdict.confirmed),
+    catch_all_checked_at: verdict.checkedAt,
+    catch_all_recheck_at: null,
+  })
 }
 
 /**
@@ -741,7 +787,7 @@ async function companyFirstPage(
   count: number,
   need: number,
   /** Leave out companies where no email can be verified (screenCompanies), counting them here. */
-  screened?: { unverifiable: number; noDomain: number },
+  screened?: { unverifiable: number; noDomain: number; noWebsite: number },
   /** Hiring and funding filters: what screening left out, counted here. */
   signalTally: SignalTally = { noSignal: 0, waiting: 0 },
 ): Promise<{
@@ -900,6 +946,7 @@ async function companyFirstPage(
       fits = r.keep
       screened.unverifiable += r.unverifiable
       screened.noDomain += r.noDomain
+      screened.noWebsite += r.noWebsite
     }
     // Added to those still waiting, which carry over from the last page of companies (or industry);
     // a company found again (under a second industry, say) isn't queued twice.
@@ -1182,6 +1229,13 @@ async function processBatch(
   let lookupError: string | undefined
   let unconfirmed: PersonResult[] = []
   const notRead = new Set<string>()
+  const worthIt = await formatConfirmedAt(db)
+  // Each company's mail domain is tested as soon as its website is known,
+  // while the rest of the batch is still being worked out (domainTests).
+  const tests = hideUnverifiable ? domainTests() : null
+  const testSoon = (domain: string | null | undefined) => {
+    if (domain && !worthIt(domain)) tests?.start(domain)
+  }
   if (toLookUp.length > 0) {
     // Check the first profile before paying for the rest: if the lookup
     // itself fails (no credits, API down) the rest would fail too. A profile
@@ -1189,10 +1243,16 @@ async function processBatch(
     // and doesn't stop the others.
     // Which of someone's jobs was taken, counted: another at a company searched, or one refused for want of evidence.
     const jobs = { titleFits, noted: (how: 'other' | 'refused') => void (how === 'other' ? tally.otherJob++ : tally.otherJobRefused++) }
-    const first = await enrichOne(toLookUp[0], source, db, atSearched, jobs)
-    const results = first.error
-      ? [first]
-      : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, (p) => enrichOne(p, source, db, atSearched, jobs)))]
+    // As each profile comes back placing someone at a company searched, that company's mail domain
+    // starts being tested (if known), rather than after every profile in the batch has been read.
+    const lookUp = async (p: PersonResult) => {
+      const r = await enrichOne(p, source, db, atSearched, jobs)
+      const ref = r.person.companyRef
+      if (ref && (companySet?.has(ref) || company?.ref === ref)) testSoon(r.person.companyDomain ?? db.getProspectCompany(ref)?.domain)
+      return r
+    }
+    const first = await lookUp(toLookUp[0])
+    const results = first.error ? [first] : [first, ...(await mapLimit(toLookUp.slice(1), ENRICH_CONCURRENCY, lookUp))]
     const byUrl = new Map(results.map((r) => [r.person.profileUrl, r.person]))
     items = items.map((p) => byUrl.get(p.profileUrl) ?? p)
     for (const r of results) if (r.refined) refined.push(r.person.profileUrl)
@@ -1287,13 +1347,6 @@ async function processBatch(
   const unplaced = items.filter((p) => !p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked)
   const getCompany = source.getCompany?.bind(source)
   const searchWeb = webSearcher()
-  const worthIt = await formatConfirmedAt(db)
-  // Each company's mail domain is tested as soon as its website is known,
-  // while the rest of the batch is still being worked out (domainTests).
-  const tests = hideUnverifiable ? domainTests() : null
-  const testSoon = (domain: string | null | undefined) => {
-    if (domain && !worthIt(domain)) tests?.start(domain)
-  }
   for (const p of items) if (p.previously !== 'saved') testSoon(p.companyDomain)
 
   // Those whose employer has no LinkedIn page that we know of: the page its
@@ -1304,21 +1357,26 @@ async function processBatch(
   // website is read from there.
   type Placed = { ref?: string; slug?: string | null; domain: string | null; searched: boolean }
   const placed = new Map<string, Placed>()
-  const placeUnlinked = mapLimit(
-    unplaced.filter((p) => p.company.trim() && !several.has(p.profileUrl)),
-    ENRICH_CONCURRENCY,
-    async (p) => {
-      const page = free && getCompany ? await findCompanyByName(p.company, { getCompany }, db).catch(() => null) : null
-      const name = page?.name ?? p.company
-      // A page with no website on it is as good as no page: the web is searched either way.
-      const reader = !page && free && getCompany ? companyPageReader(p.company, { getCompany }, db) : undefined
-      const site =
-        page?.domain || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db, Date.now(), reader).catch(() => null)
-      const domain = page?.domain ?? site
-      testSoon(domain)
-      if (page || domain) placed.set(p.profileUrl, { ref: page?.ref, slug: page?.slug, domain, searched: Boolean(site) })
-    },
-  )
+  // A page guess or web search that failed (undefined) has said nothing: tried once more at the
+  // end of the batch, and if it fails again its people are left out as before, but nothing is
+  // remembered, so a later page or search tries again (siteLookupFailed).
+  const failedPlacing = new Set<PersonResult>()
+  const failedSites = new Set<PersonResult>()
+  const placeOne = async (p: PersonResult) => {
+    const page = free && getCompany ? await findCompanyByName(p.company, { getCompany }, db).catch(() => undefined) : null
+    const name = page?.name ?? p.company
+    // A page with no website on it is as good as no page: the web is searched either way.
+    const reader = !page && free && getCompany ? companyPageReader(p.company, { getCompany }, db) : undefined
+    const site =
+      page?.domain || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db, Date.now(), reader).catch(() => undefined)
+    const domain = page?.domain ?? site ?? null
+    testSoon(domain)
+    if (page || domain) placed.set(p.profileUrl, { ref: page?.ref, slug: page?.slug, domain, searched: Boolean(site) })
+    // Something failed and no website was found: worth asking once more.
+    if (!domain && (page === undefined || site === undefined)) failedPlacing.add(p)
+    else failedPlacing.delete(p)
+  }
+  const placeUnlinked = mapLimit(unplaced.filter((p) => p.company.trim() && !several.has(p.profileUrl)), ENRICH_CONCURRENCY, placeOne)
 
   // Someone at a company with a LinkedIn page whose website we don't know
   // yet: a Reveal would read the page for it, and find nothing if the page
@@ -1328,20 +1386,48 @@ async function processBatch(
   // company page; a page that couldn't be read says nothing either way.
   const unsited = free && getCompany ? items.filter((p) => p.companyRef && !p.companyDomain && p.previously !== 'saved' && p.profileChecked) : []
   const sites = new Map<string, { domain: string | null; searched: boolean }>()
-  const readPages = mapLimit([...new Map(unsited.map((p) => [p.companyRef!, p])).values()], ENRICH_CONCURRENCY, async (p) => {
+  const readOne = async (p: PersonResult) => {
     const ref = p.companyRef!
     const read = !db.getProspectCompany(ref)?.page_checked
     const onPage = await companyWebsite(ref, p.company, { getCompany: getCompany! }, db, p.companySlug).catch(() => undefined)
     if (onPage === undefined) return
     if (read) tally.companyPagesRead++
     const name = db.getProspectCompany(ref)?.name ?? p.company
-    const found = onPage || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db).catch(() => null)
+    const found = onPage || !searchWeb || !isCompanyName(name) ? null : await findCompanySite(name, p.country, searchWeb, db).catch(() => undefined)
     testSoon(onPage ?? found)
+    if (found === undefined) {
+      failedSites.add(p)
+      return
+    }
+    failedSites.delete(p)
     sites.set(ref, { domain: onPage ?? found, searched: Boolean(found) })
-  })
+  }
+  const readPages = mapLimit([...new Map(unsited.map((p) => [p.companyRef!, p])).values()], ENRICH_CONCURRENCY, readOne)
 
   // The two don't wait on each other: one is about people with no company page, the other about people with one.
   await Promise.all([placeUnlinked, readPages])
+  // Those that failed, once more: one ask per employer (its people share the answer), a few at a
+  // time (a failed search is often a busy one), and for no more than RETRY_MS in all.
+  if (failedPlacing.size || failedSites.size) {
+    const byName = new Map<string, PersonResult[]>()
+    for (const p of failedPlacing) byName.set(companyKey(p.company), [...(byName.get(companyKey(p.company)) ?? []), p])
+    const retry = Promise.all([
+      mapLimit([...byName.values()], 2, async ([first, ...others]) => {
+        await placeOne(first)
+        for (const p of others) {
+          const found = placed.get(first.profileUrl)
+          if (found) placed.set(p.profileUrl, found)
+          if (!failedPlacing.has(first)) failedPlacing.delete(p)
+        }
+      }),
+      mapLimit([...failedSites], 2, readOne),
+    ])
+    await Promise.race([retry, new Promise((r) => setTimeout(r, RETRY_MS))])
+    // Still nothing: left out like those with no website, until a later search asks again. Counted by person.
+    const stillFailed = new Set(failedSites)
+    tally.siteLookupFailed += failedPlacing.size + unsited.filter((p) => [...stillFailed].some((f) => f.companyRef === p.companyRef)).length
+    for (const p of failedSites) sites.set(p.companyRef!, { domain: null, searched: false })
+  }
 
   items = items.map((p) => {
     if (p.previously === 'saved' || !p.profileChecked || p.companyDomain) return p
@@ -1387,8 +1473,11 @@ async function processBatch(
   // In a hosted copy, also companies any other copy there has found out
   // about (sharedCatchAll.ts): company refs and domains only.
   const unmarked = items.filter((p) => !p.catchAll && !(p.companyDomain && worthIt(p.companyDomain)))
-  const shared = await sharedCatchAll(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
-  unmarked.forEach((p, i) => shared[i] && (p.catchAll = true))
+  const shared = await sharedCatchAllVerdicts(unmarked.map((p) => ({ ref: p.companyRef, domain: p.companyDomain })))
+  unmarked.forEach((p, i) => {
+    keepSharedVerdict(db, p.companyDomain, shared[i])
+    if (shared[i]?.catchAll === true) p.catchAll = true
+  })
   // Where such people are hidden, the batch waits a little for the tests of
   // the domains nobody had tested yet, so that nobody is shown someone a
   // Reveal can't work for.
@@ -1519,7 +1608,7 @@ export async function searchPeople(
     noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
     paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
     employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
-    wrongCompanySameSlug: 0,
+    wrongCompanySameSlug: 0, siteLookupFailed: 0,
   }
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
@@ -1573,7 +1662,7 @@ export async function searchPeople(
   // Set when a whole batch of profiles couldn't be confirmed: more searching wouldn't confirm any either.
   let cantConfirm = false
   // Companies left out before searching people there (screenCompanies).
-  const screened = { unverifiable: 0, noDomain: 0 }
+  const screened = { unverifiable: 0, noDomain: 0, noWebsite: 0 }
   // How many companies match the filters in all, as SocialFetch counts them (up to 1,000).
   const org: { total: number | null } = { total: null }
   // What became of the people the searches returned, for the funnel log.
@@ -1592,7 +1681,7 @@ export async function searchPeople(
     orgSearches: number
     found: number
     orgTotal: number | null
-    screened: { unverifiable: number; noDomain: number }
+    screened: { unverifiable: number; noDomain: number; noWebsite: number }
     /** Hiring and funding filters: the signals of the companies searched, by ref. */
     signals?: Map<string, Signal[]>
     firstOfBatch?: boolean
@@ -1604,7 +1693,7 @@ export async function searchPeople(
   const withCompanySignals = (found: PersonResult[]) =>
     companySignalsByRef.size ? found.map((p) => (p.companyRef && companySignalsByRef.has(p.companyRef) ? withSignals(p, companySignalsByRef.get(p.companyRef)!) : p)) : found
   const fetchPage = async (at: string | undefined, count: number, need: number): Promise<Fetched> => {
-    const sc = { unverifiable: 0, noDomain: 0 }
+    const sc = { unverifiable: 0, noDomain: 0, noWebsite: 0 }
     if (!companyFirst) {
       const page = await source.searchPeople(company ?? null, { ...filters, cursor: at, count })
       return { page, splitCursor: null, batchHasMore: false, orgSearches: 0, found: 0, orgTotal: null, screened: sc }
@@ -1687,6 +1776,7 @@ export async function searchPeople(
       companiesFound += r.found
       screened.unverifiable += r.screened.unverifiable
       screened.noDomain += r.screened.noDomain
+      screened.noWebsite += r.screened.noWebsite
       if (r.orgTotal !== null) org.total = Math.max(org.total ?? 0, r.orgTotal)
       searches++
       requests += page.requests ?? 1
@@ -1864,6 +1954,7 @@ export async function searchPeople(
     companiesFound,
     companiesInAll: org.total,
     companiesLeftOut: screened.unverifiable,
+    companiesNoWebsite: screened.noWebsite,
     batchesSplit: split.batches,
     companiesSearchedAlone: split.companies,
     peopleSearches: requests,
@@ -1901,6 +1992,7 @@ export async function searchPeople(
     noCompanyPage: tally.noCompany,
     companyPagesRead: tally.companyPagesRead,
     noWebsite: tally.noWebsite,
+    siteLookupFailed: tally.siteLookupFailed,
     domainsCheckedAhead: tally.domainsChecked,
     domainsNotChecked: tally.domainsUnchecked,
     mailServerSilent: items.filter((p) => p.noAnswer).length,
