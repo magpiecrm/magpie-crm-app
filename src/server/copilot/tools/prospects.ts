@@ -181,6 +181,8 @@ export const prospectTools = [
           company: p.company,
           country: p.country,
           ...(p.signals?.length ? { signals: p.signals.map((s) => s.label) } : {}),
+          // Not a title searched: a related role in the same department, filling a short page.
+          ...(p.related ? { relatedRole: true } : {}),
         })),
       }
     },

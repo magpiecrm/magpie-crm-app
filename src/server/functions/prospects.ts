@@ -72,6 +72,8 @@ export const peopleSearchInput = z.object({
   includeContacts: z.boolean().optional(),
   // Only people with one of these signals (signals.ts).
   signals: z.array(z.enum(SIGNAL_KINDS)).max(SIGNAL_KINDS.length).optional(),
+  // False: no people in related roles to fill a short page.
+  relatedRoles: z.boolean().optional(),
   fromStart: z.boolean().optional(),
   // The page offers 25, 50, 75 or 100 (PAGE_SIZES).
   count: z.number().int().min(1).max(100).optional(),

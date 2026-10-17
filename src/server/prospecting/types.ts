@@ -175,6 +175,11 @@ export interface PersonResult {
   roleStartedOn?: string
   /** Their signals, and their company's (signals.ts), where there are any. */
   signals?: Signal[]
+  /**
+   * Not one of the titles searched: a related role in the same department,
+   * shown after the exact matches when a page would be short (relatedRoles).
+   */
+  related?: boolean
 }
 
 /**
@@ -236,6 +241,12 @@ export interface PeopleFilters {
   /** Those companies all have 50 staff or fewer, so leaders only bigger ones have aren't searched for. Set by search.ts. */
   smallCompanies?: boolean
   /**
+   * When too few people have the titles searched, fill the page with people
+   * in related roles in the same department (a Sales Executive for "Sales
+   * Manager"), after them and marked. On unless false.
+   */
+  relatedRoles?: boolean
+  /**
    * Start at the top of the results. Otherwise a new search (no cursor) with
    * the same filters as an earlier one carries on from where that one stopped.
    */
@@ -269,7 +280,8 @@ export interface Page<T> {
    * were left out for the title (headline) and for seniority or country: for
    * the search funnel log.
    */
-  funnel?: { hits: number; offTitle: number; filteredOut: number }
+  /** Where a page's people went: `related` of them have a related role, not a title searched (relatedRoles). */
+  funnel?: { hits: number; offTitle: number; filteredOut: number; related?: number }
 }
 
 export interface CompanySource {

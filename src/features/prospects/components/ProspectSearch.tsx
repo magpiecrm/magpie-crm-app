@@ -87,6 +87,8 @@ interface PeopleForm {
   includeContacts: boolean
   /** Only people with one of these signals (server/prospecting/signals.ts). */
   signals: SignalKind[]
+  /** When too few have the titles, fill the page with related roles in the same department, marked. */
+  relatedRoles: boolean
   /** Results per page. Each result's profile is looked up, so this drives cost. */
   count: number
 }
@@ -105,7 +107,7 @@ const signalsNeedTerm = (f: PeopleForm) =>
 
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
-const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, signals: [], count: PAGE_SIZES[0] }
+const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, signals: [], relatedRoles: true, count: PAGE_SIZES[0] }
 const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
 /** A size with no company chosen is searched companies first, which needs an industry or keyword to find them by. */
@@ -255,6 +257,7 @@ export function ProspectSearch() {
           companySizes: peopleSearch!.company || !peopleSearch!.companySizes?.length ? undefined : peopleSearch!.companySizes,
           includeContacts: peopleSearch!.includeContacts || undefined,
           signals: peopleSearch!.signals?.length ? peopleSearch!.signals : undefined,
+          relatedRoles: peopleSearch!.relatedRoles === false ? false : undefined,
           // Only the first page: Load more carries on from its own cursor.
           fromStart: (!pageParam && peopleSearch!.fromStart) || undefined,
           count: peopleSearch!.count ?? EMPTY_PEOPLE_FORM.count,
@@ -666,6 +669,20 @@ export function ProspectSearch() {
             they word it, as does a title like "Head of Sales".
           </p>
         </div>
+        <label className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
+          <input
+            type="checkbox"
+            className="rounded border-border text-accent focus:ring-accent mt-0.5"
+            checked={peopleForm.relatedRoles}
+            onChange={(e) => setPeopleForm({ ...peopleForm, relatedRoles: e.target.checked })}
+          />
+          <span>
+            Fill with related roles when few match
+            <span className="block text-[10px] text-muted-foreground leading-snug">
+              Someone else in the same department, such as a Sales Executive for Sales Manager, after everyone with your titles and marked "Related role".
+            </span>
+          </span>
+        </label>
       </FilterAccordion>
 
       <FilterAccordion label="Seniority" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} badgeCount={peopleForm.seniorities.length}>

@@ -1434,6 +1434,9 @@ export async function searchPeople(
   // People whose profile couldn't be confirmed (ProfileUnconfirmed), with the
   // companies their batch searched: asked about again if the page runs short.
   let heldBack: Array<{ person: PersonResult; companySet?: Map<string, string> }> = []
+  // People in a related role, not a title searched (relatedRoles): they fill the page only if it ends short.
+  const relatedHeld: Array<{ person: PersonResult; companySet?: Map<string, string> }> = []
+  let relatedShown = 0
   // Set when a whole batch of profiles couldn't be confirmed: more searching wouldn't confirm any either.
   let cantConfirm = false
   // Companies left out before searching people there (screenCompanies).
@@ -1538,7 +1541,10 @@ export async function searchPeople(
         details.push(...(page.details ?? []))
       }
       nextCursor = page.nextCursor
-      const fresh = page.items.filter((p) => !seen.has(p.profileUrl))
+      const unseen = page.items.filter((p) => !seen.has(p.profileUrl))
+      // People in a related role, not a title searched: held back to fill the page if it ends short.
+      const fresh = unseen.filter((p) => !p.related)
+      for (const person of unseen) if (person.related) relatedHeld.push({ person, companySet })
 
       // Even with everyone here shown the page won't be full, so the next
       // search page starts now rather than after these profiles are looked up.
@@ -1566,8 +1572,8 @@ export async function searchPeople(
       funnel.hits += page.funnel?.hits ?? page.items.length
       funnel.offTitle += page.funnel?.offTitle ?? 0
       funnel.filteredOut += page.funnel?.filteredOut ?? 0
-      funnel.repeats += page.items.length - fresh.length
-      fresh.forEach((p) => seen.add(p.profileUrl))
+      funnel.repeats += page.items.length - unseen.length
+      unseen.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
       const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
       const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
@@ -1637,6 +1643,29 @@ export async function searchPeople(
         }
       }
     }
+    // Still short: people in related roles in the same department fill it, after everyone with a
+    // title searched and marked as such. Only as many are looked up as there could be room for.
+    if (filters.relatedRoles !== false && relatedHeld.length && usable() < target && !lookupError && !interrupted && !cantConfirm) {
+      const groups = new Map<Map<string, string> | undefined, PersonResult[]>()
+      for (const { person, companySet } of relatedHeld.slice(0, (target - usable()) * 2 + 5)) groups.set(companySet, [...(groups.get(companySet) ?? []), person])
+      for (const [companySet, people] of groups) {
+        if (usable() >= target) break
+        const batch = await processBatch(people, company ?? null, source, db, tally, hideUnverifiable, includeContacts, companySet, undefined, free, titleFits)
+        for (const p of batch.items) p.searchId = searchId
+        const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
+        const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
+        items.push(...taken)
+        refined.push(...takenRefined)
+        relatedShown += taken.filter((p) => !hidden(p)).length
+        if (taken.length) opts.onPeople?.({ items: taken, refined: takenRefined })
+        lookedUp += batch.lookedUp.length
+        batch.lookedUp.forEach((url) => paidFor.add(url))
+        if (batch.lookupError) {
+          lookupError = batch.lookupError
+          break
+        }
+      }
+    }
     tally.unconfirmed = heldBack.length
     dropAhead()
     await Promise.allSettled(unused)
@@ -1687,6 +1716,8 @@ export async function searchPeople(
     lookupsSpared: spared,
     prospectCredits: usable(),
     noSignal: tally.noSignal,
+    relatedFound: relatedHeld.length,
+    relatedShown,
     otherJobTaken: tally.otherJob,
     otherJobRefused: tally.otherJobRefused,
     companiesNoSignal: signalTally.noSignal,
@@ -1765,6 +1796,11 @@ export async function searchPeople(
   })
   if (tally.noSignal > 0) {
     details.push(`${plural(tally.noSignal, 'person was', 'people were')} left out for having none of the signals chosen.`)
+  }
+  if (relatedShown > 0) {
+    details.push(
+      `Too few people here have the job titles searched, so ${plural(relatedShown, 'person', 'people')} in related roles in the same department ${relatedShown === 1 ? 'follows' : 'follow'} them, marked "Related role".`,
+    )
   }
   if (signalTally.noSignal > 0) {
     details.push(`${plural(signalTally.noSignal, 'company was', 'companies were')} passed over for showing none of the signals chosen, before anyone there was searched for.`)
@@ -1900,6 +1936,8 @@ function searchPositionKey(input: PeopleFilters & { company?: { ref: string; nam
     industries: sorted(input.industries),
     sizes: input.company ? [] : sorted(input.companySizes),
     includeContacts: Boolean(input.includeContacts),
+    // Only when switched off, so searches from before keep their place.
+    ...(input.relatedRoles === false ? { relatedRoles: false } : {}),
     // Only when used, so searches from before signals keep their place.
     ...(input.signals?.length ? { signals: sorted(input.signals) } : {}),
   })

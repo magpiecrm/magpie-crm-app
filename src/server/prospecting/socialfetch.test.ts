@@ -443,8 +443,10 @@ describe('searchPeople', () => {
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Head of Marketing', 'VP Marketing'], count: 25 })
     expect(f.calls).toHaveLength(1)
     expect(f.calls[0].searchParams.get('title')).toBe('Marketing')
-    expect(page.items.map((p) => p.firstName)).toEqual(['Ann', 'Cy'])
-    expect(page.funnel).toMatchObject({ hits: 3, offTitle: 1 })
+    expect(page.items.filter((p) => !p.related).map((p) => p.firstName)).toEqual(['Ann', 'Cy'])
+    // Bo isn't a leader but works in marketing: kept, marked, for filling a short page.
+    expect(page.items.filter((p) => p.related).map((p) => [p.firstName, p.title])).toEqual([['Bo', 'Marketing Executive']])
+    expect(page.funnel).toMatchObject({ hits: 3, offTitle: 0, related: 1 })
     expect(page.details).toContain(
       'For "Head of Marketing" and "VP Marketing", searched "Marketing" and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
     )
@@ -464,7 +466,8 @@ describe('searchPeople', () => {
     ])
     const page = await createSocialFetchSource(f.impl).searchPeople(null, { titles: ['Sales leaders'], count: 25 })
     expect(f.calls.map((c) => c.searchParams.get('title'))).toEqual(['Sales', 'Revenue'])
-    expect(page.items.map((p) => p.firstName)).toEqual(['Ann', 'Di'])
+    expect(page.items.filter((p) => !p.related).map((p) => p.firstName)).toEqual(['Ann', 'Di'])
+    expect(page.items.filter((p) => p.related).map((p) => p.firstName)).toEqual(['Ed'])
     expect(page.details).toContain(
       'For "Sales leaders", searched "Sales" and "Revenue" and kept the leaders (Head of, VP, Director and the like): LinkedIn headlines word the same job many ways, so the exact title finds few.',
     )

@@ -258,8 +258,16 @@ function EmailCell({
 
 function TitleText({ person, refined }: { person: PersonResult; refined: boolean }) {
   return (
-    <span className="inline-flex items-start gap-1">
+    <span className="inline-flex items-start gap-1 flex-wrap">
       <span>{person.title || '—'}</span>
+      {person.related && (
+        <span
+          title="Not one of the job titles you searched: someone in a related role in the same department, shown because too few people here have those titles"
+          className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground whitespace-nowrap"
+        >
+          Related role
+        </span>
+      )}
       {person.shared ? (
         <span title="From the shared database: their job, employer and verified email are already known, so nothing was looked up">
           <Database className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />

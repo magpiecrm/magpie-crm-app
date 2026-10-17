@@ -544,6 +544,37 @@ export function leaderMatcher(department: string): (headline: string | null | un
  */
 const ALSO_LEADS: Record<string, string[]> = { sales: ['Revenue'] }
 
+/**
+ * Departments whose other roles fill a page when too few people have the
+ * title searched (PeopleFilters.relatedRoles), with the other words their
+ * roles go by: someone asked about "Finance leaders" may be the company's
+ * Controller or Bookkeeper.
+ */
+const RELATED: Record<string, string[]> = {
+  sales: ['Sales', 'Business Development', 'Account Executive'],
+  finance: ['Finance', 'Financial', 'Accounting', 'Accountant', 'Controller', 'Bookkeeper'],
+  revenue: ['Revenue', 'Sales'],
+  marketing: ['Marketing', 'Growth', 'Brand'],
+  operations: ['Operations'],
+  engineering: ['Engineering', 'Engineer', 'Developer'],
+  product: ['Product'],
+  procurement: ['Procurement', 'Purchasing', 'Buyer'],
+  hr: ['HR', 'Human Resources', 'People', 'Talent', 'Recruitment'],
+  people: ['People', 'HR', 'Human Resources', 'Talent'],
+  legal: ['Legal', 'Counsel'],
+  partnerships: ['Partnerships', 'Partner'],
+  'customer success': ['Customer Success', 'Account Manager'],
+}
+
+/** The related roles for a title: those of the first department word it has ("Sales Manager" -> sales), or null for a title with none. */
+function relatedRolesFor(title: string): ((headline: string | null) => string[]) | null {
+  const words = ` ${norm(title).replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ')} `
+  const department = Object.keys(RELATED).find((d) => words.includes(` ${d} `))
+  if (!department) return null
+  const matchers = RELATED[department].map((w) => titleRoles(w))
+  return (headline) => [...new Set(matchers.flatMap((m) => m(headline)))]
+}
+
 /** What's searched for one job title: the title itself, or for a leadership title its department (leadershipDepartment). */
 interface TitleQuery {
   /** Its cursor and held results go under this. */
@@ -551,6 +582,8 @@ interface TitleQuery {
   search: string
   /** The parts of a headline that name it (titleRoles, leaderRoles); none means the person is left out. Null when no title was searched. */
   roles: ((headline: string | null) => string[]) | null
+  /** The parts naming a related role in the same department, for filling a short page (relatedRolesFor). */
+  related: ((headline: string | null) => string[]) | null
   /** The leadership titles searched as this department. */
   leaders: string[]
 }
@@ -560,12 +593,12 @@ function titleQueries(titles: string[], opts: { small?: boolean } = {}): TitleQu
   for (const title of titles) {
     const department = title ? leadershipDepartment(title) : null
     if (!department) {
-      if (!out.has(title)) out.set(title, { key: title, search: title, roles: title ? titleRoles(title) : null, leaders: [] })
+      if (!out.has(title)) out.set(title, { key: title, search: title, roles: title ? titleRoles(title) : null, related: title ? relatedRolesFor(title) : null, leaders: [] })
       continue
     }
     for (const search of [department, ...(opts.small ? [] : (ALSO_LEADS[norm(department)] ?? []))]) {
       const key = `leaders:${norm(search)}`
-      const query = out.get(key) ?? { key, search, roles: leaderRoles(search), leaders: [] }
+      const query = out.get(key) ?? { key, search, roles: leaderRoles(search), related: relatedRolesFor(search), leaders: [] }
       if (!query.leaders.includes(title)) query.leaders.push(title)
       out.set(key, query)
     }
@@ -916,7 +949,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         return named.find((c) => h.includes(` ${c.key} `)) ?? null
       }
 
-      const readPeople = (res: any, asked: number, rolesFor: TitleQuery['roles']): Hit[] => {
+      const readPeople = (res: any, asked: number, rolesFor: TitleQuery['roles'], relatedFor: TitleQuery['related']): Hit[] => {
         const raw: any[] = Array.isArray(res.data?.people) ? res.data.people : []
         console.log(
           `[SocialFetch] people/search returned ${raw.length} of ${asked} (status=${res.data?.lookupStatus ?? '?'}, reported=${num(res.data?.reportedTotal) ?? '?'}, more=${res.data?.page?.hasMore ? 'yes' : 'no'})`,
@@ -927,9 +960,12 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
           const person = mapPerson(r)
           const headline = str(r?.headline)
           const roles = person && rolesFor ? rolesFor(headline) : null
-          if (roles && !roles.length) return 'off-title'
+          // Not the title searched, but a role in the same department: kept for filling a short page.
+          const related = roles && !roles.length && filters.relatedRoles !== false && relatedFor ? relatedFor(headline) : []
+          if (roles && !roles.length && !related.length) return 'off-title'
           const at = person && namedIn(headline)
-          const hit = at ? { ...person, company: at.name, companyRef: at.ref } : person
+          const found = at ? { ...person, company: at.name, companyRef: at.ref } : person
+          const hit = found && related.length ? { ...found, relatedRoles: related } : found
           // Kept beside a title that only came from the headline; a record with the real job on it keeps that.
           return hit && roles && hit.title === (titleFromHeadline(headline) ?? '') ? { ...hit, roles } : hit
         })
@@ -977,7 +1013,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             }
           }
           const page = res.data?.page
-          const people = readPeople(res, FETCH_SIZE, query.roles)
+          const people = readPeople(res, FETCH_SIZE, query.roles, query.related)
           hits = {
             items: people,
             hasMore: Boolean(page?.hasMore),
@@ -1008,10 +1044,11 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       let reportedTotal: number | null = null
       const people: PersonResult[] = []
       // Everyone read so far, with the parts of their headline that named a title searched for.
-      const seen = new Map<string, { person: PersonResult; roles: string[] }>()
+      const seen = new Map<string, { person: PersonResult; roles: string[]; related: string[] }>()
       let wrongCompany = 0
       let unreadable = 0
       let offTitle = 0
+      let relatedRoles = 0
 
       for (const { title, people: found, next, reportedTotal: total } of ok) {
         if (next) nextCursors[title] = next
@@ -1025,14 +1062,16 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
             offTitle++
             continue
           }
-          const { roles = [], ...person } = hit
-          // Found under a second title too: both show.
+          const { roles = [], relatedRoles: related = [], ...person } = hit
+          // Found under a second title too: both show. Found under one by its title, it isn't only related.
           const before = seen.get(person.profileUrl)
           if (before) {
             for (const role of roles) if (!before.roles.some((r) => norm(r) === norm(role))) before.roles.push(role)
+            if (before.roles.length) delete before.person.related
             continue
           }
-          seen.set(person.profileUrl, { person, roles: [...roles] })
+          if (!roles.length && related.length) person.related = true
+          seen.set(person.profileUrl, { person, roles: [...roles], related: [...related] })
 
           if (company) {
             const headlineNamesIt = norm(person.title).includes(norm(company.name))
@@ -1059,11 +1098,13 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
       // searched for ("Helping teams scale | VP Sales at Acme" shows "VP
       // Sales"), not whatever the headline opens with. Set here, after the
       // company check above has read the headline's opening for its name.
-      for (const { person, roles } of seen.values()) {
-        if (!roles.length) continue
-        person.title = roles.join(', ')
+      for (const { person, roles, related } of seen.values()) {
+        const shown = roles.length ? roles : person.related ? related : []
+        if (!shown.length) continue
+        person.title = shown.join(', ')
         person.seniority = classifySeniority(person.title)
       }
+      relatedRoles = people.filter((p) => p.related).length
 
       // Never drop records silently: a shape change would otherwise look like
       // "no results".
@@ -1115,7 +1156,7 @@ export function createSocialFetchSource(fetchImpl: Fetch = fetch, getApiKey: () 
         warnings,
         details,
         requests: ok.reduce((n, t) => n + t.requests, 0),
-        funnel: { hits: ok.reduce((n, t) => n + t.people.length, 0), offTitle, filteredOut: hidden },
+        funnel: { hits: ok.reduce((n, t) => n + t.people.length, 0), offTitle, filteredOut: hidden, related: relatedRoles },
       }
     },
 

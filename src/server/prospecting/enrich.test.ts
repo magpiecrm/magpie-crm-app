@@ -435,6 +435,32 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     }
   })
 
+  it('fills a short page with people in related roles, after the exact matches and marked, unless that’s switched off', async () => {
+    const ben = profiles.ben
+    profiles.ben = { ...ben, title: 'Sales Executive' }
+    try {
+      // Ana has the title searched; Ben only works in the same department.
+      searchPage = pageOf(hit('ben', 'Sales Executive'), hit('ana'))
+      searchPage.items[0] = { ...searchPage.items[0], related: true }
+      const res = await searchPeople({ titles: ['Business Analyst'] })
+      expect(res.items.map((p) => [p.firstName, p.related ?? false])).toEqual([
+        ['ana', false],
+        ['ben', true],
+      ])
+      expect(res.warnings).toContain('Too few people here have the job titles searched, so 1 person in related roles in the same department follows them, marked "Related role".')
+      // A page the exact matches fill has no room for them, and their profiles aren't read.
+      getPerson.mockClear()
+      const full = await searchPeople({ titles: ['Business Analyst'], count: 1, fromStart: true })
+      expect(full.items.map((p) => p.firstName)).toEqual(['ana'])
+      expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/ana'])
+      // Switched off: none.
+      const off = await searchPeople({ titles: ['Business Analyst'], relatedRoles: false, fromStart: true })
+      expect(off.items.map((p) => p.firstName)).toEqual(['ana'])
+    } finally {
+      profiles.ben = ben
+    }
+  })
+
   it('with New in role chosen, keeps only people whose job started lately, and counts the rest', async () => {
     const thisMonth = new Date().toISOString().slice(0, 7)
     const ana = profiles.ana

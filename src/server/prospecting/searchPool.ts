@@ -19,7 +19,7 @@ const HOUR = 3_600_000
  * couldn't be read, or 'off-title' for someone whose headline doesn't name
  * the job. Each keeps its place in the offsets.
  */
-export type Hit = (PersonResult & { roles?: string[] }) | null | 'off-title'
+export type Hit = (PersonResult & { roles?: string[]; relatedRoles?: string[] }) | null | 'off-title'
 
 export interface HeldHits<H = Hit> {
   /** The hits in search order. */
