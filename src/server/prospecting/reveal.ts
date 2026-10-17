@@ -12,7 +12,7 @@ import { domainForPerson, type DomainSource } from './companies'
 import { findEmailCounted, type FinderDeps } from './emailFinder'
 import { recordFinderStats } from './finderStats'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import { handsOver, type CompanySource, type EmailStatus, type PersonResult } from './types'
+import { bucketTop, handsOver, type CompanySource, type EmailStatus, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { noteSearchLookup } from './searchLog'
 import { requireAllowance } from '../allowance'
@@ -131,7 +131,13 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   let found: Awaited<ReturnType<typeof findEmailCounted>>
   try {
     const retryOnly = retrying ? (email: string) => retrying.emails.includes(emailHash(email)) : undefined
-    found = await findEmailCounted(person, domain, deps.finder, { headcount, ...(retryOnly ? { retrying: retryOnly } : {}) })
+    found = await findEmailCounted(person, domain, deps.finder, {
+      headcount,
+      sizeHint: headcount ?? bucketTop(person.companySize),
+      domainFromCompany: how.source === 'user' || how.source === 'search' || how.source === 'page',
+      country: person.country,
+      ...(retryOnly ? { retrying: retryOnly } : {}),
+    })
   } catch (err) {
     if (isPacing(err)) {
       if (retryKey && retrying) greylistRetries.set(retryKey, retrying)

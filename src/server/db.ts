@@ -364,7 +364,7 @@ export interface DbSchema {
    * so search can leave them out (prospecting/unverifiable.ts). Keyed HMAC
    * hash of the profile URL only.
    */
-  unverifiable?: Array<{ hash: string; outcome: string; created_at: string }>
+  unverifiable?: Array<{ hash: string; outcome: string; created_at: string; finder?: number }>
   /**
    * Where each people search last stopped, so the same filters carry on from
    * there next time instead of showing the same first pages again. Keyed by
@@ -456,6 +456,12 @@ export interface ProspectingSettingsRecord {
    * (prospecting/sharedPeople.ts contributeSaved).
    */
   shared_offered_until?: string
+  /**
+   * Contacts already offered were offered once more with their profile link
+   * and country (0.9.96), which the first offers left out, so the host can
+   * find them by it.
+   */
+  shared_reoffered?: boolean
   /**
    * Whether emails are verified (by the verification server) or not. Absent means "verify when
    * it's set up". `neverbounce` may linger from before it was removed; it's
@@ -551,6 +557,8 @@ export interface EmailDomainRecord {
   /** e.g. `{first}.{last}`. Never stored with a name or address. */
   pattern: string | null
   pattern_confidence: number
+  /** People rejected under the learned pattern since one was last verified with it: it loses confidence on the second (emailFinder.ts). */
+  pattern_misses?: number
   pattern_verified_at: string | null
   catch_all: boolean | null
   catch_all_checked_at: string | null
@@ -885,11 +893,11 @@ class JsonDb {
     return (this.data.search_log ?? []).filter((e) => e.at >= day)
   }
 
-  getUnverifiable(): Array<{ hash: string; outcome: string; created_at: string }> {
+  getUnverifiable(): Array<{ hash: string; outcome: string; created_at: string; finder?: number }> {
     return this.data.unverifiable ?? []
   }
 
-  setUnverifiable(entries: Array<{ hash: string; outcome: string; created_at: string }>) {
+  setUnverifiable(entries: Array<{ hash: string; outcome: string; created_at: string; finder?: number }>) {
     this.data.unverifiable = entries
     this.save()
   }

@@ -62,7 +62,12 @@ const HOST_MAX = 200
  */
 export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getProspectingSettings' | 'saveProspectingSettings'>, fetchImpl: typeof fetch = fetch): Promise<number> {
   if (!sharedDatabase()?.contributing) return 0
-  const settings = db.getProspectingSettings()
+  let settings = db.getProspectingSettings()
+  // Once: those offered before 0.9.96, offered again with what that left out (their profile link and country).
+  if (settings?.shared_offered_until && !settings.shared_reoffered) {
+    settings = { ...settings, shared_offered_until: undefined, shared_reoffered: true }
+    db.saveProspectingSettings(settings)
+  }
   const from = settings?.shared_offered_until ?? ''
   const waiting = db.data.contacts
     .filter((c) => c.source === 'socialfetch' && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email))
@@ -80,6 +85,9 @@ export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getPr
     emailStatus: 'verified',
     source: 'socialfetch',
     verifiedAt: c.created_at,
+    // So searches can find them by their profile, as for those sent as they're saved.
+    ...(c.linkedin_url ? { profileUrl: c.linkedin_url } : {}),
+    ...(c.country ? { country: c.country } : {}),
   }))
   const res = await post('/v1/pool/contribute', { people }, fetchImpl)
   if (!res.ok) return 0
@@ -95,7 +103,8 @@ export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getPr
           .reverse()
           .find((c) => c.created_at < due[taken].created_at)?.created_at
   // Read again: the settings may have changed while the host was asked (a confirmed title joiner, say).
-  if (until) db.saveProspectingSettings({ ...(db.getProspectingSettings() ?? { updated_at: new Date().toISOString() }), shared_offered_until: until })
+  // Offers from now on carry the profile link and country, so there's nothing to offer again later.
+  if (until) db.saveProspectingSettings({ ...(db.getProspectingSettings() ?? { updated_at: new Date().toISOString() }), shared_offered_until: until, shared_reoffered: true })
   return Number(body.accepted) || 0
 }
 

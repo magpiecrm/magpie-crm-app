@@ -353,11 +353,24 @@ describe('findEmail', () => {
     expect(await findEmail(jane, 'acme.com', deps)).toMatchObject({ email: 'jane@acme.com', status: 'risky', outcome: 'risky', greylisted: false })
   })
 
+  it('tries first@ first at a small firm on its own domain, and not on a domain found another way or behind a gateway', async () => {
+    const order = async (opts: Parameters<typeof findEmail>[3], domain: Partial<EmailDomainRecord> = {}) => {
+      const { deps, candidateChecks } = setup({ mailbox: { 'jane.smith@acme.com': 'safe' }, domain: { mx_family: 'google', mx_checked_at: new Date().toISOString(), accepts_mail: true, ...domain } })
+      await findEmail(jane, 'acme.com', deps, opts)
+      return candidateChecks()
+    }
+    expect(await order({ sizeHint: 10, domainFromCompany: true })).toEqual(['jane@acme.com', 'jane.smith@acme.com'])
+    expect(await order({ sizeHint: 10, domainFromCompany: false })).toEqual(['jane.smith@acme.com'])
+    expect(await order({ sizeHint: 500, domainFromCompany: true })).toEqual(['jane.smith@acme.com'])
+    expect(await order({ sizeHint: 10, domainFromCompany: true }, { mx_family: 'mimecast' })).toEqual(['jane.smith@acme.com'])
+  })
+
   it('reports not_found when every candidate is rejected', async () => {
     const { deps, candidateChecks } = setup({})
     const result = await findEmail(jane, 'acme.com', deps)
-    expect(result).toMatchObject({ status: 'not_found', outcome: 'rejected' })
-    expect(result.detail).toBe("acme.com's mail server rejected all 6 likely address formats.")
+    // Nobody has been verified at acme.com yet, so the domain may be the wrong one: the fix-domain step is offered.
+    expect(result).toMatchObject({ status: 'not_found', outcome: 'rejected', domainProblem: true })
+    expect(result.detail).toBe("acme.com's mail server rejected all 6 likely address formats. Nobody's address has been confirmed there yet, so their email may be at another domain.")
     expect(candidateChecks().length).toBeLessThanOrEqual(6)
   })
 

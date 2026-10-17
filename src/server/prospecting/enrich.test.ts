@@ -57,7 +57,7 @@ vi.mock('./runtime', () => ({
 let suppressedHashes = new Set<string>()
 let allowance: any = null
 let prospectingSettings: { hide_unverifiable?: boolean } | null = null
-let unverifiable: Array<{ hash: string; outcome: string; created_at: string }> = []
+let unverifiable: Array<{ hash: string; outcome: string; created_at: string; finder?: number }> = []
 let emailDomains: Record<string, { catch_all: boolean | null; catch_all_checked_at: string | null; accepts_mail: boolean | null }> = {}
 vi.mock('../db', () => ({
   db: {
@@ -713,6 +713,17 @@ describe('searchPeople and people who couldn\'t be verified', () => {
     const res = await searchPeople({ titles: ['Business Analyst'] })
     expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
     expect(getPerson).not.toHaveBeenCalledWith('https://www.linkedin.com/in/ana')
+  })
+
+  it("looks again at someone every address was rejected for before, when today's guesses try others for their name", async () => {
+    // Ana Smith-Jones: today's six checks try Smith as well as Smith-Jones; the guesses before didn't.
+    unverifiable = [{ hash: profileHash('https://www.linkedin.com/in/ana')!, outcome: 'rejected', created_at: new Date().toISOString() }]
+    profiles.ana = { ...profiles.ana }
+    searchPage = pageOf({ ...hit('ana'), lastName: 'Smith-Jones' }, hit('ben'))
+    expect((await searchPeople({ titles: ['Business Analyst'] })).items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
+    // Remembered by today's way of guessing, she stays out.
+    unverifiable[0].finder = 2
+    expect((await searchPeople({ titles: ['Business Analyst'], fromStart: true })).items.map((p) => p.firstName)).toEqual(['ben'])
   })
 
   it('forgets them after 90 days, and looks them up while hiding is turned off', async () => {

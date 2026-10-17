@@ -149,6 +149,17 @@ describe('the shared database', () => {
       expect(sent).toHaveLength(1)
     })
 
+    it("are offered once more with their profile link and country, where an older copy offered them without", async () => {
+      const db = store([contact(1, { linkedin_url: 'https://www.linkedin.com/in/pat-lee1', country: 'United Kingdom' })])
+      db.saveProspectingSettings({ shared_offered_until: '2026-09-01T00:00:00.000Z', updated_at: 'x' })
+      const { fetchImpl, sent } = host({ contributing: true })
+      await refreshHostRules(fetchImpl)
+      await contributeSaved(db, fetchImpl)
+      expect(sent[0].body.people[0]).toMatchObject({ email: 'p1@acme.co.uk', profileUrl: 'https://www.linkedin.com/in/pat-lee1', country: 'United Kingdom' })
+      await contributeSaved(db, fetchImpl)
+      expect(sent).toHaveLength(1)
+    })
+
     it('carry on next time from where the host ran out of room', async () => {
       const db = store([contact(1), contact(2), contact(4), contact(5)])
       const asked: string[][] = []

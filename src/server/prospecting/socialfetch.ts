@@ -31,6 +31,7 @@ import { industryCodes } from '../../features/prospects/constants/industryCodes'
 import { classifySeniority } from './seniority'
 import { monthOf } from './signals'
 import { createSearchPool, isOffTitle, searchPoolKey, type HeldHits, type Hit } from './searchPool'
+import { NOT_A_MAIL_DOMAIN } from './platformDomains'
 import { CompanyUnconfirmed, ProfileUnconfirmed } from './types'
 import type {
   CompanyFilters,
@@ -218,8 +219,7 @@ export function domainFromWebsite(website: unknown): string | null {
   try {
     const url = new URL(/^https?:\/\//i.test(website) ? website : `https://${website}`)
     const host = url.hostname.toLowerCase().replace(/^www\d?\./, '')
-    // LinkedIn/linktree/etc. are not the company's mail domain.
-    if (!host.includes('.') || /(^|\.)(linkedin\.com|linktr\.ee|facebook\.com|instagram\.com)$/.test(host)) return null
+    if (!host.includes('.') || NOT_A_MAIL_DOMAIN.test(host)) return null
     return host
   } catch {
     return null

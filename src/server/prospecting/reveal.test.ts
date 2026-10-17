@@ -195,7 +195,7 @@ describe('revealEmail', () => {
     expect(JSON.stringify(res)).not.toContain('jane.smith@')
     expect(state.disclosure).toEqual([])
     // Remembered as a hash of the profile only, so later searches can leave her out.
-    expect(state.unverifiable).toEqual([{ hash: hashesFor({ profileUrl: jane.profileUrl })[0].hash, outcome: 'catchAll', created_at: expect.any(String) }])
+    expect(state.unverifiable).toEqual([{ hash: hashesFor({ profileUrl: jane.profileUrl })[0].hash, outcome: 'catchAll', created_at: expect.any(String), finder: 2 }])
     expect(JSON.stringify(state.unverifiable)).not.toMatch(/jane|linkedin/i)
     expect(check).not.toHaveBeenCalled()
   })

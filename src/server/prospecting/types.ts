@@ -37,6 +37,18 @@ export const HEADCOUNT_BUCKETS = [
 ] as const
 export type HeadcountBucket = (typeof HEADCOUNT_BUCKETS)[number]
 
+/** The most staff a size bucket holds ('1-10' -> 10), or null for the open-ended one. */
+export function bucketTop(bucket: HeadcountBucket | null | undefined): number | null {
+  const m = bucket?.match(/^\d+-(\d+)$/)
+  return m ? Number(m[1]) : null
+}
+
+/** The size bucket a staff count is in. */
+export function bucketOf(headcount: number | null | undefined): HeadcountBucket | null {
+  if (!headcount || headcount < 1) return null
+  return HEADCOUNT_BUCKETS.find((b) => (bucketTop(b) ?? Number.POSITIVE_INFINITY) >= headcount) ?? null
+}
+
 /**
  * Signs that a company, or a person there, may be in the market now
  * (signals.ts). `warm`: the workspace's own email, forms or proposals found
@@ -160,6 +172,8 @@ export interface PersonResult {
    * or not tested yet. Counted against how their lookup ends (searchLog.ts).
    */
   mailCheck?: 'pattern' | 'tested' | 'deadEnd' | 'untested'
+  /** Their company's size, where known (company data): from the size searched or its staff count. Orders the email formats tried. */
+  companySize?: HeadcountBucket
   /**
    * Already a contact (`saved`: details and email come from the contact, and
    * the profile isn't looked up again) or revealed before (`revealed`).

@@ -268,6 +268,14 @@ function TitleText({ person, refined }: { person: PersonResult; refined: boolean
           Related role
         </span>
       )}
+      {person.mailCheck === 'pattern' && (
+        <span
+          title="Their company's email format is already known from addresses confirmed there, so a Reveal is likely to find theirs"
+          className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground whitespace-nowrap"
+        >
+          Email likely
+        </span>
+      )}
       {person.shared ? (
         <span title="From the shared database: their job, employer and verified email are already known, so nothing was looked up">
           <Database className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />

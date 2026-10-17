@@ -17,6 +17,12 @@ import type { LookupOutcome } from './types'
 
 // `formatConfirmed` only reaches here when such guesses are withheld.
 const DEFINITE = new Set<LookupOutcome>(['catchAll', 'formatConfirmed', 'rejected', 'noMail', 'hiddenSurname', 'badName'])
+/**
+ * Which way of guessing addresses an entry was made by: an older one's
+ * `rejected` stops counting for someone the guesses have changed for since
+ * (search.ts). 2: spellings, nicknames and size-ordered formats (0.9.96).
+ */
+export const FINDER_VERSION = 2
 const KEEP_MS = 90 * 24 * 60 * 60_000
 
 type Store = Pick<typeof Db, 'getUnverifiable' | 'setUnverifiable'>
@@ -29,11 +35,16 @@ export function rememberIfUnverifiable(profileUrl: string, outcome: LookupOutcom
   const hash = profileHash(profileUrl)
   if (!hash) return false
   const kept = fresh(store.getUnverifiable(), now.getTime()).filter((e) => e.hash !== hash)
-  store.setUnverifiable([...kept, { hash, outcome, created_at: now.toISOString() }])
+  store.setUnverifiable([...kept, { hash, outcome, created_at: now.toISOString(), finder: FINDER_VERSION }])
   return true
 }
 
 /** Hashes of the people remembered in the last 90 days. */
 export function unverifiableHashes(store: Pick<Store, 'getUnverifiable'>, now = Date.now()): Set<string> {
   return new Set(fresh(store.getUnverifiable(), now).map((e) => e.hash))
+}
+
+/** The people remembered in the last 90 days, by hash: how their lookup ended, when, and by which way of guessing. */
+export function unverifiableEntries(store: Pick<Store, 'getUnverifiable'>, now = Date.now()): Map<string, { outcome: string; created_at: string; finder?: number }> {
+  return new Map(fresh(store.getUnverifiable(), now).map((e) => [e.hash, e]))
 }

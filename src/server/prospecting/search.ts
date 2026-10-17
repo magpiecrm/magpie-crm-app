@@ -4,16 +4,18 @@
 import { createHash } from 'node:crypto'
 import { env } from '../env'
 import { refineFromProfile } from './refine'
-import { PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type Signal, type SignalKind } from './types'
+import { bucketOf, PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type Signal, type SignalKind } from './types'
 import { hasSignal, newInRoleSignal, signalKey, withSignals } from './signals'
 import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companySignals'
 import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
-import { unverifiableHashes } from './unverifiable'
+import { FINDER_VERSION, unverifiableEntries } from './unverifiable'
+import { guessesChangedFor } from './patterns'
 import { sharedCatchAll, sharedCatchAllVerdicts, type SharedVerdict } from './sharedCatchAll'
 import { noTitleBatches } from './hostRules'
 import { companyNamer, companyPageReader, companyWebsite, findCompanyByName, isCompanyName, plainlySameCompany } from './companies'
 import { findCompanySite, knownToHaveNoSite } from './companySite'
+import { isPlatformDomain } from './platformDomains'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
@@ -618,6 +620,14 @@ async function screenCompanies(companies: CompanyResult[], db: Db): Promise<{ ke
   return { keep: companies.filter((c) => !out.has(c.ref)), unverifiable, noDomain, noWebsite }
 }
 
+/** How likely a Reveal is to find someone's email, from what was known of their mail domain (PersonResult.mailCheck). */
+const FINDABLE: Record<string, number> = { pattern: 0, tested: 1, untested: 2, deadEnd: 4 }
+const findableFirst = (people: PersonResult[]) =>
+  people
+    .map((p, i) => ({ p, i, rank: p.mailCheck ? FINDABLE[p.mailCheck] : 3 }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((x) => x.p)
+
 /** The most a batch waits for its failed website lookups to be tried again. */
 const RETRY_MS = 15_000
 
@@ -1104,9 +1114,19 @@ async function processBatch(
   // won't change (unverifiable.ts), is left out before their profile is paid
   // for again, while unverifiable people are hidden.
   if (hideUnverifiable) {
-    const remembered = unverifiableHashes(db)
+    const remembered = unverifiableEntries(db)
     if (remembered.size > 0) {
-      const keep = items.filter((p) => !remembered.has(profileHash(p.profileUrl) ?? ''))
+      // Not those every address was rejected for by an older way of guessing, when today's tries
+      // other addresses, or their company has since been given a domain by hand.
+      const stillOut = (p: PersonResult) => {
+        const entry = remembered.get(profileHash(p.profileUrl) ?? '')
+        if (!entry) return false
+        if (entry.outcome !== 'rejected') return true
+        const userDomain = p.companyRef ? db.getProspectCompany(p.companyRef) : null
+        if (userDomain?.domain_source === 'user' && (userDomain.updated_at ?? '') > entry.created_at) return false
+        return (entry.finder ?? 1) >= FINDER_VERSION || !guessesChangedFor(p.firstName, p.lastName)
+      }
+      const keep = items.filter((p) => !stillOut(p))
       tally.remembered += items.length - keep.length
       items = keep
     }
@@ -1337,7 +1357,7 @@ async function processBatch(
     const known = searched ? db.getProspectCompany(searched[0]) ?? { ref: searched[0], domain: null, slug: null } : byName === 'several' ? null : byName
     if (known) {
       tally.employerByName++
-      return { ...p, companyRef: known.ref, companySlug: p.companySlug ?? known.slug ?? null, companyDomain: known.domain ?? null }
+      return { ...p, companyRef: known.ref, companySlug: p.companySlug ?? known.slug ?? null, companyDomain: isPlatformDomain(known.domain) ? null : (known.domain ?? null) }
     }
     return p
   })
@@ -1502,6 +1522,7 @@ async function processBatch(
     for (const p of items) {
       if (!p.companyDomain) continue
       const rec = known(p.companyDomain.toLowerCase().trim())
+      p.companySize ??= (p.companyRef ? bucketOf(db.getProspectCompany(p.companyRef)?.headcount) : null) ?? undefined
       p.mailCheck = trustedPattern(rec, now)
         ? 'pattern'
         : p.catchAll || p.noMail || p.noAnswer || rec?.catch_all === true || rec?.accepts_mail === false
@@ -1622,9 +1643,12 @@ export async function searchPeople(
     tally.noSignal += found.length - kept.length
     return kept
   }
-  const fitting = (found: PersonResult[]) => {
+  const fitting = (found: PersonResult[], opts: { findableFirst?: boolean } = {}) => {
     let room = target - usable()
-    return found.filter((p) => hidden(p) || room-- > 0)
+    if (!opts.findableFirst) return found.filter((p) => hidden(p) || room-- > 0)
+    // Who takes the room is chosen by how findable their email is; they stay in the order found.
+    const chosen = new Set(findableFirst(found.filter((p) => !hidden(p))).slice(0, Math.max(0, room)).map((p) => p.profileUrl))
+    return found.filter((p) => hidden(p) || chosen.has(p.profileUrl))
   }
 
   // A new search carries on from where the last one with these filters
@@ -1788,6 +1812,8 @@ export async function searchPeople(
       }
       nextCursor = page.nextCursor
       const unseen = page.items.filter((p) => !seen.has(p.profileUrl) && !shownHashes.has(hashOf(p)))
+      // A companies-first search for one size: everyone found is at a company that size.
+      if (companyFirst && filters.companySizes?.length === 1) for (const p of unseen) p.companySize ??= filters.companySizes[0]
       // People in a related role, not a title searched: held back to fill the page if it ends short.
       const fresh = unseen.filter((p) => !p.related)
       for (const person of unseen) if (person.related) relatedHeld.push({ person, companySet })
@@ -1837,7 +1863,8 @@ export async function searchPeople(
       page.funnel?.onlyByTitle?.forEach((n, i) => (onlyByTitle[i] = (onlyByTitle[i] ?? 0) + n))
       unseen.forEach((p) => seen.add(p.profileUrl))
       for (const p of batch.items) p.searchId = searchId
-      const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)))
+      // When there's less room than people, those whose email is likeliest to be found take it (mailCheck).
+      const taken = fitting(withSignalsAsked(withCompanySignals(batch.items)), { findableFirst: true })
       const takenRefined = batch.refined.filter((url) => taken.some((p) => p.profileUrl === url))
       items.push(...taken)
       refined.push(...takenRefined)

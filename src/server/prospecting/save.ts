@@ -13,7 +13,7 @@ import { findEmailCounted, type FinderDeps, type FindResult } from './emailFinde
 import { recordFinderStats } from './finderStats'
 import { isPacing } from './proxyRouter'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
-import { handsOver, ProfileUnconfirmed, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
+import { bucketTop, handsOver, ProfileUnconfirmed, type CompanySource, type EmailStatus, type LookupOutcome, type PeopleSource, type PersonResult } from './types'
 import { recordLookup, recordUsage } from '../usage'
 import { noteSearchLookup } from './searchLog'
 import { remaining } from '../allowance'
@@ -186,7 +186,12 @@ async function processPerson(
     }
     headcount = person.companyRef ? deps.db.getProspectCompany(person.companyRef)?.headcount : null
     try {
-      found = await findEmailCounted(person, domain, deps.finder, { headcount })
+      found = await findEmailCounted(person, domain, deps.finder, {
+        headcount,
+        sizeHint: headcount ?? bucketTop(person.companySize),
+        domainFromCompany: how.source === 'user' || how.source === 'search' || how.source === 'page',
+        country: person.country,
+      })
       looked = true
     } catch (err) {
       // Held back only by pacing: tried again at the end, like a greylisted check.

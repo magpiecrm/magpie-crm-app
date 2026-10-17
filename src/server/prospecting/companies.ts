@@ -1,4 +1,5 @@
 import { companyKey, sameCompanyName } from './socialfetch'
+import { isPlatformDomain } from './platformDomains'
 import { normaliseDomain } from './suppression'
 import { findCompanySite, type CompanyPageReader } from './companySite'
 import { webSearcher, type WebSearch } from './webSearch'
@@ -39,7 +40,8 @@ export async function companyWebsite(
   slug?: string | null,
 ): Promise<string | null | undefined> {
   const cached = db.getProspectCompany(ref)
-  if (cached?.domain || cached?.page_checked || cached?.domain_source === 'user') return cached.domain
+  // A site builder's or link page's host kept from before isn't a mail domain (platformDomains.ts).
+  if (cached?.domain || cached?.page_checked || cached?.domain_source === 'user') return cached.domain_source !== 'user' && isPlatformDomain(cached.domain) ? null : cached.domain
 
   const pending = inflight.get(ref)
   if (pending) return pending
@@ -265,7 +267,7 @@ export async function domainForPerson(
     const cached = db.getProspectCompany(person.companyRef)
     if (cached?.domain_source === 'user' && cached.domain) return (how.source = 'user'), cached.domain
   }
-  if (person.companyDomain) return (how.source = 'search'), normaliseDomain(person.companyDomain)
+  if (person.companyDomain && !isPlatformDomain(person.companyDomain)) return (how.source = 'search'), normaliseDomain(person.companyDomain)
   // An employer named without its company page: the one company we know by that name, if there is one.
   // Or, when we know none by it, the page its name would have, if it turns out to be that company's.
   let named: KnownCompany | null = null

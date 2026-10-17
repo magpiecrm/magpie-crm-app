@@ -137,6 +137,7 @@ const personInput = z.object({
   shared: z.string().max(200).optional(),
   searchId: z.string().max(40).optional(),
   mailCheck: z.enum(['pattern', 'tested', 'deadEnd', 'untested']).optional(),
+  companySize: z.enum(HEADCOUNT_BUCKETS).optional(),
 })
 
 /**

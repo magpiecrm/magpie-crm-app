@@ -485,6 +485,21 @@ export function ProspectSearch() {
   const cantVerify = (p: PersonResult) => !reveals.has(p.profileUrl) && Boolean(isCatchAll(p) || p.noMail || p.noAnswer || p.noCompany)
   const hiddenCount = hideUnverifiable ? allPeople.filter(cantVerify).length : 0
   const hiding = hiddenCount > 0 && !showHidden
+  // Why, in a few words: so a thin page says what to change (a company's domain, the filters).
+  const hiddenWhy = (() => {
+    if (!hiddenCount) return ''
+    const hidden = allPeople.filter(cantVerify)
+    const reasons: Array<[number, string]> = [
+      [hidden.filter((p) => p.noCompany).length, 'no website to find an email on'],
+      [hidden.filter((p) => !p.noCompany && isCatchAll(p)).length, 'their company accepts every address'],
+      [hidden.filter((p) => !p.noCompany && !isCatchAll(p) && p.noMail).length, 'their company takes no email'],
+      [hidden.filter((p) => !p.noCompany && !isCatchAll(p) && !p.noMail && p.noAnswer).length, "their company's mail server didn't answer"],
+    ]
+    return reasons
+      .filter(([n]) => n > 0)
+      .map(([n, why]) => `${n}: ${why}`)
+      .join('; ')
+  })()
   // Hiring and funding badges, fetched for the companies on screen once they're showing.
   const withWebSignals = useCompanySignals(hiding ? allPeople.filter((p) => !cantVerify(p)) : allPeople, webSignals.length > 0 && !searching)
   const unsorted = withWebSignals
@@ -1003,8 +1018,9 @@ export function ProspectSearch() {
           <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
               {hiding
-                ? `${hiddenCount} ${hiddenCount === 1 ? 'person is' : 'people are'} hidden because their email can't be verified.`
-                : `Showing ${hiddenCount} ${hiddenCount === 1 ? 'person' : 'people'} whose email can't be verified.`}
+                ? `${hiddenCount} ${hiddenCount === 1 ? 'person is' : 'people are'} hidden because their email can't be verified`
+                : `Showing ${hiddenCount} ${hiddenCount === 1 ? 'person' : 'people'} whose email can't be verified`}
+              {hiddenWhy ? ` (${hiddenWhy}).` : '.'}
             </span>
             <button type="button" onClick={() => setShowHidden((v) => !v)} className="font-semibold text-accent hover:underline">
               {hiding ? 'Show them' : 'Hide them'}

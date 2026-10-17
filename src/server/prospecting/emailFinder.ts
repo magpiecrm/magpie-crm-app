@@ -23,6 +23,7 @@ import type { EmailDomainRecord } from '../db'
 import { firstLastLikelihood, formatPrior } from './formatStats'
 import { weighFormats, type KnownAddress } from './patternEvidence'
 import { generateCandidates, type Candidate } from './patterns'
+import { isPlatformDomain } from './platformDomains'
 import {
   familyFromMx,
   isGateway,
@@ -106,6 +107,8 @@ const PUBLIC_SUFFIX_RE = /^(co|com|org|net|ac|gov|ltd|plc|edu|me|nhs|sch)\.[a-z]
  * does. DNS only, no website fetching.
  */
 async function parentWithMail(domain: string, deps: FinderDeps): Promise<{ domain: string; rec: EmailDomainRecord } | null> {
+  // A site builder's subdomain (acme.wixsite.com): the platform's own domain isn't the company's.
+  if (isPlatformDomain(domain)) return null
   const labels = domain.split('.')
   while (labels.length > 2) {
     labels.shift()
@@ -424,7 +427,7 @@ function learnPattern(domain: string, pattern: string, deps: FinderDeps) {
   const now = new Date(deps.now()).toISOString()
   if (!rec?.pattern || rec.pattern === pattern) {
     const confidence = rec?.pattern === pattern ? Math.min(1, rec.pattern_confidence + 0.1) : TRUSTED_CONFIDENCE
-    deps.updateDomain(domain, { pattern, pattern_confidence: confidence, pattern_verified_at: now })
+    deps.updateDomain(domain, { pattern, pattern_confidence: confidence, pattern_verified_at: now, pattern_misses: 0 })
   } else if (rec.pattern_confidence < TRUSTED_CONFIDENCE) {
     deps.updateDomain(domain, { pattern, pattern_confidence: TRUSTED_CONFIDENCE, pattern_verified_at: now })
   } else {
@@ -469,8 +472,18 @@ export async function findEmail(
    * `retrying`: check only the addresses this says are worth it, in order (a
    * retry of those its mail server greylisted, by their keyed hashes); then
    * a retry that confirms nothing is still a greylisting, never a rejection.
+   * `sizeHint` (staff, or the top of the size searched), `domainFromCompany`
+   * (the domain is the company's own: its page, its search result or one the
+   * user set, not one guessed by name or found by web search) and `country`
+   * only change the order addresses are tried in.
    */
-  opts: { headcount?: number | null; retrying?: (email: string) => boolean } = {},
+  opts: {
+    headcount?: number | null
+    retrying?: (email: string) => boolean
+    sizeHint?: number | null
+    domainFromCompany?: boolean
+    country?: string | null
+  } = {},
 ): Promise<FindResult> {
   if (surnameHidden(person.lastName)) {
     return {
@@ -510,9 +523,15 @@ export async function findEmail(
   const evidence = known ? null : weighFormats(deps.knownAddresses?.(domain) ?? [], opts.headcount, shared)
   const evidenceFirst = evidence && evidence.confidence >= EVIDENCE_FIRST ? evidence.pattern : null
   const ranked = known ? ('learned' as const) : evidenceFirst ? ('evidence' as const) : ('general' as const)
+  // At a small firm on its own domain (not behind a mail security gateway, which is a bigger
+  // company's set-up), the first name alone comes first: most addresses there are first@.
+  const size = opts.sizeHint ?? opts.headcount
+  const firstLeads = Boolean(size && size <= 50 && opts.domainFromCompany && (!rec.mx_family || ['google', 'microsoft', 'other'].includes(rec.mx_family)))
   const candidates: Candidate[] = generateCandidates(person.firstName, person.lastName, domain, {
     knownPattern: known ?? evidenceFirst,
     max: MAX_CHECKS_PER_PERSON,
+    firstLeads,
+    country: opts.country,
   })
   if (candidates.length === 0) {
     return { email: null, status: 'not_found', outcome: 'badName', greylisted: false, detail: "Their name can't be turned into an email address." }
@@ -588,6 +607,8 @@ export async function findEmail(
   const greylistedEmails: string[] = []
   // Cut short by our host's limits: what was asked says nothing about the rest.
   let heldBack = false
+  // The learned format counts one miss per person, however many spellings of it were rejected.
+  let missedKnown = false
   for (const candidate of again.length ? again : candidates) {
     const { result, exhausted } = await verify(deps.verifier, candidate.email, domain, rec.mx_provider ?? 'other')
     // Held back by our host's limits. Before anything was asked, the lookup waits; part way
@@ -631,8 +652,12 @@ export async function findEmail(
       firstRisky ??= candidate.email
     } else if (result.reachability === 'invalid') {
       anyDefinite = true
-      if (known && candidate.pattern === known) {
-        deps.updateDomain(domain, { pattern_confidence: Math.max(0, rec.pattern_confidence - 0.3) })
+      // One person rejected under the learned format may have left, or spell their name another way:
+      // it loses confidence only when a second is, so one ex-employee doesn't unlearn it for everyone.
+      if (known && candidate.pattern === known && !missedKnown) {
+        missedKnown = true
+        const misses = (rec.pattern_misses ?? 0) + 1
+        deps.updateDomain(domain, misses >= 2 ? { pattern_confidence: Math.max(0, rec.pattern_confidence - 0.3), pattern_misses: 0 } : { pattern_misses: misses })
       }
     } else if (result.outcome === 'greylisted') {
       greylisted = true
@@ -689,5 +714,17 @@ export async function findEmail(
       detail: `${domain}'s mail server still wouldn't confirm an address after we waited, so none could be confirmed.`,
     })
   }
-  return done({ email: null, status: 'not_found', outcome: 'rejected', greylisted: false, detail: `${domain}'s mail server rejected all ${tried} likely address formats.` })
+  // Everyone rejected at a domain where nobody was ever verified: their mail may be elsewhere.
+  // A domain its DNS names that takes email is offered (never used by itself: mailDomainHint.ts).
+  const neverVerified = !rec.pattern
+  const elsewhere = neverVerified ? ((await deps.suggestMailDomain?.(domain).catch(() => null)) ?? undefined) : undefined
+  return done({
+    email: null,
+    status: 'not_found',
+    outcome: 'rejected',
+    greylisted: false,
+    detail: `${domain}'s mail server rejected all ${tried} likely address formats.${neverVerified ? ` Nobody's address has been confirmed there yet, so their email may be at another domain${elsewhere ? `, such as ${elsewhere}` : ''}.` : ''}`,
+    ...(neverVerified ? { domainProblem: true } : {}),
+    ...(elsewhere ? { suggestedDomain: elsewhere } : {}),
+  })
 }

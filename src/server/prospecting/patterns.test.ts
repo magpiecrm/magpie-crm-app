@@ -22,7 +22,7 @@ describe('foldName', () => {
 
 describe('nameVariants', () => {
   it('handles a plain name', () => {
-    expect(nameVariants('Jane', 'Smith')).toEqual({ first: ['jane'], last: ['smith'] })
+    expect(nameVariants('Jane', 'Smith')).toMatchObject({ first: ['jane'], last: ['smith'] })
   })
 
   it('joins, keeps and splits hyphenated surnames', () => {
@@ -43,13 +43,13 @@ describe('nameVariants', () => {
   })
 
   it('strips titles, suffixes, credentials and bracketed notes', () => {
-    expect(nameVariants('Dr. Sarah', 'Connor, PhD')).toEqual({ first: ['sarah'], last: ['connor'] })
-    expect(nameVariants('John', 'Smith Jr.')).toEqual({ first: ['john'], last: ['smith'] })
-    expect(nameVariants('Priya (she/her)', 'Patel 🚀')).toEqual({ first: ['priya'], last: ['patel'] })
+    expect(nameVariants('Dr. Sarah', 'Connor, PhD')).toMatchObject({ first: ['sarah'], last: ['connor'] })
+    expect(nameVariants('John', 'Smith Jr.')).toMatchObject({ first: ['john'], last: ['smith'] })
+    expect(nameVariants('Priya (she/her)', 'Patel 🚀')).toMatchObject({ first: ['priya'], last: ['patel'] })
   })
 
   it('splits a full name given only as the first name', () => {
-    expect(nameVariants('Jane Smith', '')).toEqual({ first: ['jane'], last: ['smith'] })
+    expect(nameVariants('Jane Smith', '')).toMatchObject({ first: ['jane'], last: ['smith'] })
   })
 
   it('keeps the first given name primary when there is a middle name', () => {
@@ -103,6 +103,30 @@ describe('generateCandidates', () => {
 
   it('works for accented and apostrophe names end to end', () => {
     expect(generateCandidates('Siobhán', "O'Néill", 'acme.ie')[0].email).toBe('siobhan.oneill@acme.ie')
+  })
+})
+
+describe('the checks a person gets', () => {
+  it('go to the likely formats and spellings together when a name has more than one spelling', () => {
+    expect(locals('Anna', 'Smith-Jones', { max: 6 })).toEqual(['anna.smithjones', 'asmithjones', 'anna.smith-jones', 'anna', 'asmith-jones', 'anna.smith'])
+    // At a small firm the first name comes first, and the other spellings go to formats with a surname.
+    expect(locals('Anna', 'Smith-Jones', { max: 6, firstLeads: true })).toEqual(['anna', 'anna.smithjones', 'anna.smith-jones', 'asmithjones', 'asmith-jones', 'anna.smith'])
+    expect(locals('Jane', 'Smith', { max: 3, firstLeads: true })).toEqual(['jane', 'jane.smith', 'jsmith'])
+  })
+
+  it('try umlauts written out, first for German-speaking countries, and the name in brackets first', () => {
+    expect(locals('Jürgen', 'Müller', { max: 3, country: 'Germany' })).toEqual(['juergen.mueller', 'jmueller', 'juergen.muller'])
+    expect(locals('Jürgen', 'Müller', { max: 3 })).toEqual(['jurgen.muller', 'jmuller', 'jurgen.mueller'])
+    expect(locals('Jonathan (Jon)', 'Smith', { max: 3 })).toEqual(['jon.smith', 'jsmith', 'jonathan.smith'])
+    // Pronouns and the like in brackets aren't a name.
+    expect(locals('Priya (she)', 'Patel', { max: 1 })).toEqual(['priya.patel'])
+  })
+
+  it('try a usual shorter first name only as first.last, after the name as given', () => {
+    const six = locals('Christopher', 'Brown', { max: 6 })
+    expect(six).toContain('chris.brown')
+    expect(six.indexOf('chris.brown')).toBeGreaterThan(six.indexOf('christopher.brown'))
+    expect(locals('Christopher', 'Brown', { max: 20 }).filter((l) => l.startsWith('chris') && !l.startsWith('christopher'))).toEqual(['chris.brown'])
   })
 })
 
