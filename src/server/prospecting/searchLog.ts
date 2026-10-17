@@ -34,6 +34,8 @@ export interface SearchLogEntry {
   }
   /** Where the people found went, as in the funnel log line. */
   counts: Record<string, number>
+  /** Why the page stopped searching: full, nothing more, most top-ups, few kept, budget, or a failure. */
+  stop?: string
   /** How the email lookups for people this search showed ended, by outcome. */
   lookups: Partial<Record<LookupOutcome, number>>
 }

@@ -826,7 +826,18 @@ async function companyFirstPage(
   }
   const companies = new Map(s.batch)
   if (!s.batch.length) {
-    return { page: { items: [], nextCursor: null, reportedTotal: null, warnings: [], details: [], requests: 0 }, companies, orgSearches, found, orgTotal, splitCursor: null, batchHasMore: false, signals: batchSignals }
+    // No batch after a few tries (the companies found were all left out): carry on from here if
+    // there are more to find, rather than end a search with hundreds of companies still to come.
+    return {
+      page: { items: [], nextCursor: hasMore(s) ? encodeState(s) : null, reportedTotal: null, warnings: [], details: [], requests: 0 },
+      companies,
+      orgSearches,
+      found,
+      orgTotal,
+      splitCursor: null,
+      batchHasMore: false,
+      signals: batchSignals,
+    }
   }
   const splitCursor =
     s.batch.length > 1 && !s.people
@@ -1414,6 +1425,8 @@ export async function searchPeople(
   let spared = 0
   const paidFor = new Set<string>()
   let wasteful = false
+  /** Why the page stopped searching, for the search log: full, nothing more, most top-ups, few kept, budget, or a failure. */
+  let stop = 'failure'
   let orgSearches = 0
   let companiesFound = 0
   // Set when the data source failed partway: the page keeps what it had found.
@@ -1574,12 +1587,27 @@ export async function searchPeople(
         cantConfirm = true
         break
       }
-      if (usable() >= target || !nextCursor || searches >= planned + MAX_TOP_UPS) break
-      if (!free && searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
-        wasteful = true
+      if (usable() >= target) {
+        stop = 'full'
         break
       }
-      if (searches >= planned + TOP_UPS && spent() >= pageBudget) break
+      if (!nextCursor) {
+        stop = 'nothing more'
+        break
+      }
+      if (searches >= planned + MAX_TOP_UPS) {
+        stop = 'most top-ups'
+        break
+      }
+      if (!free && searches >= planned && lookedUp >= MIN_LOOKUPS_TO_JUDGE && usable() / lookedUp < MIN_KEPT_SHARE) {
+        wasteful = true
+        stop = 'few kept'
+        break
+      }
+      if (searches >= planned + TOP_UPS && spent() >= pageBudget) {
+        stop = 'budget'
+        break
+      }
       cursor = nextCursor
     }
 
@@ -1683,6 +1711,7 @@ export async function searchPeople(
         signals: kinds.length ? kinds : undefined,
         page,
       },
+      stop: interrupted ? 'source failed' : lookupError ? 'lookup failed' : cantConfirm ? 'profiles unreadable' : stop,
       ...counts,
     })}`,
   )
@@ -1702,6 +1731,7 @@ export async function searchPeople(
       page,
     },
     counts: Object.fromEntries(Object.entries(counts).filter((e): e is [string, number] => typeof e[1] === 'number')),
+    stop: interrupted ? 'source failed' : lookupError ? 'lookup failed' : cantConfirm ? 'profiles unreadable' : stop,
   })
 
   // A prospect credit for each person shown; what finding them took isn't charged.

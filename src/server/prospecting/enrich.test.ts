@@ -410,6 +410,31 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
     await expect(searchPeople({ titles: ['Business Analyst'], signals: ['hiring'] })).rejects.toThrow(/need an industry or keyword/)
   })
 
+  it('carries on past pages of companies that are all left out, rather than ending the search', async () => {
+    let call = 0
+    searchCompaniesMock.mockImplementation(async () => {
+      call++
+      // Four pages of companies with no LinkedIn id (left out), then one to search inside.
+      const company = call <= 4 ? { ref: `page-${call}`, name: `Nameless ${call}` } : { ref: '7', name: 'Acme' }
+      return {
+        items: [{ ...company, domain: null, industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' }],
+        nextCursor: call < 6 ? `org-${call}` : null,
+        reportedTotal: 1000,
+        warnings: [],
+      } as any
+    })
+    try {
+      searchPeopleMock.mockClear()
+      searchPage = pageOf(hit('ben'))
+      const res = await searchPeople({ titles: ['Business Analyst'], industries: ['Banking'], companySizes: ['11-50'] })
+      expect(call).toBeGreaterThanOrEqual(5)
+      expect((searchPeopleMock.mock.calls[0] as unknown[])[1]).toMatchObject({ companyRefs: ['7'] })
+      expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+    } finally {
+      searchCompaniesMock.mockImplementation(async () => structuredClone(companyPage))
+    }
+  })
+
   it('with New in role chosen, keeps only people whose job started lately, and counts the rest', async () => {
     const thisMonth = new Date().toISOString().slice(0, 7)
     const ana = profiles.ana
