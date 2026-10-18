@@ -24,6 +24,8 @@ const defaultGetPerson = async (url: string): Promise<PersonResult | null> => {
 const getPerson = vi.fn(defaultGetPerson)
 /** Companies a people search takes, as a source says (web search: 40); unset, SocialFetch's 20. */
 let sourceBatch: number | undefined
+/** Extra searches a page runs, as a source says (web search: 30); unset, search.ts's 10. */
+let sourceTopUps: number | undefined
 let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 let companyPage: any
@@ -38,7 +40,7 @@ let catchAllDomains = new Set<string>()
 // And which mail servers block the check, answering neither way.
 let silentDomains = new Set<string>()
 vi.mock('./runtime', () => ({
-  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock, ...(sourceBatch ? { companiesPerSearch: sourceBatch } : {}) }),
+  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock, ...(sourceBatch ? { companiesPerSearch: sourceBatch } : {}), ...(sourceTopUps ? { maxTopUps: sourceTopUps } : {}) }),
   getFinderDeps: async () => ({
     getDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     updateDomain: (d: string, patch: any) => {
@@ -358,6 +360,23 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
       ['eve', '42'],
       ['ana', '42'],
     ])
+  })
+
+  it('runs as many extra searches to fill a page as the source allows', async () => {
+    // Every search finds nobody new, with more always to come: the page stops at its limit.
+    searchPeopleMock.mockClear()
+    searchPeopleMock.mockImplementation(async () => ({ ...pageOf(), nextCursor: 'more' }))
+    try {
+      await searchPeople({ titles: ['Business Analyst'] })
+      const usual = searchPeopleMock.mock.calls.length
+      sourceTopUps = 20
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Business Analyst'] })
+      expect(searchPeopleMock.mock.calls.length).toBe(usual + 10)
+    } finally {
+      sourceTopUps = undefined
+      searchPeopleMock.mockImplementation(async () => structuredClone(searchPage))
+    }
   })
 
   it('fills a batch to as many companies as the source takes a search', async () => {

@@ -38,6 +38,14 @@ const NAMES_PER_QUERY = 4
  * covers more companies in the same rounds of pages.
  */
 const COMPANIES_PER_SEARCH = 40
+/**
+ * Extra searches a page of results runs to fill itself (search.ts): about
+ * 360 companies in a companies-first search, against SocialFetch's 10 (about
+ * 120). A search here is Google pages at about 0.08p and a second each, not
+ * SocialFetch's credits, and tiny companies have few people on Google: 120
+ * found 4 to 13 sales managers (hq, 2026-10-18).
+ */
+const MAX_TOP_UPS = 30
 /** Most Google pages one call fetches, and how many at once: a batch of 40 companies is 10 queries, two pages deep at most. */
 const MAX_PAGES_PER_CALL = 20
 const PAGES_AT_ONCE = 20
@@ -222,6 +230,7 @@ export function createWebSource(
 
   return {
     companiesPerSearch: COMPANIES_PER_SEARCH,
+    maxTopUps: MAX_TOP_UPS,
 
     searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
       if (!lookups.searchCompanies) throw new Error('Company search is not available.')

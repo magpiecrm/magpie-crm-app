@@ -352,6 +352,8 @@ export interface PeopleSource {
   getPerson(profileRef: string): Promise<PersonResult | null>
   /** Companies one people search takes in a companies-first search (search.ts); MAX_COMPANIES_PER_SEARCH (SocialFetch's) when not said. */
   companiesPerSearch?: number
+  /** Most extra searches one page of results runs to fill itself (search.ts MAX_TOP_UPS when not said). */
+  maxTopUps?: number
 }
 
 /**

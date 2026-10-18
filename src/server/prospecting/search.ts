@@ -1663,7 +1663,9 @@ export async function searchPeople(
   const perSearch = searchesForTitles(filters.titles, { small: onlySmallCompanies(filters.companySizes) })
   const capFor = (searchesAllowed: number) => searchesAllowed * perSearch
   // A hard stop on searches however little they cost, and with lookups free, on profiles read.
-  const MAX_SEARCHES = 3 * (planned + MAX_TOP_UPS)
+  // A source can take more top-ups than SocialFetch's credits allow (webSource.ts).
+  const maxTopUps = source.maxTopUps ?? MAX_TOP_UPS
+  const MAX_SEARCHES = 3 * (planned + maxTopUps)
   const maxReads = 3 * target
 
   const items: PersonResult[] = []
@@ -1788,7 +1790,7 @@ export async function searchPeople(
   // Paid requests so far, and why the page would stop now that it has had its share (null: it carries on).
   const paid = () => requests + orgSearches
   const capped = (spent: () => number): string | null =>
-    paid() >= capFor(planned + MAX_TOP_UPS) || searches >= MAX_SEARCHES
+    paid() >= capFor(planned + maxTopUps) || searches >= MAX_SEARCHES
       ? 'most top-ups'
       : free && lookedUp >= maxReads
         ? 'most reads'
@@ -1871,7 +1873,7 @@ export async function searchPeople(
         nextCursor &&
         !finishing &&
         usable() + fresh.length < target &&
-        paid() + perSearch <= capFor(planned + MAX_TOP_UPS) &&
+        paid() + perSearch <= capFor(planned + maxTopUps) &&
         searches + 1 < MAX_SEARCHES &&
         !(free && lookedUp >= maxReads) &&
         !(paid() + perSearch >= capFor(planned + TOP_UPS) && spent() + perSearch * 3 >= pageBudget)
