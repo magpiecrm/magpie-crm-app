@@ -1178,11 +1178,12 @@ async function processBatch(
       : undefined
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
     if (p.previously === 'saved' || p.profileChecked) return null
-    // A web search result names the employer from their profile's own current
-    // job (linkedinResults.ts), not a company filter's guess, so one naming a
-    // company searched is taken as it stands even with lookups free. On hq
-    // (2026-10-17) looking everyone up kept 2 of 137, while about 6 in 10 of
-    // the results on the title named a company searched (hq-style batches).
+    // A company search also finds people who list it without working there
+    // (members of a society, say): with lookups free, everyone is checked. A
+    // web search result's employer too, which can be a job they've since left:
+    // taken without a lookup (0.9.99-0.9.103), 1 in 16 of their emails was
+    // verified, against about 1 in 3 looked up (hq, 2026-10-18).
+    if (free) return null
     if (p.source === 'web') {
       if (!p.company.trim()) return null
       if (company && (p.companyRef === company.ref || typedAt(p, company.name))) return company
@@ -1190,9 +1191,6 @@ async function processBatch(
       if (companySet?.size) for (const [ref, name] of companySet) if (typedAt(p, name)) return { ref, name }
       return null
     }
-    // A company search also finds people who list it without working there
-    // (members of a society, say): with lookups free, everyone is checked.
-    if (free) return null
     if (company && /^\d+$/.test(company.ref)) return company
     if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
     if (companySet?.size && p.company) {
@@ -1268,13 +1266,13 @@ async function processBatch(
   // Those whose profile would otherwise have been paid for.
   const spared = [...fromShared].filter((url) => !noLookup.has(url))
 
-  // A web search result (webSource.ts) usually names the employer, unlike a SocialFetch hit, from
-  // the profile's own current job: taken as it stands, lookups free or not. Reading the profiles of
-  // those too was most of a search's time once Google's pages took a second or two (each profile
-  // read about a second, 2026-10-18). Only those whose result names no employer are looked up.
+  // A web search result (webSource.ts) usually names the employer, unlike a SocialFetch hit. Where
+  // lookups cost credits that's taken as it stands; where they're free, the profile is still read for
+  // their current job (Google's can be one they've left: unread, 1 in 16 of their emails was verified,
+  // 2026-10-18), and if it can't be, the result's employer is kept rather than the person left out.
   const listedEmployer = (p: PersonResult) => p.source === 'web' && Boolean(p.company.trim())
   const fromListing = new Set(
-    items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
+    free ? [] : items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
   )
   const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && !fromListing.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {

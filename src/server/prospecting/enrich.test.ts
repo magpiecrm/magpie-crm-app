@@ -1180,15 +1180,16 @@ describe("searchPeople with the host's shared database", () => {
       }
     })
 
-    it('takes a web search result naming one of the companies as it stands, leaves out one naming another, and looks up only one naming none', async () => {
+    it('reads the profile of anyone a web search result places at one of the companies, and leaves out one placed at another', async () => {
       free()
       try {
         employers = {}
         companyPage = barclays
         const web = (p: PersonResult): PersonResult => ({ ...p, source: 'web' })
-        // Eve's result names Barclays (matched to it by the web search); Fay's names it as typed; Gus's names
-        // another employer, so he's left out without a lookup; Hal's names none, so he's looked up.
-        profiles.gus = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
+        // Eve's and Fay's results name Barclays, Hal's no one: their profiles are read for where they work now
+        // (Google's can be a job they've left). Gus's names another employer, so he's left out unread.
+        profiles.eve = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
+        profiles.fay = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
         profiles.hal = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
         searchPage = pageOf(
           web({ ...hit('eve', 'Analyst'), company: 'Barclays', companyRef: '42' }),
@@ -1200,33 +1201,35 @@ describe("searchPeople with the host's shared database", () => {
         const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
         const funnel = JSON.parse(String(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Search funnel'))).split('Search funnel ')[1])
         log.mockRestore()
-        expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/hal'])
+        expect(getPerson.mock.calls.map((c) => c[0]).sort()).toEqual(['eve', 'fay', 'hal'].map((h) => `https://www.linkedin.com/in/${h}`))
         expect(res.items.map((p) => [p.firstName, p.company, p.companyRef]).sort()).toEqual([
           ['eve', 'Barclays', '42'],
           ['fay', 'Barclays', '42'],
           ['hal', 'Barclays', '42'],
         ])
-        expect(funnel).toMatchObject({ noLookupNeeded: 2, employerFromListing: 2, profilesBought: 1, headlineOtherEmployer: 1 })
+        expect(funnel).toMatchObject({ profilesBought: 3, headlineOtherEmployer: 1 })
       } finally {
-        delete profiles.gus
-        delete profiles.hal
+        for (const h of ['eve', 'fay', 'hal']) delete profiles[h]
         unhost()
       }
     })
 
-    it("in a search by title, looks up only those whose web search result names no employer", async () => {
+    it("in a search by title, reads each profile for the employer they're at now, whatever the web search result says", async () => {
       free()
       try {
         employers = {}
+        profiles.eve = { title: 'Business Analyst', seniority: null, company: 'Initrode', companyRef: '9' }
         profiles.hal = { title: 'Business Analyst', seniority: null, company: 'Acme', companyRef: '7' }
         searchPage = pageOf({ ...hit('eve'), company: 'Initech', source: 'web' }, { ...hit('hal'), source: 'web' })
         const res = await searchPeople({ titles: ['Business Analyst'] })
-        expect(getPerson.mock.calls.map((c) => c[0])).toEqual(['https://www.linkedin.com/in/hal'])
+        expect(getPerson.mock.calls.map((c) => c[0]).sort()).toEqual(['https://www.linkedin.com/in/eve', 'https://www.linkedin.com/in/hal'])
+        // Eve's result had her at Initech, a job she's since left.
         expect(res.items.map((p) => [p.firstName, p.company]).sort()).toEqual([
-          ['eve', 'Initech'],
+          ['eve', 'Initrode'],
           ['hal', 'Acme'],
         ])
       } finally {
+        delete profiles.eve
         delete profiles.hal
         unhost()
       }
