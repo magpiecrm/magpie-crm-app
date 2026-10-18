@@ -39,10 +39,11 @@ describe('queryPlan', () => {
   it('ORs the titles, then each alone, then the past year, then the country’s own site', () => {
     const plan = queryPlan({ titles: ['Founder', 'CEO'], country: 'United Kingdom' }, null)
     expect(plan).toEqual([
-      { query: 'site:linkedin.com/in ("Founder" OR "CEO")', maxPage: 10 },
-      { query: 'site:linkedin.com/in "Founder"', maxPage: 5 },
-      { query: 'site:linkedin.com/in "CEO"', maxPage: 5 },
-      { query: 'site:linkedin.com/in ("Founder" OR "CEO")', maxPage: 5, recent: true },
+      // The country named, which Google matches in a profile's location; its own LinkedIn site says it last.
+      { query: 'site:linkedin.com/in ("Founder" OR "CEO") "United Kingdom"', maxPage: 10 },
+      { query: 'site:linkedin.com/in "Founder" "United Kingdom"', maxPage: 5 },
+      { query: 'site:linkedin.com/in "CEO" "United Kingdom"', maxPage: 5 },
+      { query: 'site:linkedin.com/in ("Founder" OR "CEO") "United Kingdom"', maxPage: 5, recent: true },
       { query: 'site:uk.linkedin.com/in ("Founder" OR "CEO")', maxPage: 5 },
     ])
   })
@@ -51,8 +52,10 @@ describe('queryPlan', () => {
     const [sales, revenue] = queryPlan({ titles: ['Sales leaders'] }, null)
     expect(sales.query).toContain('"Head of Sales"')
     expect(sales.query).toContain('"VP Sales"')
-    // Revenue leaders are sales leaders too (socialfetch.ts ALSO_LEADS), in the next query when they don't fit in one.
-    expect(`${sales.query} ${revenue.query}`).toContain('"Chief Revenue Officer"')
+    // Revenue leaders are sales leaders too (socialfetch.ts ALSO_LEADS), but in a query of their own after
+    // Sales's: ORed in, Google returned mostly Chief Revenue Officers.
+    expect(sales.query).not.toContain('Revenue')
+    expect(revenue.query).toContain('"Chief Revenue Officer"')
     expect(sales.query).not.toContain('Sales leaders')
   })
 
@@ -98,7 +101,7 @@ describe('searchPeople', () => {
 
   it('leaves out people without the title, or in another country', async () => {
     // Only the first query's first page has anyone.
-    const { search } = fakeSearch((q, o) => ((o.page ?? 1) > 1 || o.recent || q !== 'site:linkedin.com/in "Founder"' ? [] : [...page(q, 3), ...page(q, 2, { at: 10, title: 'Accountant' }), ...page(q, 2, { at: 20, country: 'Germany' })]))
+    const { search } = fakeSearch((q, o) => ((o.page ?? 1) > 1 || o.recent || q !== 'site:linkedin.com/in "Founder" "United Kingdom"' ? [] : [...page(q, 3), ...page(q, 2, { at: 10, title: 'Accountant' }), ...page(q, 2, { at: 20, country: 'Germany' })]))
     const result = await createWebSource(search, lookups, fast).searchPeople(null, { titles: ['Founder'], country: 'United Kingdom', count: 25 })
     expect(result.items).toHaveLength(3)
     expect(result.funnel).toMatchObject({ offTitle: 2, filteredOut: 2 })

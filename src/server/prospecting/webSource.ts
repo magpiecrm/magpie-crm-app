@@ -89,20 +89,37 @@ const chunks = <T>(list: T[], size: number): T[][] => {
 /** The queries a search runs, in order: what the cursor walks through. Empty when there's nothing to search by. */
 export function queryPlan(filters: PeopleFilters, company: CompanyRef | null): Step[] {
   const titles = [...new Set((filters.titles ?? []).map((t) => t.trim()).filter(Boolean))].slice(0, MAX_TITLES)
+  // The titles asked for ORed together, and the departments searched beside one of them (Revenue
+  // beside "Sales leaders", socialfetch.ts ALSO_LEADS) after those, on their own: ORed in with the
+  // rest, Google returned mostly Chief Revenue Officers for "Sales leaders" (2026-10-18).
   const terms: string[] = []
-  for (const t of titleQueries(titles, { small: filters.smallCompanies }).flatMap(termsFor)) if (!terms.some((o) => norm(o) === norm(t))) terms.push(t)
+  const also: string[] = []
+  const asked = new Set<string>()
+  for (const q of titleQueries(titles, { small: filters.smallCompanies })) {
+    const key = q.leaders.length ? q.leaders.map(norm).join('|') : ''
+    const extra = Boolean(key) && asked.has(key)
+    if (key) asked.add(key)
+    for (const t of termsFor(q)) if (![...terms, ...also].some((o) => norm(o) === norm(t))) (extra ? also : terms).push(t)
+  }
+  const groups = [...chunks(terms, TERMS_PER_QUERY), ...chunks(also, TERMS_PER_QUERY)]
+  terms.push(...also)
+  if (!groups.length) groups.push([])
   const keyword = filters.keyword?.trim() ? ` ${filters.keyword.trim().replace(/["“”]/g, '')}` : ''
   const who = (c: string[]) => (c.length ? ` ${anyOf(c)}` : '')
-  const groups = terms.length ? chunks(terms, TERMS_PER_QUERY) : [[]]
   // Companies found first (search.ts): their names, a few to a query beside the titles.
   const names = (filters.companyRefs ?? []).map((ref) => filters.companyNames?.[ref]).filter((n): n is string => Boolean(n && companyKey(n).length >= 3))
   if (names.length) return chunks(names, NAMES_PER_QUERY).map((batch) => ({ query: `${profileSite()}${who(terms.slice(0, 6))} ${anyOf(batch)}${keyword}`, maxPage: 2 }))
   const at = company ? ` ${phrase(company.name)}` : ''
   if (!terms.length && !at && !keyword) return []
-  const steps: Step[] = groups.map((g) => ({ query: `${profileSite()}${who(g)}${at}${keyword}`, maxPage: company ? 5 : MAX_PAGE }))
-  if (terms.length > 1) for (const t of terms) steps.push({ query: `${profileSite()} ${phrase(t)}${at}${keyword}`, maxPage: company ? 2 : 5 })
+  // Searching everywhere, the country named: Google matches it in a profile's location, so on the
+  // first pages of US searches the people confirmed there went from 12 to 23 ("Sales Manager") and
+  // 5 to 19 ("Sales leaders") (2026-10-18). Not inside one company, which says where enough.
+  const country = canonicalCountry(filters.country)
+  const where = !company && country ? ` ${phrase(country)}` : ''
+  const steps: Step[] = groups.map((g) => ({ query: `${profileSite()}${who(g)}${at}${where}${keyword}`, maxPage: company ? 5 : MAX_PAGE }))
+  if (terms.length > 1) for (const t of terms) steps.push({ query: `${profileSite()} ${phrase(t)}${at}${where}${keyword}`, maxPage: company ? 2 : 5 })
   if (!company) {
-    for (const g of groups) steps.push({ query: `${profileSite()}${who(g)}${keyword}`, maxPage: 5, recent: true })
+    for (const g of groups) steps.push({ query: `${profileSite()}${who(g)}${where}${keyword}`, maxPage: 5, recent: true })
     const sub = countrySite(filters.country)
     if (sub) for (const g of groups) steps.push({ query: `${profileSite(sub)}${who(g)}${keyword}`, maxPage: 5 })
   }

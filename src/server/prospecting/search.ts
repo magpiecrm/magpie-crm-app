@@ -1213,12 +1213,15 @@ async function processBatch(
   // In a companies-first search, SocialFetch's company filter also finds
   // people who used to work at one of the companies: someone whose headline
   // names another employer has moved on, so no profile is paid for to find
-  // that out (it was most of the profiles paid for in these searches).
-  if (companySet?.size && !free) {
+  // that out (it was most of the profiles paid for in these searches). With
+  // lookups free, a web search result naming another employer is left out
+  // too, rather than read in case that employer fits: on hq that kept 4 of
+  // the 36 read (2026-10-18), each read about a second of the search.
+  if (companySet?.size) {
     const names = [...companySet.values()]
     const elsewhere = new Set(
       items
-        .filter((p) => p.previously !== 'saved' && !p.profileChecked && !noLookup.has(p.profileUrl) && p.company.trim() && !names.some((n) => sameCompanyName(p.company, n)))
+        .filter((p) => (!free || p.source === 'web') && p.previously !== 'saved' && !p.profileChecked && !noLookup.has(p.profileUrl) && p.company.trim() && !names.some((n) => sameCompanyName(p.company, n)))
         .map((p) => p.profileUrl),
     )
     if (elsewhere.size) {
@@ -1265,12 +1268,13 @@ async function processBatch(
   // Those whose profile would otherwise have been paid for.
   const spared = [...fromShared].filter((url) => !noLookup.has(url))
 
-  // A web search result (webSource.ts) usually names the employer, unlike a SocialFetch hit. Where
-  // lookups cost credits that's taken as it stands; where they're free, the profile is still read for
-  // their current job, and if it can't be, the result's employer is kept rather than the person left out.
+  // A web search result (webSource.ts) usually names the employer, unlike a SocialFetch hit, from
+  // the profile's own current job: taken as it stands, lookups free or not. Reading the profiles of
+  // those too was most of a search's time once Google's pages took a second or two (each profile
+  // read about a second, 2026-10-18). Only those whose result names no employer are looked up.
   const listedEmployer = (p: PersonResult) => p.source === 'web' && Boolean(p.company.trim())
   const fromListing = new Set(
-    free ? [] : items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
+    items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
   )
   const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && !fromListing.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {
