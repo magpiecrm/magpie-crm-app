@@ -32,9 +32,9 @@ const MAX_TITLES = 5
 const TERMS_PER_QUERY = 8
 /** Company names ORed in one query, beside the titles. */
 const NAMES_PER_QUERY = 4
-/** Most Google pages one call fetches, and how many at once. */
-const MAX_PAGES_PER_CALL = 9
-const PAGES_AT_ONCE = 6
+/** Most Google pages one call fetches, and how many at once: a batch of 20 companies is 5 queries, two pages deep at most. */
+const MAX_PAGES_PER_CALL = 10
+const PAGES_AT_ONCE = 10
 /** People with a title searched a page usually brings: how many pages are fetched at once for what's still needed. */
 const PEOPLE_PER_PAGE = 7
 /** A page with fewer profiles than this is the last its query has. */
@@ -278,38 +278,44 @@ export function createWebSource(
       const hold = (pos: Position, hits: Hit[], more: boolean) => pool.put(poolKey(pos), { items: hits, hasMore: more, end: 0, reportedTotal: null, at: Date.now() })
       let next: Position | null = at.step < plan.length ? at : null
       while (next && onTitle() < want && !failedPage) {
-        // Pages in order from where the search carries on: held hits if there are any, otherwise the next
-        // few pages of this step, fetched at once. A page that failed is null.
-        let entries: { pos: Position; hits: Hit[] | null; more: boolean }[]
-        const held: HeldHits | null = pool.take(poolKey(next))
-        if (held) {
-          entries = [{ pos: next, hits: held.items, more: held.hasMore }]
-        } else {
-          if (pages >= MAX_PAGES_PER_CALL) break
-          // The next pages in the plan, fetched at once: more of this query while it's a deep one, and the
-          // first page of each query after it, so a companies-first search's batches of names (two pages
-          // deep at most) are asked for together rather than in turn. A shallow query's second page waits
-          // for its first to show there's more.
-          const from: Position = next
-          const shallow = plan[from.step].maxPage <= 2
-          const need = Math.ceil((want - onTitle()) / PEOPLE_PER_PAGE)
-          const span = Math.max(1, Math.min(PAGES_AT_ONCE, shallow ? Number.POSITIVE_INFINITY : need, MAX_PAGES_PER_CALL - pages))
-          const positions: Position[] = []
-          for (let p: Position | null = from; p && positions.length < span; ) {
-            positions.push(p)
-            const step: Step = plan[p.step]
-            p = p.page < step.maxPage && step.maxPage > 2 ? { step: p.step, page: p.page + 1, offset: 0 } : p.step + 1 < plan.length ? { step: p.step + 1, page: 1, offset: 0 } : null
+        // The next pages in the plan, taken at once: those held from before as they are, and the rest
+        // fetched together. More of this query while it's a deep one, and the first page of each query
+        // after it, so a companies-first search's batches of names (two pages deep at most) are asked
+        // for together rather than in turn; a shallow query's second page once its first, held, shows
+        // there's more, so a batch's second pages come in one round too. Held pages were fetched again
+        // before (0.9.99 and earlier): on hq a batch of 14 queries took 33 pages.
+        const from: Position = next
+        const shallow = plan[from.step].maxPage <= 2
+        const span = Math.min(PAGES_AT_ONCE, MAX_PAGES_PER_CALL - pages)
+        const walk: { pos: Position; held: HeldHits | null }[] = []
+        let toFetch = 0
+        // People on the title the held pages walked so far bring: no page is fetched for what they cover.
+        let heldOnTitle = 0
+        for (let p: Position | null = from; p; ) {
+          const held: HeldHits | null = pool.take(poolKey(p))
+          if (!held) {
+            const stillWanted = want - onTitle() - heldOnTitle
+            if (toFetch >= span || stillWanted <= 0 || (!shallow && toFetch >= Math.ceil(stillWanted / PEOPLE_PER_PAGE))) break
           }
-          const fetched = await Promise.all(positions.map((p) => fetchPage(plan[p.step], p.page, country, tally)))
-          entries = fetched.map((results, i) => {
-            if (!results) return { pos: positions[i], hits: null, more: false }
-            pages++
-            const { hits, profiles } = readPage(results)
-            if (!profiles) emptyPages++
-            // Carrying on part-way through a page whose held hits were lost: the hits already used are passed over.
-            return { pos: positions[i], hits: i === 0 && from.offset ? hits.slice(from.offset) : hits, more: profiles >= PROFILES_FOR_MORE }
-          })
+          walk.push({ pos: p, held })
+          if (held) heldOnTitle += held.items.filter((h) => h && !isOffTitle(h)).length
+          else toFetch++
+          const step: Step = plan[p.step]
+          const deeper: boolean = p.page < step.maxPage && (step.maxPage > 2 || Boolean(held?.hasMore))
+          p = deeper ? { step: p.step, page: p.page + 1, offset: 0 } : p.step + 1 < plan.length ? { step: p.step + 1, page: 1, offset: 0 } : null
         }
+        if (!walk.length) break
+        const fetched = await Promise.all(walk.map((w) => (w.held ? null : fetchPage(plan[w.pos.step], w.pos.page, country, tally))))
+        const entries: { pos: Position; hits: Hit[] | null; more: boolean }[] = walk.map((w, i) => {
+          if (w.held) return { pos: w.pos, hits: w.held.items, more: w.held.hasMore }
+          const results = fetched[i]
+          if (!results) return { pos: w.pos, hits: null, more: false }
+          pages++
+          const { hits, profiles } = readPage(results)
+          if (!profiles) emptyPages++
+          // Carrying on part-way through a page whose held hits were lost: the hits already used are passed over.
+          return { pos: w.pos, hits: i === 0 && from.offset ? hits.slice(from.offset) : hits, more: profiles >= PROFILES_FOR_MORE }
+        })
         // Hits are taken in plan order until there are enough. Where that stops (enough people, a page that
         // failed), the search carries on next time; pages fetched beyond that point are held for then, and
         // those of a query that ran out before them are dropped.

@@ -157,6 +157,18 @@ describe('searchPeople', () => {
     expect(result.funnel?.webPages).toBe(5)
   })
 
+  it("fetches each page of a batch once, and the batch's second pages in one round", async () => {
+    // Every first page full, so each query has a second page.
+    const { search, calls } = fakeSearch((q, o) => page(q, 10, { at: ((o.page ?? 1) - 1) * 10 }))
+    const names = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [String(i), `Firm ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + i)}`]))
+    const result = await createWebSource(search, lookups, { hedgeMs: 1_000, pausesMs: [0] }).searchPeople(null, { titles: ['Founder'], companyRefs: Object.keys(names), companyNames: names, count: 50 })
+    const fetched = calls.map((c) => `${c.query.slice(-30)} p${c.opts.page ?? 1}`)
+    // Three queries of four names, two pages each: six pages, none twice (0.9.99 asked for later first pages again).
+    expect(new Set(fetched).size).toBe(fetched.length)
+    expect(calls.map((c) => c.opts.page ?? 1)).toEqual([1, 1, 1, 2, 2, 2])
+    expect(result.funnel?.webPages).toBe(6)
+  })
+
   it('hands profile lookups to the other source', async () => {
     const { search } = fakeSearch(() => [])
     await createWebSource(search, lookups, fast).getPerson('https://www.linkedin.com/in/someone')
