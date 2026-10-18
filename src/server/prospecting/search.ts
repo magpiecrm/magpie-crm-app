@@ -1175,9 +1175,22 @@ async function processBatch(
       ? (e) => Boolean(e.companyRef && companySet.has(e.companyRef)) || searchedNames.some((n) => typedAt(e, n))
       : undefined
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
+    if (p.previously === 'saved' || p.profileChecked) return null
+    // A web search result names the employer from their profile's own current
+    // job (linkedinResults.ts), not a company filter's guess, so one naming a
+    // company searched is taken as it stands even with lookups free. On hq
+    // (2026-10-17) looking everyone up kept 2 of 137, while about 6 in 10 of
+    // the results on the title named a company searched (hq-style batches).
+    if (p.source === 'web') {
+      if (!p.company.trim()) return null
+      if (company && (p.companyRef === company.ref || typedAt(p, company.name))) return company
+      if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
+      if (companySet?.size) for (const [ref, name] of companySet) if (typedAt(p, name)) return { ref, name }
+      return null
+    }
     // A company search also finds people who list it without working there
     // (members of a society, say): with lookups free, everyone is checked.
-    if (free || p.previously === 'saved' || p.profileChecked) return null
+    if (free) return null
     if (company && /^\d+$/.test(company.ref)) return company
     if (companySet?.size && p.companyRef && companySet.has(p.companyRef)) return { ref: p.companyRef, name: companySet.get(p.companyRef)! }
     if (companySet?.size && p.company) {
@@ -1190,6 +1203,7 @@ async function processBatch(
     const at = knownEmployer(p)
     if (!at) return p
     noLookup.add(p.profileUrl)
+    if (p.source === 'web') tally.employerFromListing++
     return { ...p, company: at.name, companyRef: at.ref, companyDomain: db.getProspectCompany(at.ref)?.domain ?? null }
   })
   tally.noLookup += noLookup.size

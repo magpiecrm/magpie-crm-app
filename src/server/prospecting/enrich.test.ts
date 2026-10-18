@@ -1142,6 +1142,41 @@ describe("searchPeople with the host's shared database", () => {
       }
     })
 
+    it('takes a web search result naming one of the companies as it stands, and looks up only the rest', async () => {
+      free()
+      try {
+        employers = {}
+        companyPage = barclays
+        const web = (p: PersonResult): PersonResult => ({ ...p, source: 'web' })
+        // Eve's result names Barclays (matched to it by the web search); Fay's names it as typed; Gus's names
+        // another employer, and Hal's none: those two are looked up, as before.
+        profiles.gus = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
+        profiles.hal = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
+        searchPage = pageOf(
+          web({ ...hit('eve', 'Analyst'), company: 'Barclays', companyRef: '42' }),
+          web({ ...hit('fay', 'Analyst'), company: 'Barclays UK' }),
+          web({ ...hit('gus', 'Analyst'), company: 'Lloyds' }),
+          web(hit('hal', 'Analyst')),
+        )
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        const funnel = JSON.parse(String(log.mock.calls.map((c) => String(c[0])).find((l) => l.includes('Search funnel'))).split('Search funnel ')[1])
+        log.mockRestore()
+        expect(getPerson.mock.calls.map((c) => c[0]).sort()).toEqual(['https://www.linkedin.com/in/gus', 'https://www.linkedin.com/in/hal'])
+        expect(res.items.map((p) => [p.firstName, p.company, p.companyRef]).sort()).toEqual([
+          ['eve', 'Barclays', '42'],
+          ['fay', 'Barclays', '42'],
+          ['gus', 'Barclays', '42'],
+          ['hal', 'Barclays', '42'],
+        ])
+        expect(funnel).toMatchObject({ noLookupNeeded: 2, employerFromListing: 2, profilesBought: 2 })
+      } finally {
+        delete profiles.gus
+        delete profiles.hal
+        unhost()
+      }
+    })
+
     it("keeps searching when few of the people looked up are kept, as there are no credits to save by stopping", async () => {
       free()
       try {
