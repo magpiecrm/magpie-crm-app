@@ -350,6 +350,8 @@ export interface PeopleSource {
   searchPeople(company: CompanyRef | null, filters: PeopleFilters): Promise<Page<PersonResult>>
   /** Null when there's no such profile; throws ProfileUnconfirmed when it couldn't be read. */
   getPerson(profileRef: string): Promise<PersonResult | null>
+  /** Companies one people search takes in a companies-first search (search.ts); MAX_COMPANIES_PER_SEARCH (SocialFetch's) when not said. */
+  companiesPerSearch?: number
 }
 
 /**

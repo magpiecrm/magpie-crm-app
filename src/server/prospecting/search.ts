@@ -822,6 +822,8 @@ async function companyFirstPage(
 }> {
   const { canonicalCountry } = await import('./geo')
   const { MAX_COMPANIES_PER_SEARCH } = await import('./socialfetch')
+  // How many companies a batch is filled to: SocialFetch takes 20 a search, a web search more (webSource.ts).
+  const perBatch = source.companiesPerSearch ?? MAX_COMPANIES_PER_SEARCH
   // With the Warm filter, the companies are the workspace's warm ones: no company search.
   const warm = Boolean(filters.signals?.includes('warm'))
   // Hiring and funding filters: each batch keeps only companies with one (screenBySignals). Warm takes them all.
@@ -903,7 +905,7 @@ async function companyFirstPage(
       signals: batchSignals,
     }
   }
-  // The batch is filled to MAX_COMPANIES_PER_SEARCH before its people are searched: a people
+  // The batch is filled to perBatch before its people are searched: a people
   // search costs the same for 2 companies as for 20, so the few left over from one page of
   // companies wait for the next page (usually held already, at no cost) instead of being
   // searched on their own. A few company pages at most, in case pages come back with none that fit.
@@ -913,7 +915,7 @@ async function companyFirstPage(
   let signalScreens = 0
   const canFind = () => !warm && Boolean(source.searchCompanies) && (s.orgCursor !== undefined || s.term < terms.length)
   for (let guard = 0; guard < 6 && !s.batch.length; guard++) {
-    const room = MAX_COMPANIES_PER_SEARCH - filling.length
+    const room = perBatch - filling.length
     // Hiring and funding: each screening waits up to SIGNALS_WAIT_MS, so a batch fills from two at most.
     if (webKinds.length > 0 && signalScreens >= 2) {
       if (filling.length) s = { ...s, batch: filling.splice(0), people: undefined }
@@ -935,7 +937,7 @@ async function companyFirstPage(
         s = { ...s, pending: pending.slice(next.length) }
       }
       // Full, or as full as it will get.
-      if (filling.length >= MAX_COMPANIES_PER_SEARCH || (!s.pending.length && !canFind())) {
+      if (filling.length >= perBatch || (!s.pending.length && !canFind())) {
         s = { ...s, batch: filling.splice(0), people: undefined }
         break
       }

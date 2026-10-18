@@ -22,6 +22,8 @@ const defaultGetPerson = async (url: string): Promise<PersonResult | null> => {
   }
 }
 const getPerson = vi.fn(defaultGetPerson)
+/** Companies a people search takes, as a source says (web search: 40); unset, SocialFetch's 20. */
+let sourceBatch: number | undefined
 let searchPage: Page<PersonResult>
 const searchPeopleMock = vi.fn(async () => structuredClone(searchPage))
 let companyPage: any
@@ -36,7 +38,7 @@ let catchAllDomains = new Set<string>()
 // And which mail servers block the check, answering neither way.
 let silentDomains = new Set<string>()
 vi.mock('./runtime', () => ({
-  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock }),
+  getSource: () => ({ getPerson, searchPeople: searchPeopleMock, searchCompanies: searchCompaniesMock, getCompany: getCompanyMock, ...(sourceBatch ? { companiesPerSearch: sourceBatch } : {}) }),
   getFinderDeps: async () => ({
     getDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     updateDomain: (d: string, patch: any) => {
@@ -356,6 +358,23 @@ describe('searchPeople pays for no profile it can tell is wasted', () => {
       ['eve', '42'],
       ['ana', '42'],
     ])
+  })
+
+  it('fills a batch to as many companies as the source takes a search', async () => {
+    const company = (i: number) => ({ ref: String(100 + i), name: `Firm ${String.fromCharCode(65 + i)}`, domain: `firm${i}.example`, industry: 'Banking', headcount: 30, companyType: null, country: 'United Kingdom', linkedinUrl: null, source: 'socialfetch' as const })
+    companyPage = { items: Array.from({ length: 30 }, (_, i) => company(i)), nextCursor: null, reportedTotal: null, warnings: [] }
+    searchPage = pageOf(hit('ana'))
+    try {
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+      expect((searchPeopleMock.mock.calls[0] as any[])[1].companyRefs).toHaveLength(20)
+      sourceBatch = 25
+      searchPeopleMock.mockClear()
+      await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+      expect((searchPeopleMock.mock.calls[0] as any[])[1].companyRefs).toHaveLength(25)
+    } finally {
+      sourceBatch = undefined
+    }
   })
 
   it('marks people at a company where the workspace found interest, and with Warm chosen searches only those companies', async () => {

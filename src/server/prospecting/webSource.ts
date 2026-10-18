@@ -32,9 +32,15 @@ const MAX_TITLES = 5
 const TERMS_PER_QUERY = 8
 /** Company names ORed in one query, beside the titles. */
 const NAMES_PER_QUERY = 4
-/** Most Google pages one call fetches, and how many at once: a batch of 20 companies is 5 queries, two pages deep at most. */
-const MAX_PAGES_PER_CALL = 10
-const PAGES_AT_ONCE = 10
+/**
+ * Companies a companies-first batch takes (search.ts): SocialFetch's search
+ * takes 20, but here a batch is queries of NAMES_PER_QUERY, so a bigger one
+ * covers more companies in the same rounds of pages.
+ */
+const COMPANIES_PER_SEARCH = 40
+/** Most Google pages one call fetches, and how many at once: a batch of 40 companies is 10 queries, two pages deep at most. */
+const MAX_PAGES_PER_CALL = 20
+const PAGES_AT_ONCE = 20
 /** People with a title searched a page usually brings: how many pages are fetched at once for what's still needed. */
 const PEOPLE_PER_PAGE = 7
 /** A page with fewer profiles than this is the last its query has. */
@@ -198,6 +204,8 @@ export function createWebSource(
   }
 
   return {
+    companiesPerSearch: COMPANIES_PER_SEARCH,
+
     searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
       if (!lookups.searchCompanies) throw new Error('Company search is not available.')
       return lookups.searchCompanies(filters)
