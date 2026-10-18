@@ -68,7 +68,7 @@ vi.mock('../db', () => ({
     getAllowance: () => allowance,
     getProspectCompany: (ref: string) =>
       ref === '42'
-        ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000 }
+        ? { ref, name: 'Barclays', domain: 'barclays.com', headcount: 80000, slug: 'barclays' }
         : ref === '7'
           ? { ref, name: 'Acme', domain: 'acme.com', headcount: 30 }
           : (prospectCompanies.find((c: { ref: string }) => c.ref === ref) ?? null),
@@ -1208,6 +1208,26 @@ describe("searchPeople with the host's shared database", () => {
           ['hal', 'Barclays', '42'],
         ])
         expect(funnel).toMatchObject({ profilesBought: 3, headlineOtherEmployer: 1 })
+      } finally {
+        for (const h of ['eve', 'fay', 'hal']) delete profiles[h]
+        unhost()
+      }
+    })
+
+    it("leaves out someone at another company of the same name, by its LinkedIn page", async () => {
+      free()
+      try {
+        employers = {}
+        companyPage = barclays
+        const web = (p: PersonResult): PersonResult => ({ ...p, source: 'web', company: 'Barclays' })
+        // All three profiles say Barclays. Eve's links another company's page (a same-named firm), Fay's the
+        // searched one's, and Hal's none, which can't say she's elsewhere.
+        profiles.eve = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: 'barclays-design-studio', companySlug: 'barclays-design-studio' }
+        profiles.fay = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: 'barclays', companySlug: 'barclays' }
+        profiles.hal = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: null }
+        searchPage = pageOf(web(hit('eve', 'Analyst')), web(hit('fay', 'Analyst')), web(hit('hal', 'Analyst')))
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(res.items.map((p) => p.firstName).sort()).toEqual(['fay', 'hal'])
       } finally {
         for (const h of ['eve', 'fay', 'hal']) delete profiles[h]
         unhost()

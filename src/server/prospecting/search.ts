@@ -133,7 +133,7 @@ const SHARED_FRESH_MS = 90 * 24 * 60 * 60_000
 
 type Db = typeof import('../db')['db']
 /** Where someone works, as far as matching it to a company goes: the name, and the company page if there is one. */
-type Employer = Pick<PersonResult, 'company' | 'companyRef'>
+type Employer = Pick<PersonResult, 'company' | 'companyRef' | 'companySlug'>
 
 interface Enriched {
   person: PersonResult
@@ -1169,12 +1169,22 @@ async function processBatch(
   // someone works only when it could be a company's: LinkedIn's search files
   // everyone who typed "clean" or "food industry" under a company of that name.
   const typedAt = (p: Employer, name: string) => plainlySameCompany(p.company, name, Boolean(p.companyRef)) && (Boolean(p.companyRef) || isCompanyName(p.company))
+  // Another company of the same name: the employer's LinkedIn page isn't the searched company's.
+  // A web search finds people by the companies' names, and small companies share them (a fifth of
+  // hq's with 50 or fewer staff shared theirs with another it had found, 2026-10-18): their emails
+  // were guessed at the wrong company's domain, most refused. Only where both pages are known by
+  // name; a numeric id says nothing against a name.
+  const pageName = (v: string | null | undefined) => (v && !/^\d+$/.test(v) ? v.toLowerCase() : null)
+  const otherPage = (e: Employer, ref: string) => {
+    const theirs = pageName(db.getProspectCompany(ref)?.slug)
+    const mine = pageName(e.companySlug) ?? pageName(e.companyRef)
+    return Boolean(theirs && mine && theirs !== mine)
+  }
   // Whether an employer is one this search is for: the chosen company, or one of a companies-first batch.
-  const searchedNames = [...(companySet?.values() ?? [])]
   const atSearched: ((e: Employer) => boolean) | undefined = company
-    ? (e) => e.companyRef === company.ref || typedAt(e, company.name)
+    ? (e) => e.companyRef === company.ref || (typedAt(e, company.name) && !otherPage(e, company.ref))
     : companySet?.size
-      ? (e) => Boolean(e.companyRef && companySet.has(e.companyRef)) || searchedNames.some((n) => typedAt(e, n))
+      ? (e) => Boolean(e.companyRef && companySet.has(e.companyRef)) || [...companySet].some(([ref, n]) => typedAt(e, n) && !otherPage(e, ref))
       : undefined
   const knownEmployer = (p: PersonResult): { ref: string; name: string } | null => {
     if (p.previously === 'saved' || p.profileChecked) return null

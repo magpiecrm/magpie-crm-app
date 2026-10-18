@@ -45,7 +45,7 @@ export function refineFromProfile(
   }
 }
 
-type Employer = Pick<CurrentJob, 'company' | 'companyRef'>
+type Employer = Pick<CurrentJob, 'company' | 'companyRef' | 'companySlug'>
 
 /**
  * Which of someone's current jobs they're shown in. A profile lists them in
