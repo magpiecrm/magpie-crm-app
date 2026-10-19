@@ -30,11 +30,22 @@ const SOURCE = 'web' as const
 const MAX_TITLES = 5
 /** Phrases ORed in one query: Google reads the first 32 words of a query. */
 const TERMS_PER_QUERY = 8
-/** Company names ORed in one query, beside the titles. */
-const NAMES_PER_QUERY = 4
+/**
+ * Company names ORed in one query beside the titles: as many as fit in the
+ * words Google reads of a query, up to a ten. On hq's companies (2026-10-19)
+ * that was 5.7 for five founder titles and 7.6 for "Sales Manager", against
+ * four a query: 30-48% fewer pages, a page still holding ten results, so
+ * per person found 20% fewer pages for the founders and about as many for
+ * the sales managers. Four long names had run past the 32 words, and Google
+ * ignored those past it.
+ */
+const QUERY_WORDS = 32
+const MAX_NAMES_PER_QUERY = 10
+/** Words in a query as Google counts them, near enough: operators and ORs count, quotes and brackets don't. */
+const wordsIn = (query: string) => query.replace(/[()"“”]/g, ' ').split(/\s+/).filter(Boolean).length
 /**
  * Companies a companies-first batch takes (search.ts): SocialFetch's search
- * takes 20, but here a batch is queries of NAMES_PER_QUERY, so a bigger one
+ * takes 20, but here a batch is queries of a few names each, so a bigger one
  * covers more companies in the same rounds of pages.
  */
 const COMPANIES_PER_SEARCH = 40
@@ -116,7 +127,21 @@ export function queryPlan(filters: PeopleFilters, company: CompanyRef | null): S
   const who = (c: string[]) => (c.length ? ` ${anyOf(c)}` : '')
   // Companies found first (search.ts): their names, a few to a query beside the titles.
   const names = (filters.companyRefs ?? []).map((ref) => filters.companyNames?.[ref]).filter((n): n is string => Boolean(n && companyKey(n).length >= 3))
-  if (names.length) return chunks(names, NAMES_PER_QUERY).map((batch) => ({ query: `${profileSite()}${who(terms.slice(0, 6))} ${anyOf(batch)}${keyword}`, maxPage: 2 }))
+  if (names.length) {
+    const query = (batch: string[]) => `${profileSite()}${who(terms.slice(0, 6))} ${anyOf(batch)}${keyword}`
+    const steps: Step[] = []
+    let batch: string[] = []
+    for (const name of names) {
+      const more = [...batch, name]
+      if (batch.length && (more.length > MAX_NAMES_PER_QUERY || wordsIn(query(more)) > QUERY_WORDS)) {
+        steps.push({ query: query(batch), maxPage: 2 })
+        batch = []
+      }
+      batch.push(name)
+    }
+    if (batch.length) steps.push({ query: query(batch), maxPage: 2 })
+    return steps
+  }
   const at = company ? ` ${phrase(company.name)}` : ''
   if (!terms.length && !at && !keyword) return []
   // Searching everywhere, the country named: Google matches it in a profile's location, so on the

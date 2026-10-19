@@ -63,10 +63,15 @@ describe('queryPlan', () => {
     expect(queryPlan({ titles: ['Founder'] }, { ref: '1', name: 'Larkspur Labs' })[0].query).toBe('site:linkedin.com/in "Founder" "Larkspur Labs"')
     const names = Object.fromEntries(['Aster', 'Birch', 'Cedar', 'Daisy', 'Elm Co'].map((n, i) => [String(i), n]))
     const plan = queryPlan({ titles: ['Founder'], companyRefs: Object.keys(names), companyNames: names }, null)
-    expect(plan.map((s) => s.query)).toEqual([
-      'site:linkedin.com/in "Founder" ("Aster" OR "Birch" OR "Cedar" OR "Daisy")',
-      'site:linkedin.com/in "Founder" "Elm Co"',
-    ])
+    expect(plan.map((s) => s.query)).toEqual(['site:linkedin.com/in "Founder" ("Aster" OR "Birch" OR "Cedar" OR "Daisy" OR "Elm Co")'])
+    // As many names as fit in the 32 words Google reads, up to ten: long names, more queries, none past the limit.
+    const long = Object.fromEntries(Array.from({ length: 9 }, (_, i) => [String(i), `Northern Lights Creative Agency Number ${i}`]))
+    const longPlan = queryPlan({ titles: ['Founder', 'Owner'], companyRefs: Object.keys(long), companyNames: long }, null)
+    expect(longPlan.length).toBeGreaterThan(1)
+    for (const step of longPlan) expect(step.query.replace(/[()"]/g, ' ').split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(32)
+    expect(longPlan.map((s) => s.query.match(/Number \d/g)?.length).reduce((a, b) => a! + b!, 0)).toBe(9)
+    const short = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [String(i), `Firm${i}`]))
+    expect(queryPlan({ titles: ['Founder'], companyRefs: Object.keys(short), companyNames: short }, null).map((s) => s.query.match(/Firm\d+/g)?.length)).toEqual([10, 2])
   })
 
   it('has nothing to search without a title, company or keyword', () => {
@@ -156,8 +161,9 @@ describe('searchPeople', () => {
     const names = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [String(i), `Firm ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + i)}`]))
     // No second copies here (hedgeMs), so what's in flight at once is pages.
     const result = await createWebSource(search, lookups, { hedgeMs: 1_000, pausesMs: [0] }).searchPeople(null, { titles: ['Founder'], companyRefs: Object.keys(names), companyNames: names, count: 25 })
-    expect(most).toBe(5)
-    expect(result.funnel?.webPages).toBe(5)
+    // Twenty two-word names fit ten to a query beside one title.
+    expect(most).toBe(2)
+    expect(result.funnel?.webPages).toBe(2)
   })
 
   it("fetches each page of a batch once, and the batch's second pages in one round", async () => {
@@ -166,10 +172,10 @@ describe('searchPeople', () => {
     const names = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [String(i), `Firm ${String.fromCharCode(65 + i)}${String.fromCharCode(65 + i)}`]))
     const result = await createWebSource(search, lookups, { hedgeMs: 1_000, pausesMs: [0] }).searchPeople(null, { titles: ['Founder'], companyRefs: Object.keys(names), companyNames: names, count: 50 })
     const fetched = calls.map((c) => `${c.query.slice(-30)} p${c.opts.page ?? 1}`)
-    // Three queries of four names, two pages each: six pages, none twice (0.9.99 asked for later first pages again).
+    // Two queries (ten names and two), two pages each: four pages, none twice (0.9.99 asked for later first pages again).
     expect(new Set(fetched).size).toBe(fetched.length)
-    expect(calls.map((c) => c.opts.page ?? 1)).toEqual([1, 1, 1, 2, 2, 2])
-    expect(result.funnel?.webPages).toBe(6)
+    expect(calls.map((c) => c.opts.page ?? 1)).toEqual([1, 1, 2, 2])
+    expect(result.funnel?.webPages).toBe(4)
   })
 
   it('hands profile lookups to the other source', async () => {
