@@ -1234,6 +1234,22 @@ describe("searchPeople with the host's shared database", () => {
       }
     })
 
+    it('leaves out a web search result naming no employer whose profile shows no current job either', async () => {
+      free()
+      try {
+        employers = {}
+        companyPage = barclays
+        // Dan's result names no employer and his profile no current job: nothing says he works at Barclays.
+        profiles.hal = { title: 'Analyst', seniority: null, company: 'Barclays', companyRef: '42' }
+        searchPage = pageOf({ ...hit('dan', 'Analyst'), source: 'web' }, { ...hit('hal', 'Analyst'), source: 'web' })
+        const res = await searchPeople({ titles: ['Analyst'], companySizes: ['11-50'], industries: ['Banking'] })
+        expect(res.items.map((p) => [p.firstName, p.companyRef])).toEqual([['hal', '42']])
+      } finally {
+        delete profiles.hal
+        unhost()
+      }
+    })
+
     it("in a search by title, reads each profile for the employer they're at now, whatever the web search result says", async () => {
       free()
       try {

@@ -1369,13 +1369,18 @@ async function processBatch(
 
   // With the real employer known, people who don't work at the chosen
   // company can be dropped.
+  // Someone a lookup taught nothing (no current job) is kept where the search itself said where they
+  // work: SocialFetch's company filter does; a web search result doesn't, as Google matches a company's
+  // name anywhere on a profile. Kept, half of a web search's people had no employer to find an email
+  // at: all 7 of those revealed came back with no domain (hq-style search, 2026-10-19).
+  const placedBySearch = (p: PersonResult) => !refined.includes(p.profileUrl) && p.source !== 'web'
   if (company && atSearched) {
-    const atCompany = items.filter((p) => !refined.includes(p.profileUrl) || atSearched(p))
+    const atCompany = items.filter((p) => placedBySearch(p) || atSearched(p))
     tally.wrongCompany += items.length - atCompany.length
     items = atCompany
   } else if (companySet?.size && atSearched) {
     // Someone who has moved on since LinkedIn indexed them isn't at one of them any more.
-    const atOne = (p: PersonResult) => !refined.includes(p.profileUrl) || atSearched(p)
+    const atOne = (p: PersonResult) => placedBySearch(p) || atSearched(p)
     // Unless, with lookups free, where they do work fits the filters too.
     const fitting = free?.fits ? await employersFitting(items.filter((p) => !atOne(p)), source, free.fits) : new Map<string, CompanyResult>()
     const kept = items
