@@ -20,6 +20,8 @@ import { env } from '../env'
 import { cachedSharedFormat, sharedFormat } from './sharedFormats'
 
 let source: (CompanySource & PeopleSource) | null = null
+/** SocialFetch's own search, kept beside a web source for searches with company filters (getSource). */
+let socialFetchSource: (CompanySource & PeopleSource) | null = null
 let sourceKind = ''
 let router: ProxyRouter | null = null
 let routerKey = ''
@@ -65,21 +67,31 @@ function webPeopleSearch(): boolean {
   return env.prospectingManaged() ? hostWebPeopleSearch() : env.webSearch.people() && Boolean(env.webSearch.apiKey())
 }
 
-export function getSource(): CompanySource & PeopleSource {
+/**
+ * The source a people search uses. With web people search on, it's a mix:
+ * searches by job title alone go to the web search (webSource.ts), and those
+ * with company filters, or inside one company (`companies`), to SocialFetch's
+ * own search, which knows who works where: at companies of 1-10 staff its
+ * people's emails were verified about a third of the time, against about one
+ * in ten found by web search, which can only find whom Google has indexed
+ * (hq, 2026-10-19). Lookups go to the same place either way.
+ */
+export function getSource(opts: { companies?: boolean } = {}): CompanySource & PeopleSource {
   // The host's switch can change while the copy runs (hostRules.ts), so the source is built for the current one.
   const kind = webPeopleSearch() ? 'web' : 'socialfetch'
-  if (!source || kind !== sourceKind) {
-    const socialfetch = createSocialFetchSource(fetch, requireSocialFetchKey, { joiner: joinerStore })
+  if (!source || !socialFetchSource || kind !== sourceKind) {
+    // Profile lookups are remembered for a day (in memory only), so a person who
+    // turns up again isn't paid for twice, whichever search found them.
+    const socialfetch = withProfileCache(createSocialFetchSource(fetch, requireSocialFetchKey, { joiner: joinerStore }))
     const search = kind === 'web' ? webSearcher() : null
     // Profile and company lookups (and company search) still go to SocialFetch's API: in a hosted
     // copy, the host, which answers them from LinkedIn's public pages.
     const lookups = env.prospectingManaged() || isSocialFetchConfigured() ? socialfetch : noLookups
-    // Profile lookups are remembered for a day (in memory only), so a person who
-    // turns up again isn't paid for twice.
-    source = withProfileCache(search ? createWebSource(search, lookups) : socialfetch)
+    source = search ? createWebSource(search, lookups) : socialfetch
+    socialFetchSource = socialfetch
     sourceKind = kind
   }
-  return source
+  return opts.companies ? socialFetchSource : source
 }
 
 /**

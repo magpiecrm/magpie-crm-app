@@ -1636,7 +1636,6 @@ export async function searchPeople(
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
-  const source: Source = getSource()
   // Whether a job title is one searched for, for choosing between someone's current jobs (refine.ts).
   const titleFits = filters.titles?.length ? fitsTitles(filters.titles) : undefined
   // Only people with one of these signals (signals.ts). Warm chooses the companies first, from the workspace's own.
@@ -1646,6 +1645,10 @@ export async function searchPeople(
   const webFirst = !company && !warmFirst && kinds.some((k) => (WEB_SIGNAL_KINDS as readonly SignalKind[]).includes(k))
   const companyFirst = !company && (Boolean(filters.companySizes?.length) || warmFirst || webFirst)
   if (companyFirst && !warmFirst && !companyTerms(filters).length) throw new Error(filters.companySizes?.length ? SIZE_NEEDS_TERM : SIGNALS_NEED_TERM)
+  // With company filters (size, industry, signals), or inside one company, SocialFetch's own search, which
+  // knows who works where; by job title alone, the web's where it's on (runtime.ts getSource). A web search
+  // can't tell an industry at all.
+  const source: Source = getSource({ companies: companyFirst || Boolean(company) || Boolean(filters.industries?.length) })
   // People whose email can't be verified are hidden, unless the user chose
   // to see them marked as such (Settings → Prospect search).
   const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
