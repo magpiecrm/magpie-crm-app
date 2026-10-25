@@ -1636,6 +1636,19 @@ export async function searchPeople(
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
   const { remaining, requireAllowance } = await import('../allowance')
   const { company, includeContacts = false, fromStart = false, ...filters } = input
+  // Where the host runs the verified people search (liscrape over OpenSERP), a
+  // people search by job title is answered there instead: each person is
+  // confirmed against their live profile, so the result comes back ready and
+  // this orchestration's enrichment/top-ups/companies-first don't apply. Only
+  // title searches across companies — a search inside one company keeps the
+  // existing path.
+  {
+    const { hostVerifiedPeopleSearch } = await import('./hostRules')
+    if (hostVerifiedPeopleSearch() && !company && (filters.titles?.length ?? 0) > 0) {
+      const { verifiedPeopleSearch } = await import('./verifiedPeopleSource')
+      return verifiedPeopleSearch({ ...filters, company: null }, opts)
+    }
+  }
   // Whether a job title is one searched for, for choosing between someone's current jobs (refine.ts).
   const titleFits = filters.titles?.length ? fitsTitles(filters.titles) : undefined
   // Only people with one of these signals (signals.ts). Warm chooses the companies first, from the workspace's own.

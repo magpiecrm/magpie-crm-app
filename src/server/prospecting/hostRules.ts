@@ -48,6 +48,8 @@ interface HostAnswer {
   noTitleBatches: boolean
   /** People are found by the host's web search of public LinkedIn profiles (webSource.ts) rather than SocialFetch's people search. */
   webPeopleSearch: boolean
+  /** The host runs a verified people search (liscrape over OpenSERP): each person is confirmed against their live profile. Slower, streamed. */
+  verifiedPeopleSearch: boolean
 }
 
 export interface SharedDatabase {
@@ -154,6 +156,11 @@ export function hostWebPeopleSearch(): boolean {
   return env.prospectingManaged() && g.__hostRules?.webSearch === true && g.__hostRules?.webPeopleSearch === true
 }
 
+/** Whether the host runs the verified people search (liscrape): people search streams verified profiles instead of SocialFetch/web (verifiedPeopleSource.ts). */
+export function hostVerifiedPeopleSearch(): boolean {
+  return env.prospectingManaged() && g.__hostRules?.verifiedPeopleSearch === true
+}
+
 /** Whether small companies may be searched once with no job title (search.ts): on unless a host has turned it off. */
 export function noTitleBatches(): boolean {
   return g.__hostRules?.noTitleBatches !== false
@@ -198,6 +205,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       signals: body?.signals === true,
       noTitleBatches: body?.noTitleBatches !== false,
       webPeopleSearch: body?.peopleSearch === 'web',
+      verifiedPeopleSearch: body?.verifiedPeopleSearch === true,
     }
     g.__hostRules = answer
     return answer
