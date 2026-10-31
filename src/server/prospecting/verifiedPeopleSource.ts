@@ -6,7 +6,8 @@
 // minutes, streamed — but every person is checked, so there's no off-title,
 // enrichment or wrong-company. Each batch still goes through search.ts's funnel
 // (verifiedFunnel) before it's shown, and more people are asked for than the
-// page wants, since that leaves out about half of them or more.
+// page wants, since that leaves out about half of them or more. A country
+// also searches its cities, a few at a time (searchPlaces.ts).
 //
 // It talks to the host over the SocialFetch channel (SOCIALFETCH_BASE_URL +
 // x-api-key), which the relay proxies to liscrape's async people API
@@ -17,6 +18,7 @@ import { env } from '../env'
 import { requireSocialFetchKey } from './settings'
 import { classifySeniority } from './seniority'
 import { logSearch, newSearchId } from './searchLog'
+import type { PlacesPlan } from './searchPlaces'
 import { HEADCOUNT_BUCKETS, type HeadcountBucket, type Page, type PeopleFilters, type PersonResult } from './types'
 
 /** How long to keep polling one search before returning what it has. */
@@ -188,15 +190,18 @@ export interface VerifiedFunnel {
   hidden(person: PersonResult): boolean
   /** Whose email is likeliest to be found, first, for when there's less room than people. */
   findableFirst(people: PersonResult[]): PersonResult[]
-  /** Everyone the search kept: what the funnel did, for the log, usage and the page. */
-  finish(items: PersonResult[]): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean }
+  /** The cities this search takes in its country (searchPlaces.ts). */
+  plan: Pick<PlacesPlan, 'places' | 'placesOnly'>
+  /** Everyone the search kept, and whether it ran: what the funnel did, for the log, usage and the page, and where the next search takes up. */
+  finish(items: PersonResult[], ran: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
 }
 
 const NO_FUNNEL: VerifiedFunnel = {
   prepare: async (people) => people,
   hidden: () => false,
   findableFirst: (people) => people,
-  finish: () => ({ counts: {}, usage: {}, details: [], resumed: false }),
+  plan: { places: [], placesOnly: false },
+  finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }),
 }
 
 export interface VerifiedDeps {
@@ -252,6 +257,7 @@ export async function verifiedPeopleSearch(
     locations: input.country?.trim() ? [input.country.trim()] : [],
     industries: input.industries ?? [],
     sizes,
+    ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
     limit: Math.min(MAX_ASKED, count * ASKED_PER_SHOWN),
   }
 
@@ -306,9 +312,9 @@ export async function verifiedPeopleSearch(
     if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
   }
 
-  const kept = funnel.finish(items)
+  const kept = funnel.finish(items, stop !== 'source failed')
   const shown = usable()
-  const counts = { hits: found, shown, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
+  const counts = { hits: found, shown, places: funnel.plan.places.length, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,
@@ -322,7 +328,7 @@ export async function verifiedPeopleSearch(
       country: input.country?.trim() || null,
       company: null,
       keyword: Boolean(input.keyword?.trim()),
-      page: 'first',
+      page: input.cursor ? 'more' : funnel.plan.placesOnly ? 'resumed' : 'first',
     },
     counts,
     stop,
@@ -334,7 +340,7 @@ export async function verifiedPeopleSearch(
 
   return {
     items,
-    nextCursor: null,
+    nextCursor: kept.nextCursor,
     reportedTotal: found,
     warnings: [],
     details: kept.details,

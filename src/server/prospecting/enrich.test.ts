@@ -1828,4 +1828,19 @@ describe('the verified people search, through the funnel', () => {
     expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 0, prospectCredits: 0 })
     expect((await searchPeople({ ...filters, fromStart: true })).items).toHaveLength(1)
   })
+
+  it("asks about the country's cities a few at a time, and takes up where the last search stopped", async () => {
+    hostFinds([])
+    const filters = { titles: ['Founder'], country: 'United States' }
+    const first = await searchPeople({ ...filters, fromStart: true })
+    expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['New York']), placesOnly: false })
+    expect(first.nextCursor).toBe('places:6')
+    asked = []
+    const next = await searchPeople(filters)
+    expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Boston']), placesOnly: true })
+    expect(next).toMatchObject({ resumed: true, nextCursor: 'places:12' })
+    asked = []
+    await searchPeople({ ...filters, fromStart: true })
+    expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['New York']), placesOnly: false })
+  })
 })

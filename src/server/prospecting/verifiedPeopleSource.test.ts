@@ -95,7 +95,8 @@ describe('verifiedPeopleSearch', () => {
       prepare: async (people) => people.filter((p) => p.lastName !== over.gone).map((p) => (p.company === over.dead ? { ...p, catchAll: true } : p)),
       hidden: (p: PersonResult) => Boolean(p.catchAll),
       findableFirst: (people) => people,
-      finish: (items) => ({ counts: { hiddenUnverifiable: items.filter((p) => p.catchAll).length }, usage: { searchDeadDomain: items.filter((p) => p.catchAll).length }, details: ['left out'], resumed: true }),
+      plan: { places: [], placesOnly: false },
+      finish: (items) => ({ counts: { hiddenUnverifiable: items.filter((p) => p.catchAll).length }, usage: { searchDeadDomain: items.filter((p) => p.catchAll).length }, details: ['left out'], resumed: true, nextCursor: null }),
     })
     const at = (name: string, company: string) => person({ profileUrl: `https://x/in/${name}`, name: `A ${name}`, company: { ...person().company, name: company } })
 
@@ -159,6 +160,26 @@ describe('verifiedPeopleSearch', () => {
       await verifiedPeopleSearch({ titles: ['Founder'], count: 25 }, {}, { calls: c, sleep: async () => {}, now: () => 0 })
       await verifiedPeopleSearch({ titles: ['Founder'], count: 100 }, {}, { calls: c, sleep: async () => {}, now: () => 0 })
       expect(sent.map((b) => b.limit)).toEqual([100, 200])
+    })
+
+    it('sends the cities only when there are some, and carries the next cursor', async () => {
+      const sent: any[] = []
+      const c = { start: async (b: unknown) => { sent.push(b); return { id: 's1' } }, poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
+      const finish = vi.fn(() => ({ counts: {}, usage: {}, details: [], resumed: true, nextCursor: 'places:12' }))
+      const page = await verifiedPeopleSearch({ titles: ['Founder'], cursor: 'places:6' }, {}, { calls: c, sleep: async () => {}, now: () => 0, funnel: { ...funnel(), plan: { places: ['Boston', 'Seattle'], placesOnly: true }, finish } })
+      await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0 })
+      expect(sent[0]).toMatchObject({ places: ['Boston', 'Seattle'], placesOnly: true })
+      expect(sent[1]).not.toHaveProperty('places')
+      expect(page.nextCursor).toBe('places:12')
+      expect(finish).toHaveBeenCalledWith([], true)
+      expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ page: 'more' }), counts: expect.objectContaining({ places: 2 }) }))
+    })
+
+    it('tells the funnel when the search failed, so it keeps its place', async () => {
+      const finish = vi.fn(() => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }))
+      const c = { start: async () => ({ id: 's1' }), poll: async () => null }
+      await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0, funnel: { ...funnel(), finish } })
+      expect(finish).toHaveBeenCalledWith([], false)
     })
 
     it('logs what the host search did as counts', async () => {

@@ -19,6 +19,7 @@ import { isPlatformDomain } from './platformDomains'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
+import { placesFor } from './searchPlaces'
 import type { VerifiedFunnel } from './verifiedPeopleSource'
 import { companyKey, cursorIsNoTitle, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -1632,8 +1633,8 @@ const emptyTally = (): Tally => ({
  * companies where no email can be verified are dealt with before anyone is
  * shown or charged for. Without it most of hq's first lookups there were
  * catch-all companies (16 of 21, 2026-10-31). It also keeps who a search has
- * shown: a verified search starts from the top each time, so asking again
- * would otherwise show and charge for the same people.
+ * shown, and which of the country's cities it reached (searchPlaces.ts), so
+ * asking again moves on rather than showing and charging for the same people.
  */
 async function verifiedFunnel(
   input: PeopleFilters & { company?: { ref: string; name: string } | null; includeContacts?: boolean },
@@ -1652,9 +1653,12 @@ async function verifiedFunnel(
   const positionKey = searchPositionKey(input)
   const shownHashes = shownFor(positionKey, !fromStart)
   const hashOf = (p: PersonResult) => profileHash(p.profileUrl) ?? p.profileUrl
+  const saved = !input.cursor && !fromStart ? db.getSearchPosition(positionKey) : null
+  const plan = placesFor(input.country, new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size, input.cursor ?? saved)
   let repeats = 0
   let spared = 0
   return {
+    plan,
     hidden,
     findableFirst,
     async prepare(people) {
@@ -1664,9 +1668,11 @@ async function verifiedFunnel(
       spared += batch.spared
       return batch.items
     },
-    finish(items) {
+    finish(items, ran) {
       for (const p of items) shownHashes.add(hashOf(p))
       keepShown(positionKey, shownHashes)
+      // A search that failed hasn't been through its cities: the next one takes them.
+      if (ran) db.setSearchPosition(positionKey, plan.next)
       const hiddenPeople = items.filter(hidden)
       const shared = items.filter((p) => p.shared && !hidden(p)).length
       const details: string[] = []
@@ -1698,7 +1704,8 @@ async function verifiedFunnel(
           searchSkippedNotWorking: tally.skippedNotWorking,
         },
         details,
-        resumed: repeats > 0,
+        resumed: repeats > 0 || plan.placesOnly,
+        nextCursor: ran ? plan.next : (input.cursor ?? null),
       }
     },
   }
