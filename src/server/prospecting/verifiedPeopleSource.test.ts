@@ -63,6 +63,12 @@ describe('verifiedPeopleSearch', () => {
     expect(onPeople.mock.calls[0][0].items).toHaveLength(2)
   })
 
+  it('marks someone found on a company website, with nothing to look up when saved', async () => {
+    const row = person({ profileUrl: 'https://larkspur.example/about#jane-doe', title: 'Founder', titleVerified: false, fromWebsite: true })
+    const page = await verifiedPeopleSearch({ titles: ['Founder'] }, {}, deps(calls([{ found: 1, nextCursor: 1, people: [row] }])))
+    expect(page.items[0]).toMatchObject({ profileUrl: 'https://larkspur.example/about#jane-doe', fromWebsite: true, profileChecked: true, titleExact: false })
+  })
+
   it('stops at the requested count and de-dupes across polls', async () => {
     const dup = person()
     const c = calls([
@@ -86,7 +92,7 @@ describe('verifiedPeopleSearch', () => {
     let sent: any = null
     const c = { start: async (b: unknown) => { sent = b; return { id: 's1' } }, poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
     await verifiedPeopleSearch({ titles: ['Sales Manager'], industries: ['Financial Services'], companySizes: ['1-10', '51-200'], country: 'GB', count: 10 }, {}, { calls: c as any, sleep: async () => {}, now: () => 0 })
-    expect(sent).toEqual({ titles: ['Sales Manager'], locations: ['GB'], industries: ['Financial Services'], sizes: ['1', '2-10', '51-200'], limit: 40 })
+    expect(sent).toEqual({ titles: ['Sales Manager'], locations: ['GB'], industries: ['Financial Services'], sizes: ['1', '2-10', '51-200'], founderSites: true, limit: 40 })
   })
 
   describe('with the funnel', () => {

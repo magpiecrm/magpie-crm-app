@@ -89,7 +89,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
     deps.db.addDisclosure({
       contact_hash: emailHash(held.email),
       profile_hash: profileHash(person.profileUrl),
-      sources: [person.source],
+      sources: [person.fromWebsite ? 'website' : person.source],
       event: 'revealed',
       notice_status: null,
     })
@@ -185,7 +185,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
   deps.db.addDisclosure({
     contact_hash: emailHash(found.email),
     profile_hash: profileHash(person.profileUrl),
-    sources: [person.source],
+    sources: [person.fromWebsite ? 'website' : person.source],
     event: 'revealed',
     notice_status: null,
   })

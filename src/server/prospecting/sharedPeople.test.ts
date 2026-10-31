@@ -102,6 +102,7 @@ describe('the shared database', () => {
     const { fetchImpl, sent } = host({ contributing: true })
     await refreshHostRules(fetchImpl)
     contribute({ ...jane, shared: '7.2026-10-11.sig' }, 'jane.smith@acme.com', 'verified', fetchImpl)
+    contribute({ ...jane, fromWebsite: true }, 'jane.smith@acme.com', 'verified', fetchImpl)
     await settle()
     expect(sent).toEqual([])
   })
@@ -129,6 +130,7 @@ describe('the shared database', () => {
         contact(4, { email_status: 'catch_all_likely' }),
         contact(5, { status: 'bounced' }),
         contact(6, { source: 'shared' }), // its email came from the database
+        contact(8, { source: 'website' }), // found on their company's site, not a profile
         contact(7),
       ])
       const out = host({ contributing: false })

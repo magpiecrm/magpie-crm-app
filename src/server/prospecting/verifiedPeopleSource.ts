@@ -86,6 +86,8 @@ interface HostPerson {
   name: string
   title: string
   titleVerified: boolean
+  /** Found on their company's website rather than a profile (the host's sitefounders). */
+  fromWebsite?: boolean
   country: string | null
   company: { name: string; slug: string | null; url: string | null; industry: string | null; sizeBand: string | null; employees: number | null; website: string | null } | null
 }
@@ -109,7 +111,9 @@ function mapPerson(row: HostPerson, searchId: string): PersonResult {
     // The title was confirmed against the live profile's mask.
     titleExact: row.titleVerified,
     // liscrape already confirmed the employer against the live profile, so saving needn't pay to look it up again.
+    // Someone found on a company's own site has no profile to look up, and works where the site says.
     profileChecked: true,
+    ...(row.fromWebsite ? { fromWebsite: true } : {}),
     ...(c?.sizeBand ? { companySize: bandToBucket(c.sizeBand) } : {}),
     ...(c ? {} : { noCompany: true }),
     searchId,
@@ -285,6 +289,8 @@ export async function verifiedPeopleSearch(
     industries: input.industries ?? [],
     sizes,
     ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
+    // The host also reads company websites, where it runs that and the filter suits it.
+    founderSites: true,
     limit: Math.min(MAX_ASKED, (count - usable()) * ASKED_PER_SHOWN),
   })
 

@@ -176,6 +176,14 @@ describe('saveProspects', () => {
     expect(JSON.stringify(entry)).not.toMatch(/jane|smith|acme|linkedin/i)
   })
 
+  it('saves someone found on a company website as that, with no LinkedIn profile, and logs where they came from', async () => {
+    const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any }
+    await saveProspects(1, [person('Jane', 'Smith', { profileUrl: 'https://acme.com/about#jane-smith', fromWebsite: true, source: 'web', profileChecked: true })], deps)
+    expect(state.contacts[0]).toMatchObject({ email: 'jane.smith@acme.com', source: 'website', email_status: 'verified' })
+    expect('linkedin_url' in state.contacts[0]).toBe(false)
+    expect(state.disclosure[0]).toMatchObject({ event: 'saved', sources: ['website'] })
+  })
+
   it("keeps their LinkedIn profile and country with the contact, and fills them in for one saved before they were kept", async () => {
     const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe', 'bob.jones@acme.com': 'safe' }), db: fakeDb as any }
     await saveProspects(1, [person('Jane', 'Smith')], deps)

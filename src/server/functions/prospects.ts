@@ -131,6 +131,7 @@ const personInput = z.object({
   country: z.string().trim().max(100).nullable(),
   source: z.enum(['socialfetch', 'web']),
   profileChecked: z.boolean().optional(),
+  fromWebsite: z.boolean().optional(),
   previously: z.enum(['saved', 'revealed']).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   emailStatus: z.enum(EMAIL_STATUSES).optional(),

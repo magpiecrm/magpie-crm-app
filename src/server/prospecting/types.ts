@@ -12,7 +12,9 @@
 export type SourceId = 'socialfetch' | 'web'
 
 /** Found by prospect search, by either source. */
-export const fromProspectSearch = (source: string | null | undefined): boolean => source === 'socialfetch' || source === 'web'
+export const fromProspectSearch = (source: string | null | undefined): boolean => source === 'socialfetch' || source === 'web' || source === 'website'
+/** A person found on their company's own website: never sent to the host's shared database, which holds people from profiles. */
+export const sharedWithHost = (source: string | null | undefined): boolean => fromProspectSearch(source) && source !== 'website'
 
 export const SENIORITY_LEVELS = [
   'owner',
@@ -132,6 +134,12 @@ export interface PersonResult {
    * sent anywhere never carries this.
    */
   otherJobs?: CurrentJob[]
+  /**
+   * Found on their company's own website, not on LinkedIn: `profileUrl` is
+   * that page, and `title` is what the page calls them, unconfirmed by a
+   * live profile. Saved with the source `website`.
+   */
+  fromWebsite?: boolean
   /**
    * Their profile has already been looked up (3 credits), whether or not it
    * listed a current job. Saving won't pay for the same lookup again.

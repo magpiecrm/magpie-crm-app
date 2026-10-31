@@ -60,7 +60,10 @@ key), with the app's actions as tools.
     sends the host each
     contact saved from search with a verified email, for the host's shared
     database. The host is that database's controller and sends the people in
-    it their notice; nothing imported, guessed or signed-up is ever sent, and
+    it their notice; nothing imported, guessed or signed-up is ever sent, nor
+    anyone found on their company's website (`fromWebsite`, a host's verified
+    search can add these for founder-type titles at small companies, marked
+    in the results, contact source `website`), and
     a copy that isn't hosted or isn't contributing sends nothing. Where the host
     has switched searching on, any hosted copy's search also asks it which of
     the people found it already holds (by profile hash): their job and

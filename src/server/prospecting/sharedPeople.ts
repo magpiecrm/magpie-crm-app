@@ -28,7 +28,7 @@
 import { env } from '../env'
 import { refreshHostRules, sharedDatabase } from './hostRules'
 import { profileHash } from './suppressionHash'
-import { fromProspectSearch, type EmailStatus, type PersonResult, type Seniority } from './types'
+import { sharedWithHost, type EmailStatus, type PersonResult, type Seniority } from './types'
 
 const TIMEOUT_MS = 10_000
 /** A search doesn't wait long to hear who's held: without an answer it looks everyone up as before. */
@@ -70,7 +70,7 @@ export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getPr
   }
   const from = settings?.shared_offered_until ?? ''
   const waiting = db.data.contacts
-    .filter((c) => fromProspectSearch(c.source) && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email))
+    .filter((c) => sharedWithHost(c.source) && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
   if (waiting.length === 0) return 0
   let size = Math.min(BATCH, waiting.length)
@@ -190,7 +190,7 @@ export async function setContributing(contribute: boolean, actor: string, fetchI
  */
 export function contribute(person: PersonResult, email: string, status: EmailStatus, fetchImpl: typeof fetch = fetch): void {
   // Someone whose email came from the database isn't sent back to it as newly verified.
-  if (!sharedDatabase()?.contributing || status !== 'verified' || !fromProspectSearch(person.source) || person.shared) return
+  if (!sharedDatabase()?.contributing || status !== 'verified' || !sharedWithHost(person.source) || person.fromWebsite || person.shared) return
   const { profileUrl, firstName, lastName, title, company, companyRef, country, source } = person
   void post('/v1/pool/contribute', { people: [{ profileUrl, firstName, lastName, title, company, companyRef, country, email, emailStatus: status, source }] }, fetchImpl).catch(() => {})
 }

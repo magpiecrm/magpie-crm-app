@@ -237,7 +237,7 @@ async function processPerson(
   // Where their profile is and the country on it, kept with the contact. A
   // contact saved before these were kept gets them the next time they're saved.
   const profile = {
-    ...(person.profileUrl ? { linkedin_url: person.profileUrl } : {}),
+    ...(person.profileUrl && !person.fromWebsite ? { linkedin_url: person.profileUrl } : {}),
     ...(person.country?.trim() ? { country: person.country.trim() } : {}),
   }
   if (existing) {
@@ -248,7 +248,7 @@ async function processPerson(
 
   deps.db.setContactProspectFields(found.email, {
     // `shared`: the email came from the host's shared database, so this contact is never contributed back to it.
-    source: held ? 'shared' : person.source,
+    source: held ? 'shared' : person.fromWebsite ? 'website' : person.source,
     email_status: found.status,
     notice_status: 'pending',
     ...profile,
@@ -256,7 +256,7 @@ async function processPerson(
   deps.db.addDisclosure({
     contact_hash: emailHash(found.email),
     profile_hash: profileHash(person.profileUrl),
-    sources: [person.source],
+    sources: [person.fromWebsite ? 'website' : person.source],
     event: 'saved',
     notice_status: 'pending',
   })
