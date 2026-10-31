@@ -260,28 +260,12 @@ function TitleText({ person, refined }: { person: PersonResult; refined: boolean
   return (
     <span className="inline-flex items-start gap-1 flex-wrap">
       <span>{person.title || '—'}</span>
-      {person.fromWebsite && (
-        <span
-          title="Found on their company's own website, which calls them this. There's no LinkedIn profile behind it, so the job title isn't confirmed by one."
-          className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground"
-        >
-          From their website
-        </span>
-      )}
       {person.related && (
         <span
           title="Not one of the job titles you searched: someone in a related role in the same department, shown because too few people here have those titles"
           className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground whitespace-nowrap"
         >
           Related role
-        </span>
-      )}
-      {person.mailCheck === 'pattern' && (
-        <span
-          title="Their company's email format is already known from addresses confirmed there, so a Reveal is likely to find theirs"
-          className="inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground whitespace-nowrap"
-        >
-          Email likely
         </span>
       )}
       {person.shared ? (
