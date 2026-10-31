@@ -306,6 +306,16 @@ export async function verifiedPeopleSearch(
   let stop = 'time limit'
   let roundFound = 0
 
+  /** Makes `people` ready and adds them to the page, as far as there's room. */
+  const take = async (people: PersonResult[]) => {
+    const ready = people.length ? await funnel.prepare(people) : []
+    // When there's less room than people, those whose email is likeliest to be found take it.
+    const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
+    const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
+    items.push(...taken)
+    if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
+  }
+
   /** One batch of cities, to the end of its host search; false if it couldn't start. */
   const runRound = async (): Promise<boolean> => {
     const started = await calls.start(body()).catch(() => null)
@@ -318,6 +328,8 @@ export async function verifiedPeopleSearch(
     let cursor = 0
     let status = 'running'
     roundFound = 0
+    // Wait for the end of the batch: they only take the room those with a live profile leave.
+    const fromWebsite: PersonResult[] = []
     stop = 'time limit'
     try {
       while (now() - roundStartedAt < MAX_WAIT_MS && usable() < count) {
@@ -335,14 +347,10 @@ export async function verifiedPeopleSearch(
         for (const row of page.people) {
           if (!row?.profileUrl || seen.has(row.profileUrl)) continue
           seen.add(row.profileUrl)
-          fresh.push(mapPerson(row, searchId))
+          const person = mapPerson(row, searchId)
+          ;(person.fromWebsite ? fromWebsite : fresh).push(person)
         }
-        const ready = fresh.length ? await funnel.prepare(fresh) : []
-        // When there's less room than people, those whose email is likeliest to be found take it.
-        const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
-        const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
-        items.push(...taken)
-        if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
+        await take(fresh)
         if (usable() >= count) {
           stop = 'full'
           break
@@ -357,6 +365,10 @@ export async function verifiedPeopleSearch(
     } finally {
       // Still spending the host's proxy data for people nobody will read.
       if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
+    }
+    if (fromWebsite.length && usable() < count) {
+      await take(fromWebsite)
+      if (usable() >= count) stop = 'full'
     }
     return true
   }

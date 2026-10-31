@@ -69,6 +69,37 @@ describe('verifiedPeopleSearch', () => {
     expect(page.items[0]).toMatchObject({ profileUrl: 'https://larkspur.example/about#jane-doe', fromWebsite: true, profileChecked: true, titleExact: false })
   })
 
+  describe('people found on a company website', () => {
+    const site = (name: string) => person({ profileUrl: `https://larkspur.example/about#${name}`, name: `A ${name}`, titleVerified: false, fromWebsite: true })
+    const profile = (name: string) => person({ profileUrl: `https://x/in/${name}`, name: `A ${name}` })
+
+    it('only take the room left at the end of a batch, even when they came first', async () => {
+      const onPeople = vi.fn()
+      const c = calls([
+        { found: 2, nextCursor: 2, people: [site('web1'), site('web2')] },
+        { found: 3, nextCursor: 3, people: [profile('one')] },
+      ])
+      const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 2 }, { onPeople }, deps(c))
+      expect(page.items.map((p) => p.lastName)).toEqual(['one', 'web1'])
+      expect(onPeople.mock.calls.map(([found]) => found.items.map((p: PersonResult) => p.lastName))).toEqual([['one'], ['web1']])
+    })
+
+    it('are left out where those with a profile fill the page', async () => {
+      const cancel = vi.fn(async () => {})
+      const c = { ...calls([{ found: 2, nextCursor: 2, people: [site('web1'), profile('one')] }, { found: 3, nextCursor: 3, people: [profile('two')] }]), cancel }
+      const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 2 }, {}, { ...deps(c), now: () => 1_000 })
+      expect(page.items.map((p) => p.lastName)).toEqual(['one', 'two'])
+      expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full' }))
+    })
+
+    it('still come through when the search runs out of time', async () => {
+      let t = 0
+      const c = { start: async () => ({ id: 's1' }), poll: async () => ({ status: 'running', found: 1, nextCursor: 1, people: [site('web1')] }), cancel: async () => {} }
+      const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: c, sleep: async () => {}, now: () => (t += 120_000) })
+      expect(page.items.map((p) => p.lastName)).toEqual(['web1'])
+    })
+  })
+
   it('stops at the requested count and de-dupes across polls', async () => {
     const dup = person()
     const c = calls([
