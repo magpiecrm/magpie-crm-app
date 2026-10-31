@@ -52,7 +52,7 @@ export const Route = createFileRoute('/api/prospects/search')({
             const stillHere = setInterval(() => send({ type: 'wait' }), STILL_HERE_MS)
             const stop = joinSearch(
               JSON.stringify(input),
-              (onPeople) => searchPeople(input, { onPeople: (found) => onPeople(found) }),
+              (onPeople, listening) => searchPeople(input, { onPeople: (found) => onPeople(found), listening }),
               (line) => {
                 const reached = send(line)
                 if (line.type !== 'people') {

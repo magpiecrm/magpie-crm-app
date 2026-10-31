@@ -1654,11 +1654,23 @@ async function verifiedFunnel(
   const shownHashes = shownFor(positionKey, !fromStart)
   const hashOf = (p: PersonResult) => profileHash(p.profileUrl) ?? p.profileUrl
   const saved = !input.cursor && !fromStart ? db.getSearchPosition(positionKey) : null
-  const plan = placesFor(input.country, new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size, input.cursor ?? saved)
+  const titleCount = new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
+  let plan = placesFor(input.country, titleCount, input.cursor ?? saved)
+  const resumed = plan.placesOnly
+  // Where the cities of the batch under way start: a batch that failed hasn't been through them.
+  let roundStart = input.cursor ?? null
   let repeats = 0
   let spared = 0
   return {
-    plan,
+    get plan() {
+      return plan
+    },
+    nextRound() {
+      if (!plan.next) return false
+      roundStart = plan.next
+      plan = placesFor(input.country, titleCount, plan.next)
+      return true
+    },
     hidden,
     findableFirst,
     async prepare(people) {
@@ -1672,7 +1684,8 @@ async function verifiedFunnel(
       for (const p of items) shownHashes.add(hashOf(p))
       keepShown(positionKey, shownHashes)
       // A search that failed hasn't been through its cities: the next one takes them.
-      if (ran) db.setSearchPosition(positionKey, plan.next)
+      const next = ran ? plan.next : roundStart
+      if (ran || next !== (input.cursor ?? null)) db.setSearchPosition(positionKey, next)
       const hiddenPeople = items.filter(hidden)
       const shared = items.filter((p) => p.shared && !hidden(p)).length
       const details: string[] = []
@@ -1704,8 +1717,8 @@ async function verifiedFunnel(
           searchSkippedNotWorking: tally.skippedNotWorking,
         },
         details,
-        resumed: repeats > 0 || plan.placesOnly,
-        nextCursor: ran ? plan.next : (input.cursor ?? null),
+        resumed: repeats > 0 || resumed,
+        nextCursor: next,
       }
     },
   }
@@ -1723,8 +1736,11 @@ async function verifiedFunnel(
  */
 export async function searchPeople(
   input: PeopleFilters & { company?: { ref: string; name: string } | null },
-  /** Called with each batch's people as soon as they're ready, before the page is done (/api/prospects/search streams them). */
-  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void } = {},
+  /**
+   * `onPeople`: called with each batch's people as soon as they're ready, before the page is done (/api/prospects/search streams them).
+   * `listening`: whether anyone's still there, for a search that would go on working to fill its page.
+   */
+  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void; listening?: () => boolean } = {},
 ): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')

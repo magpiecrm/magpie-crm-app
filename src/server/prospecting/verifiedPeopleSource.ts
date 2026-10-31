@@ -36,6 +36,15 @@ const DEFAULT_COUNT = 25
 const ASKED_PER_SHOWN = 4
 /** Most people one search can ask for (the cloud's liscrapeSource.ts MAX_LIMIT). */
 const MAX_ASKED = 200
+/**
+ * Batches of cities one search works through to fill its page, while someone's
+ * watching. A narrow filter gives few people a batch, and fewer each time
+ * (14, 10 and 3 new on hq's filters, 2026-10-31), so a fourth isn't worth its
+ * proxy data: Load more takes up where this stops.
+ */
+const MAX_ROUNDS = 3
+/** No further batch is started after this long, so a search ends within about 15 minutes. */
+const NO_NEW_ROUND_AFTER_MS = 8 * 60_000
 
 /** App size buckets (HEADCOUNT_BUCKETS) -> liscrape size bands (SIZE_BANDS). */
 const BUCKET_TO_BANDS: Record<string, string[]> = {
@@ -130,6 +139,19 @@ interface HostCalls {
   cancel?: (id: string) => Promise<unknown>
 }
 
+function addStats(a: HostStats | null, b: HostStats | null): HostStats | null {
+  if (!a || !b) return a ?? b
+  const rejected = { ...a.rejected }
+  for (const [why, n] of Object.entries(b.rejected ?? {})) rejected[why] = (rejected[why] ?? 0) + n
+  return {
+    searches: a.searches + b.searches,
+    engineErrors: a.engineErrors + b.engineErrors,
+    siteIgnored: a.siteIgnored + b.siteIgnored,
+    candidates: a.candidates + b.candidates,
+    rejected,
+  }
+}
+
 function statCounts(stats: HostStats | null): Record<string, number> {
   if (!stats) return {}
   return {
@@ -190,8 +212,10 @@ export interface VerifiedFunnel {
   hidden(person: PersonResult): boolean
   /** Whose email is likeliest to be found, first, for when there's less room than people. */
   findableFirst(people: PersonResult[]): PersonResult[]
-  /** The cities this search takes in its country (searchPlaces.ts). */
+  /** The cities this batch of the search takes in its country (searchPlaces.ts). */
   plan: Pick<PlacesPlan, 'places' | 'placesOnly'>
+  /** Moves `plan` on to the next cities; false where there are none. */
+  nextRound(): boolean
   /** Everyone the search kept, and whether it ran: what the funnel did, for the log, usage and the page, and where the next search takes up. */
   finish(items: PersonResult[], ran: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
 }
@@ -201,6 +225,7 @@ const NO_FUNNEL: VerifiedFunnel = {
   hidden: () => false,
   findableFirst: (people) => people,
   plan: { places: [], placesOnly: false },
+  nextRound: () => false,
   finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }),
 }
 
@@ -216,12 +241,14 @@ export interface VerifiedDeps {
 /**
  * Runs a verified people search to completion (or until `count` people worth
  * showing or the time cap), streaming each batch through `onPeople`, and
- * cancels it at the host if it's still going. Returns the same
- * Page shape search.ts returns, so the UI and callers are unchanged.
+ * cancels it at the host if it's still going. Where the page isn't full and
+ * `listening` says someone's still there, it goes on to the country's next
+ * cities, up to MAX_ROUNDS, stopping early at cities that find nobody. Returns
+ * the same Page shape search.ts returns, so the UI and callers are unchanged.
  */
 export async function verifiedPeopleSearch(
   input: PeopleFilters & { company?: { ref: string; name: string } | null },
-  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void } = {},
+  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void; listening?: () => boolean } = {},
   deps: VerifiedDeps = {},
 ): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
   const fetchImpl = deps.fetchImpl ?? fetch
@@ -252,69 +279,98 @@ export async function verifiedPeopleSearch(
   const searchId = newSearchId()
   const startedAt = now()
   const sizes = [...new Set((input.companySizes ?? []).flatMap((b) => BUCKET_TO_BANDS[b] ?? []))]
-  const body = {
+  const body = () => ({
     titles,
     locations: input.country?.trim() ? [input.country.trim()] : [],
     industries: input.industries ?? [],
     sizes,
     ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
-    limit: Math.min(MAX_ASKED, count * ASKED_PER_SHOWN),
-  }
-
-  const started = await calls.start(body).catch(() => null)
-  if (!started) return empty(['Verified people search is busy right now — try again in a moment.'])
+    limit: Math.min(MAX_ASKED, (count - usable()) * ASKED_PER_SHOWN),
+  })
 
   const items: PersonResult[] = []
   const seen = new Set<string>()
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !funnel.hidden(p)).length
-  let cursor = 0
+  const resumedSearch = funnel.plan.placesOnly
   let found = 0
   let stats: HostStats | null = null
-  let status = 'running'
+  let places = 0
+  let rounds = 0
   let stop = 'time limit'
-  try {
-    while (now() - startedAt < MAX_WAIT_MS && usable() < count) {
-      const page = await calls.poll(started.id, cursor).catch(() => null)
-      if (!page) {
-        stop = 'source failed'
-        break
+  let roundFound = 0
+
+  /** One batch of cities, to the end of its host search; false if it couldn't start. */
+  const runRound = async (): Promise<boolean> => {
+    const started = await calls.start(body()).catch(() => null)
+    if (!started) return false
+    rounds++
+    places += funnel.plan.places.length
+    const roundStartedAt = now()
+    const earlierFound = found
+    const earlierStats = stats
+    let cursor = 0
+    let status = 'running'
+    roundFound = 0
+    stop = 'time limit'
+    try {
+      while (now() - roundStartedAt < MAX_WAIT_MS && usable() < count) {
+        const page = await calls.poll(started.id, cursor).catch(() => null)
+        if (!page) {
+          stop = 'source failed'
+          break
+        }
+        roundFound = page.found
+        found = earlierFound + page.found
+        stats = addStats(earlierStats, page.stats ?? null)
+        status = page.status
+        if (page.nextCursor != null) cursor = page.nextCursor
+        const fresh: PersonResult[] = []
+        for (const row of page.people) {
+          if (!row?.profileUrl || seen.has(row.profileUrl)) continue
+          seen.add(row.profileUrl)
+          fresh.push(mapPerson(row, searchId))
+        }
+        const ready = fresh.length ? await funnel.prepare(fresh) : []
+        // When there's less room than people, those whose email is likeliest to be found take it.
+        const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
+        const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
+        items.push(...taken)
+        if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
+        if (usable() >= count) {
+          stop = 'full'
+          break
+        }
+        // Finished at the host, with nothing left unread: a big search can finish between polls.
+        if (status !== 'running' && (page.nextCursor == null || !page.people.length)) {
+          stop = status
+          break
+        }
+        if (page.people.length < POLL_SIZE) await sleep(POLL_EVERY_MS)
       }
-      found = page.found
-      stats = page.stats ?? stats
-      status = page.status
-      if (page.nextCursor != null) cursor = page.nextCursor
-      const fresh: PersonResult[] = []
-      for (const row of page.people) {
-        if (!row?.profileUrl || seen.has(row.profileUrl)) continue
-        seen.add(row.profileUrl)
-        fresh.push(mapPerson(row, searchId))
-      }
-      const ready = fresh.length ? await funnel.prepare(fresh) : []
-      // When there's less room than people, those whose email is likeliest to be found take it.
-      const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
-      const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
-      items.push(...taken)
-      if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
-      if (usable() >= count) {
-        stop = 'full'
-        break
-      }
-      // Finished at the host, with nothing left unread: a big search can finish between polls.
-      if (status !== 'running' && (page.nextCursor == null || !page.people.length)) {
-        stop = status
-        break
-      }
-      if (page.people.length < POLL_SIZE) await sleep(POLL_EVERY_MS)
+    } finally {
+      // Still spending the host's proxy data for people nobody will read.
+      if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
     }
-  } finally {
-    // Still spending the host's proxy data for people nobody will read.
-    if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
+    return true
+  }
+
+  if (!(await runRound())) return empty(['Verified people search is busy right now — try again in a moment.'])
+  while (
+    stop === 'done' &&
+    usable() < count &&
+    roundFound > 0 &&
+    rounds < MAX_ROUNDS &&
+    now() - startedAt < NO_NEW_ROUND_AFTER_MS &&
+    opts.listening?.() &&
+    funnel.nextRound()
+  ) {
+    if (!(await runRound())) stop = 'source failed'
   }
 
   const kept = funnel.finish(items, stop !== 'source failed')
   const shown = usable()
-  const counts = { hits: found, shown, places: funnel.plan.places.length, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
+  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,
@@ -328,7 +384,7 @@ export async function verifiedPeopleSearch(
       country: input.country?.trim() || null,
       company: null,
       keyword: Boolean(input.keyword?.trim()),
-      page: input.cursor ? 'more' : funnel.plan.placesOnly ? 'resumed' : 'first',
+      page: input.cursor ? 'more' : resumedSearch ? 'resumed' : 'first',
     },
     counts,
     stop,

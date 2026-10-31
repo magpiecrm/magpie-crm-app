@@ -45,6 +45,14 @@ describe('a people search that is asked for more than once', () => {
     expect(s.started()).toBe(2)
   })
 
+  it('can ask whether anyone is still following it', async () => {
+    let listening = () => false
+    const leave = joinSearch<Page>('k', (_, here) => ((listening = here), new Promise(() => {})), listener().take)
+    expect(listening()).toBe(true)
+    leave()
+    expect(listening()).toBe(false)
+  })
+
   it('is kept when it finishes with nobody there, for whoever asks next', async () => {
     const s = search()
     const gone = listener()

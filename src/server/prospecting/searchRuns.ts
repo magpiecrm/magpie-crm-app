@@ -46,11 +46,12 @@ function prune(now: number) {
  * Follows the search `key` stands for, starting it with `start` unless it's
  * already running or was finished with nobody there. The listener gets the
  * people found so far, each batch after that, and then how it ended. Returns
- * a way to stop listening; the search itself carries on regardless.
+ * a way to stop listening; the search itself carries on regardless, though
+ * `start` can ask whether anyone's still there before doing more than it must.
  */
 export function joinSearch<Page>(
   key: string,
-  start: (onPeople: (found: { items: unknown[]; refined: string[] }) => void) => Promise<Page>,
+  start: (onPeople: (found: { items: unknown[]; refined: string[] }) => void, listening: () => boolean) => Promise<Page>,
   listener: Listener<Page>,
   now = Date.now(),
 ): () => void {
@@ -82,7 +83,7 @@ export function joinSearch<Page>(
     const line: SearchLine<Page> = { type: 'people', ...found }
     run.people.push(line)
     tell(line)
-  }).then(
+  }, () => run.listeners.size > 0).then(
     (page) => end({ type: 'done', page }),
     (err) => end({ type: 'error', message: err instanceof Error ? err.message : 'Search failed' }),
   )

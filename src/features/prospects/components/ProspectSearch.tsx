@@ -666,6 +666,16 @@ export function ProspectSearch() {
                 Founders and owners
               </button>
             )}
+            {peopleForm.titles.includes('Founder') && !peopleForm.titles.includes('CEO') && (
+              <button
+                type="button"
+                disabled={peopleForm.titles.length >= MAX_TITLES}
+                onClick={() => setPeopleForm({ ...peopleForm, titles: [...peopleForm.titles, 'CEO'] })}
+                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
+              >
+                Add CEO
+              </button>
+            )}
             {LEADER_TITLES.filter((t) => !peopleForm.titles.includes(t)).map((t) => (
               <button
                 key={t}

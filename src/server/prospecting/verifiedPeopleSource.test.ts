@@ -96,6 +96,7 @@ describe('verifiedPeopleSearch', () => {
       hidden: (p: PersonResult) => Boolean(p.catchAll),
       findableFirst: (people) => people,
       plan: { places: [], placesOnly: false },
+      nextRound: () => false,
       finish: (items) => ({ counts: { hiddenUnverifiable: items.filter((p) => p.catchAll).length }, usage: { searchDeadDomain: items.filter((p) => p.catchAll).length }, details: ['left out'], resumed: true, nextCursor: null }),
     })
     const at = (name: string, company: string) => person({ profileUrl: `https://x/in/${name}`, name: `A ${name}`, company: { ...person().company, name: company } })
@@ -180,6 +181,102 @@ describe('verifiedPeopleSearch', () => {
       const c = { start: async () => ({ id: 's1' }), poll: async () => null }
       await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0, funnel: { ...funnel(), finish } })
       expect(finish).toHaveBeenCalledWith([], false)
+    })
+
+    describe('filling the page from the next cities', () => {
+      /** A host that finds `each[n]` people on its nth search, and a funnel with `cities` batches of cities. */
+      const rounds = (each: number[], cities = 5) => {
+        const sent: any[] = []
+        let n = 0
+        const c = {
+          start: async (b: unknown) => {
+            sent.push(b)
+            n++
+            return { id: `s${n}` }
+          },
+          poll: async () => {
+            const people = Array.from({ length: each[n - 1] ?? 0 }, (_, i) => person({ profileUrl: `https://x/in/${n}-${i}`, name: `A P${n}x${i}` }))
+            return { status: 'done', found: people.length, nextCursor: null, people, stats: { searches: 10, engineErrors: 0, siteIgnored: 0, candidates: 5, rejected: { 'size mismatch': 2 } as Record<string, number> } }
+          },
+        }
+        let at = 0
+        const f: VerifiedFunnel = {
+          ...funnel(),
+          get plan() {
+            return { places: [`City ${at}`], placesOnly: at > 0 }
+          },
+          nextRound: () => ++at < cities,
+          finish: vi.fn(() => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null })),
+        }
+        return { sent, c, f }
+      }
+      const run = (r: ReturnType<typeof rounds>, opts: { listening?: () => boolean }, count = 10, now: () => number = () => 0) =>
+        verifiedPeopleSearch({ titles: ['Founder'], count }, opts, { calls: r.c, sleep: async () => {}, now, funnel: r.f })
+
+      it('goes on to the next cities for what the page still wants, until it is full', async () => {
+        const r = rounds([2, 8, 5])
+        const onPeople = vi.fn()
+        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 10 }, { onPeople, listening: () => true }, { calls: r.c, sleep: async () => {}, now: () => 0, funnel: r.f })
+        expect(page.items).toHaveLength(10)
+        expect(onPeople).toHaveBeenCalledTimes(2)
+        expect(r.sent.map((b) => [b.places, b.placesOnly, b.limit])).toEqual([[['City 0'], false, 40], [['City 1'], true, 32]])
+        expect(r.f.finish).toHaveBeenCalledTimes(1)
+      })
+
+      it('logs one search, added up across its batches', async () => {
+        await run(rounds([2, 3]), { listening: () => true })
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({
+          stop: 'done',
+          filters: expect.objectContaining({ page: 'first' }),
+          counts: expect.objectContaining({ hits: 5, shown: 5, rounds: 3, places: 3, serpSearches: 30, candidates: 15, 'rejected: size mismatch': 6 }),
+        }))
+      })
+
+      it('stops at three batches, and at the last city', async () => {
+        const many = rounds([1, 1, 1, 1, 1])
+        await run(many, { listening: () => true })
+        expect(many.sent).toHaveLength(3)
+        const few = rounds([1, 1, 1], 2)
+        await run(few, { listening: () => true })
+        expect(few.sent).toHaveLength(2)
+      })
+
+      it("doesn't go on for cities that found nobody", async () => {
+        const r = rounds([1, 0, 5])
+        await run(r, { listening: () => true })
+        expect(r.sent).toHaveLength(2)
+      })
+
+      it('only goes on for someone who is still there', async () => {
+        const left = rounds([1, 1])
+        await run(left, { listening: () => false })
+        expect(left.sent).toHaveLength(1)
+        const unasked = rounds([1, 1])
+        await run(unasked, {})
+        expect(unasked.sent).toHaveLength(1)
+      })
+
+      it('starts no more batches once it has taken long enough', async () => {
+        let t = 0
+        const r = rounds([1, 1, 1])
+        await run(r, { listening: () => true }, 10, () => (t += 3 * 60_000))
+        expect(r.sent).toHaveLength(1)
+      })
+
+      it('keeps who it has when a later batch fails, and tells the funnel', async () => {
+        const r = rounds([2, 1])
+        r.c.start = vi.fn().mockResolvedValueOnce({ id: 's1' }).mockResolvedValueOnce(null)
+        let polled = false
+        r.c.poll = async () => {
+          polled = true
+          return { status: 'done', found: 1, nextCursor: null, people: [person()], stats: { searches: 1, engineErrors: 0, siteIgnored: 0, candidates: 1, rejected: {} } }
+        }
+        const page = await run(r, { listening: () => true })
+        expect(polled).toBe(true)
+        expect(page.items).toHaveLength(1)
+        expect(page.warnings).toEqual([])
+        expect(r.f.finish).toHaveBeenCalledWith(page.items, false)
+      })
     })
 
     it('logs what the host search did as counts', async () => {

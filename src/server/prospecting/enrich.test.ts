@@ -1843,4 +1843,35 @@ describe('the verified people search, through the funnel', () => {
     await searchPeople({ ...filters, fromStart: true })
     expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['New York']), placesOnly: false })
   })
+
+  it('works through more cities to fill its page while someone is watching, and remembers how far it got', async () => {
+    hostFinds([person('ana', 'https://good.example')])
+    const filters = { titles: ['Founder'], country: 'United States', count: 5 }
+    const page = await searchPeople({ ...filters, fromStart: true }, { listening: () => true })
+    const starts = asked.filter((a) => a.method === 'POST').map((a) => a.body)
+    expect(starts.map((b) => [b.places[0], b.placesOnly])).toEqual([['New York', false], ['Boston', true], ['Houston', true]])
+    expect(page).toMatchObject({ resumed: false, nextCursor: 'places:18' })
+    expect(page.items).toHaveLength(1)
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ searches: 1, prospects: 1, prospectCredits: 1 })
+    asked = []
+    await searchPeople(filters, { listening: () => false })
+    expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Portland']), placesOnly: true })
+  })
+
+  it('takes up the cities of a batch that failed next time', async () => {
+    hostFinds([person('ana', 'https://good.example')])
+    const hosted = fetch
+    let starts = 0
+    vi.stubGlobal('fetch', async (target: URL | string, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(target).includes('/v2/linkedin/people/searches') && ++starts === 2) return new Response('{}', { status: 429 })
+      return hosted(target, init)
+    })
+    const filters = { titles: ['Founder'], country: 'United States', count: 5 }
+    const page = await searchPeople({ ...filters, fromStart: true }, { listening: () => true })
+    expect(page.items).toHaveLength(1)
+    expect(page.nextCursor).toBe('places:6')
+    asked = []
+    await searchPeople(filters, { listening: () => false })
+    expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Boston']), placesOnly: true })
+  })
 })
