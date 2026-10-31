@@ -19,6 +19,7 @@ import { isPlatformDomain } from './platformDomains'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
+import type { VerifiedFunnel } from './verifiedPeopleSource'
 import { companyKey, cursorIsNoTitle, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
@@ -1284,7 +1285,8 @@ async function processBatch(
   const fromListing = new Set(
     free ? [] : items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && listedEmployer(p)).map((p) => p.profileUrl),
   )
-  const toLookUp = items.filter((p) => p.previously !== 'saved' && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && !fromListing.has(p.profileUrl))
+  // Someone whose live profile has already been read (the verified search's people) isn't read again.
+  const toLookUp = items.filter((p) => p.previously !== 'saved' && !p.profileChecked && !noLookup.has(p.profileUrl) && !fromShared.has(p.profileUrl) && !fromListing.has(p.profileUrl))
   if (toLookUp.length && splitWhen?.(toLookUp.length)) {
     Object.assign(tally, counted)
     return { items: [], refined: [], lookedUp: [], shared: 0, spared: 0, split: true, unconfirmed: [] }
@@ -1616,6 +1618,92 @@ async function processBatch(
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
+const emptyTally = (): Tally => ({
+  noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
+  paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
+  employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
+  wrongCompanySameSlug: 0, siteLookupFailed: 0, employerFromListing: 0,
+})
+
+/**
+ * What the verified search's people go through before they're shown: the same
+ * processBatch as any other search's, so the host's shared database is asked
+ * about them, and opted-out people, existing contacts, hidden surnames and
+ * companies where no email can be verified are dealt with before anyone is
+ * shown or charged for. Without it most of hq's first lookups there were
+ * catch-all companies (16 of 21, 2026-10-31). It also keeps who a search has
+ * shown: a verified search starts from the top each time, so asking again
+ * would otherwise show and charge for the same people.
+ */
+async function verifiedFunnel(
+  input: PeopleFilters & { company?: { ref: string; name: string } | null; includeContacts?: boolean },
+  fromStart: boolean,
+): Promise<VerifiedFunnel> {
+  const { getSource } = await import('./runtime')
+  const { db } = await import('../db')
+  const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
+  const { profileLookupsFree } = await import('./hostRules')
+  // Only its company pages are read here: everyone's profile already was.
+  const source: Source = getSource({ companies: true })
+  const hideUnverifiable = isVerifiedOnly() && hidesUnverifiable()
+  const hidden = (p: PersonResult) => hideUnverifiable && Boolean(p.catchAll || p.noMail || p.noAnswer || p.noCompany)
+  const free = profileLookupsFree() ? { fits: null } : undefined
+  const tally = emptyTally()
+  const positionKey = searchPositionKey(input)
+  const shownHashes = shownFor(positionKey, !fromStart)
+  const hashOf = (p: PersonResult) => profileHash(p.profileUrl) ?? p.profileUrl
+  let repeats = 0
+  let spared = 0
+  return {
+    hidden,
+    findableFirst,
+    async prepare(people) {
+      const unseen = people.filter((p) => !shownHashes.has(hashOf(p)))
+      repeats += people.length - unseen.length
+      const batch = await processBatch(unseen, input.company ?? null, source, db, tally, hideUnverifiable, Boolean(input.includeContacts), undefined, undefined, free)
+      spared += batch.spared
+      return batch.items
+    },
+    finish(items) {
+      for (const p of items) shownHashes.add(hashOf(p))
+      keepShown(positionKey, shownHashes)
+      const hiddenPeople = items.filter(hidden)
+      const shared = items.filter((p) => p.shared && !hidden(p)).length
+      const details: string[] = []
+      if (tally.noSurname > 0) details.push(`${plural(tally.noSurname, 'person was', 'people were')} left out because LinkedIn hides ${tally.noSurname === 1 ? 'their surname' : 'their surnames'} (e.g. "Andy C."), so no email can be found.`)
+      if (tally.remembered > 0) details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}.`)
+      if (tally.inContacts > 0) details.push(`${plural(tally.inContacts, 'person was', 'people were')} left out because they're already in your contacts. Turn on "Include existing contacts" to see them.`)
+      return {
+        counts: {
+          repeats,
+          inContacts: tally.inContacts,
+          noSurname: tally.noSurname,
+          knownUnverifiable: tally.skippedUnverifiable,
+          remembered: tally.remembered,
+          noCompanyPage: tally.noCompany,
+          noWebsite: tally.noWebsite,
+          domainsCheckedAhead: tally.domainsChecked,
+          domainsNotChecked: tally.domainsUnchecked,
+          mailServerSilent: items.filter((p) => p.noAnswer).length,
+          hiddenUnverifiable: hiddenPeople.length,
+          fromSharedDatabase: shared,
+          lookupsSpared: spared,
+        },
+        usage: {
+          sharedPeople: shared,
+          searchNoSite: hiddenPeople.filter((p) => p.noCompany).length,
+          searchDeadDomain: hiddenPeople.filter((p) => !p.noCompany).length,
+          searchSkippedUnverifiable: tally.skippedUnverifiable,
+          searchSkippedContact: tally.skippedContact,
+          searchSkippedNotWorking: tally.skippedNotWorking,
+        },
+        details,
+        resumed: repeats > 0,
+      }
+    },
+  }
+}
+
 /**
  * People search. Search hits don't say where anyone works, and without an
  * employer there's no domain to find an email on, so every result's profile
@@ -1638,15 +1726,15 @@ export async function searchPeople(
   const { company, includeContacts = false, fromStart = false, ...filters } = input
   // Where the host runs the verified people search (liscrape over OpenSERP), a
   // people search by job title is answered there instead: each person is
-  // confirmed against their live profile, so the result comes back ready and
-  // this orchestration's enrichment/top-ups/companies-first don't apply. Only
-  // title searches across companies — a search inside one company keeps the
-  // existing path.
+  // confirmed against their live profile, so this orchestration's top-ups and
+  // companies-first don't apply, but what's left of the funnel does
+  // (verifiedFunnel). Only title searches across companies — a search inside
+  // one company keeps the existing path.
   {
     const { hostVerifiedPeopleSearch } = await import('./hostRules')
     if (hostVerifiedPeopleSearch() && !company && (filters.titles?.length ?? 0) > 0) {
       const { verifiedPeopleSearch } = await import('./verifiedPeopleSource')
-      return verifiedPeopleSearch({ ...filters, company: null }, opts)
+      return verifiedPeopleSearch({ ...filters, company: null }, opts, { funnel: await verifiedFunnel(input, fromStart) })
     }
   }
   // Whether a job title is one searched for, for choosing between someone's current jobs (refine.ts).
@@ -1702,12 +1790,7 @@ export async function searchPeople(
   const seen = new Set<string>()
   const warnings: string[] = []
   const details: string[] = []
-  const tally: Tally = {
-    noSurname: 0, alreadySaved: 0, inContacts: 0, failed: 0, noJob: 0, unconfirmed: 0, wrongCompany: 0, remembered: 0,
-    paidInContacts: 0, skippedUnverifiable: 0, skippedNotWorking: 0, skippedContact: 0, skippedOtherEmployer: 0, noLookup: 0,
-    employerByName: 0, employerByGuess: 0, employerBySite: 0, noCompany: 0, domainsChecked: 0, domainsUnchecked: 0, companyPagesRead: 0, noWebsite: 0, noSignal: 0, otherJob: 0, otherJobRefused: 0, roleStartMonth: 0, roleStartYear: 0,
-    wrongCompanySameSlug: 0, siteLookupFailed: 0, employerFromListing: 0,
-  }
+  const tally = emptyTally()
   // Hidden people don't fill the page.
   const usable = () => items.filter((p) => !hidden(p)).length
   // A batch can find a few more people than the page has room left for (each

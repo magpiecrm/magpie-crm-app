@@ -3,8 +3,10 @@
 // host's liscrape search over OpenSERP: it finds LinkedIn profiles by job title
 // and confirms each against the live profile (title mask, location, employer
 // industry/size) before returning them. It's slower than the index/web path —
-// minutes, streamed — but every person is checked, so the funnel is simple
-// (no off-title, no enrichment, no wrong-company): the people come back ready.
+// minutes, streamed — but every person is checked, so there's no off-title,
+// enrichment or wrong-company. Each batch still goes through search.ts's funnel
+// (verifiedFunnel) before it's shown, and more people are asked for than the
+// page wants, since that leaves out about half of them or more.
 //
 // It talks to the host over the SocialFetch channel (SOCIALFETCH_BASE_URL +
 // x-api-key), which the relay proxies to liscrape's async people API
@@ -20,7 +22,18 @@ import { HEADCOUNT_BUCKETS, type HeadcountBucket, type Page, type PeopleFilters,
 /** How long to keep polling one search before returning what it has. */
 const MAX_WAIT_MS = 7 * 60_000
 const POLL_EVERY_MS = 4_000
+const POLL_SIZE = 50
 const DEFAULT_COUNT = 25
+/**
+ * People asked of the host for each the page wants: the funnel hid 44-53% of
+ * those found before this search, and 16 of its first 21 (hq, 2026-10). The
+ * search is cancelled once the page is full, so this is only ever a ceiling.
+ * The host charges a search by what the page wants, not this (the cloud's
+ * liscrapeSource.ts ASKED_PER_SHOWN).
+ */
+const ASKED_PER_SHOWN = 4
+/** Most people one search can ask for (the cloud's liscrapeSource.ts MAX_LIMIT). */
+const MAX_ASKED = 200
 
 /** App size buckets (HEADCOUNT_BUCKETS) -> liscrape size bands (SIZE_BANDS). */
 const BUCKET_TO_BANDS: Record<string, string[]> = {
@@ -92,9 +105,38 @@ function mapPerson(row: HostPerson, searchId: string): PersonResult {
   }
 }
 
+/** What the host's search did, for the search log: counts and fixed reasons, nobody's details. */
+interface HostStats {
+  searches: number
+  engineErrors: number
+  siteIgnored: number
+  candidates: number
+  rejected: Record<string, number>
+}
+
+interface HostPage {
+  status: string
+  found: number
+  nextCursor: number | null
+  people: HostPerson[]
+  stats?: HostStats | null
+}
+
 interface HostCalls {
   start: (body: unknown) => Promise<{ id: string } | null>
-  poll: (id: string, cursor: number) => Promise<{ status: string; found: number; nextCursor: number | null; people: HostPerson[] } | null>
+  poll: (id: string, cursor: number) => Promise<HostPage | null>
+  cancel?: (id: string) => Promise<unknown>
+}
+
+function statCounts(stats: HostStats | null): Record<string, number> {
+  if (!stats) return {}
+  return {
+    serpSearches: stats.searches,
+    serpErrors: stats.engineErrors,
+    serpSiteIgnored: stats.siteIgnored,
+    candidates: stats.candidates,
+    ...Object.fromEntries(Object.entries(stats.rejected ?? {}).map(([why, n]) => [`rejected: ${why}`, n])),
+  }
 }
 
 /** The host relay calls over the SocialFetch channel (default), overridable for tests. */
@@ -116,18 +158,45 @@ function hostCalls(fetchImpl: typeof fetch): HostCalls {
     async poll(id, cursor) {
       const url = new URL(`/v2/linkedin/people/searches/${encodeURIComponent(id)}`, base)
       url.searchParams.set('cursor', String(cursor))
-      url.searchParams.set('limit', '50')
+      url.searchParams.set('limit', String(POLL_SIZE))
       const res = await fetchImpl(url, { headers: headers(), signal: AbortSignal.timeout(30_000) })
       if (!res.ok) return null
-      const j = (await res.json()) as { status?: string; found?: number; next_cursor?: number | null; nextCursor?: number | null; people?: HostPerson[] }
+      const j = (await res.json()) as { status?: string; found?: number; next_cursor?: number | null; nextCursor?: number | null; people?: HostPerson[]; stats?: HostStats | null }
       return {
         status: j.status ?? 'running',
         found: typeof j.found === 'number' ? j.found : 0,
         nextCursor: j.next_cursor ?? j.nextCursor ?? null,
         people: Array.isArray(j.people) ? j.people : [],
+        stats: j.stats ?? null,
       }
     },
+    async cancel(id) {
+      await fetchImpl(new URL(`/v2/linkedin/people/searches/${encodeURIComponent(id)}`, base), {
+        method: 'DELETE',
+        headers: headers(),
+        signal: AbortSignal.timeout(15_000),
+      })
+    },
   }
+}
+
+/** What's done to the host's people before they're shown (search.ts verifiedFunnel). */
+export interface VerifiedFunnel {
+  /** One batch made ready to show: some left out, and those who can't be verified marked. */
+  prepare(people: PersonResult[]): Promise<PersonResult[]>
+  /** Marked, and hidden by the page: doesn't fill it, and isn't charged for. */
+  hidden(person: PersonResult): boolean
+  /** Whose email is likeliest to be found, first, for when there's less room than people. */
+  findableFirst(people: PersonResult[]): PersonResult[]
+  /** Everyone the search kept: what the funnel did, for the log, usage and the page. */
+  finish(items: PersonResult[]): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean }
+}
+
+const NO_FUNNEL: VerifiedFunnel = {
+  prepare: async (people) => people,
+  hidden: () => false,
+  findableFirst: (people) => people,
+  finish: () => ({ counts: {}, usage: {}, details: [], resumed: false }),
 }
 
 export interface VerifiedDeps {
@@ -136,11 +205,13 @@ export interface VerifiedDeps {
   now?: () => number
   /** Override the host transport (tests). */
   calls?: HostCalls
+  funnel?: VerifiedFunnel
 }
 
 /**
- * Runs a verified people search to completion (or until `count` people or the
- * time cap), streaming each batch through `onPeople`. Returns the same
+ * Runs a verified people search to completion (or until `count` people worth
+ * showing or the time cap), streaming each batch through `onPeople`, and
+ * cancels it at the host if it's still going. Returns the same
  * Page shape search.ts returns, so the UI and callers are unchanged.
  */
 export async function verifiedPeopleSearch(
@@ -152,12 +223,15 @@ export async function verifiedPeopleSearch(
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
   const now = deps.now ?? Date.now
   const calls = deps.calls ?? hostCalls(fetchImpl)
+  const funnel = deps.funnel ?? NO_FUNNEL
 
   const { remaining, requireAllowance } = await import('../allowance')
-  if (remaining('prospects') < 1) requireAllowance('prospects')
+  const left = remaining('prospects')
+  if (left < 1) requireAllowance('prospects')
 
   const titles = (input.titles ?? []).map((t) => t.trim()).filter(Boolean)
-  const count = Math.max(1, input.count ?? DEFAULT_COUNT)
+  // A credit per person shown, so a page asks for no more than are left.
+  const count = Math.min(Math.max(1, input.count ?? DEFAULT_COUNT), Math.floor(left))
   const empty = (warnings: string[] = []): Page<PersonResult> & { refined: string[]; resumed: boolean } => ({
     items: [],
     nextCursor: null,
@@ -178,7 +252,7 @@ export async function verifiedPeopleSearch(
     locations: input.country?.trim() ? [input.country.trim()] : [],
     industries: input.industries ?? [],
     sizes,
-    limit: count,
+    limit: Math.min(MAX_ASKED, count * ASKED_PER_SHOWN),
   }
 
   const started = await calls.start(body).catch(() => null)
@@ -186,37 +260,56 @@ export async function verifiedPeopleSearch(
 
   const items: PersonResult[] = []
   const seen = new Set<string>()
+  // Hidden people don't fill the page.
+  const usable = () => items.filter((p) => !funnel.hidden(p)).length
   let cursor = 0
   let found = 0
+  let stats: HostStats | null = null
   let status = 'running'
-  let stop = 'done'
-  while (now() - startedAt < MAX_WAIT_MS && items.length < count) {
-    const page = await calls.poll(started.id, cursor).catch(() => null)
-    if (!page) {
-      stop = 'source failed'
-      break
+  let stop = 'time limit'
+  try {
+    while (now() - startedAt < MAX_WAIT_MS && usable() < count) {
+      const page = await calls.poll(started.id, cursor).catch(() => null)
+      if (!page) {
+        stop = 'source failed'
+        break
+      }
+      found = page.found
+      stats = page.stats ?? stats
+      status = page.status
+      if (page.nextCursor != null) cursor = page.nextCursor
+      const fresh: PersonResult[] = []
+      for (const row of page.people) {
+        if (!row?.profileUrl || seen.has(row.profileUrl)) continue
+        seen.add(row.profileUrl)
+        fresh.push(mapPerson(row, searchId))
+      }
+      const ready = fresh.length ? await funnel.prepare(fresh) : []
+      // When there's less room than people, those whose email is likeliest to be found take it.
+      const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
+      const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
+      items.push(...taken)
+      if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
+      if (usable() >= count) {
+        stop = 'full'
+        break
+      }
+      // Finished at the host, with nothing left unread: a big search can finish between polls.
+      if (status !== 'running' && (page.nextCursor == null || !page.people.length)) {
+        stop = status
+        break
+      }
+      if (page.people.length < POLL_SIZE) await sleep(POLL_EVERY_MS)
     }
-    found = page.found
-    const batch: PersonResult[] = []
-    for (const row of page.people) {
-      if (!row?.profileUrl || seen.has(row.profileUrl)) continue
-      seen.add(row.profileUrl)
-      const person = mapPerson(row, searchId)
-      items.push(person)
-      batch.push(person)
-      if (items.length >= count) break
-    }
-    if (page.nextCursor != null) cursor = page.nextCursor
-    if (batch.length) opts.onPeople?.({ items: batch, refined: [] })
-    status = page.status
-    if (status !== 'running') {
-      stop = status === 'done' ? 'done' : status
-      break
-    }
-    if (items.length >= count) break
-    await sleep(POLL_EVERY_MS)
+  } finally {
+    // Still spending the host's proxy data for people nobody will read.
+    if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
   }
 
+  const kept = funnel.finish(items)
+  const shown = usable()
+  const counts = { hits: found, shown, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
+  console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,
     at: new Date(startedAt).toISOString(),
@@ -231,21 +324,22 @@ export async function verifiedPeopleSearch(
       keyword: Boolean(input.keyword?.trim()),
       page: 'first',
     },
-    counts: { hits: found, shown: items.length },
+    counts,
     stop,
   })
 
+  // A prospect credit for each person shown, as for any other search.
   const { recordUsage } = await import('../usage')
-  recordUsage({ searches: 1, prospects: items.length, prospectCredits: items.length, searchShown: items.length, searchHits: found })
+  recordUsage({ searches: 1, prospects: shown, prospectCredits: shown, searchShown: shown, searchHits: found, ...kept.usage })
 
   return {
     items,
     nextCursor: null,
     reportedTotal: found,
     warnings: [],
-    details: [],
+    details: kept.details,
     requests: 1,
     refined: [],
-    resumed: false,
+    resumed: kept.resumed,
   }
 }

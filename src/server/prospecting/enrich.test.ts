@@ -1749,3 +1749,83 @@ describe('searchPeople with a company size finds companies first', () => {
   })
 
 })
+
+describe('the verified people search, through the funnel', () => {
+  const ENV = { PROSPECTING_MANAGED: 'on', REACHER_URL: 'https://services.magpie.test', REACHER_SECRET: 'vt_mc_acme', SOCIALFETCH_API_KEY: 'k', SOCIALFETCH_BASE_URL: 'https://host.test' }
+  const person = (handle: string, website: string | null, over: Record<string, unknown> = {}) => ({
+    profileUrl: `https://www.linkedin.com/in/${handle}`, name: `${handle} Jones`, title: 'Founder', titleVerified: true, country: 'US',
+    company: { name: `${handle} Co`, slug: `${handle}-co`, url: null, industry: null, sizeBand: '2-10', employees: 5, website },
+    ...over,
+  })
+  let asked: { method: string; body: any }[] = []
+  function hostFinds(people: unknown[], pool: unknown = null) {
+    Object.assign(process.env, ENV)
+    ;(globalThis as any).__hostRules = { rules: {}, verifiedPeopleSearch: true, pool }
+    asked = []
+    vi.stubGlobal('fetch', async (target: URL | string, init?: RequestInit) => {
+      const url = String(target)
+      if (url.endsWith('/v1/pool/known')) {
+        const hashes: string[] = JSON.parse(String(init?.body)).profiles
+        return Response.json({ people: hashes.map((h) => ({ profile: h, handle: 'held', title: 'Founder', seniority: 'founder', company: 'held Co', companyRef: null, companyDomain: 'held.example', country: 'US', verifiedAt: new Date().toISOString() })) })
+      }
+      if (!url.includes('/v2/linkedin/people/searches')) return Response.json({})
+      asked.push({ method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : null })
+      if (init?.method === 'POST') return Response.json({ id: 's1' })
+      return Response.json({ status: 'done', found: people.length, next_cursor: null, people })
+    })
+  }
+  beforeEach(() => {
+    return () => {
+      for (const k of Object.keys(ENV)) delete process.env[k]
+      delete (globalThis as any).__hostRules
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('tests each company ahead, and marks people where nothing can be verified, charging only for the rest', async () => {
+    catchAllDomains = new Set(['dead.example'])
+    hostFinds([person('ana', 'https://dead.example'), person('ben', 'https://good.example')])
+    const res = await searchPeople({ titles: ['Founder'], country: 'United States', count: 4, fromStart: true })
+    expect(res.items.map((p) => [p.firstName, Boolean(p.catchAll)])).toEqual([['ana', true], ['ben', false]])
+    expect(res.items[1].mailCheck).toBe('tested')
+    // Their live profiles were read at the host: nothing is looked up again.
+    expect(getPerson).not.toHaveBeenCalled()
+    expect(asked[0].body.limit).toBe(16)
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1, prospectCredits: 1, searchShown: 1, searchDeadDomain: 1 })
+    expect(searchLog.at(-1).counts).toMatchObject({ hits: 2, shown: 1, hiddenUnverifiable: 1, domainsCheckedAhead: 2 })
+  })
+
+  it('leaves out opted-out people, existing contacts and hidden surnames before anyone is charged', async () => {
+    suppressedHashes = new Set(hashesFor({ profileUrl: 'https://www.linkedin.com/in/opted' }).map((h) => h.hash))
+    contacts = [{ email: 'cat@known.example', job_title: 'Founder', company: 'cat Co', first_name: 'cat', last_name: 'Jones' }]
+    hostFinds([
+      person('opted', 'https://opted.example'),
+      person('cat', 'https://known.example'),
+      person('dan', 'https://dan.example', { name: 'dan J.' }),
+      person('eve', 'https://eve.example'),
+    ])
+    const res = await searchPeople({ titles: ['Founder'], country: 'United States', fromStart: true })
+    expect(res.items.map((p) => p.firstName)).toEqual(['eve'])
+    expect(res.details?.join(' ')).toMatch(/hides their surname/)
+    expect(res.details?.join(' ')).toMatch(/already in your contacts/)
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospectCredits: 1 })
+  })
+
+  it('takes someone from the shared database, so their email can come from it', async () => {
+    hostFinds([person('held', 'https://held.example')], { canJoin: true, search: true, contributing: true, byDefault: false, termsVersion: '1', termsUrl: null })
+    const res = await searchPeople({ titles: ['Founder'], country: 'United States', fromStart: true })
+    expect(res.items[0]).toMatchObject({ firstName: 'held', shared: 'held' })
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ sharedPeople: 1 })
+  })
+
+  it("doesn't show or charge for anyone a search with these filters just showed, unless started from the top", async () => {
+    hostFinds([person('ana', 'https://ana.example')])
+    const filters = { titles: ['Founder'], country: 'Canada' }
+    expect((await searchPeople({ ...filters, fromStart: true })).items).toHaveLength(1)
+    const again = await searchPeople(filters)
+    expect(again.items).toEqual([])
+    expect(again.resumed).toBe(true)
+    expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 0, prospectCredits: 0 })
+    expect((await searchPeople({ ...filters, fromStart: true })).items).toHaveLength(1)
+  })
+})
