@@ -136,6 +136,8 @@ function autoDetectMappings(grid: string[][], hasHeaders: boolean): Record<numbe
         mappings[colIdx] = 'company'
       } else if (val.includes('title') || val.includes('role') || val.includes('job')) {
         mappings[colIdx] = 'jobTitle'
+      } else if (val.includes('country')) {
+        mappings[colIdx] = 'country'
       }
     }
   }
@@ -325,6 +327,9 @@ function ImportContactsPage() {
     const jobTitleColIdxStr = Object.keys(mappings).find(key => mappings[Number(key)] === 'jobTitle')
     const jobTitleColIdx = jobTitleColIdxStr !== undefined ? Number(jobTitleColIdxStr) : -1
 
+    const countryColIdxStr = Object.keys(mappings).find(key => mappings[Number(key)] === 'country')
+    const countryColIdx = countryColIdxStr !== undefined ? Number(countryColIdxStr) : -1
+
     const contactsList: { email: string; attributes?: any }[] = []
     const startRow = hasHeaders ? 1 : 0
 
@@ -340,6 +345,7 @@ function ImportContactsPage() {
       if (lastNameColIdx !== -1 && row[lastNameColIdx]) attributes.LASTNAME = row[lastNameColIdx]
       if (companyColIdx !== -1 && row[companyColIdx]) attributes.COMPANY = row[companyColIdx]
       if (jobTitleColIdx !== -1 && row[jobTitleColIdx]) attributes.JOB_TITLE = row[jobTitleColIdx]
+      if (countryColIdx !== -1 && row[countryColIdx]) attributes.COUNTRY = row[countryColIdx]
 
       contactsList.push({
         email,
@@ -605,6 +611,7 @@ function ImportContactsPage() {
                           <option value="lastName">Last Name</option>
                           <option value="company">Company</option>
                           <option value="jobTitle">Job Title</option>
+                          <option value="country">Country</option>
                         </Select>
                       </div>
                     </th>

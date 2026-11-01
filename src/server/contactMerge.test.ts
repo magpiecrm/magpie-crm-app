@@ -95,6 +95,27 @@ describe('adding someone who is already a contact', () => {
     expect(db.data.list_contacts.filter((lc) => lc.list_id === listId && lc.contact_email === EMAIL)).toHaveLength(1)
   })
 
+  it('takes a country a CSV brings, in its one spelling', async () => {
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { COUNTRY: ' usa ' } } as any])
+    expect(contact().country).toBe('United States')
+  })
+
+  it("keeps a country it doesn't know as it was typed", async () => {
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { COUNTRY: ' Portugal ' } } as any])
+    expect(contact().country).toBe('Portugal')
+  })
+
+  it("doesn't clear a country with a blank", async () => {
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { COUNTRY: '  ' } } as any])
+    expect(contact().country).toBe('United Kingdom')
+  })
+
+  it('gives a new contact their country', async () => {
+    const email = `new-${Math.random()}@acme.test`
+    await emailService.addContactsToList(listId, [{ email, attributes: { COUNTRY: 'UK' } } as any])
+    expect(db.data.contacts.find((c) => c.email === email)?.country).toBe('United Kingdom')
+  })
+
   it('still creates someone new', async () => {
     const email = `new-${Math.random()}@acme.test`
     await emailService.addContactsToList(listId, [{ email, attributes: { FIRSTNAME: 'Sam', JOB_TITLE: 'CTO' } } as any])

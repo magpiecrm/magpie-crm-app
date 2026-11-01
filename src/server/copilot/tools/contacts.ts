@@ -7,7 +7,7 @@ const contactInput = z.object({
   attributes: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
     .optional()
-    .describe('Contact fields, e.g. { "FIRSTNAME": "Ada", "COMPANY": "Analytical Engines" }.'),
+    .describe('Contact fields: FIRSTNAME, LASTNAME, JOB_TITLE, COMPANY, COUNTRY, e.g. { "FIRSTNAME": "Ada", "COMPANY": "Analytical Engines" }.'),
 })
 
 export const contactTools = [

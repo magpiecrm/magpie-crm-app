@@ -14,6 +14,7 @@ import { env } from './env'
 import { optedOutAt, signedUpSince } from './prospecting/suppression'
 import { BOUNCE_WAIT_CAP_MS, firstBatchPassed, newHold, splitGuesses } from './guessedRecipients'
 import { isUnconfirmedGuess } from './prospecting/types'
+import { canonicalCountry } from './prospecting/geo'
 import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
 import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
 import { isUnknownRecipient } from './providers/types'
@@ -81,6 +82,7 @@ export interface EmailContact {
     LASTNAME?: string
     JOB_TITLE?: string
     COMPANY?: string
+    COUNTRY?: string
   }
 }
 
@@ -242,6 +244,17 @@ export async function addContactsToList(listId: number, contacts: EmailContact[]
       linkContactStmt.run(listId, email)
     }
   })()
+  // Not a column the write above has. As there, a value brought in wins and a blank clears nothing.
+  const countries = new Map<string, string>()
+  for (const c of contacts) {
+    const country = String(c.attributes?.COUNTRY ?? '').trim()
+    if (country) countries.set(c.email.toLowerCase().trim(), canonicalCountry(country) ?? country)
+  }
+  if (countries.size) {
+    db.mutate((data) => {
+      for (const c of data.contacts) c.country = countries.get(c.email) ?? c.country
+    })
+  }
   if (optedOut.size) console.log(`[Contacts] Skipped ${optedOut.size} who opted out of being contacted`)
   return { added, skipped: optedOut.size }
 }
