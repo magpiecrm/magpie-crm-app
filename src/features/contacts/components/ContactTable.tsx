@@ -112,10 +112,13 @@ export function ContactTable({
                   )}
                   {customOnCards.map((id) => {
                     const field = fieldOf(id, fields)!
+                    const shown = formatCellValue(contact.custom[field.key], field)
                     return (
-                      <p key={id} className="text-xs text-muted-foreground truncate mt-1">
-                        {field.label}: <span className="text-foreground">{formatCellValue(contact.custom[field.key], field) || '—'}</span>
-                      </p>
+                      shown && (
+                        <p key={id} className="text-xs text-muted-foreground truncate mt-1">
+                          {field.label}: <span className="text-foreground">{shown}</span>
+                        </p>
+                      )
                     )
                   })}
                 </div>
@@ -356,7 +359,7 @@ function CustomCell({ field, contact }: { field: ContactFieldDef; contact: Table
             if (choosesAtOnce) void commit(value)
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Enter') void commit(draft)
           }}
           onBlur={() => (choosesAtOnce ? setEditing(false) : void commit(draft))}
         />
