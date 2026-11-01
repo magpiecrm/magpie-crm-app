@@ -9,6 +9,7 @@ import type { Enrollment, Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
+import type { SavedFilter } from '../features/contacts/contactFilters'
 import { isUnconfirmedGuess, type EmailStatus, type NoticeStatus } from './prospecting/types'
 import type { MailFamily, MailProvider } from './prospecting/proxyRouter'
 import type { SenderHealthReport } from './prospecting/senderHealth'
@@ -77,7 +78,13 @@ const SEARCH_POSITION_MS = 30 * 24 * 60 * 60_000
 const MAX_SEARCH_POSITIONS = 300
 
 export interface DbSchema {
-  lists: Array<{ id: number; name: string; created_at: string }>
+  lists: Array<{
+    id: number
+    name: string
+    created_at: string
+    /** Made from filters (listBuilder.ts). `removed`: who was taken off by hand, so adding new matches leaves them off. */
+    built_from?: { filters: SavedFilter[]; refreshed_at: string | null; removed: string[] }
+  }>
   contacts: Array<{
     email: string
     first_name: string

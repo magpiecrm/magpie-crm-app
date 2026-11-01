@@ -1,5 +1,5 @@
 import { db, type RecipientRecord } from './db'
-import type { ContactCustomValue } from '../features/contacts/contactFields'
+import { contactForPage } from '../features/contacts/contactFilters'
 import { sendMail } from './nodemailer'
 import { encryptToken } from './crypto'
 import { notify } from './notify'
@@ -98,29 +98,6 @@ export async function getLists() {
   `).all() as any[]
 
   return { lists, count: lists.length }
-}
-
-/** A contact as the Contacts page gets it: what's shown, filtered on and exported. */
-function contactForPage(r: any) {
-  return {
-    email: r.email as string,
-    status: r.status as string,
-    createdAt: r.created_at as string,
-    attributes: {
-      FIRSTNAME: r.first_name || '',
-      LASTNAME: r.last_name || '',
-      JOB_TITLE: r.job_title || '',
-      COMPANY: r.company || '',
-    },
-    custom: (r.custom ?? {}) as Record<string, ContactCustomValue>,
-    /** Their company record, for linking to it. */
-    companyId: (r.company_id as string | null | undefined) ?? null,
-    /** For contacts saved from prospect search: their LinkedIn profile, its country, where they came from and how sure the email is. */
-    linkedinUrl: (r.linkedin_url as string | undefined) ?? '',
-    country: (r.country as string | undefined) ?? '',
-    source: (r.source as string | undefined) ?? '',
-    emailStatus: (r.email_status as string | undefined) ?? '',
-  }
 }
 
 export async function getContacts(limit?: number, offset?: number) {

@@ -31,6 +31,20 @@ export const SENIORITY_LEVELS = [
 ] as const
 export type Seniority = (typeof SENIORITY_LEVELS)[number]
 
+export const SENIORITY_LABEL: Record<Seniority, string> = {
+  owner: 'Owner',
+  founder: 'Founder',
+  c_suite: 'C-suite',
+  partner: 'Partner',
+  vp: 'VP',
+  head: 'Head',
+  director: 'Director',
+  manager: 'Manager',
+  senior: 'Senior',
+  entry: 'Entry',
+  intern: 'Intern',
+}
+
 export const HEADCOUNT_BUCKETS = [
   '1-10',
   '11-50',

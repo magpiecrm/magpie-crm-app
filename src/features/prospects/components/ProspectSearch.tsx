@@ -34,6 +34,7 @@ import {
   HEADCOUNT_BUCKETS,
   PAGE_SIZES,
   pageSizeFor,
+  SENIORITY_LABEL,
   SENIORITY_LEVELS,
   type CompanyResult,
   type HeadcountBucket,
@@ -52,7 +53,7 @@ import { JOB_TITLES } from '../constants/jobTitles'
 import type { Persona } from '../types'
 import { CompanyPicker } from './CompanyPicker'
 import { CompanyResults, DomainCell } from './CompanyResults'
-import { PeopleResults, SENIORITY_LABEL, type RevealState } from './PeopleResults'
+import { PeopleResults, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
 import { streamPeopleSearch } from '../streamPeopleSearch'
 import { liveSearch, useLivePeople } from '../liveSearch'

@@ -1,13 +1,44 @@
 import { canonicalCountry } from '../../server/prospecting/geo'
+import { HEADCOUNT_BUCKETS, SENIORITY_LABEL, SENIORITY_LEVELS } from '../../server/prospecting/types'
 import type { ContactCustomValue, ContactFieldDef } from './contactFields'
 
 /**
- * Filters for the Contacts page: which fields can be filtered on, the ways
- * each kind of field can be compared, and whether a contact passes. Contacts
- * are filtered in the browser, where the page already has all of them.
+ * Filters on contacts: which fields can be filtered on, the ways each kind of
+ * field can be compared, and whether a contact passes. The Contacts page
+ * filters in the browser, where it already has everyone, and shows what's left.
+ * Building a list decides who gets email, so that goes through `selectForList`
+ * on the server, which refuses a filter it can't apply rather than ignoring it.
  */
 
-/** A contact as `contactsFn` / `listContactsFn` return it (`contactForPage` in emailService.ts). */
+/** A contact as `contactsFn` / `listContactsFn` return it. */
+export function contactForPage(r: any) {
+  return {
+    email: r.email as string,
+    status: r.status as string,
+    createdAt: r.created_at as string,
+    attributes: {
+      FIRSTNAME: r.first_name || '',
+      LASTNAME: r.last_name || '',
+      JOB_TITLE: r.job_title || '',
+      COMPANY: r.company || '',
+    },
+    custom: (r.custom ?? {}) as Record<string, ContactCustomValue>,
+    /** Their company record, for linking to it. */
+    companyId: (r.company_id as string | null | undefined) ?? null,
+    /** For contacts saved from prospect search: their LinkedIn profile, its country, where they came from and how sure the email is. */
+    linkedinUrl: (r.linkedin_url as string | undefined) ?? '',
+    country: (r.country as string | undefined) ?? '',
+    source: (r.source as string | undefined) ?? '',
+    emailStatus: (r.email_status as string | undefined) ?? '',
+  }
+}
+
+/** The latest time something happened on an email to someone, and the latest email it could have. */
+export interface Activity {
+  last: string | null
+  eligible: string | null
+}
+
 export interface FilterableContact {
   email: string
   status?: string
@@ -18,11 +49,18 @@ export interface FilterableContact {
   country?: string
   source?: string
   emailStatus?: string
+  /** Worked out on the server when building a list (listBuilder.ts). */
+  seniority?: string
+  companySize?: string
+  industry?: string
+  opened?: Activity
+  clicked?: Activity
+  replied?: Activity
 }
 
-export type FilterKind = 'text' | 'choice' | 'date' | 'number' | 'boolean'
+export type FilterKind = 'text' | 'choice' | 'date' | 'number' | 'boolean' | 'activity'
 
-export type FilterOp = 'contains' | 'not_contains' | 'contains_any' | 'contains_none' | 'is' | 'is_not' | 'is_any' | 'is_none' | 'empty' | 'not_empty' | 'on_or_after' | 'on_or_before' | 'more_than' | 'less_than' | 'yes' | 'no'
+export type FilterOp = 'contains' | 'not_contains' | 'contains_any' | 'contains_none' | 'is' | 'is_not' | 'is_any' | 'is_none' | 'empty' | 'not_empty' | 'on_or_after' | 'on_or_before' | 'more_than' | 'less_than' | 'yes' | 'no' | 'in_last_days' | 'not_in_last_days'
 
 export interface FilterField {
   key: string
@@ -31,7 +69,14 @@ export interface FilterField {
   value: (contact: FilterableContact) => ContactCustomValue | undefined
   /** For a choice: the values to pick from, each with how it reads. */
   options?: Array<{ value: string; label: string }>
+  /** For activity: what happened, in place of `value`. */
+  activity?: (contact: FilterableContact) => Activity | undefined
+  /** What to know before relying on it. */
+  hint?: string
 }
+
+/** A field as the browser gets it, without the functions that read a contact. */
+export type FilterFieldInfo = Pick<FilterField, 'key' | 'label' | 'kind' | 'options' | 'hint'>
 
 export interface ContactFilter {
   id: string
@@ -76,7 +121,16 @@ export const OPERATORS: Record<FilterKind, Array<{ op: FilterOp; label: string; 
     { op: 'yes', label: 'is yes', valueless: true },
     { op: 'no', label: 'is no', valueless: true },
   ],
+  activity: [
+    { op: 'in_last_days', label: 'in the last' },
+    { op: 'not_in_last_days', label: 'not in the last' },
+  ],
 }
+
+/** How far back an activity filter looks until it's changed, and how far it can. */
+export const DEFAULT_ACTIVITY_DAYS = 90
+const MAX_ACTIVITY_DAYS = 3650
+const DAY_MS = 86_400_000
 
 const STATUS_LABELS: Record<string, string> = { subscribed: 'Subscribed', unsubscribed: 'Unsubscribed', bounced: 'Bounced', blocklisted: 'Blocklisted', pending: 'Pending' }
 const EMAIL_STATUS_LABELS: Record<string, string> = {
@@ -129,9 +183,46 @@ export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableC
   ]
 }
 
-/** A new filter on a field, on that kind's first comparison. */
-export function newFilter(field: FilterField): ContactFilter {
-  return { id: `${field.key}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, field: field.key, op: OPERATORS[field.kind][0].op, value: '' }
+/**
+ * What building a list can filter on besides the Contacts page's fields, which
+ * need a pass over companies and sends the page doesn't make (listBuilder.ts).
+ */
+export function listFilterFields(fieldDefs: ContactFieldDef[], contacts: FilterableContact[]): FilterField[] {
+  const all = filterFields(fieldDefs, contacts)
+  const builtIn = all.filter((f) => !f.key.startsWith('custom:'))
+  const afterCompany = builtIn.findIndex((f) => f.key === 'company') + 1
+  const happened = (key: 'opened' | 'clicked' | 'replied', label: string, hint: string): FilterField => ({ key, label, kind: 'activity', value: () => undefined, activity: (c) => c[key], hint })
+  return [
+    ...builtIn.slice(0, afterCompany),
+    {
+      key: 'seniority',
+      label: 'Seniority',
+      kind: 'choice',
+      value: (c) => c.seniority,
+      options: SENIORITY_LEVELS.map((level) => ({ value: level, label: SENIORITY_LABEL[level] })),
+      hint: "Worked out from the job title, so it's a good guess rather than a fact.",
+    },
+    { key: 'company_size', label: 'Company size', kind: 'choice', value: (c) => c.companySize, options: HEADCOUNT_BUCKETS.map((b) => ({ value: b, label: b })), hint: 'Only companies whose staff count is known.' },
+    { key: 'industry', label: 'Industry', kind: 'choice', value: (c) => c.industry, options: optionsIn(contacts, (c) => c.industry), hint: "Only companies with an industry typed in on the company's page." },
+    ...builtIn.slice(afterCompany),
+    happened('opened', 'Opened', 'A guide rather than a count: some mail apps load images by themselves. Automated opens are left out, and a click counts as an open.'),
+    happened('clicked', 'Clicked', 'The first click on each email. Automated clicks are left out.'),
+    happened('replied', 'Replied', "Replies to sequence emails, seen by a connected inbox or marked by hand. Replies to campaigns aren't tracked."),
+    ...all.filter((f) => f.key.startsWith('custom:')),
+  ]
+}
+
+/** A new filter on a field, on that kind's first comparison, or its first taking several values. */
+export function newFilter(field: FilterFieldInfo, several = false): ContactFilter {
+  const operators = OPERATORS[field.kind]
+  const op = (several && operators.find((o) => o.multi)) || operators[0]
+  return {
+    id: `${field.key}:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    field: field.key,
+    op: op.op,
+    value: field.kind === 'activity' ? String(DEFAULT_ACTIVITY_DAYS) : '',
+    ...(op.multi ? { values: [] } : {}),
+  }
 }
 
 const isBlank = (v: ContactCustomValue | undefined) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
@@ -163,7 +254,7 @@ function wordPattern(term: string): RegExp {
 }
 
 /** Whether a filter is ready to apply: one that still needs a value filters nothing out. */
-export function isComplete(filter: ContactFilter, field: FilterField | undefined): boolean {
+export function isComplete(filter: ContactFilter, field: FilterFieldInfo | undefined): boolean {
   if (!field) return false
   const op = OPERATORS[field.kind].find((o) => o.op === filter.op)
   if (!op) return false
@@ -171,7 +262,7 @@ export function isComplete(filter: ContactFilter, field: FilterField | undefined
   return Boolean(op.valueless || filter.value.trim() !== '')
 }
 
-export function matchesFilter(contact: FilterableContact, filter: ContactFilter, field: FilterField | undefined): boolean {
+export function matchesFilter(contact: FilterableContact, filter: ContactFilter, field: FilterField | undefined, now = Date.now()): boolean {
   if (!isComplete(filter, field)) return true
   const actual = field!.value(contact)
   const wanted = filter.value.trim()
@@ -213,6 +304,15 @@ export function matchesFilter(contact: FilterableContact, filter: ContactFilter,
       return !isBlank(actual) && Number(actual) > Number(wanted)
     case 'less_than':
       return !isBlank(actual) && Number(actual) < Number(wanted)
+    case 'in_last_days':
+    case 'not_in_last_days': {
+      const since = new Date(now - Number(wanted) * DAY_MS).toISOString()
+      const happened = field!.activity?.(contact)
+      const recent = Boolean(happened?.last && happened.last >= since)
+      if (filter.op === 'in_last_days') return recent
+      // Not happening only says something about someone who had an email it could happen on.
+      return !recent && Boolean(happened?.eligible && happened.eligible >= since)
+    }
   }
 }
 
@@ -221,4 +321,69 @@ export function applyFilters<C extends FilterableContact>(contacts: C[], filters
   const active = filters.map((f) => ({ f, field: fields.find((x) => x.key === f.field) })).filter(({ f, field }) => isComplete(f, field))
   if (!active.length) return contacts
   return contacts.filter((c) => active.every(({ f, field }) => matchesFilter(c, f, field)))
+}
+
+/** A filter saved on a list, with its field's name in case the field goes. */
+export type SavedFilter = ContactFilter & { label: string }
+
+const validValue = (field: FilterFieldInfo, value: string) => {
+  const v = value.trim()
+  if (field.kind === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(v) && dayOf(v) === v
+  if (field.kind === 'number') return Number.isFinite(Number(v))
+  if (field.kind === 'activity') return /^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= MAX_ACTIVITY_DAYS
+  return true
+}
+
+/**
+ * What stops these filters being used to pick people, each said for the user.
+ * Where the page ignores a filter it can't apply, this refuses, as leaving one
+ * out would pick more people than were asked for.
+ */
+export function filterProblems(filters: Array<ContactFilter & { label?: string }>, fields: FilterFieldInfo[]): string[] {
+  if (filters.length === 0) return ['Add at least one filter.']
+  return filters.flatMap((filter) => {
+    const field = fields.find((f) => f.key === filter.field)
+    if (!field) return [`The "${filter.label ?? filter.field}" field doesn't exist any more.`]
+    const op = OPERATORS[field.kind].find((o) => o.op === filter.op)
+    if (!op) return [`${field.label} can't be compared that way.`]
+    if (!isComplete(filter, field)) return [`${field.label} still needs a value.`]
+    if (!op.valueless && !op.multi && !validValue(field, filter.value)) {
+      return [field.kind === 'activity' ? `${field.label} needs a number of days, from 1 to ${MAX_ACTIVITY_DAYS}.` : `${field.label} needs a valid ${field.kind}.`]
+    }
+    return []
+  })
+}
+
+/** The contacts that pass every filter, or an error when one can't be applied: never everyone by mistake. */
+export function selectForList<C extends FilterableContact>(contacts: C[], filters: ContactFilter[], fields: FilterField[], now = Date.now()): C[] {
+  const [problem] = filterProblems(filters, fields)
+  if (problem) throw new Error(problem)
+  const active = filters.map((filter) => ({ filter, field: fields.find((f) => f.key === filter.field)! }))
+  return contacts.filter((c) => active.every(({ filter, field }) => matchesFilter(c, filter, field, now)))
+}
+
+const LEAVES_OUT: FilterOp[] = ['not_contains', 'contains_none', 'is_not', 'is_none']
+const ABOUT_BLANKS: FilterOp[] = ['empty', 'not_empty', 'yes', 'no']
+
+/**
+ * How many have nothing in a filter's field, which decides whether they're
+ * picked: left out of "is Germany", and in "is not Germany".
+ */
+export function blanksIn(contacts: FilterableContact[], matched: FilterableContact[], filters: ContactFilter[], fields: FilterField[]) {
+  return filters.flatMap((filter) => {
+    const field = fields.find((f) => f.key === filter.field)
+    if (!field || field.kind === 'activity' || ABOUT_BLANKS.includes(filter.op)) return []
+    const included = LEAVES_OUT.includes(filter.op)
+    const count = (included ? matched : contacts).filter((c) => isBlank(field.value(c))).length
+    return count ? [{ label: field.label, count, included }] : []
+  })
+}
+
+/** A saved filter as a line of plain words. */
+export function describeFilter(filter: SavedFilter, field?: FilterFieldInfo): string {
+  const op = Object.values(OPERATORS).flat().find((o) => o.op === filter.op)
+  const shown = (value: string) => field?.options?.find((o) => o.value === value)?.label ?? value
+  if (op?.multi) return `${filter.label} ${op.label}: ${(filter.values ?? []).map(shown).join(', ')}`
+  if (op?.valueless) return `${filter.label} ${op.label}`
+  return `${filter.label} ${op?.label ?? filter.op} ${shown(filter.value)}${filter.op.endsWith('_days') ? ' days' : ''}`
 }

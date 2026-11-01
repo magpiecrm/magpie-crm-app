@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Plus, Search, X } from 'lucide-react'
 import { Select } from '../../../components/ui/Select'
-import { OPERATORS, isComplete, newFilter, type ContactFilter, type FilterField } from '../contactFilters'
+import { OPERATORS, isComplete, newFilter, type ContactFilter, type FilterFieldInfo } from '../contactFilters'
 
 const CONTROL = 'px-2.5 py-1.5 border border-border rounded-lg bg-background text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-accent'
 
 /** The "Add filter" button and its menu of fields. */
-export function AddFilterButton({ fields, onAdd, open, onOpenChange }: { fields: FilterField[]; onAdd: (field: FilterField) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function AddFilterButton({ fields, onAdd, open, onOpenChange }: { fields: FilterFieldInfo[]; onAdd: (field: FilterFieldInfo) => void; open: boolean; onOpenChange: (open: boolean) => void }) {
   const [query, setQuery] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -84,7 +84,7 @@ export function AddFilterButton({ fields, onAdd, open, onOpenChange }: { fields:
 }
 
 /** A filter's several values as chips, picked from the field's options or typed. */
-function ValuesInput({ filter, field, onChange }: { filter: ContactFilter; field: FilterField; onChange: (next: ContactFilter) => void }) {
+function ValuesInput({ filter, field, onChange }: { filter: ContactFilter; field: FilterFieldInfo; onChange: (next: ContactFilter) => void }) {
   const [draft, setDraft] = useState('')
   const values = filter.values ?? []
   const labelOf = (value: string) => field.options?.find((o) => o.value === value)?.label ?? value
@@ -146,7 +146,7 @@ function ValuesInput({ filter, field, onChange }: { filter: ContactFilter; field
 }
 
 /** One filter: its field, how it's compared, and what with. */
-function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilter; field: FilterField; onChange: (next: ContactFilter) => void; onRemove: () => void }) {
+function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilter; field: FilterFieldInfo; onChange: (next: ContactFilter) => void; onRemove: () => void }) {
   const operators = OPERATORS[field.kind]
   const operator = operators.find((o) => o.op === filter.op) ?? operators[0]
   const waiting = !isComplete(filter, field)
@@ -188,15 +188,16 @@ function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilte
           </Select>
         ) : (
           <input
-            type={field.kind === 'date' ? 'date' : field.kind === 'number' ? 'number' : 'text'}
+            type={field.kind === 'date' ? 'date' : field.kind === 'number' || field.kind === 'activity' ? 'number' : 'text'}
             value={filter.value}
             onChange={(e) => onChange({ ...filter, value: e.target.value })}
             placeholder={field.kind === 'text' ? 'Type to filter' : undefined}
             aria-label={`${field.label} value`}
             autoFocus={filter.value === ''}
-            className={`${CONTROL} ${field.kind === 'text' ? 'w-40' : 'w-32'}`}
+            className={`${CONTROL} ${field.kind === 'text' ? 'w-40' : field.kind === 'activity' ? 'w-16' : 'w-32'}`}
           />
         ))}
+      {field.kind === 'activity' && <span className="text-xs text-muted-foreground">days</span>}
       <button type="button" onClick={onRemove} aria-label={`Remove the ${field.label} filter`} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer">
         <X className="w-3.5 h-3.5" />
       </button>
@@ -205,7 +206,7 @@ function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilte
 }
 
 /** The filters in use, each editable, with a way to clear them all. */
-export function ActiveFilters({ filters, fields, onChange }: { filters: ContactFilter[]; fields: FilterField[]; onChange: (next: ContactFilter[]) => void }) {
+export function ActiveFilters({ filters, fields, onChange }: { filters: ContactFilter[]; fields: FilterFieldInfo[]; onChange: (next: ContactFilter[]) => void }) {
   if (filters.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4" aria-label="Filters in use">

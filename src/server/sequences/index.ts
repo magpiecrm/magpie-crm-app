@@ -107,15 +107,22 @@ export function notReady(data: DbSchema, s: Sequence): string | null {
   return null
 }
 
+/** Why someone can't be emailed at all, or null when they can. */
+export function whyNotEmailable(contact: DbSchema['contacts'][number], optedOut: Map<string, string>): 'bounced' | 'unsubscribed' | 'opted_out' | null {
+  if (contact.status === 'bounced') return 'bounced'
+  if (contact.status !== 'subscribed') return 'unsubscribed'
+  const stop = db.emailStop(contact.email)
+  if (!signedUpSince(stop?.at, contact.signed_up_at)) return stop?.reason === 'bounced' ? 'bounced' : 'unsubscribed'
+  if (!signedUpSince(optedOut.get(contact.email), contact.signed_up_at)) return 'opted_out'
+  return null
+}
+
 /** Why each address can't be enrolled, or null when it can (in this data). */
 function whyNot(data: DbSchema, s: Sequence, email: string, optedOut: Map<string, string>): string | null {
   const contact = data.contacts.find((c) => c.email === email)
   if (!contact) return 'not_contact'
-  if (contact.status === 'bounced') return 'bounced'
-  if (contact.status !== 'subscribed') return 'unsubscribed'
-  const stop = db.emailStop(email)
-  if (!signedUpSince(stop?.at, contact.signed_up_at)) return stop?.reason === 'bounced' ? 'bounced' : 'unsubscribed'
-  if (!signedUpSince(optedOut.get(email), contact.signed_up_at)) return 'opted_out'
+  const stopped = whyNotEmailable(contact, optedOut)
+  if (stopped) return stopped
   if ((data.sequence_enrollments ?? []).some((e) => e.sequence_id === s.id && e.contact_email === email)) return 'already_in'
   if ((data.sequence_enrollments ?? []).some((e) => e.contact_email === email && e.status === 'active' && e.sequence_id !== s.id)) return 'in_another'
   return null

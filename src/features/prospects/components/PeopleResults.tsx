@@ -3,25 +3,11 @@ import { BadgeCheck, Copy, Database, ExternalLink, Loader2, Mail } from 'lucide-
 import { Avatar } from '../../../components/ui/Avatar'
 import { Badge } from '../../../components/ui/Badge'
 import type { RevealResult } from '../../../server/prospecting/reveal'
-import type { PersonResult, Seniority } from '../../../server/prospecting/types'
+import { SENIORITY_LABEL, type PersonResult } from '../../../server/prospecting/types'
 import { EmailStatusBadge } from './EmailStatusBadge'
 import { SignalBadges } from './SignalBadges'
 
 export type RevealState = { status: 'loading' } | { status: 'error'; message: string } | RevealResult
-
-export const SENIORITY_LABEL: Record<Seniority, string> = {
-  owner: 'Owner',
-  founder: 'Founder',
-  c_suite: 'C-suite',
-  partner: 'Partner',
-  vp: 'VP',
-  head: 'Head',
-  director: 'Director',
-  manager: 'Manager',
-  senior: 'Senior',
-  entry: 'Entry',
-  intern: 'Intern',
-}
 
 interface Props {
   people: PersonResult[]
