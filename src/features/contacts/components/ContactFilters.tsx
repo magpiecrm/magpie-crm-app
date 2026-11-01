@@ -83,18 +83,88 @@ export function AddFilterButton({ fields, onAdd, open, onOpenChange }: { fields:
   )
 }
 
+/** A filter's several values as chips, picked from the field's options or typed. */
+function ValuesInput({ filter, field, onChange }: { filter: ContactFilter; field: FilterField; onChange: (next: ContactFilter) => void }) {
+  const [draft, setDraft] = useState('')
+  const values = filter.values ?? []
+  const labelOf = (value: string) => field.options?.find((o) => o.value === value)?.label ?? value
+
+  const add = (text: string) => {
+    const typed = text.split(',').map((v) => v.trim()).filter(Boolean)
+    const fresh = typed.filter((v, i) => typed.indexOf(v) === i && !values.some((x) => x.toLowerCase() === v.toLowerCase()))
+    if (fresh.length) onChange({ ...filter, values: [...values, ...fresh] })
+    setDraft('')
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {values.map((value) => (
+        <span key={value} className="flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-lg bg-accent/10 text-foreground text-xs">
+          {labelOf(value)}
+          <button
+            type="button"
+            onClick={() => onChange({ ...filter, values: values.filter((v) => v !== value) })}
+            aria-label={`Remove ${labelOf(value)}`}
+            className="rounded text-muted-foreground hover:text-foreground cursor-pointer"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </span>
+      ))}
+      {field.kind === 'choice' ? (
+        <Select value="" onChange={(e) => add(e.target.value)} aria-label={`Add a ${field.label} value`} className={CONTROL}>
+          <option value="">Add…</option>
+          {(field.options ?? [])
+            .filter((o) => !values.includes(o.value))
+            .map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+        </Select>
+      ) : (
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault()
+              add(draft)
+            } else if (e.key === 'Backspace' && !draft && values.length) {
+              onChange({ ...filter, values: values.slice(0, -1) })
+            }
+          }}
+          onBlur={() => add(draft)}
+          placeholder={values.length ? 'Add another' : 'Type, then Enter'}
+          aria-label={`${field.label} values`}
+          autoFocus={values.length === 0}
+          className={`${CONTROL} w-32`}
+        />
+      )}
+    </div>
+  )
+}
+
 /** One filter: its field, how it's compared, and what with. */
 function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilter; field: FilterField; onChange: (next: ContactFilter) => void; onRemove: () => void }) {
   const operators = OPERATORS[field.kind]
   const operator = operators.find((o) => o.op === filter.op) ?? operators[0]
   const waiting = !isComplete(filter, field)
 
+  // What's been entered carries across to a comparison taking one value or several.
+  const compareBy = (op: ContactFilter['op']) => {
+    const multi = operators.find((o) => o.op === op)?.multi
+    if (multi && !operator.multi) return onChange({ ...filter, op, value: '', values: filter.value.trim() ? [filter.value.trim()] : [] })
+    if (!multi && operator.multi) return onChange({ ...filter, op, value: filter.values?.[0] ?? '', values: undefined })
+    onChange({ ...filter, op })
+  }
+
   return (
-    <div className={`flex items-center gap-1.5 pl-3 pr-1.5 py-1 border rounded-xl bg-card ${waiting ? 'border-dashed border-border' : 'border-accent/30 bg-accent/5'}`}>
+    <div className={`flex flex-wrap items-center gap-1.5 pl-3 pr-1.5 py-1 border rounded-xl bg-card ${waiting ? 'border-dashed border-border' : 'border-accent/30 bg-accent/5'}`}>
       <span className="text-xs font-semibold text-foreground whitespace-nowrap">{field.label}</span>
       <Select
         value={operator.op}
-        onChange={(e) => onChange({ ...filter, op: e.target.value as ContactFilter['op'] })}
+        onChange={(e) => compareBy(e.target.value as ContactFilter['op'])}
         aria-label={`How to compare ${field.label}`}
         className={CONTROL}
       >
@@ -104,7 +174,9 @@ function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilte
           </option>
         ))}
       </Select>
-      {!operator.valueless &&
+      {operator.multi ? (
+        <ValuesInput filter={filter} field={field} onChange={onChange} />
+      ) : !operator.valueless &&
         (field.kind === 'choice' ? (
           <Select value={filter.value} onChange={(e) => onChange({ ...filter, value: e.target.value })} aria-label={`${field.label} value`} className={CONTROL}>
             <option value="">Choose…</option>

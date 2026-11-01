@@ -1,3 +1,4 @@
+import { canonicalCountry } from '../../server/prospecting/geo'
 import type { ContactCustomValue, ContactFieldDef } from './contactFields'
 
 /**
@@ -21,7 +22,7 @@ export interface FilterableContact {
 
 export type FilterKind = 'text' | 'choice' | 'date' | 'number' | 'boolean'
 
-export type FilterOp = 'contains' | 'not_contains' | 'is' | 'is_not' | 'empty' | 'not_empty' | 'on_or_after' | 'on_or_before' | 'more_than' | 'less_than' | 'yes' | 'no'
+export type FilterOp = 'contains' | 'not_contains' | 'contains_any' | 'contains_none' | 'is' | 'is_not' | 'is_any' | 'is_none' | 'empty' | 'not_empty' | 'on_or_after' | 'on_or_before' | 'more_than' | 'less_than' | 'yes' | 'no'
 
 export interface FilterField {
   key: string
@@ -37,22 +38,28 @@ export interface ContactFilter {
   field: string
   op: FilterOp
   value: string
+  /** What a `multi` comparison looks for, in place of `value`. */
+  values?: string[]
 }
 
-/** The comparisons each kind of field offers; the first is what a new filter starts on. `valueless` ones need nothing typed. */
-export const OPERATORS: Record<FilterKind, Array<{ op: FilterOp; label: string; valueless?: boolean }>> = {
+/** The comparisons each kind of field offers; the first is what a new filter starts on. `valueless` ones need nothing typed, `multi` ones take several values. */
+export const OPERATORS: Record<FilterKind, Array<{ op: FilterOp; label: string; valueless?: boolean; multi?: boolean }>> = {
   text: [
     { op: 'contains', label: 'contains' },
     { op: 'not_contains', label: "doesn't contain" },
     { op: 'is', label: 'is exactly' },
     { op: 'empty', label: 'is empty', valueless: true },
     { op: 'not_empty', label: 'has a value', valueless: true },
+    { op: 'contains_any', label: 'has any of these words', multi: true },
+    { op: 'contains_none', label: 'has none of these words', multi: true },
   ],
   choice: [
     { op: 'is', label: 'is' },
     { op: 'is_not', label: 'is not' },
     { op: 'empty', label: 'is empty', valueless: true },
     { op: 'not_empty', label: 'has a value', valueless: true },
+    { op: 'is_any', label: 'is any of', multi: true },
+    { op: 'is_none', label: 'is none of', multi: true },
   ],
   date: [
     { op: 'on_or_after', label: 'on or after' },
@@ -105,7 +112,8 @@ export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableC
     text('last_name', 'Last name', (c) => c.attributes?.LASTNAME),
     text('job_title', 'Job title', (c) => c.attributes?.JOB_TITLE),
     text('company', 'Company', (c) => c.attributes?.COMPANY),
-    choice('country', 'Country', (c) => c.country),
+    // "UK" and "United Kingdom" are one country, however each contact came by it.
+    choice('country', 'Country', (c) => canonicalCountry(c.country) ?? c.country),
     text('linkedin_url', 'LinkedIn URL', (c) => c.linkedinUrl),
     choice('status', 'Subscription', (c) => c.status, STATUS_LABELS),
     choice('email_status', 'Email check', (c) => c.emailStatus, EMAIL_STATUS_LABELS),
@@ -134,11 +142,33 @@ const dayOf = (v: unknown) => {
   return date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : ''
 }
 
+/** A `multi` filter's values, without the blanks. */
+const valuesOf = (filter: ContactFilter) => (filter.values ?? []).map((v) => v.trim()).filter(Boolean)
+
+const WORD_PATTERNS = new Map<string, RegExp>()
+
+/**
+ * A word or phrase as whole words, in any case, so "CTO" isn't found in
+ * "Director". Bounded by letters and digits of any language, where `\b` only
+ * knows English ones.
+ */
+function wordPattern(term: string): RegExp {
+  const known = WORD_PATTERNS.get(term)
+  if (known) return known
+  const body = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, 'iu')
+  if (WORD_PATTERNS.size >= 500) WORD_PATTERNS.clear()
+  WORD_PATTERNS.set(term, pattern)
+  return pattern
+}
+
 /** Whether a filter is ready to apply: one that still needs a value filters nothing out. */
 export function isComplete(filter: ContactFilter, field: FilterField | undefined): boolean {
   if (!field) return false
   const op = OPERATORS[field.kind].find((o) => o.op === filter.op)
-  return Boolean(op && (op.valueless || filter.value.trim() !== ''))
+  if (!op) return false
+  if (op.multi) return valuesOf(filter).length > 0
+  return Boolean(op.valueless || filter.value.trim() !== '')
 }
 
 export function matchesFilter(contact: FilterableContact, filter: ContactFilter, field: FilterField | undefined): boolean {
@@ -158,6 +188,18 @@ export function matchesFilter(contact: FilterableContact, filter: ContactFilter,
       return lower(Array.isArray(actual) ? actual.join(' ') : actual).includes(wanted.toLowerCase())
     case 'not_contains':
       return !lower(Array.isArray(actual) ? actual.join(' ') : actual).includes(wanted.toLowerCase())
+    case 'contains_any':
+    case 'contains_none': {
+      const text = String(Array.isArray(actual) ? actual.join(' ') : (actual ?? ''))
+      const found = valuesOf(filter).some((term) => wordPattern(term).test(text))
+      return filter.op === 'contains_any' ? found : !found
+    }
+    case 'is_any':
+    case 'is_none': {
+      const among = new Set(valuesOf(filter).map(lower))
+      const found = Array.isArray(actual) ? actual.some((v) => among.has(lower(v))) : among.has(lower(actual))
+      return filter.op === 'is_any' ? found : !found
+    }
     case 'is':
       if (field!.kind === 'number') return !isBlank(actual) && Number(actual) === Number(wanted)
       return Array.isArray(actual) ? actual.some((v) => lower(v) === wanted.toLowerCase()) : lower(actual) === wanted.toLowerCase()

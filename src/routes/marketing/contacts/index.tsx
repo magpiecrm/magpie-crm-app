@@ -207,7 +207,7 @@ function ContactsPage() {
 
   // Reset page when search, list or filters change. The filters are compared
   // by what they say: the list itself is a new one on every render.
-  const filterKey = JSON.stringify(activeFilters.map((f) => [f.field, f.op, f.value]))
+  const filterKey = JSON.stringify(activeFilters.map((f) => [f.field, f.op, f.value, f.values]))
   useMemo(() => {
     setCurrentPage(1)
   }, [searchTerm, selectedListId, filterKey])
