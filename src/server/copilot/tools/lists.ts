@@ -57,7 +57,7 @@ export const listTools = [
   defineTool({
     name: 'deleteList',
     description:
-      'Delete a contact list. The contacts themselves are kept — only the list and its memberships go.',
+      "Delete a contact list. The contacts themselves are kept — only the list and its memberships go. Refused, saying why, for the default list, the only list, and a list a form, survey or unfinished campaign still uses.",
     input: { list: listRef },
     target: 'server',
     destructive: true,

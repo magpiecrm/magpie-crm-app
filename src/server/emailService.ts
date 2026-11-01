@@ -165,9 +165,42 @@ export async function removeContactFromList(listId: number, email: string) {
   db.run('DELETE FROM list_contacts WHERE list_id = ? AND contact_email = ?', [listId, email.toLowerCase().trim()])
 }
 
+/** The default list: /api/subscribe adds everyone to it, and new forms start on it. */
+const DEFAULT_LIST_ID = 1
+
+/**
+ * What still needs a list: a campaign reads its list as it sends (a sent one
+ * too, while it's holding back guessed addresses), and forms and surveys add
+ * people to theirs.
+ */
+function whatNeedsList(listId: number): string[] {
+  const campaigns = db.data.campaigns.filter((c) => Number(c.list_id) === listId && (c.status !== 'sent' || c.guess_hold?.status === 'waiting'))
+  return [
+    ...(db.data.forms ?? []).filter((f) => Number(f.list_id) === listId).map((f) => `form "${f.name}"`),
+    ...(db.data.surveys ?? []).filter((s) => Number(s.settings.listId) === listId).map((s) => `survey "${s.name}"`),
+    ...campaigns.map((c) => `${c.status === 'sent' ? 'held' : c.status} campaign "${c.name}"`),
+  ]
+}
+
+/** Removes a list and who's on it. The contacts stay; a list that's still needed isn't removed. */
 export async function deleteList(listId: number) {
-  db.run('DELETE FROM list_contacts WHERE list_id = ?', [listId])
-  db.run('DELETE FROM lists WHERE id = ?', [listId])
+  const id = Number(listId)
+  if (!db.data.lists.some((l) => l.id === id)) throw new Error("That list doesn't exist.")
+  if (id === DEFAULT_LIST_ID) throw new Error("This is the default list. Sign-ups go here, so it can't be deleted.")
+  // With no lists left, the next start adds the sample contacts back.
+  if (db.data.lists.length === 1) throw new Error("This is your only list, so it can't be deleted.")
+  const needed = whatNeedsList(id)
+  if (needed.length) {
+    const shown = needed.slice(0, 3).join(', ')
+    const more = needed.length > 3 ? ` and ${needed.length - 3} more` : ''
+    throw new Error(`This list is still in use: ${shown}${more}. Move them to another list or delete them first.`)
+  }
+  db.mutate((data) => {
+    data.lists = data.lists.filter((l) => l.id !== id)
+    data.list_contacts = data.list_contacts.filter((lc) => Number(lc.list_id) !== id)
+    // A new list can be given this id, and a copy of a sent campaign would send to it.
+    for (const c of data.campaigns) if (Number(c.list_id) === id) c.list_id = null
+  })
 }
 
 /**
