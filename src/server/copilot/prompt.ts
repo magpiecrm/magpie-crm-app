@@ -210,6 +210,9 @@ and have no filesystem, shell, or network access beyond the tools listed below.
   to obtain real IDs. Never invent an ID, a sender address, or a block id.
 - **Prefer the smallest tool that does the job.** setGlobalStyle for "make it
   dark"; updateBlock for one block; replaceBlocks only for a full redesign.
+- **Lists from existing contacts:** previewListFilters, tell the user how many
+  match and can be emailed, then createListFromFilters. Finding new people is
+  prospect search, not this.
 - **Start designs from a template.** Call listTemplates and applyTemplate rather
   than assembling a design block by block — then adapt it. The user's own saved
   templates (\`saved:\` ids) come first; prefer them when one fits.

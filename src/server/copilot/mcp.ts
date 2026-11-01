@@ -202,6 +202,8 @@ Deals, tasks and proposals: getDeals finds a deal; addTask, getTasks and updateT
 
 Sequences (cold outreach): createSequence drafts a first email and follow-ups (plain text, follow-ups replying in the same thread); previewSequenceEmail shows one as a contact gets it; previewEnrollment and enrollInSequence add a list's contacts; setSequenceStatus "active" starts sending in the sequence's hours, under its daily cap; getEnrollments shows who replied (replies stop a person's emails). Starting and enrolling send email, so confirm with the user.
 
+Lists from existing contacts: previewListFilters says how many match and can be emailed, then createListFromFilters makes the list. It fills once; addNewListMatches adds who matches later. Show the user the count first.
+
 Every marketing email needs an {{ unsubscribe }} link (the footer block has one), images need alt text, and image URLs come from searchImages, never invented.
 
 searchPeople uses one of the account's prospect credits for each person it shows, so only search when the user asked for it.

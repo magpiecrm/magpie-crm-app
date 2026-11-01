@@ -42,6 +42,8 @@ interface ClientAction {
 const TOOL_INVALIDATIONS: Record<string, Array<readonly unknown[]>> = {
   createList: [queryKeys.email.lists()],
   deleteList: [queryKeys.email.lists()],
+  createListFromFilters: [queryKeys.email.lists()],
+  addNewListMatches: [queryKeys.email.lists(), ['email', 'list'], ['email', 'contacts', 'list']],
   addContacts: [queryKeys.email.lists(), queryKeys.email.contacts(), queryKeys.email.contactsAll()],
   createCampaign: [queryKeys.email.campaigns()],
   updateCampaign: [queryKeys.email.campaigns()],

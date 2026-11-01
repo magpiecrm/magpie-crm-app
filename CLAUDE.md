@@ -100,6 +100,15 @@ key), with the app's actions as tools.
     production this file lives on a mounted volume.
   - `emailService.ts` / `nodemailer.ts` — campaign send pipeline: reads from
     `db.ts` and sends through the configured provider (`providers/`).
+  - `listBuilder.ts` — lists built from filters over the workspace's own
+    contacts. Filters fill a normal list once and are kept on it
+    (`lists.built_from`), new matches are added only when asked, and sending
+    doesn't know the difference. Picking people goes through `selectForList` in
+    `features/contacts/contactFilters.ts`, which refuses a filter it can't
+    apply. Don't use `applyFilters` for this: it ignores such a filter, and
+    returns everyone when none is left, which is right for a page view but not
+    for an audience. Previews and writes share one selection, and previews
+    return counts only.
   - `sendingLimits.ts` / `sendingReputation.ts` — only where the host's mail
     server sends (`SENDING_MANAGED`): daily limits for cold email (contacts
     found by prospecting who haven't signed up or replied) and opt-in email,
