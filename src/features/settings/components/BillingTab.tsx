@@ -143,7 +143,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
             </Button>
           }
         >
-          The payment provider is retrying it. Update your card so your plan carries on.
+          The payment provider is retrying it. Searching, reveals and sending are paused until it goes through, so update your card.
         </Notice>
       )}
       {b.live && b.cancelAt && (

@@ -136,7 +136,9 @@ export function requireAllowance(kind: AllowanceKind, n = 1, action?: string) {
   }
   const limit = a.limits[kind]!
   const message =
-    left === 0 || !action
+    limit === 0
+      ? `Your plan has no ${noun(kind, limit)} available right now. See Settings → Billing.`
+      : left === 0 || !action
       ? `You've used all ${fmt(limit)} ${noun(kind, limit)} in your plan this month. Upgrade to get more.`
       : `${action} needs ${fmt(n)} ${noun(kind, n)}, but your plan has ${fmt(left)} left this month. Upgrade to get more.`
   throw new AllowanceError(kind, message, a.upgradeUrl)
