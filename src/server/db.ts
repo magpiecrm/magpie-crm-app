@@ -1345,10 +1345,14 @@ class JsonDb {
       if (existingIdx >= 0) {
         // If using INSERT OR IGNORE, we should not overwrite an existing contact!
         if (!cleanSql.startsWith('INSERT OR IGNORE INTO contacts')) {
-          // The SQL only carries the built-in columns; custom field values
-          // would otherwise be wiped by every re-import or edit.
-          const custom = this.data.contacts[existingIdx].custom
-          this.data.contacts[existingIdx] = custom ? { ...contact, custom } : contact
+          // The SQL only carries a few columns: a value it brings wins, a blank
+          // one clears nothing, and the rest of the contact stays as it was
+          // (who found them, how sure the email is, when they signed up), so a
+          // re-import can't turn a prospect into an opt-in.
+          const existing = this.data.contacts[existingIdx]
+          for (const key of ['first_name', 'last_name', 'job_title', 'company'] as const) {
+            if (contact[key].trim()) existing[key] = contact[key]
+          }
           this.save()
         }
       } else {
