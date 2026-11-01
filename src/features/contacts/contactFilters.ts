@@ -1,6 +1,6 @@
 import { canonicalCountry } from '../../server/prospecting/geo'
 import { HEADCOUNT_BUCKETS, SENIORITY_LABEL, SENIORITY_LEVELS } from '../../server/prospecting/types'
-import type { ContactCustomValue, ContactFieldDef } from './contactFields'
+import { formatCustomValue, type ContactCustomValue, type ContactFieldDef } from './contactFields'
 
 /**
  * Filters on contacts: which fields can be filtered on, the ways each kind of
@@ -321,6 +321,63 @@ export function applyFilters<C extends FilterableContact>(contacts: C[], filters
   const active = filters.map((f) => ({ f, field: fields.find((x) => x.key === f.field) })).filter(({ f, field }) => isComplete(f, field))
   if (!active.length) return contacts
   return contacts.filter((c) => active.every(({ f, field }) => matchesFilter(c, f, field)))
+}
+
+export interface ContactSort {
+  column: string
+  dir: 'asc' | 'desc'
+}
+
+/** What a column sorts on: a number, or text. Null sits last whichever way it's sorted. */
+function sortKey(contact: FilterableContact, column: string, defs: ContactFieldDef[]): string | number | null {
+  const given = (v: string | undefined) => v?.trim() || null
+  switch (column) {
+    case 'contact':
+      return `${contact.attributes?.FIRSTNAME ?? ''} ${contact.attributes?.LASTNAME ?? ''}`.trim() || contact.email
+    case 'email':
+      return contact.email
+    case 'status':
+      return given(contact.status)
+    case 'company':
+      return given(contact.attributes?.COMPANY)
+    case 'job_title':
+      return given(contact.attributes?.JOB_TITLE)
+    case 'country':
+      return given(contact.country)
+    case 'created_at':
+      return given(contact.createdAt)
+  }
+  const key = column.replace(/^custom:/, '')
+  const value = contact.custom?.[key]
+  if (isBlank(value)) return null
+  const type = defs.find((d) => d.key === key)?.type
+  if (type === 'number') return Number.isFinite(Number(value)) ? Number(value) : null
+  if (type === 'boolean') return value === true ? 1 : 0
+  return formatCustomValue(value)
+}
+
+/** Contacts in a column's order, with anyone blank last either way. */
+export function sortContacts<C extends FilterableContact>(contacts: C[], sort: ContactSort | null, defs: ContactFieldDef[]): C[] {
+  if (!sort) return contacts
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+  const way = sort.dir === 'asc' ? 1 : -1
+  return contacts
+    .map((contact) => ({ contact, key: sortKey(contact, sort.column, defs) }))
+    .sort((a, b) => {
+      if (a.key === null || b.key === null) return a.key === b.key ? 0 : a.key === null ? 1 : -1
+      if (typeof a.key === 'number' && typeof b.key === 'number') return (a.key - b.key) * way
+      return collator.compare(String(a.key), String(b.key)) * way
+    })
+    .map(({ contact }) => contact)
+}
+
+/** Everything a search looks through for a contact, in lower case. */
+export function contactSearchText(contact: FilterableContact): string {
+  const { FIRSTNAME, LASTNAME, COMPANY, JOB_TITLE } = contact.attributes ?? {}
+  return [contact.email, FIRSTNAME, LASTNAME, COMPANY, JOB_TITLE, contact.country, ...Object.values(contact.custom ?? {}).map(formatCustomValue)]
+    .filter(Boolean)
+    .join('\n')
+    .toLowerCase()
 }
 
 /** A filter saved on a list, with its field's name in case the field goes. */

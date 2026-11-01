@@ -1,37 +1,34 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { useState, useMemo } from 'react'
+import { useDeferredValue, useState, useMemo } from 'react'
 import { 
   contactsFn, 
   listsFn, 
   listContactsFn,
   createContactFn,
-  deleteContactsFn,
-  getContactFieldsFn
+  deleteContactsFn
 } from '../../../server/functions'
 import { 
   Search, 
   Loader2, 
   ChevronDown, 
-  Mail, 
   SlidersHorizontal,
   X,
   ArrowLeft,
   Trash2,
-  BellOff,
-  AlertTriangle,
-  HelpCircle,
   Repeat,
-  ExternalLink
+  Columns3
 } from 'lucide-react'
-import { Avatar } from '../../../components/ui/Avatar'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { ContactDetails } from '../../../features/contacts/components/ContactDetails'
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
 import { ActiveFilters, AddFilterButton, newFilter } from '../../../features/contacts/components/ContactFilters'
-import { applyFilters, filterFields, isComplete, type ContactFilter } from '../../../features/contacts/contactFilters'
+import { applyFilters, contactSearchText, filterFields, isComplete, sortContacts, type ContactFilter, type ContactSort } from '../../../features/contacts/contactFilters'
+import { ContactTable } from '../../../features/contacts/components/ContactTable'
+import { AddColumnDialog, ColumnPicker } from '../../../features/contacts/components/ColumnPicker'
+import { useContactColumns } from '../../../features/contacts/useContactColumns'
 import { CustomFieldInput } from '../../../features/contacts/components/CustomFieldInput'
 import type { ContactCustomValue } from '../../../features/contacts/contactFields'
 import { Select } from '../../../components/ui/Select'
@@ -43,46 +40,6 @@ export const Route = createFileRoute('/marketing/contacts/')({
     typeof search.contact === 'string' && search.contact ? { contact: search.contact } : {},
   component: ContactsPage,
 })
-
-// Reflects `contacts.status` from the DB. This column previously rendered a
-// hardcoded green badge for every row, so unsubscribed and bounced contacts
-// looked subscribed — which hid the reason a campaign sent to nobody.
-// Campaign sends select `status = 'subscribed'`, so anything else is excluded.
-function SubscriptionBadge({ status }: { status?: string }) {
-  const styles = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold border'
-
-  switch (status) {
-    case 'subscribed':
-      return (
-        <span className={`${styles} bg-emerald-500/10 text-emerald-600 border-emerald-500/10`}>
-          <Mail className="w-3 h-3" />
-          Subscribed
-        </span>
-      )
-    case 'unsubscribed':
-      return (
-        <span className={`${styles} bg-amber-500/10 text-amber-600 border-amber-500/10`}>
-          <BellOff className="w-3 h-3" />
-          Unsubscribed
-        </span>
-      )
-    case 'bounced':
-      return (
-        <span className={`${styles} bg-red-500/10 text-red-600 border-red-500/10`}>
-          <AlertTriangle className="w-3 h-3" />
-          Bounced
-        </span>
-      )
-    default:
-      // Never silently render an unknown status as subscribed.
-      return (
-        <span className={`${styles} bg-muted text-muted-foreground border-border`}>
-          <HelpCircle className="w-3 h-3" />
-          {status || 'Unknown'}
-        </span>
-      )
-  }
-}
 
 function ContactsPage() {
   const queryClient = useQueryClient()
@@ -97,6 +54,9 @@ function ContactsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
   const [selectedEmails, setSelectedEmails] = useState<string[]>([])
+  const [sort, setSort] = useState<ContactSort | null>(null)
+  const [choosingColumns, setChoosingColumns] = useState(false)
+  const [addingColumn, setAddingColumn] = useState(false)
 
   // Drawer Form State
   const [showDrawer, setShowDrawer] = useState(false)
@@ -161,10 +121,7 @@ function ContactsPage() {
     queryFn: () => listsFn(),
   })
 
-  const { data: contactFields = [] } = useQuery({
-    queryKey: queryKeys.email.contactFields(),
-    queryFn: () => getContactFieldsFn(),
-  })
+  const { fields: contactFields, columns } = useContactColumns('contacts')
 
   // Fetch all contacts
   const { data: allContactsData, isLoading: isLoadingAllContacts } = useQuery({
@@ -193,42 +150,31 @@ function ContactsPage() {
   const fields = useMemo(() => filterFields(contactFields, rawContacts), [contactFields, rawContacts])
   const activeFilters = useMemo(() => filters.filter((f) => isComplete(f, fields.find((x) => x.key === f.field))), [filters, fields])
 
-  // Client-side search and filtering
+  // Worked out once, on the first search, rather than on every letter typed.
+  const deferredSearch = useDeferredValue(searchTerm)
+  const searching = deferredSearch.trim() !== ''
+  const searchTexts = useMemo(() => (searching ? new Map(rawContacts.map((c: any) => [c.email, contactSearchText(c)])) : null), [rawContacts, searching])
+
+  // Client-side search, filtering and sorting
   const contacts = useMemo(() => {
     const filtered = applyFilters(rawContacts as any[], filters, fields)
-    if (!searchTerm.trim()) return filtered
-    const term = searchTerm.toLowerCase()
-    return filtered.filter((c: any) => {
-      const email = (c.email || '').toLowerCase()
-      const firstName = (c.attributes?.FIRSTNAME || '').toLowerCase()
-      const lastName = (c.attributes?.LASTNAME || '').toLowerCase()
-      const company = (c.attributes?.COMPANY || '').toLowerCase()
-      const jTitle = (c.attributes?.JOB_TITLE || '').toLowerCase()
-      const country = (c.country || '').toLowerCase()
-      return email.includes(term) || firstName.includes(term) || lastName.includes(term) || company.includes(term) || jTitle.includes(term) || country.includes(term)
-    })
-  }, [rawContacts, searchTerm, filters, fields])
+    if (!searchTexts) return sortContacts(filtered, sort, contactFields)
+    const term = deferredSearch.trim().toLowerCase()
+    return sortContacts(filtered.filter((c: any) => searchTexts.get(c.email)?.includes(term)), sort, contactFields)
+  }, [rawContacts, searchTexts, deferredSearch, filters, fields, sort, contactFields])
 
   // Reset page when search, list or filters change. The filters are compared
   // by what they say: the list itself is a new one on every render.
   const filterKey = JSON.stringify(activeFilters.map((f) => [f.field, f.op, f.value, f.values]))
   useMemo(() => {
     setCurrentPage(1)
-  }, [searchTerm, selectedListId, filterKey])
+  }, [searchTerm, selectedListId, filterKey, sort])
 
   // Slice contacts for current page
   const paginatedContacts = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage
     return contacts.slice(startIndex, startIndex + itemsPerPage)
   }, [contacts, currentPage, itemsPerPage])
-
-  const isAllSelected = useMemo(() => {
-    return paginatedContacts.length > 0 && paginatedContacts.every((c: any) => selectedEmails.includes(c.email))
-  }, [paginatedContacts, selectedEmails])
-
-  const isSomeSelected = useMemo(() => {
-    return paginatedContacts.some((c: any) => selectedEmails.includes(c.email)) && !isAllSelected
-  }, [paginatedContacts, selectedEmails, isAllSelected])
 
   const selectedListName = selectedListId !== null
     ? lists.find((l: any) => l.id === selectedListId)?.name || `List #${selectedListId}`
@@ -639,6 +585,15 @@ function ContactsPage() {
           </div>
           <button
             type="button"
+            onClick={() => setChoosingColumns(true)}
+            aria-label="Choose columns"
+            title="Choose columns"
+            className="p-2 border border-border rounded-xl hover:bg-muted/40 transition-colors bg-card cursor-pointer text-muted-foreground"
+          >
+            <Columns3 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
             onClick={() => setShowAddFilter(true)}
             aria-label="Add a filter"
             title="Add a filter"
@@ -663,203 +618,20 @@ function ContactsPage() {
             : `${contacts.length.toLocaleString()} contacts`}
       </div>
 
-      {/* Table Card */}
-      <div className="bg-card border border-border overflow-hidden shadow-sm">
-        {/* Mobile card list — the 7-column table below is unreadable under md */}
-        <ul className="md:hidden divide-y divide-border">
-          {isLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <li key={i} className="p-4 animate-pulse">
-                <div className="h-6 bg-muted rounded w-full" />
-              </li>
-            ))
-          ) : contacts.length === 0 ? (
-            <li className="p-8 text-center text-muted-foreground text-sm">No contacts found.</li>
-          ) : (
-            paginatedContacts.map((contact: any) => {
-              const firstName = contact.attributes?.FIRSTNAME || ''
-              const lastName = contact.attributes?.LASTNAME || ''
-              const fullName = `${firstName} ${lastName}`.trim() || contact.email
-
-              return (
-                <li
-                  key={contact.email}
-                  onClick={() => setSelectedContactEmail(contact.email)}
-                  className="p-4 flex items-start gap-3 active:bg-muted/40 transition-colors cursor-pointer"
-                >
-                  <label
-                    onClick={(e) => e.stopPropagation()}
-                    className="touch-target flex items-center justify-center shrink-0 -m-2 p-2"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedEmails.includes(contact.email)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedEmails([...selectedEmails, contact.email])
-                        } else {
-                          setSelectedEmails(selectedEmails.filter(email => email !== contact.email))
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent"
-                    />
-                  </label>
-                  <Avatar name={fullName} />
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-foreground truncate">{fullName}</p>
-                    <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
-                    {(contact.attributes?.JOB_TITLE || contact.attributes?.COMPANY) && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {contact.attributes.JOB_TITLE}
-                        {contact.attributes.JOB_TITLE && contact.attributes.COMPANY && ' at '}
-                        <CompanyName name={contact.attributes.COMPANY} companyId={contact.companyId} />
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <SubscriptionBadge status={contact.status} />
-                      <span className="text-[10px] text-muted-foreground font-medium">
-                        {new Date(contact.createdAt).toLocaleDateString(undefined, {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric'
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              )
-            })
-          )}
-        </ul>
-
-        <table className="hidden md:table w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-border bg-muted/20 text-xs font-bold text-muted-foreground uppercase tracking-wider">
-              <th className="px-6 py-4 w-12">
-                <input 
-                  type="checkbox" 
-                  checked={isAllSelected}
-                  ref={(el) => {
-                    if (el) {
-                      el.indeterminate = isSomeSelected
-                    }
-                  }}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      const newSelected = [...selectedEmails]
-                      paginatedContacts.forEach((c: any) => {
-                        if (!newSelected.includes(c.email)) {
-                          newSelected.push(c.email)
-                        }
-                      })
-                      setSelectedEmails(newSelected)
-                    } else {
-                      const paginatedEmails = paginatedContacts.map((c: any) => c.email)
-                      setSelectedEmails(selectedEmails.filter(email => !paginatedEmails.includes(email)))
-                    }
-                  }}
-                  className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent" 
-                />
-              </th>
-              <th className="px-6 py-4">Contact</th>
-              <th className="px-6 py-4">Subscribed</th>
-              <th className="px-6 py-4">Blocklisted</th>
-              <th className="px-6 py-4">Email</th>
-              <th className="px-6 py-4">Country</th>
-              <th className="px-6 py-4">Creation Date</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border text-sm">
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="animate-pulse">
-                  <td colSpan={7} className="px-6 py-7">
-                    <div className="h-6 bg-muted rounded w-full" />
-                  </td>
-                </tr>
-              ))
-            ) : contacts.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
-                  No contacts found.
-                </td>
-              </tr>
-            ) : (
-              paginatedContacts.map((contact: any) => {
-                const firstName = contact.attributes?.FIRSTNAME || ''
-                const lastName = contact.attributes?.LASTNAME || ''
-                const fullName = `${firstName} ${lastName}`.trim() || contact.email
-
-                return (
-                  <tr 
-                    key={contact.email} 
-                    className="hover:bg-muted/30 transition-colors cursor-pointer"
-                    onClick={() => setSelectedContactEmail(contact.email)}
-                  >
-                    <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedEmails.includes(contact.email)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedEmails([...selectedEmails, contact.email])
-                          } else {
-                            setSelectedEmails(selectedEmails.filter(email => email !== contact.email))
-                          }
-                        }}
-                        className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent" 
-                      />
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={fullName} />
-                        <div>
-                          <p className="font-semibold text-foreground flex items-center gap-1.5">
-                            {fullName}
-                            {contact.linkedinUrl && (
-                              <a
-                                href={contact.linkedinUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                aria-label={`${fullName} on LinkedIn`}
-                                title="Open their LinkedIn profile"
-                                className="text-muted-foreground hover:text-accent"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            )}
-                          </p>
-                          {(contact.attributes?.JOB_TITLE || contact.attributes?.COMPANY) && (
-                            <p className="text-xs text-muted-foreground">
-                              {contact.attributes.JOB_TITLE}
-                              {contact.attributes.JOB_TITLE && contact.attributes.COMPANY && ' at '}
-                              <CompanyName name={contact.attributes.COMPANY} companyId={contact.companyId} />
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <SubscriptionBadge status={contact.status} />
-                    </td>
-                    <td className="px-6 py-4 text-muted-foreground">—</td>
-                    <td className="px-6 py-4 font-medium text-foreground">{contact.email}</td>
-                    <td className="px-6 py-4 text-muted-foreground">{contact.country || '—'}</td>
-                    <td className="px-6 py-4 text-xs text-muted-foreground font-medium">
-                      {new Date(contact.createdAt).toLocaleDateString(undefined, {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                      })}
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ContactTable
+        columns={columns}
+        fields={contactFields}
+        rows={paginatedContacts}
+        isLoading={isLoading}
+        empty="No contacts found."
+        sort={sort}
+        onSort={setSort}
+        onRowClick={setSelectedContactEmail}
+        selection={{ selected: selectedEmails, onChange: setSelectedEmails }}
+        onAddColumn={() => setAddingColumn(true)}
+      />
+      {addingColumn && <AddColumnDialog view="contacts" onClose={() => setAddingColumn(false)} />}
+      {choosingColumns && <ColumnPicker view="contacts" columns={columns} fields={contactFields} onClose={() => setChoosingColumns(false)} onAddColumn={() => setAddingColumn(true)} />}
 
       <Pagination
         totalItems={contacts.length}
@@ -869,20 +641,5 @@ function ContactsPage() {
         onPageChange={setCurrentPage}
       />
     </div>
-  )
-}
-
-/** The contact's company name, linking to its company page when it has one. */
-function CompanyName({ name, companyId }: { name: string; companyId: string | null }) {
-  if (!name || !companyId) return <>{name}</>
-  return (
-    <Link
-      to="/marketing/companies/$id"
-      params={{ id: companyId }}
-      onClick={(e) => e.stopPropagation()}
-      className="hover:text-accent hover:underline"
-    >
-      {name}
-    </Link>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFilters, filterFields, isComplete, newFilter, type ContactFilter, type FilterableContact } from './contactFilters'
+import { applyFilters, contactSearchText, filterFields, isComplete, newFilter, sortContacts, type ContactFilter, type FilterableContact } from './contactFilters'
 import type { ContactFieldDef } from './contactFields'
 
 const contacts: FilterableContact[] = [
@@ -105,5 +105,39 @@ describe('contact filters', () => {
   it('starts a filter where it always did', () => {
     const starts: Record<string, string> = { company: 'contains', country: 'is', created_at: 'on_or_after', 'custom:seats': 'is', 'custom:vip': 'yes' }
     for (const [key, op] of Object.entries(starts)) expect(newFilter(fields.find((x) => x.key === key)!).op).toBe(op)
+  })
+})
+
+describe('sorting contacts', () => {
+  const defs: ContactFieldDef[] = [
+    { key: 'seats', label: 'Seats', type: 'number', created_at: 'now' },
+    { key: 'renews', label: 'Renews', type: 'date', created_at: 'now' },
+    { key: 'paid', label: 'Paid', type: 'boolean', created_at: 'now' },
+  ]
+  const people = [
+    { email: 'a@x.co', custom: { seats: 10, renews: '2026-03-01', paid: false } },
+    { email: 'b@x.co', custom: {} },
+    { email: 'c@x.co', custom: { seats: 9, renews: '2025-03-01', paid: true } },
+  ]
+  const order = (column: string, dir: 'asc' | 'desc') => sortContacts(people, { column, dir }, defs).map((c) => c.email[0]).join('')
+
+  it('compares numbers as numbers, dates in order and blanks last either way', () => {
+    expect(order('custom:seats', 'asc')).toBe('cab')
+    expect(order('custom:seats', 'desc')).toBe('acb')
+    expect(order('custom:renews', 'asc')).toBe('cab')
+    expect(order('custom:paid', 'desc')).toBe('cab')
+  })
+
+  it('leaves the order alone with no sort, and sorts names ignoring case', () => {
+    expect(sortContacts(people, null, defs)).toBe(people)
+    const named = [{ email: 'z@x.co', attributes: { FIRSTNAME: 'bea' } }, { email: 'y@x.co', attributes: { FIRSTNAME: 'Al' } }]
+    expect(sortContacts(named, { column: 'contact', dir: 'asc' }, []).map((c) => c.email)).toEqual(['y@x.co', 'z@x.co'])
+  })
+})
+
+describe('searching contacts', () => {
+  it('looks through custom values as well as the built-ins', () => {
+    const text = contactSearchText({ email: 'a@x.co', attributes: { FIRSTNAME: 'Ada' }, country: 'Portugal', custom: { plan: 'Enterprise', tags: ['VIP'], paid: true } })
+    for (const term of ['a@x.co', 'ada', 'portugal', 'enterprise', 'vip']) expect(text).toContain(term)
   })
 })

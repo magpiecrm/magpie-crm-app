@@ -1,20 +1,19 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import {
-  createContactFieldFn,
   deleteContactFieldFn,
   getContactFieldsFn,
   updateContactFieldFn,
 } from '../../../server/functions'
-import type { ContactFieldDef, ContactFieldType } from '../../contacts/contactFields'
-import { CONTACT_FIELD_TYPES, hasOptions, parseOptions, slugifyFieldKey, TYPE_LABELS, validateFieldKey } from '../../contacts/contactFields'
+import type { ContactFieldDef } from '../../contacts/contactFields'
+import { hasOptions, parseOptions, TYPE_LABELS } from '../../contacts/contactFields'
+import { ContactFieldForm } from '../../contacts/components/ContactFieldForm'
 import { invalidateContactFields } from '../../contacts/contactCache'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { Select } from '../../../components/ui/Select'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 /**
@@ -29,29 +28,6 @@ export function ContactFieldsTab() {
   })
   const invalidate = () => invalidateContactFields(queryClient)
 
-  const [label, setLabel] = useState('')
-  const [key, setKey] = useState('')
-  const [keyTouched, setKeyTouched] = useState(false)
-  const [type, setType] = useState<ContactFieldType>('text')
-  const [options, setOptions] = useState('')
-  const effectiveKey = keyTouched ? key : slugifyFieldKey(label)
-  const keyError = label || keyTouched ? validateFieldKey(effectiveKey) : null
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      createContactFieldFn({
-        data: { key: effectiveKey, label: label.trim(), type, options: hasOptions(type) ? parseOptions(options) : undefined },
-      }),
-    onSuccess: () => {
-      invalidate()
-      setLabel('')
-      setKey('')
-      setKeyTouched(false)
-      setOptions('')
-      setType('text')
-    },
-  })
-
   const deleteMutation = useMutation({
     mutationFn: (key: string) => deleteContactFieldFn({ data: { key } }),
     onSuccess: invalidate,
@@ -62,7 +38,7 @@ export function ContactFieldsTab() {
       <SettingsPanel>
         <SettingsBlock
           title="Your fields"
-          description="Custom fields appear on contact profiles and exports, and survey answers can be saved to them."
+          description="Custom fields can be shown as columns in your contacts, filled in by hand, by import or from survey answers, and used in emails."
         >
           {isLoading ? (
             <SettingsEmpty>Loading…</SettingsEmpty>
@@ -85,50 +61,7 @@ export function ContactFieldsTab() {
         </SettingsBlock>
 
         <SettingsBlock title="Add a field">
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={e => {
-              e.preventDefault()
-              if (!keyError && label.trim()) createMutation.mutate()
-            }}
-          >
-            <FieldGrid>
-              <Field label="Label">
-                <input className={INPUT_CLASS} value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Industry" />
-              </Field>
-              <Field label="Key" hint="Can't be changed later." error={keyError ?? undefined}>
-                <input
-                  className={INPUT_CLASS}
-                  value={effectiveKey}
-                  onChange={e => {
-                    setKeyTouched(true)
-                    setKey(e.target.value)
-                  }}
-                  placeholder="industry"
-                />
-              </Field>
-              <Field label="Type">
-                <Select className={INPUT_CLASS} value={type} onChange={e => setType(e.target.value as ContactFieldType)}>
-                  {CONTACT_FIELD_TYPES.map(t => (
-                    <option key={t} value={t}>
-                      {TYPE_LABELS[t]}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              {hasOptions(type) && (
-                <Field label="Options" hint="Separate them with commas.">
-                  <input className={INPUT_CLASS} value={options} onChange={e => setOptions(e.target.value)} placeholder="SaaS, Retail, Finance" />
-                </Field>
-              )}
-            </FieldGrid>
-            {!keyError && createMutation.error && <Notice level="error">{createMutation.error.message}</Notice>}
-            <SettingsActions>
-              <Button type="submit" disabled={!label.trim() || !!keyError} isLoading={createMutation.isPending} leftIcon={<Plus className="h-4 w-4" />}>
-                Add field
-              </Button>
-            </SettingsActions>
-          </form>
+          <ContactFieldForm submitLabel="Add field" onCreated={invalidate} Actions={SettingsActions} />
         </SettingsBlock>
       </SettingsPanel>
     </div>
@@ -190,8 +123,9 @@ function FieldRow({ field, onSaved, onDelete }: { field: ContactFieldDef; onSave
               </Field>
             )}
           </FieldGrid>
+          {saveMutation.error && <Notice level="error">{saveMutation.error.message}</Notice>}
           <SettingsActions>
-            <Button size="sm" onClick={() => saveMutation.mutate()}>
+            <Button size="sm" onClick={() => saveMutation.mutate()} isLoading={saveMutation.isPending}>
               Save
             </Button>
             <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
