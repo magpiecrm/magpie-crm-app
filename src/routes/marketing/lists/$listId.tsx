@@ -8,6 +8,7 @@ import { Avatar } from '../../../components/ui/Avatar'
 import { useState } from 'react'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
+import { BuiltFromPanel } from '../../../features/contacts/components/BuiltFromPanel'
 import { contactExportColumnsWith } from '../../../features/contacts/exportColumns'
 
 export const Route = createFileRoute('/marketing/lists/$listId')({
@@ -109,6 +110,8 @@ function ListDetailsPage() {
           </div>
         </div>
       </div>
+
+      {currentList?.builtFrom && <BuiltFromPanel listId={parseInt(listId)} builtFrom={currentList.builtFrom} />}
 
       <div className="card border border-border overflow-hidden bg-card shadow-sm">
         {/* Mobile card list */}

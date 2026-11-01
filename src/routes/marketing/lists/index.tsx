@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { Users, Plus, List as ListIcon, Loader2, X, Trash2 } from 'lucide-react'
+import { Users, Plus, List as ListIcon, Loader2, X, Trash2, Filter } from 'lucide-react'
 import { useState } from 'react'
 import { listsFn, createListFn, deleteListFn } from '../../../server/functions'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
@@ -62,18 +62,25 @@ function ListsPage() {
 
   return (
     <div className="p-4 lg:p-8">
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-display text-foreground mb-2">Contact Lists</h1>
           <p className="text-muted-foreground">Manage your synced contact lists locally.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <ExportMenu
             filename="lists"
             sheetName="Lists"
             rows={lists as ListRow[]}
             columns={listExportColumns}
           />
+          <Link
+            to="/marketing/lists/new"
+            className="border border-border bg-card text-foreground px-4 py-2.5 rounded-md-s font-medium hover:bg-muted transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <Filter className="w-4 h-4" />
+            Build from contacts
+          </Link>
           <button 
             onClick={() => setShowModal(true)}
             className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
@@ -128,6 +135,7 @@ function ListsPage() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Users className="w-4 h-4" />
                 {list.totalContacts} contacts
+                {list.builtFrom && <span className="text-xs">· from filters</span>}
               </div>
             </Link>
           ))

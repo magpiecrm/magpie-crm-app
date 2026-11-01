@@ -43,6 +43,7 @@ import { Route as ApiUploadsIndexRouteImport } from './routes/api/uploads/index'
 import { Route as SalesSequencesIdRouteImport } from './routes/sales/sequences/$id'
 import { Route as SalesProposalsProposalIdRouteImport } from './routes/sales/proposals/$proposalId'
 import { Route as SalesDealsIdRouteImport } from './routes/sales/deals/$id'
+import { Route as MarketingListsNewRouteImport } from './routes/marketing/lists/new'
 import { Route as MarketingListsListIdRouteImport } from './routes/marketing/lists/$listId'
 import { Route as MarketingFormsFormIdRouteImport } from './routes/marketing/forms/$formId'
 import { Route as MarketingContactsImportRouteImport } from './routes/marketing/contacts/import'
@@ -241,6 +242,11 @@ const SalesDealsIdRoute = SalesDealsIdRouteImport.update({
   path: '/sales/deals/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketingListsNewRoute = MarketingListsNewRouteImport.update({
+  id: '/marketing/lists/new',
+  path: '/marketing/lists/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MarketingListsListIdRoute = MarketingListsListIdRouteImport.update({
   id: '/marketing/lists/$listId',
   path: '/marketing/lists/$listId',
@@ -411,6 +417,7 @@ export interface FileRoutesByFullPath {
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -468,6 +475,7 @@ export interface FileRoutesByTo {
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -530,6 +538,7 @@ export interface FileRoutesById {
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
   '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
+  '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -593,6 +602,7 @@ export interface FileRouteTypes {
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/marketing/lists/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -650,6 +660,7 @@ export interface FileRouteTypes {
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/marketing/lists/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -711,6 +722,7 @@ export interface FileRouteTypes {
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
     | '/marketing/lists/$listId'
+    | '/marketing/lists/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -767,6 +779,7 @@ export interface RootRouteChildren {
   MarketingCampaignsIdRoute: typeof MarketingCampaignsIdRoute
   MarketingCompaniesIdRoute: typeof MarketingCompaniesIdRoute
   MarketingListsListIdRoute: typeof MarketingListsListIdRoute
+  MarketingListsNewRoute: typeof MarketingListsNewRoute
   SalesDealsIdRoute: typeof SalesDealsIdRoute
   SalesProposalsProposalIdRoute: typeof SalesProposalsProposalIdRoute
   SalesSequencesIdRoute: typeof SalesSequencesIdRoute
@@ -1021,6 +1034,13 @@ declare module '@tanstack/react-router' {
       path: '/sales/deals/$id'
       fullPath: '/sales/deals/$id'
       preLoaderRoute: typeof SalesDealsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/marketing/lists/new': {
+      id: '/marketing/lists/new'
+      path: '/marketing/lists/new'
+      fullPath: '/marketing/lists/new'
+      preLoaderRoute: typeof MarketingListsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/marketing/lists/$listId': {
@@ -1307,6 +1327,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingCampaignsIdRoute: MarketingCampaignsIdRoute,
   MarketingCompaniesIdRoute: MarketingCompaniesIdRoute,
   MarketingListsListIdRoute: MarketingListsListIdRoute,
+  MarketingListsNewRoute: MarketingListsNewRoute,
   SalesDealsIdRoute: SalesDealsIdRoute,
   SalesProposalsProposalIdRoute: SalesProposalsProposalIdRoute,
   SalesSequencesIdRoute: SalesSequencesIdRoute,

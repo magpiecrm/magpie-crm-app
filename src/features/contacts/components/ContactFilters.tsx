@@ -198,7 +198,7 @@ function FilterRow({ filter, field, onChange, onRemove }: { filter: ContactFilte
           />
         ))}
       {field.kind === 'activity' && <span className="text-xs text-muted-foreground">days</span>}
-      <button type="button" onClick={onRemove} aria-label={`Remove the ${field.label} filter`} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer">
+      <button type="button" onClick={onRemove} aria-label={`Remove the ${field.label} filter`} className="ml-auto p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50 cursor-pointer">
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
