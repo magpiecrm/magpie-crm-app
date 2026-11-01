@@ -178,7 +178,7 @@ async function processPerson(
     if (isSuppressed(hashesFor({ ...person, domain }), suppressed)) return { ...base, status: 'suppressed' }
     if (!domain) {
       recordLookup('noDomain')
-      void noteSearchLookup(person.searchId, 'noDomain', { source: how.source, check: person.mailCheck })
+      void noteSearchLookup(person.searchId, 'noDomain', { source: how.source, check: person.mailCheck, website: person.fromWebsite })
       return {
         ...base,
         status: 'no_domain',
@@ -208,7 +208,7 @@ async function processPerson(
   if (found.outcome) {
     recordLookup(found.outcome)
     if (looked) void recordFinderStats(person, found as FindResult, headcount)
-    void noteSearchLookup(person.searchId, found.outcome, { source: how.source, check: person.mailCheck })
+    void noteSearchLookup(person.searchId, found.outcome, { source: how.source, check: person.mailCheck, website: person.fromWebsite })
   }
   // Nothing handed over, for a reason no retry changes: remembered, so later
   // searches can leave them out (unverifiable.ts).

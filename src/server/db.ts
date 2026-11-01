@@ -877,15 +877,17 @@ class JsonDb {
     this.save()
   }
 
-  /** Counts how an email lookup ended against the search that showed the person. */
-  noteSearchLookup(id: string, outcome: string, how: { source?: string; check?: string } = {}) {
+  /** Counts how an email lookup ended against the search that showed the person; false if that search has no line. */
+  noteSearchLookup(id: string, outcome: string, how: { source?: string; check?: string; website?: boolean } = {}): boolean {
     const entry = this.data.search_log?.find((e) => e.id === id)
-    if (!entry) return
+    if (!entry) return false
     const add = (into: Record<string, number>) => void (into[outcome] = (into[outcome] ?? 0) + 1)
     add(entry.lookups as Record<string, number>)
     if (how.source) add(((entry.lookupsBySource ??= {})[how.source] ??= {}) as Record<string, number>)
     add(((entry.lookupsByCheck ??= {})[how.check ?? 'none'] ??= {}) as Record<string, number>)
+    if (how.website) add((entry.lookupsFromWebsite ??= {}) as Record<string, number>)
     this.save()
+    return true
   }
 
   /** The logged searches that finished on or after a day (YYYY-MM-DD), oldest first. */

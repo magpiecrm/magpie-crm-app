@@ -305,6 +305,7 @@ export async function verifiedPeopleSearch(
   let rounds = 0
   let stop = 'time limit'
   let roundFound = 0
+  let websiteFound = 0
 
   /** Makes `people` ready and adds them to the page, as far as there's room. */
   const take = async (people: PersonResult[]) => {
@@ -349,6 +350,7 @@ export async function verifiedPeopleSearch(
           seen.add(row.profileUrl)
           const person = mapPerson(row, searchId)
           ;(person.fromWebsite ? fromWebsite : fresh).push(person)
+          if (person.fromWebsite) websiteFound++
         }
         await take(fresh)
         if (usable() >= count) {
@@ -388,7 +390,9 @@ export async function verifiedPeopleSearch(
 
   const kept = funnel.finish(items, stop !== 'source failed')
   const shown = usable()
-  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...statCounts(stats) }
+  const onWebsites = items.filter((p) => p.fromWebsite)
+  const websiteCounts: Record<string, number> = websiteFound ? { websiteFound, websiteShown: onWebsites.filter((p) => !funnel.hidden(p)).length, websiteHidden: onWebsites.filter(funnel.hidden).length } : {}
+  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...websiteCounts, ...statCounts(stats) }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,

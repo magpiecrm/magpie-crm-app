@@ -42,7 +42,20 @@ export interface SearchLogEntry {
   lookupsBySource?: Record<string, Partial<Record<LookupOutcome, number>>>
   /** The same, by what was known of the domain when the person was shown (PersonResult.mailCheck). */
   lookupsByCheck?: Record<string, Partial<Record<LookupOutcome, number>>>
+  /** The same again, for the people it found on a company's website alone. */
+  lookupsFromWebsite?: Partial<Record<LookupOutcome, number>>
 }
+
+interface LookupHow {
+  source?: string
+  check?: string
+  /** The person was found on their company's website. */
+  website?: boolean
+}
+
+/** Lookups for a search still running, which has no line yet: a slow one's people get revealed as they show. Outcomes and categories only. */
+const early = new Map<string, Array<{ outcome: LookupOutcome; how: LookupHow }>>()
+const MAX_EARLY = 200
 
 /** A short id for one search: random, and meaning nothing by itself. */
 export const newSearchId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 16)
@@ -51,6 +64,8 @@ export async function logSearch(entry: Omit<SearchLogEntry, 'lookups'>) {
   try {
     const { db } = await import('../db')
     db.addSearchLog({ ...entry, lookups: {} })
+    for (const { outcome, how } of early.get(entry.id) ?? []) db.noteSearchLookup(entry.id, outcome, how)
+    early.delete(entry.id)
   } catch (err: any) {
     // Keeping the log must never break the search it's about.
     console.error('[Prospecting] Failed to log the search:', err?.message ?? err)
@@ -62,11 +77,13 @@ export async function logSearch(entry: Omit<SearchLogEntry, 'lookups'>) {
  * it's still in the log, with where its domain came from and what was known
  * of that domain when they were shown (categories, nothing about the person).
  */
-export async function noteSearchLookup(searchId: string | null | undefined, outcome: LookupOutcome, how: { source?: string; check?: string } = {}) {
+export async function noteSearchLookup(searchId: string | null | undefined, outcome: LookupOutcome, how: LookupHow = {}) {
   if (!searchId) return
   try {
     const { db } = await import('../db')
-    db.noteSearchLookup(searchId, outcome, how)
+    if (db.noteSearchLookup(searchId, outcome, how)) return
+    early.set(searchId, [...(early.get(searchId) ?? []), { outcome, how }])
+    if (early.size > MAX_EARLY) early.delete(early.keys().next().value!)
   } catch (err: any) {
     console.error('[Prospecting] Failed to note a lookup against its search:', err?.message ?? err)
   }

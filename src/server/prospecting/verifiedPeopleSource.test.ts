@@ -92,6 +92,20 @@ describe('verifiedPeopleSearch', () => {
       expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full' }))
     })
 
+    it('are counted apart in the search log', async () => {
+      const dead: VerifiedFunnel = {
+        prepare: async (people) => people.map((p) => (p.lastName === 'web2' ? { ...p, catchAll: true } : p)),
+        hidden: (p: PersonResult) => Boolean(p.catchAll),
+        findableFirst: (people) => people,
+        plan: { places: [], placesOnly: false },
+        nextRound: () => false,
+        finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }),
+      }
+      const c = calls([{ found: 4, nextCursor: 4, people: [profile('one'), site('web1'), site('web2'), site('web3')] }])
+      await verifiedPeopleSearch({ titles: ['Founder'], count: 2 }, {}, { ...deps(c), funnel: dead })
+      expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ counts: expect.objectContaining({ websiteFound: 3, websiteShown: 1, websiteHidden: 1 }) }))
+    })
+
     it('still come through when the search runs out of time', async () => {
       let t = 0
       const c = { start: async () => ({ id: 's1' }), poll: async () => ({ status: 'running', found: 1, nextCursor: 1, people: [site('web1')] }), cancel: async () => {} }

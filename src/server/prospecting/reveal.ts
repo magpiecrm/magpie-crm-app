@@ -100,7 +100,7 @@ export async function revealEmail(person: PersonResult, deps: RevealDeps): Promi
 
   const how: { source?: DomainSource } = {}
   const domain = await domainForPerson(person, deps.source, deps.db, undefined, how)
-  const noted = { source: how.source, check: person.mailCheck }
+  const noted = { source: how.source, check: person.mailCheck, website: person.fromWebsite }
   if (!domain) {
     recordLookup('noDomain')
     void noteSearchLookup(person.searchId, 'noDomain', noted)
