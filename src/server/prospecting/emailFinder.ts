@@ -19,7 +19,7 @@
 // is returned as `unverified`.
 
 import crypto from 'crypto'
-import type { EmailDomainRecord } from '../db'
+import type { EmailDomainRecord } from './emailDomain'
 import { firstLastLikelihood, formatPrior } from './formatStats'
 import { weighFormats, type KnownAddress } from './patternEvidence'
 import { generateCandidates, type Candidate } from './patterns'
@@ -27,7 +27,6 @@ import { isPlatformDomain } from './platformDomains'
 import {
   familyFromMx,
   isGateway,
-  isPacing,
   providerFromMx,
   refusedIp,
   VerificationLimitError,
@@ -37,7 +36,6 @@ import {
 } from './proxyRouter'
 import type { CheckResult } from './reacher'
 import type { EmailStatus, LookupOutcome } from './types'
-import { recordLimit, recordLookup } from '../usage'
 
 const DAY = 86_400_000
 /** A learned address format is re-checked after this long. */
@@ -433,24 +431,6 @@ function learnPattern(domain: string, pattern: string, deps: FinderDeps) {
   } else {
     // Mixed patterns at one company: weaken the old one rather than flip-flop.
     deps.updateDomain(domain, { pattern_confidence: Math.max(0, rec.pattern_confidence - 0.2) })
-  }
-}
-
-/**
- * findEmail, counting which verification limit stopped it (recordLimit) and,
- * unless it was only pacing that the caller waits out (isPacing), the lookup
- * as `limit`, before the error goes on. Other outcomes are counted by the
- * caller, once the result is final.
- */
-export async function findEmailCounted(...args: Parameters<typeof findEmail>): Promise<FindResult> {
-  try {
-    return await findEmail(...args)
-  } catch (err) {
-    if (err instanceof VerificationLimitError) {
-      recordLimit(err.code)
-      if (!isPacing(err)) recordLookup('limit')
-    }
-    throw err
   }
 }
 

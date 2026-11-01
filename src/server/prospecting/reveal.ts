@@ -9,7 +9,8 @@
 // then saved.
 
 import { domainForPerson, type DomainSource } from './companies'
-import { findEmailCounted, type FinderDeps } from './emailFinder'
+import type { FinderDeps } from './emailFinder'
+import { findEmailCounted } from './findEmailCounted'
 import { recordFinderStats } from './finderStats'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 import { bucketTop, handsOver, type CompanySource, type EmailStatus, type PersonResult } from './types'
