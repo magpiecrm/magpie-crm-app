@@ -336,6 +336,13 @@ async function skipBeforeLookup(
  * next search or a Reveal.
  */
 const AHEAD_MS = 20_000
+/**
+ * The same for a verified search, which already takes minutes. A company that
+ * accepts every address takes two checks in separate sessions, so those left
+ * waiting after AHEAD_MS were nearly all such companies (16 lookups in 16 at
+ * hq, 2026-11-01), shown and charged for with no email to find.
+ */
+const VERIFIED_AHEAD_MS = 75_000
 
 /**
  * Tests of mail domains nobody has looked an email up at yet, made while a
@@ -372,13 +379,13 @@ function domainTests() {
         })().catch(() => {}),
       )
     },
-    /** Waits up to AHEAD_MS for these domains' tests, starting any not begun: how many were answered in time. */
-    async settle(domains: string[]): Promise<number> {
+    /** Waits up to `waitMs` for these domains' tests, starting any not begun: how many were answered in time. */
+    async settle(domains: string[], waitMs: number): Promise<number> {
       const wanted = [...new Set(domains.map(key))].filter(Boolean)
       if (!wanted.length) return 0
       wanted.forEach((d) => this.start(d))
       let timer: ReturnType<typeof setTimeout> | undefined
-      await Promise.race([Promise.all(wanted.map((d) => started.get(d))), new Promise((r) => (timer = setTimeout(r, AHEAD_MS)))])
+      await Promise.race([Promise.all(wanted.map((d) => started.get(d))), new Promise((r) => (timer = setTimeout(r, waitMs)))])
       clearTimeout(timer)
       return wanted.filter((d) => answered.has(d)).length
     },
@@ -1098,6 +1105,8 @@ async function processBatch(
   free?: { fits: ((company: CompanyResult) => boolean) | null },
   /** Whether a job title is one searched for: a second current job at a company searched is taken only with this or the headline's word (refine.ts). */
   titleFits?: (title: string) => boolean,
+  /** How long the batch waits for its mail domains' tests (AHEAD_MS). */
+  aheadMs = AHEAD_MS,
 ): Promise<{
   items: PersonResult[]
   refined: string[]
@@ -1571,7 +1580,7 @@ async function processBatch(
           .map((p) => p.companyDomain!.toLowerCase().trim()),
       ),
     ]
-    const answered = await tests.settle(untested)
+    const answered = await tests.settle(untested, aheadMs)
     tally.domainsChecked += answered
     tally.domainsUnchecked += untested.length - answered
     markKnown()
@@ -1676,7 +1685,7 @@ async function verifiedFunnel(
     async prepare(people) {
       const unseen = people.filter((p) => !shownHashes.has(hashOf(p)))
       repeats += people.length - unseen.length
-      const batch = await processBatch(unseen, input.company ?? null, source, db, tally, hideUnverifiable, Boolean(input.includeContacts), undefined, undefined, free)
+      const batch = await processBatch(unseen, input.company ?? null, source, db, tally, hideUnverifiable, Boolean(input.includeContacts), undefined, undefined, free, undefined, VERIFIED_AHEAD_MS)
       spared += batch.spared
       return batch.items
     },

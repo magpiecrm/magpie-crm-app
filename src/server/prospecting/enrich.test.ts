@@ -37,6 +37,7 @@ const getCompanyMock = vi.fn(async (ref: string): Promise<CompanyResult | null> 
 )
 // Checks of companies' mail servers (screenCompanies): which domains accept every address.
 let catchAllDomains = new Set<string>()
+let checkTakesMs = 0
 // And which mail servers block the check, answering neither way.
 let silentDomains = new Set<string>()
 vi.mock('./runtime', () => ({
@@ -50,10 +51,12 @@ vi.mock('./runtime', () => ({
     resolveMx: async () => ['mx.example'],
     verifier: {
       acquire: async () => ({ proxy: null, report: () => {} }),
-      check: async (email: string) =>
-        silentDomains.has(email.split('@')[1])
+      check: async (email: string) => {
+        if (checkTakesMs) await new Promise((r) => setTimeout(r, checkTakesMs))
+        return silentDomains.has(email.split('@')[1])
           ? { reachability: 'unknown', isCatchAll: null, outcome: 'blocked' }
-          : { reachability: catchAllDomains.has(email.split('@')[1]) ? 'safe' : 'invalid', isCatchAll: null, outcome: 'ok' },
+          : { reachability: catchAllDomains.has(email.split('@')[1]) ? 'safe' : 'invalid', isCatchAll: null, outcome: 'ok' }
+      },
     },
     now: () => Date.now(),
   }),
@@ -149,6 +152,7 @@ beforeEach(() => {
   webSignalAnswers = {}
   companySignalsMock.mockClear()
   catchAllDomains = new Set()
+  checkTakesMs = 0
   silentDomains = new Set()
   recordUsage.mockClear()
   positions.clear()
@@ -1793,6 +1797,22 @@ describe('the verified people search, through the funnel', () => {
     expect(asked[0].body.limit).toBe(16)
     expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1, prospectCredits: 1, searchShown: 1, searchDeadDomain: 1 })
     expect(searchLog.at(-1).counts).toMatchObject({ hits: 2, shown: 1, hiddenUnverifiable: 1, domainsCheckedAhead: 2 })
+  })
+
+  it('waits for a company that takes two slow checks to show it accepts every address, rather than charge for someone there', async () => {
+    catchAllDomains = new Set(['dead.example'])
+    checkTakesMs = 30_000
+    hostFinds([person('ana', 'https://dead.example')])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const search = searchPeople({ titles: ['Founder'], country: 'United States', count: 4, fromStart: true })
+      await vi.advanceTimersByTimeAsync(200_000)
+      const res = await search
+      expect(res.items.map((p) => [p.firstName, Boolean(p.catchAll)])).toEqual([['ana', true]])
+      expect(searchLog.at(-1).counts).toMatchObject({ shown: 0, hiddenUnverifiable: 1, domainsCheckedAhead: 1, domainsNotChecked: 0 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('leaves out opted-out people, existing contacts and hidden surnames before anyone is charged', async () => {
