@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useRouterState } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { AlertTriangle, Mail, BarChart3, Search, Users, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks, Repeat, ChevronDown, ChevronRight, ChevronsUpDown } from 'lucide-react'
-import { markSignedOut } from '../../utils/auth'
-import { checkAuthFn, getUsageFn, logoutFn, prospectingStatusFn, tasksFn } from '../../server/functions'
+import { useSignOut } from '../../hooks/useSignOut'
+import { checkAuthFn, getUsageFn, prospectingStatusFn, tasksFn } from '../../server/functions'
 import { dueBucket } from '../../features/sales/tasks'
 import { AllowanceMeter } from '../../features/settings/components/AllowanceMeter'
 import { Avatar } from '../ui/Avatar'
@@ -122,23 +122,7 @@ export function Sidebar({
   isOpen?: boolean
   onClose?: () => void
 }) {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const handleSignOut = async () => {
-    // Ends the session on the server too, so the cookie can't be reused.
-    await logoutFn().catch(() => {})
-    markSignedOut()
-    // Signing out ends the session's working data too: search results,
-    // revealed emails and saved filters, so the next person to sign in on
-    // this tab doesn't see them.
-    queryClient.clear()
-    try {
-      sessionStorage.clear()
-    } catch {
-      // storage unavailable; nothing was kept there
-    }
-    navigate({ to: '/login' })
-  }
+  const handleSignOut = useSignOut()
 
   const { data: status } = useQuery({
     queryKey: queryKeys.prospects.status(),

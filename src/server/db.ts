@@ -27,6 +27,8 @@ const STOP_STATUS: Record<EmailStopReason, string> = { unsubscribed: 'unsubscrib
 
 /** Days of daily usage counts kept (about 13 months), for periods like the last 7 or 30 days. */
 export const DAILY_USAGE_DAYS = 400
+/** How long a read-only session for the host's staff lasts (`view_sessions`). */
+export const VIEW_SESSION_SECONDS = 60 * 60
 
 export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -206,6 +208,17 @@ export interface DbSchema {
     id: string
     email: string
     expiresAt: string
+  }>
+  /**
+   * Read-only sessions for the host's staff (routes/auth/view.ts), with who
+   * opened each. Apart from `sessions` so a version that doesn't know about
+   * them, after a rollback, can't take one for an ordinary session.
+   */
+  view_sessions?: Array<{
+    id: string
+    email: string
+    expiresAt: string
+    viewOnlyBy: string
   }>
   api_keys?: Array<{
     id: string
@@ -2577,11 +2590,11 @@ class JsonDb {
     this.save()
   }
 
-  findSession(id: string) {
+  findSession(id: string): { id: string; email: string; expiresAt: string; viewOnlyBy?: string } | null {
     if (!this.data.sessions) {
       this.data.sessions = []
     }
-    return this.data.sessions.find(s => s.id === id) || null
+    return this.data.sessions.find(s => s.id === id) || this.data.view_sessions?.find(s => s.id === id) || null
   }
 
   createSession(email: string): string {
@@ -2595,9 +2608,21 @@ class JsonDb {
     return id
   }
 
+  /** A read-only session that shows as `email`, for the host's staff member `viewOnlyBy`; never extended. */
+  createViewSession(email: string, viewOnlyBy: string): string {
+    const now = Date.now()
+    const id = crypto.randomUUID()
+    const expiresAt = new Date(now + VIEW_SESSION_SECONDS * 1000).toISOString()
+    this.data.view_sessions = (this.data.view_sessions ?? []).filter(s => Date.parse(s.expiresAt) > now)
+    this.data.view_sessions.push({ id, email, expiresAt, viewOnlyBy })
+    this.save()
+    return id
+  }
+
   deleteSession(id: string) {
     if (!this.data.sessions) return
     this.data.sessions = this.data.sessions.filter(s => s.id !== id)
+    this.data.view_sessions = this.data.view_sessions?.filter(s => s.id !== id)
     this.save()
   }
 
@@ -2606,6 +2631,7 @@ class JsonDb {
     if (!this.data.sessions) return
     const target = email.toLowerCase()
     this.data.sessions = this.data.sessions.filter(s => s.id === keepId || s.email.toLowerCase() !== target)
+    this.data.view_sessions = this.data.view_sessions?.filter(s => s.id === keepId || s.email.toLowerCase() !== target)
     this.save()
   }
 }

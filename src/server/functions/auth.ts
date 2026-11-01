@@ -4,11 +4,12 @@ import { z } from 'zod'
 export const checkAuthFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     try {
-      const { requireAuth } = await import('../auth.server')
+      const { isViewOnly, requireAuth } = await import('../auth.server')
       const session = await requireAuth()
       return {
         isAuthenticated: true,
-        email: session.email
+        email: session.email,
+        viewOnly: isViewOnly(session)
       }
     } catch (e) {
       return {

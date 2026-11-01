@@ -10,6 +10,7 @@ import { useIsDesktop } from '../hooks/useMediaQuery'
 import { AIChat } from '../features/copilot/components/AIChat'
 import { ThemeToggle } from '../components/ui/ThemeToggle'
 import { NotificationBell } from '../components/NotificationBell'
+import { ViewOnlyBanner } from '../components/ViewOnlyBanner'
 import { isSignedIn } from '../utils/auth'
 import { isPublicPath } from '../utils/publicRoutes'
 import { checkAuthFn } from '../server/functions'
@@ -256,10 +257,10 @@ function RootDocument() {
                 >
                   <Menu className="w-5 h-5" />
                 </button>
-                <div className="hidden lg:block text-sm font-medium text-muted-foreground">
-                  {/* Left spacing */}
+                <div className="@container min-w-0 flex-1">
+                  <ViewOnlyBanner />
                 </div>
-                <div className="flex items-center gap-2 sm:gap-4">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-4">
                   <ThemeToggle />
                   <NotificationBell />
                   <button

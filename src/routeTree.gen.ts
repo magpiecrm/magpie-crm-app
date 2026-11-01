@@ -21,6 +21,7 @@ import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templ
 import { Route as MarketingSurveysRouteImport } from './routes/marketing/surveys'
 import { Route as MarketingFormsRouteImport } from './routes/marketing/forms'
 import { Route as MarketingContactsRouteImport } from './routes/marketing/contacts'
+import { Route as AuthViewRouteImport } from './routes/auth/view'
 import { Route as AuthLinkRouteImport } from './routes/auth/link'
 import { Route as ApiUsageRouteImport } from './routes/api/usage'
 import { Route as ApiUnsubscribeRouteImport } from './routes/api/unsubscribe'
@@ -128,6 +129,11 @@ const MarketingFormsRoute = MarketingFormsRouteImport.update({
 const MarketingContactsRoute = MarketingContactsRouteImport.update({
   id: '/marketing/contacts',
   path: '/marketing/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthViewRoute = AuthViewRouteImport.update({
+  id: '/auth/view',
+  path: '/auth/view',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthLinkRoute = AuthLinkRouteImport.update({
@@ -388,6 +394,7 @@ export interface FileRoutesByFullPath {
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
+  '/auth/view': typeof AuthViewRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -450,6 +457,7 @@ export interface FileRoutesByTo {
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
+  '/auth/view': typeof AuthViewRoute
   '/p/$token': typeof PTokenRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/sales/pipeline': typeof SalesPipelineRoute
@@ -509,6 +517,7 @@ export interface FileRoutesById {
   '/api/unsubscribe': typeof ApiUnsubscribeRoute
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
+  '/auth/view': typeof AuthViewRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -573,6 +582,7 @@ export interface FileRouteTypes {
     | '/api/unsubscribe'
     | '/api/usage'
     | '/auth/link'
+    | '/auth/view'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -635,6 +645,7 @@ export interface FileRouteTypes {
     | '/api/unsubscribe'
     | '/api/usage'
     | '/auth/link'
+    | '/auth/view'
     | '/p/$token'
     | '/s/$surveyId'
     | '/sales/pipeline'
@@ -693,6 +704,7 @@ export interface FileRouteTypes {
     | '/api/unsubscribe'
     | '/api/usage'
     | '/auth/link'
+    | '/auth/view'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -756,6 +768,7 @@ export interface RootRouteChildren {
   ApiUnsubscribeRoute: typeof ApiUnsubscribeRoute
   ApiUsageRoute: typeof ApiUsageRouteWithChildren
   AuthLinkRoute: typeof AuthLinkRoute
+  AuthViewRoute: typeof AuthViewRoute
   MarketingContactsRoute: typeof MarketingContactsRouteWithChildren
   MarketingFormsRoute: typeof MarketingFormsRouteWithChildren
   MarketingSurveysRoute: typeof MarketingSurveysRouteWithChildren
@@ -880,6 +893,13 @@ declare module '@tanstack/react-router' {
       path: '/marketing/contacts'
       fullPath: '/marketing/contacts'
       preLoaderRoute: typeof MarketingContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/view': {
+      id: '/auth/view'
+      path: '/auth/view'
+      fullPath: '/auth/view'
+      preLoaderRoute: typeof AuthViewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/link': {
@@ -1304,6 +1324,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUnsubscribeRoute: ApiUnsubscribeRoute,
   ApiUsageRoute: ApiUsageRouteWithChildren,
   AuthLinkRoute: AuthLinkRoute,
+  AuthViewRoute: AuthViewRoute,
   MarketingContactsRoute: MarketingContactsRouteWithChildren,
   MarketingFormsRoute: MarketingFormsRouteWithChildren,
   MarketingSurveysRoute: MarketingSurveysRouteWithChildren,

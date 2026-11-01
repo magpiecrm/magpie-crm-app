@@ -150,10 +150,12 @@ export function useCopilotStream({ getClientState, onClientAction, greeting }: U
         })
 
         if (!response.ok || !response.body) {
+          const refused = response.status === 403 ? (await response.json().catch(() => null))?.error : null
           finalise(
-            response.status === 401
-              ? 'Your session expired — reload the page and sign in again.'
-              : `The copilot request failed (HTTP ${response.status}).`,
+            refused ??
+              (response.status === 401
+                ? 'Your session expired — reload the page and sign in again.'
+                : `The copilot request failed (HTTP ${response.status}).`),
             true,
           )
           return

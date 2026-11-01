@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import crypto from 'crypto'
-import { createSignInToken, redeemSignInToken, resetSignInLinks } from './signInLink'
+import { createSignInToken, createViewOnlyToken, redeemSignInToken, redeemViewOnlyToken, resetSignInLinks } from './signInLink'
 
 const secret = 'a'.repeat(64)
 const isUser = (email: string) => email === 'owner@acme.test'
@@ -61,5 +61,45 @@ describe('sign-in links', () => {
     ).toString('base64url')
     const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url')
     expect(redeemSignInToken(`${payload}.${signature}`, secret, isUser, now).ok).toBe(true)
+  })
+})
+
+describe('view-only links', () => {
+  const staff = 'staff@host.test'
+
+  it('opens once, saying who by', () => {
+    const token = createViewOnlyToken('owner@acme.test', staff, secret, now)
+    expect(redeemViewOnlyToken(token, secret, now)).toEqual({ ok: true, email: 'owner@acme.test', actor: staff })
+    expect(redeemViewOnlyToken(token, secret, now + 1000)).toEqual({ ok: false, reason: 'used' })
+  })
+
+  it("can't pass as an ordinary sign-in link, which is how a version without them refuses one", () => {
+    const token = createViewOnlyToken('owner@acme.test', staff, secret, now)
+    expect(redeemSignInToken(token, secret, isUser, now)).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it("won't take an ordinary sign-in link", () => {
+    const token = createSignInToken('owner@acme.test', secret, now)
+    expect(redeemViewOnlyToken(token, secret, now)).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('refuses a link that says nothing of who opened it', () => {
+    for (const actor of ['', 'staff']) {
+      expect(redeemViewOnlyToken(createViewOnlyToken('owner@acme.test', actor, secret, now), secret, now)).toEqual({ ok: false, reason: 'invalid' })
+    }
+  })
+
+  it('refuses an expired link, one valid for too long, and another secret', () => {
+    expect(redeemViewOnlyToken(createViewOnlyToken('owner@acme.test', staff, secret, now, 60), secret, now + 61_000)).toEqual({ ok: false, reason: 'expired' })
+    expect(redeemViewOnlyToken(createViewOnlyToken('owner@acme.test', staff, secret, now, 3600), secret, now)).toEqual({ ok: false, reason: 'expired' })
+    expect(redeemViewOnlyToken(createViewOnlyToken('owner@acme.test', staff, 'b'.repeat(64), now), secret, now)).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('matches the documented format, so the portal can make links without this code', () => {
+    const payload = Buffer.from(
+      JSON.stringify({ email: 'owner@acme.test', actor: staff, exp: Math.floor(now / 1000) + 60, nonce: crypto.randomBytes(16).toString('base64url') }),
+    ).toString('base64url')
+    const signature = crypto.createHmac('sha256', secret).update(`view-only.${payload}`).digest('base64url')
+    expect(redeemViewOnlyToken(`${payload}.${signature}`, secret, now).ok).toBe(true)
   })
 })

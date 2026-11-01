@@ -24,6 +24,7 @@ export async function streamPeopleSearch(
     body: JSON.stringify(input),
     signal,
   })
+  if (res.status === 403) throw new Error((await res.json().catch(() => null))?.error ?? 'Search failed (403).')
   if (!res.ok || !res.body) throw new Error(res.status === 401 ? 'Your session has ended. Sign in again.' : `Search failed (${res.status}).`)
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
   let buffered = ''

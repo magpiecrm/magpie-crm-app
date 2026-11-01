@@ -130,9 +130,11 @@ const DAY_MS = 24 * 60 * 60_000
 
 /** Each domain with its DNS records; checks again any not ready yet, and any not checked for a day. */
 export const getSendingDomainsFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const { requireAuth } = await import('../auth.server')
-  await requireAuth()
+  const { isViewOnly, requireAuth } = await import('../auth.server')
+  const session = await requireAuth()
   const { checkSendingDomain, getSendingDomains, isReady } = await import('../sendingDomains')
+  // A check can mark a domain not ready on the host, and that stops its sending.
+  if (isViewOnly(session)) return getSendingDomains()
   const now = Date.now()
   const domains = await Promise.all(
     getSendingDomains().map(async (d) => {

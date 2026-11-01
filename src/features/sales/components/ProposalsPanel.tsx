@@ -95,21 +95,25 @@ export function ProposalsPanel({ deal }: { deal: DealView }) {
                   <Button size="sm" variant="ghost" leftIcon={<Send className="w-3.5 h-3.5" />} onClick={() => setSending(p)}>
                     Email
                   </Button>
-                  <Button size="sm" variant="ghost" leftIcon={<Copy className="w-3.5 h-3.5" />} isLoading={share.isPending && share.variables?.p.id === p.id}
-                    onClick={() =>
-                      share.mutate({ p, copied: (navigator.clipboard?.writeText(p.url) ?? Promise.reject()).then(() => true, () => false) })
-                    }
-                  >
-                    Copy link
-                  </Button>
-                  <a
-                    href={p.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Preview
-                  </a>
+                  {p.url && (
+                    <>
+                      <Button size="sm" variant="ghost" leftIcon={<Copy className="w-3.5 h-3.5" />} isLoading={share.isPending && share.variables?.p.id === p.id}
+                        onClick={() =>
+                          share.mutate({ p, copied: (navigator.clipboard?.writeText(p.url) ?? Promise.reject()).then(() => true, () => false) })
+                        }
+                      >
+                        Copy link
+                      </Button>
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground rounded-md hover:bg-muted"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Preview
+                      </a>
+                    </>
+                  )}
                   <Link
                     to="/sales/proposals/$proposalId"
                     params={{ proposalId: p.id }}

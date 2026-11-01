@@ -141,6 +141,15 @@ key), with the app's actions as tools.
   edits: `sharedPeople.ts` sends those to a host, never `custom`. Which columns
   a table shows is workspace-wide (`contact_columns`, `contactColumns.ts`); a new
   field stays hidden unless it was made from a table or an import.
+- **View-only sessions** (`src/viewOnly.ts`, `src/start.ts`) — the host's staff
+  can open a copy from their admin portal to see what a customer sees, through
+  a one-time link (`/auth/view`, `server/signInLink.ts`). The session lasts an
+  hour and is kept in `view_sessions`, apart from `sessions`, so a version
+  without this can't honour one. Two global middlewares refuse it every server
+  function and route that isn't a GET, so a new endpoint needs nothing; a POST
+  that only reads goes on the list in `viewOnly.ts`. A GET must check
+  `isViewOnly` itself if it reaches outside this copy or hands out a link that
+  acts on its own (`getSendingDomainsFn`, proposals).
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so
   invalidation stays consistent.

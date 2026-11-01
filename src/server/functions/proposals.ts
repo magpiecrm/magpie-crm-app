@@ -9,28 +9,35 @@ const title = z.string().trim().min(1).max(200)
 const html = z.string().max(2_000_000)
 
 async function signedIn() {
-  const { requireAuth } = await import('../auth.server')
+  const { isViewOnly, requireAuth } = await import('../auth.server')
   const session = await requireAuth()
   const { sales } = await import('../sales')
   const { getAppUrl } = await import('../appUrl')
-  return { sales, actor: session.email as string, baseUrl: await getAppUrl() }
+  return { sales, actor: session.email as string, baseUrl: await getAppUrl(), viewOnly: isViewOnly(session) }
 }
+
+/**
+ * A view-only session doesn't get a proposal's link: whoever has one can
+ * accept the proposal, and an open once the session has ended would count as
+ * the client's and notify the workspace.
+ */
+const withLink = <T extends { url: string }>(proposal: T, viewOnly: boolean): T => (viewOnly ? { ...proposal, url: '' } : proposal)
 
 export const proposalsFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { dealId: string }) => z.object({ dealId: id }).parse(d))
   .handler(async ({ data }) => {
-    const { sales, baseUrl } = await signedIn()
-    return sales.listProposals(data.dealId, baseUrl)
+    const { sales, baseUrl, viewOnly } = await signedIn()
+    return sales.listProposals(data.dealId, baseUrl).map((p) => withLink(p, viewOnly))
   })
 
 /** One proposal with its design, for the editor. */
 export const proposalFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
   .handler(async ({ data }) => {
-    const { sales, baseUrl } = await signedIn()
+    const { sales, baseUrl, viewOnly } = await signedIn()
     const { summary } = await import('../sales/proposals')
     const p = sales.getProposal(data.id)
-    return { ...summary(p, baseUrl), html: p.html, deal_name: sales.getDeal(p.deal_id).deal.name }
+    return { ...withLink(summary(p, baseUrl), viewOnly), html: p.html, deal_name: sales.getDeal(p.deal_id).deal.name }
   })
 
 /** A new proposal, from the proposal layout (filled in from the deal), a saved template, or blank. */

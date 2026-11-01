@@ -4,6 +4,33 @@ import { db } from './db'
 const SESSION_COOKIE = 'auth_token'
 const WEEK_SECONDS = 7 * 24 * 60 * 60
 
+/** The session cookie's value, or null; one that can't be decoded counts as none. */
+function sessionToken(request: Request): string | null {
+  const cookieHeader = request.headers.get('Cookie') || ''
+  const match = cookieHeader.match(new RegExp(`(^|; )${SESSION_COOKIE}=([^;]+)`))
+  try {
+    return match ? decodeURIComponent(match[2]) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The live session a request belongs to, or null. Everything that asks who's
+ * calling reads it here, so they can't disagree over which cookie counts.
+ */
+export function sessionFrom(request: Request) {
+  const token = sessionToken(request)
+  const session = token ? db.findSession(token) : null
+  return session && new Date(session.expiresAt) >= new Date() ? session : null
+}
+
+/** Whether a session is read-only, one of the host's staff looking in (see src/start.ts). */
+export const isViewOnly = (session: { viewOnlyBy?: string } | null) => session?.viewOnlyBy !== undefined
+
+/** Whether the current request has a view-only session. */
+export const inViewOnlySession = () => isViewOnly(sessionFrom(getRequest()))
+
 /**
  * Validates the session token from the request cookies and retrieves the session.
  * Throws an error if unauthorized.
@@ -13,16 +40,12 @@ export async function requireAuth() {
   if (!request) {
     throw new Error('Unauthorized: No active request')
   }
-  const cookieHeader = request.headers.get('Cookie') || ''
-  const match = cookieHeader.match(new RegExp(`(^|; )${SESSION_COOKIE}=([^;]+)`))
-  const value = match ? decodeURIComponent(match[2]) : null
-
-  if (!value) {
+  if (!sessionToken(request)) {
     throw new Error('Unauthorized: No session token')
   }
 
-  const session = db.findSession(value)
-  if (!session || new Date(session.expiresAt) < new Date()) {
+  const session = sessionFrom(request)
+  if (!session) {
     throw new Error('Unauthorized: Invalid or expired session')
   }
 
@@ -53,9 +76,9 @@ export function setSessionCookie(sessionId: string) {
  * The same session cookie as a Set-Cookie header value, for server routes
  * that build their own Response (e.g. /auth/link).
  */
-export function sessionCookieHeader(sessionId: string, request: Request): string {
+export function sessionCookieHeader(sessionId: string, request: Request, maxAge = WEEK_SECONDS): string {
   const https = request.headers.get('x-forwarded-proto') === 'https' || request.url.startsWith('https:')
-  return `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; Path=/; Max-Age=${WEEK_SECONDS}; HttpOnly; SameSite=Lax${https ? '; Secure' : ''}`
+  return `${SESSION_COOKIE}=${encodeURIComponent(sessionId)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${https ? '; Secure' : ''}`
 }
 
 /** Ends this request's session on the server and clears its cookie. */

@@ -10,21 +10,19 @@ import type { Proposal } from '../../features/sales/types'
 // Public: whoever has the link can read and accept it.
 
 /** Whether the request comes from someone signed in to this workspace (a preview, not counted). */
-function fromTeam(request: Request): boolean {
-  const token = request.headers.get('cookie')?.match(/(?:^|;\s*)auth_token=([^;]+)/)?.[1]
-  if (!token) return false
-  const session = db.findSession(decodeURIComponent(token))
-  return !!session && new Date(session.expiresAt) > new Date()
+async function fromTeam(request: Request): Promise<boolean> {
+  const { sessionFrom } = await import('../../server/auth.server')
+  return Boolean(sessionFrom(request))
 }
 
-function page(p: Proposal, request: Request, error?: string | null, status = 200): Response {
+async function page(p: Proposal, request: Request, error?: string | null, status = 200): Promise<Response> {
   const deal = db.data.deals?.find((d) => d.id === p.deal_id)
   const email = deal?.contact_emails[0]
   const contact = email ? db.getContact(email) : null
   const html = proposalPage(p, {
     reader: contact ? { first_name: contact.first_name, last_name: contact.last_name, company: contact.company, email: contact.email } : null,
     color: db.getBrandKit()?.primaryColor,
-    preview: fromTeam(request),
+    preview: await fromTeam(request),
     error,
   })
   return new Response(html, { status, headers: PAGE_HEADERS })
@@ -38,7 +36,7 @@ export const Route = createFileRoute('/p/$token')({
       GET: async ({ request, params }: { request: Request; params: { token: string } }) => {
         const view = sales.recordProposalView(params.token, {
           automated: looksAutomated(request.headers.get('user-agent')),
-          team: fromTeam(request),
+          team: await fromTeam(request),
         })
         if (view.counted && (view.first || view.returned)) {
           const what = view.first ? 'was opened' : 'was opened again'
@@ -58,7 +56,7 @@ export const Route = createFileRoute('/p/$token')({
         } catch (err) {
           return page(p, request, (err as Error).message, 400)
         }
-        if (result && !result.already && !fromTeam(request)) {
+        if (result && !result.already && !(await fromTeam(request))) {
           notify('proposal_accepted', `${result.proposal.title} was accepted by ${result.proposal.accepted_by} (${result.dealName})`, {
             url: `/sales/deals/${result.proposal.deal_id}`,
           })
