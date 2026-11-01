@@ -1502,6 +1502,10 @@ class JsonDb {
       const email = params[0].toLowerCase().trim()
       this.data.contacts = this.data.contacts.filter(c => c.email.toLowerCase().trim() !== email)
       this.data.list_contacts = this.data.list_contacts.filter(lc => lc.contact_email.toLowerCase().trim() !== email)
+      // No address kept for someone who isn't a contact any more.
+      for (const list of this.data.lists) {
+        if (list.built_from) list.built_from.removed = list.built_from.removed.filter(e => e !== email)
+      }
       this.data.campaign_recipients = this.data.campaign_recipients.filter(cr => cr.contact_email.toLowerCase().trim() !== email)
       if (this.data.sequence_enrollments) this.data.sequence_enrollments = this.data.sequence_enrollments.filter(e => e.contact_email !== email)
       // Notes and tasks about only them go too; a deal's or company's keep, without them.
@@ -1604,8 +1608,8 @@ class JsonDb {
         if (cleanSql.startsWith('SELECT c.email, c.first_name, c.last_name, c.job_title, c.company, c.status, c.created_at FROM contacts c JOIN list_contacts lc')) {
           // getListContacts(listId)
           const listId = params[0]
-          const emails = this.data.list_contacts.filter(lc => lc.list_id == listId).map(lc => lc.contact_email)
-          return this.data.contacts.filter(c => emails.includes(c.email))
+          const emails = new Set(this.data.list_contacts.filter(lc => lc.list_id == listId).map(lc => lc.contact_email))
+          return this.data.contacts.filter(c => emails.has(c.email))
         }
         if (cleanSql.startsWith('SELECT c.id, c.name, c.subject, c.preview_text as previewText, c.status, c.created_at as createdAt, c.sent_at as sentAt, c.list_id as listId')) {
           // getCampaigns(): not sequence steps' hidden rows

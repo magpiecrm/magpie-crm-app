@@ -97,7 +97,14 @@ export async function getLists() {
     ORDER BY l.id DESC
   `).all() as any[]
 
-  return { lists, count: lists.length }
+  // How a list was built, for showing; who was taken off stays here, as a count.
+  const built = new Map(db.data.lists.map((l) => [l.id, l.built_from]))
+  const withFilters = lists.map((l) => {
+    const from = built.get(l.id)
+    return { ...l, builtFrom: from ? { filters: from.filters, refreshedAt: from.refreshed_at, removedCount: from.removed.length } : null }
+  })
+
+  return { lists: withFilters, count: lists.length }
 }
 
 export async function getContacts(limit?: number, offset?: number) {
@@ -141,7 +148,14 @@ export async function createList(name: string) {
 }
 
 export async function removeContactFromList(listId: number, email: string) {
-  db.run('DELETE FROM list_contacts WHERE list_id = ? AND contact_email = ?', [listId, email.toLowerCase().trim()])
+  const id = Number(listId)
+  const address = email.toLowerCase().trim()
+  db.mutate((data) => {
+    data.list_contacts = data.list_contacts.filter((lc) => !(Number(lc.list_id) === id && lc.contact_email.toLowerCase().trim() === address))
+    // They still match, and adding new matches shouldn't undo this.
+    const built = data.lists.find((l) => l.id === id)?.built_from
+    if (built && !built.removed.includes(address)) built.removed.push(address)
+  })
 }
 
 /** The default list: /api/subscribe adds everyone to it, and new forms start on it. */

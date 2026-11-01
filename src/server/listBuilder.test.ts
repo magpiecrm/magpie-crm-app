@@ -196,6 +196,40 @@ describe('adding new matches', () => {
     expect(members(id)).toEqual(['ana', 'cat'])
   })
 
+  it('leaves someone taken off by hand off, and says so', async () => {
+    const id = built()
+    await emailService.removeContactFromList(id, 'ANA@ana.test ')
+    expect(members(id)).toEqual(['cat'])
+    expect(previewNewMatches(id)).toMatchObject({ matched: 2, alreadyOn: 1, removedByHand: 1, toAdd: 0 })
+    addNewMatches(id)
+    expect(members(id)).toEqual(['cat'])
+  })
+
+  it('remembers that only on lists built from filters', async () => {
+    const { id } = await emailService.createList('By hand')
+    await emailService.addContactsToList(id, [{ email: 'ana@ana.test', attributes: {} } as any])
+    await emailService.removeContactFromList(id, 'ana@ana.test')
+    expect(members(id)).toEqual([])
+    expect(db.data.lists.find((l) => l.id === id)?.built_from).toBeUndefined()
+  })
+
+  it('keeps no address for someone who stops being a contact', async () => {
+    const id = built()
+    await emailService.removeContactFromList(id, 'ana@ana.test')
+    await emailService.deleteContacts(['ana@ana.test'])
+    expect(db.data.lists.find((l) => l.id === id)?.built_from?.removed).toEqual([])
+  })
+
+  it('shows how a list was built, and how many came off, but not who', async () => {
+    const id = built()
+    await emailService.removeContactFromList(id, 'ana@ana.test')
+    const { lists } = await emailService.getLists()
+    const list = lists.find((l: any) => l.id === id)
+    expect(list.builtFrom).toMatchObject({ refreshedAt: null, removedCount: 1, filters: [{ label: 'Country' }] })
+    expect(JSON.stringify(list)).not.toContain('ana@')
+    expect(lists.find((l: any) => l.id === 1).builtFrom).toBeNull()
+  })
+
   it("won't run without all its filters, as dropping one would pick more people", () => {
     db.data.contact_fields = [{ key: 'plan', label: 'Plan', type: 'select', options: ['Pro'], created_at: '' }] as any
     db.data.contacts.find((c) => c.first_name === 'ana')!.custom = { plan: 'Pro' }
