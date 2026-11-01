@@ -10,6 +10,7 @@ import {
 } from '../../../server/functions'
 import type { ContactFieldDef, ContactFieldType } from '../../contacts/contactFields'
 import { CONTACT_FIELD_TYPES, hasOptions, parseOptions, slugifyFieldKey, TYPE_LABELS, validateFieldKey } from '../../contacts/contactFields'
+import { invalidateContactFields } from '../../contacts/contactCache'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -26,7 +27,7 @@ export function ContactFieldsTab() {
     queryKey: queryKeys.email.contactFields(),
     queryFn: () => getContactFieldsFn(),
   })
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.email.contactFields() })
+  const invalidate = () => invalidateContactFields(queryClient)
 
   const [label, setLabel] = useState('')
   const [key, setKey] = useState('')

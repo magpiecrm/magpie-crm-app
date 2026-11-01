@@ -56,7 +56,7 @@ const TOOL_INVALIDATIONS: Record<string, Array<readonly unknown[]>> = {
   closeSurvey: [queryKeys.surveys.list()],
   duplicateSurvey: [queryKeys.surveys.list()],
   deleteSurvey: [queryKeys.surveys.list()],
-  createContactField: [queryKeys.email.contactFields()],
+  createContactField: [queryKeys.email.contactFields(), queryKeys.email.listFilterFields(), queryKeys.email.contactColumns()],
   createSavedTemplate: [queryKeys.templates.list()],
   updateSavedTemplate: [queryKeys.templates.list()],
   duplicateSavedTemplate: [queryKeys.templates.list()],

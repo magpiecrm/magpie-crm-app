@@ -15,15 +15,18 @@ export function Field({
   error,
   children,
   className = '',
+  as: Wrapper = 'label',
 }: {
   label: ReactNode
   hint?: ReactNode
   error?: ReactNode
   children: ReactNode
   className?: string
+  /** `div` for controls that aren't one input: clicking a label's text presses the first button inside it. */
+  as?: 'label' | 'div'
 }) {
   return (
-    <label className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
+    <Wrapper className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
       <span className="text-xs font-semibold text-muted-foreground">{label}</span>
       {children}
       {error ? (
@@ -31,7 +34,7 @@ export function Field({
       ) : (
         hint && <span className="text-xs text-muted-foreground leading-relaxed">{hint}</span>
       )}
-    </label>
+    </Wrapper>
   )
 }
 

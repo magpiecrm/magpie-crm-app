@@ -32,6 +32,8 @@ import { ContactDetails } from '../../../features/contacts/components/ContactDet
 import { contactExportColumnsWith, type ExportableContact } from '../../../features/contacts/exportColumns'
 import { ActiveFilters, AddFilterButton, newFilter } from '../../../features/contacts/components/ContactFilters'
 import { applyFilters, filterFields, isComplete, type ContactFilter } from '../../../features/contacts/contactFilters'
+import { CustomFieldInput } from '../../../features/contacts/components/CustomFieldInput'
+import type { ContactCustomValue } from '../../../features/contacts/contactFields'
 import { Select } from '../../../components/ui/Select'
 import { EnrollDialog } from '../../../features/sequences/components/EnrollDialog'
 
@@ -109,11 +111,12 @@ function ContactsPage() {
   const [doubleOptIn, setDoubleOptIn] = useState('')
   const [selectedListIds, setSelectedListIds] = useState<number[]>([])
   const [optIn, setOptIn] = useState('')
+  const [customValues, setCustomValues] = useState<Record<string, ContactCustomValue>>({})
 
   const createContactMutation = useMutation({
-    mutationFn: (data: { email: string; attributes: any; listIds?: number[] }) => 
+    mutationFn: (data: { email: string; attributes: any; custom?: Record<string, unknown>; listIds?: number[] }) => 
       createContactFn({ data }),
-    onSuccess: () => {
+    onSuccess: ({ fieldProblems }) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
       setShowDrawer(false)
       // reset form
@@ -128,7 +131,8 @@ function ContactsPage() {
       setDoubleOptIn('')
       setSelectedListIds([])
       setOptIn('')
-      alert('Contact created successfully!')
+      setCustomValues({})
+      alert(fieldProblems.length ? `Contact created, but some values weren't saved:\n${fieldProblems.join('\n')}` : 'Contact created successfully!')
     },
     onError: (err: any) => {
       alert(`Failed to create contact: ${err.message}`)
@@ -411,6 +415,13 @@ function ContactsPage() {
               </Select>
             </div>
 
+            {contactFields.map((field) => (
+              <div key={field.key} className="space-y-1.5">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">{field.label}</span>
+                <CustomFieldInput field={field} value={customValues[field.key]} onChange={(value) => setCustomValues((all) => ({ ...all, [field.key]: value }))} ariaLabel={field.label} />
+              </div>
+            ))}
+
             {/* LISTS Selection */}
             <div className="space-y-1.5 md:col-span-2">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Lists</label>
@@ -468,6 +479,7 @@ function ContactsPage() {
                 createContactMutation.mutate({
                   email: emailAddress.trim(),
                   attributes,
+                  custom: customValues,
                   listIds: selectedListIds
                 })
               }}

@@ -18,7 +18,7 @@ import {
 import { Avatar } from '../../../components/ui/Avatar'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
-import { formatCustomValue } from '../contactFields'
+import { ContactCustomFields } from './ContactCustomFields'
 import { ContactSurveysTab } from './ContactSurveysTab'
 import { ContactHistoryTab } from './ContactHistoryTab'
 import { FollowUpButton, RecordTasks } from '../../sales/components/TaskParts'
@@ -404,12 +404,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                   <span className="font-bold text-foreground">—</span>
                 )}
               </div>
-              {fieldDefs.map(field => (
-                <div key={field.key}>
-                  <span className="text-muted-foreground block font-medium mb-0.5">{field.label}</span>
-                  <span className="font-bold text-foreground">{formatCustomValue(contact.custom?.[field.key]) || '—'}</span>
-                </div>
-              ))}
+              <ContactCustomFields email={contact.email} defs={fieldDefs} custom={contact.custom ?? {}} />
             </div>
           </div>
 

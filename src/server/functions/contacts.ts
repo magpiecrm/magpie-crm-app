@@ -33,6 +33,7 @@ export const createContactFn = createServerFn({ method: 'POST' })
   .inputValidator((d: {
     email: string;
     attributes?: Record<string, any>;
+    custom?: Record<string, unknown>;
     listIds?: number[]
   }) => d)
   .handler(async ({ data }) => {
@@ -207,6 +208,43 @@ export const updateContactFieldFn = createServerFn({ method: 'POST' })
   })
 
 const contactFieldKey = z.object({ key: z.string().max(40) })
+
+const contactValues = z.object({ email: z.string().max(320), values: z.record(z.string(), z.unknown()) })
+
+/** Writes some of a contact's custom values; a blank clears one. Says what it couldn't take. */
+export const setContactCustomFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: z.input<typeof contactValues>) => contactValues.parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const { db } = await import('../db')
+    const { writeCustomValues } = await import('../contactFieldValues')
+    await requireAuth()
+    const { problems, notFound } = writeCustomValues([data], { blanks: 'clear' })
+    if (notFound.length) throw new Error('Contact not found')
+    const email = data.email.toLowerCase().trim()
+    return { custom: (db.data.contacts.find((c) => c.email === email)?.custom ?? {}) as Record<string, ContactCustomValue>, problems: problems.map((p) => p.problem) }
+  })
+
+export const getContactColumnsFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  const { db } = await import('../db')
+  await requireAuth()
+  return db.getContactColumns()
+})
+
+const contactColumnsInput = z.object({ view: z.enum(['contacts', 'list']), columns: z.array(z.string().max(60)).max(100).nullable() })
+
+/** The columns a table shows, for everyone in the workspace; `null` goes back to its defaults. */
+export const saveContactColumnsFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: z.input<typeof contactColumnsInput>) => contactColumnsInput.parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const { db } = await import('../db')
+    const { columnsToSave } = await import('../../features/contacts/contactColumns')
+    await requireAuth()
+    db.saveContactColumns(data.view, data.columns && columnsToSave(data.columns, db.getContactFields()))
+    return db.getContactColumns()
+  })
 
 export const deleteContactFieldFn = createServerFn({ method: 'POST' })
   .inputValidator((d: z.input<typeof contactFieldKey>) => contactFieldKey.parse(d))

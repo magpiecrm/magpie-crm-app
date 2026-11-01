@@ -1,5 +1,6 @@
 import { db, type RecipientRecord } from './db'
 import { contactForPage } from '../features/contacts/contactFilters'
+import { writeCustomValues } from './contactFieldValues'
 import { sendMail } from './nodemailer'
 import { encryptToken } from './crypto'
 import { notify } from './notify'
@@ -270,6 +271,7 @@ export async function resubscribeContact(email: string) {
 export async function createContact(payload: {
   email: string
   attributes?: Record<string, any>
+  custom?: Record<string, unknown>
   listIds?: number[]
 }) {
   const email = payload.email.toLowerCase().trim()
@@ -297,11 +299,13 @@ export async function createContact(payload: {
     }
   })()
 
+  const fieldProblems = payload.custom ? writeCustomValues([{ email, values: payload.custom }], { blanks: 'keep' }).problems.map((p) => p.problem) : []
+
   if (isNewContact) {
     notify('contact_added', `New contact added: ${email}`, { contactEmail: email })
   }
 
-  return { email }
+  return { email, fieldProblems }
 }
 
 export async function deleteContacts(emails: string[]) {
