@@ -134,6 +134,13 @@ key), with the app's actions as tools.
     or share one). `src/routes/api/mcp.ts` exposes the same tools to outside
     AI apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
     `browserOnly`), authorised by MCP-scoped API keys.
+- **Custom contact fields**: definitions in `db.ts` (`contact_fields`), values on
+  `contacts[].custom`. Everything that writes a value goes through
+  `writeCustomValues` (`contactFieldValues.ts`), which checks it against its
+  field, so built-ins can't be written that way and stay out of reach of inline
+  edits: `sharedPeople.ts` sends those to a host, never `custom`. Which columns
+  a table shows is workspace-wide (`contact_columns`, `contactColumns.ts`); a new
+  field stays hidden unless it was made from a table or an import.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so
   invalidation stays consistent.
