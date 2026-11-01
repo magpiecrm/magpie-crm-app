@@ -8,7 +8,7 @@ import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sa
 import type { Enrollment, Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
-import type { ContactCustomValue, ContactFieldDef } from '../features/contacts/contactFields'
+import type { ContactCustomValue, ContactFieldDef, ContactTableView } from '../features/contacts/contactFields'
 import type { SavedFilter } from '../features/contacts/contactFilters'
 import { isUnconfirmedGuess, type EmailStatus, type NoticeStatus } from './prospecting/types'
 import type { EmailDomainRecord } from './prospecting/emailDomain'
@@ -419,6 +419,8 @@ export interface DbSchema {
    * SocialFetch API key and the verification server's secret; the rest isn't sensitive.
    */
   prospecting_settings?: ProspectingSettingsRecord
+  /** The columns chosen for each contacts table, in order, for the whole workspace. Unset, a table shows its defaults (contactColumns.ts). */
+  contact_columns?: Partial<Record<ContactTableView, string[]>>
   /** The email finder's counts by month (prospecting/finderStats.ts): kinds and counts only. */
   finder_stats?: Record<string, Record<string, number>>
   /**
@@ -1565,22 +1567,6 @@ class JsonDb {
             }
           })
         }
-        if (cleanSql.startsWith('SELECT email, first_name, last_name, job_title, company, status, created_at FROM contacts')) {
-          // getContacts(limit, offset)
-          let result = this.data.contacts
-          if (params.length >= 2) {
-            const limit = params[0]
-            const offset = params[1]
-            result = result.slice(offset, offset + limit)
-          }
-          return result
-        }
-        if (cleanSql.startsWith('SELECT c.email, c.first_name, c.last_name, c.job_title, c.company, c.status, c.created_at FROM contacts c JOIN list_contacts lc')) {
-          // getListContacts(listId)
-          const listId = params[0]
-          const emails = new Set(this.data.list_contacts.filter(lc => lc.list_id == listId).map(lc => lc.contact_email))
-          return this.data.contacts.filter(c => emails.has(c.email))
-        }
         if (cleanSql.startsWith('SELECT c.id, c.name, c.subject, c.preview_text as previewText, c.status, c.created_at as createdAt, c.sent_at as sentAt, c.list_id as listId')) {
           // getCampaigns(): not sequence steps' hidden rows
           return this.data.campaigns.filter(c => !c.sequence_id).map(c => {
@@ -2157,13 +2143,27 @@ class JsonDb {
     return this.data.contact_fields
   }
 
-  addContactField(def: Omit<ContactFieldDef, 'created_at'>): ContactFieldDef {
+  /** `showIn` puts it on that table straight away, in the same save: otherwise a new field starts hidden. */
+  addContactField(def: Omit<ContactFieldDef, 'created_at'>, opts: { showIn?: { view: ContactTableView; columns: string[] } } = {}): ContactFieldDef {
     if (!this.data.contact_fields) this.data.contact_fields = []
     if (this.data.contact_fields.some(f => f.key === def.key)) throw new Error(`A field with key "${def.key}" already exists`)
     const record = { ...def, created_at: new Date().toISOString() }
     this.data.contact_fields.push(record)
+    if (opts.showIn) this.data.contact_columns = { ...this.data.contact_columns, [opts.showIn.view]: opts.showIn.columns }
     this.save()
     return record
+  }
+
+  getContactColumns() {
+    return this.data.contact_columns ?? {}
+  }
+
+  saveContactColumns(view: ContactTableView, columns: string[] | null) {
+    const next = { ...this.data.contact_columns }
+    if (columns) next[view] = columns
+    else delete next[view]
+    this.data.contact_columns = next
+    this.save()
   }
 
   /** The key is immutable; everything else can change. */
@@ -2175,12 +2175,17 @@ class JsonDb {
     return field
   }
 
-  /** Removes the definition and the value from every contact. */
+  /** Removes the definition, its column from any table, and the value from every contact. */
   deleteContactField(key: string) {
     if (!this.data.contact_fields) return
     this.data.contact_fields = this.data.contact_fields.filter(f => f.key !== key)
     for (const c of this.data.contacts) {
       if (c.custom && key in c.custom) delete c.custom[key]
+    }
+    // Otherwise a new field with the same key would bring the column back.
+    const columns = this.data.contact_columns
+    for (const view of Object.keys(columns ?? {}) as ContactTableView[]) {
+      columns![view] = columns![view]!.filter(id => id !== `custom:${key}`)
     }
     this.save()
   }

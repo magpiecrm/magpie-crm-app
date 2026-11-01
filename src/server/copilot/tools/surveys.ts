@@ -250,11 +250,8 @@ export const surveyTools = [
     },
     target: 'server',
     handler: async args => {
-      const { db } = await import('../../db')
-      const { validateFieldKey } = await import('../../../features/contacts/contactFields')
-      const error = validateFieldKey(args.key)
-      if (error) throw new Error(error)
-      return db.addContactField(args)
+      const { createField } = await import('../../contactFieldValues')
+      return createField(args)
     },
   }),
 ]

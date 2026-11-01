@@ -11,8 +11,8 @@
 // host's own terms have every copy contribute, until someone here switches
 // it off in the same place. What's sent is what search itself held: name, job title,
 // employer, country, profile address and the verified work email. Never an
-// imported or signed-up contact, a guessed address, notes, lists, or
-// anything about what was emailed to them. A copy that isn't hosted, or
+// imported or signed-up contact, a guessed address, notes, lists, custom
+// fields, or anything about what was emailed to them. A copy that isn't hosted, or
 // isn't contributing, sends nothing. Contacts saved the same way before the copy
 // joined are offered too, a batch at a time, except anyone who has
 // unsubscribed, complained or bounced here.

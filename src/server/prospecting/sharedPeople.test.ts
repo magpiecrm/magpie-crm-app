@@ -151,6 +151,15 @@ describe('the shared database', () => {
       expect(sent).toHaveLength(1)
     })
 
+    it("never carry a contact's custom fields", async () => {
+      const db = store([contact(1, { custom: { notes: 'SECRET' } })])
+      const { fetchImpl, sent } = host({ contributing: true })
+      await refreshHostRules(fetchImpl)
+      await contributeSaved(db, fetchImpl)
+      expect(JSON.stringify(sent)).not.toContain('SECRET')
+      expect(Object.keys(sent[0].body.people[0]).sort()).toEqual(['company', 'email', 'emailStatus', 'firstName', 'lastName', 'source', 'title', 'verifiedAt'])
+    })
+
     it("are offered once more with their profile link and country, where an older copy offered them without", async () => {
       const db = store([contact(1, { linkedin_url: 'https://www.linkedin.com/in/pat-lee1', country: 'United Kingdom' })])
       db.saveProspectingSettings({ shared_offered_until: '2026-09-01T00:00:00.000Z', updated_at: 'x' })

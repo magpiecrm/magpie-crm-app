@@ -112,32 +112,14 @@ export async function getContacts(limit?: number, offset?: number) {
   const { syncCompanies } = await import('./sales/companies')
   if (syncCompanies(db.data)) db.mutate(() => {})
 
-  let query = 'SELECT email, first_name, last_name, job_title, company, status, created_at FROM contacts'
-  const params: any[] = []
-
-  if (limit !== undefined) {
-    query += ' LIMIT ? OFFSET ?'
-    params.push(limit, offset || 0)
-  }
-
-  const rows = db.query(query).all(...params) as any[]
-  const contacts = rows.map(contactForPage)
-
-  const totalCount = (db.query('SELECT COUNT(*) as count FROM contacts').get() as { count: number }).count
-
-  return { contacts, count: totalCount }
+  const all = db.data.contacts
+  const rows = limit === undefined ? all : all.slice(offset || 0, (offset || 0) + limit)
+  return { contacts: rows.map(contactForPage), count: all.length }
 }
 
 export async function getListContacts(listId: number) {
-  const rows = db.query(`
-    SELECT c.email, c.first_name, c.last_name, c.job_title, c.company, c.status, c.created_at
-    FROM contacts c
-    JOIN list_contacts lc ON c.email = lc.contact_email
-    WHERE lc.list_id = ?
-  `).all(listId) as any[]
-
-  const contacts = rows.map(contactForPage)
-
+  const onList = new Set(db.data.list_contacts.filter((lc) => lc.list_id == listId).map((lc) => lc.contact_email))
+  const contacts = db.data.contacts.filter((c) => onList.has(c.email)).map(contactForPage)
   return { contacts, count: contacts.length }
 }
 

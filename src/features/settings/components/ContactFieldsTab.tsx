@@ -9,29 +9,12 @@ import {
   updateContactFieldFn,
 } from '../../../server/functions'
 import type { ContactFieldDef, ContactFieldType } from '../../contacts/contactFields'
-import { CONTACT_FIELD_TYPES, slugifyFieldKey, validateFieldKey } from '../../contacts/contactFields'
+import { CONTACT_FIELD_TYPES, hasOptions, parseOptions, slugifyFieldKey, TYPE_LABELS, validateFieldKey } from '../../contacts/contactFields'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
-
-const TYPE_LABELS: Record<ContactFieldType, string> = {
-  text: 'Text',
-  number: 'Number',
-  date: 'Date',
-  boolean: 'Yes / No',
-  select: 'Single select',
-  multiselect: 'Multi select',
-}
-
-const hasOptions = (type: ContactFieldType) => type === 'select' || type === 'multiselect'
-
-const parseOptions = (raw: string) =>
-  raw
-    .split(',')
-    .map(o => o.trim())
-    .filter(Boolean)
 
 /**
  * User-defined contact attributes. Survey questions can map answers onto

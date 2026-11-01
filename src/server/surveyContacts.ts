@@ -2,7 +2,7 @@ import { db } from './db'
 import type { Answers, Survey } from '../features/survey-builder/types'
 import { isQuestionType } from '../features/survey-builder/types'
 import { coerceForField } from '../features/survey-builder/logic/answers'
-import type { ContactCustomValue } from '../features/contacts/contactFields'
+import { FIELD_LIMITS, type ContactCustomValue } from '../features/contacts/contactFields'
 
 const isBlank = (v: unknown) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
 
@@ -38,7 +38,7 @@ export function applySurveyToContact(
         const value = coerceForField(block, answer, def)
         if (value === undefined) continue
         if (mapTo.overwrite === 'if_empty' && !isBlank(existing?.custom?.[key])) continue
-        custom[key] = value
+        custom[key] = typeof value === 'string' ? value.slice(0, FIELD_LIMITS.textValue) : value
       } else {
         const value = coerceForField(block, answer)
         if (typeof value !== 'string') continue

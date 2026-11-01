@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { CONTACT_FIELD_TYPES, validateFieldKey, type ContactCustomValue } from '../../features/contacts/contactFields'
+import { CONTACT_FIELD_TYPES, FIELD_LIMITS, type ContactCustomValue } from '../../features/contacts/contactFields'
 
 export const contactsFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { limit?: number; offset?: number } | undefined) => d)
@@ -173,36 +173,43 @@ export const getContactFieldsFn = createServerFn({ method: 'GET' }).handler(asyn
   return db.getContactFields()
 })
 
+const fieldOptions = z.array(z.string().trim().min(1).max(FIELD_LIMITS.optionLength)).max(FIELD_LIMITS.options).optional()
+
 const contactFieldSchema = z.object({
-  key: z.string(),
-  label: z.string().trim().min(1).max(80),
+  key: z.string().max(40),
+  label: z.string().trim().min(1).max(FIELD_LIMITS.labelLength),
   type: z.enum(CONTACT_FIELD_TYPES),
-  options: z.array(z.string().trim().min(1)).optional(),
+  options: fieldOptions,
+  /** Show it on this table straight away. */
+  showIn: z.enum(['contacts', 'list']).optional(),
 })
 
 export const createContactFieldFn = createServerFn({ method: 'POST' })
   .inputValidator((d: z.input<typeof contactFieldSchema>) => contactFieldSchema.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
-    const { db } = await import('../db')
+    const { createField } = await import('../contactFieldValues')
     await requireAuth()
-    const keyError = validateFieldKey(data.key)
-    if (keyError) throw new Error(keyError)
-    return db.addContactField(data)
+    const { showIn, ...field } = data
+    return createField(field, { showIn })
   })
+
+const contactFieldEdit = z.object({ key: z.string().max(40), label: z.string().trim().min(1).max(FIELD_LIMITS.labelLength), options: fieldOptions })
 
 export const updateContactFieldFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { key: string; label?: string; options?: string[] }) => d)
+  .inputValidator((d: z.input<typeof contactFieldEdit>) => contactFieldEdit.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
-    const { db } = await import('../db')
+    const { editField } = await import('../contactFieldValues')
     await requireAuth()
     const { key, ...patch } = data
-    return db.updateContactField(key, patch)
+    return editField(key, patch)
   })
 
+const contactFieldKey = z.object({ key: z.string().max(40) })
+
 export const deleteContactFieldFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { key: string }) => d)
+  .inputValidator((d: z.input<typeof contactFieldKey>) => contactFieldKey.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const { db } = await import('../db')

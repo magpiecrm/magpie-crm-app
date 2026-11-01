@@ -48,6 +48,20 @@ function prospect() {
 
 const OWN_FIELDS = ['status', 'created_at', 'custom', 'source', 'email_status', 'linkedin_url', 'country', 'notice_status', 'signed_up_at', 'company_id'] as const
 
+describe('reading contacts', () => {
+  it('gives the page everything on the record, on all contacts and on a list', async () => {
+    const { id } = await emailService.createList('Read')
+    const email = 'read@example.com'
+    db.mutate((data) => {
+      data.contacts.push({ email, first_name: 'Rae', last_name: '', job_title: '', company: '', status: 'subscribed', created_at: 'now', custom: { plan: 'Pro' }, country: 'Portugal', company_id: 'co_1' })
+      data.list_contacts.push({ list_id: id, contact_email: email })
+    })
+    const wanted = { email, custom: { plan: 'Pro' }, country: 'Portugal', companyId: 'co_1' }
+    expect((await emailService.getContacts()).contacts.find((c) => c.email === email)).toMatchObject(wanted)
+    expect((await emailService.getListContacts(id)).contacts).toMatchObject([wanted])
+  })
+})
+
 describe('adding someone who is already a contact', () => {
   let listId: number
   beforeEach(async () => {
