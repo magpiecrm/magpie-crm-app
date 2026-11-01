@@ -1,5 +1,5 @@
 import type { ExportColumn } from '../../utils/export'
-import { formatCustomValue, type ContactCustomValue, type ContactFieldDef } from './contactFields'
+import { BUILTIN_EXPORT_HEADERS, formatCustomValue, type ContactCustomValue, type ContactFieldDef } from './contactFields'
 
 /**
  * Contact rows as returned by `contactsFn` / `listContactsFn`
@@ -36,10 +36,17 @@ const contactExportColumns: ExportColumn<ExportableContact>[] = [
   { header: 'Created At', value: c => c.createdAt ?? '' },
 ]
 
+/** A custom field's header: its label, or with its key where the label alone isn't unique (fields from before labels had to be). */
+export function exportHeader(field: ContactFieldDef, fieldDefs: ContactFieldDef[]): string {
+  const label = field.label.toLowerCase()
+  const clash = BUILTIN_EXPORT_HEADERS.some(h => h.toLowerCase() === label) || fieldDefs.some(f => f !== field && f.label.toLowerCase() === label)
+  return clash ? `${field.label} (${field.key})` : field.label
+}
+
 /** The standard columns plus one per custom contact field. */
 export function contactExportColumnsWith(fieldDefs: ContactFieldDef[]): ExportColumn<ExportableContact>[] {
   return [
     ...contactExportColumns,
-    ...fieldDefs.map(f => ({ header: f.label, value: (c: ExportableContact) => formatCustomValue(c.custom?.[f.key]) })),
+    ...fieldDefs.map(f => ({ header: exportHeader(f, fieldDefs), value: (c: ExportableContact) => formatCustomValue(c.custom?.[f.key]) })),
   ]
 }

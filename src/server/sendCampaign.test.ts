@@ -344,7 +344,7 @@ describe('adding contacts by hand', () => {
       { email: 'Jane@Acme.test', attributes: { FIRSTNAME: 'Jane' } } as any,
       { email: 'bob@other.test', attributes: {} } as any,
     ])
-    expect(res).toEqual({ added: 1, skipped: 1 })
+    expect(res).toEqual({ added: 1, skipped: 1, fieldWarnings: 0 })
     await expect(emailService.createContact({ email: 'jane@acme.test' })).rejects.toThrow(/opted out of being contacted/)
   })
 })

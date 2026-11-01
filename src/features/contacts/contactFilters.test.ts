@@ -114,7 +114,7 @@ describe('sorting contacts', () => {
     { key: 'renews', label: 'Renews', type: 'date', created_at: 'now' },
     { key: 'paid', label: 'Paid', type: 'boolean', created_at: 'now' },
   ]
-  const people = [
+  const people: FilterableContact[] = [
     { email: 'a@x.co', custom: { seats: 10, renews: '2026-03-01', paid: false } },
     { email: 'b@x.co', custom: {} },
     { email: 'c@x.co', custom: { seats: 9, renews: '2025-03-01', paid: true } },

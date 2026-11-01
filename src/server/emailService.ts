@@ -85,6 +85,8 @@ export interface EmailContact {
     COMPANY?: string
     COUNTRY?: string
   }
+  /** Custom field values by key, as typed: each is checked against its field. */
+  custom?: Record<string, unknown>
 }
 
 // --- Lists ---
@@ -184,7 +186,7 @@ export async function deleteList(listId: number) {
  * who opted out of being contacted through MagpieCRM (the suppression list)
  * are skipped rather than added; returns how many.
  */
-export async function addContactsToList(listId: number, contacts: EmailContact[]): Promise<{ added: number; skipped: number }> {
+export async function addContactsToList(listId: number, contacts: EmailContact[]): Promise<{ added: number; skipped: number; fieldWarnings: number }> {
   const known = new Set(db.data.contacts.map((c) => c.email))
   const optedOut = optedOutAt(
     db,
@@ -229,8 +231,10 @@ export async function addContactsToList(listId: number, contacts: EmailContact[]
       for (const c of data.contacts) c.country = countries.get(c.email) ?? c.country
     })
   }
+  const customValues = contacts.filter((c) => c.custom && !optedOut.has(c.email.toLowerCase().trim())).map((c) => ({ email: c.email, values: c.custom! }))
+  const fieldWarnings = customValues.length ? writeCustomValues(customValues, { blanks: 'keep' }).problems.length : 0
   if (optedOut.size) console.log(`[Contacts] Skipped ${optedOut.size} who opted out of being contacted`)
-  return { added, skipped: optedOut.size }
+  return { added, skipped: optedOut.size, fieldWarnings }
 }
 
 /**

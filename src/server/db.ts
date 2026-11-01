@@ -602,8 +602,17 @@ class JsonDb {
     if (changed) this.save()
   }
 
+  /** Saves once, when it ends: every save rewrites the whole file, so a row-by-row import can't do one each. */
   transaction(fn: (...args: any[]) => any) {
-    return (...args: any[]) => fn(...args)
+    return (...args: any[]) => {
+      this.saveHeld++
+      try {
+        return fn(...args)
+      } finally {
+        this.saveHeld--
+        if (this.saveHeld === 0 && this.saveWaiting) this.save()
+      }
+    }
   }
 
   private load(): DbSchema {
@@ -1217,8 +1226,12 @@ class JsonDb {
     renameSync(tempPath, dbPath)
   }
 
+  private saveHeld = 0
+  private saveWaiting = false
+
   private save() {
-    this.saveData(this.data)
+    this.saveWaiting = this.saveHeld > 0
+    if (!this.saveWaiting) this.saveData(this.data)
   }
 
   /**

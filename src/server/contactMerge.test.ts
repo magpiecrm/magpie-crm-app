@@ -48,6 +48,28 @@ function prospect() {
 
 const OWN_FIELDS = ['status', 'created_at', 'custom', 'source', 'email_status', 'linkedin_url', 'country', 'notice_status', 'signed_up_at', 'company_id'] as const
 
+describe('importing many', () => {
+  it("doesn't rewrite the file for every row, and saves custom values, blanks leaving what's there", async () => {
+    const { id } = await emailService.createList('Many')
+    db.mutate((data) => {
+      data.contact_fields = [{ key: 'seats', label: 'Seats', type: 'number', created_at: 'now' }]
+    })
+    const rows = Array.from({ length: 50 }, (_, i) => ({ email: `many${i}@example.com`, attributes: { FIRSTNAME: 'Many' }, custom: { seats: String(i + 1) } }))
+    const save = vi.spyOn(db as any, 'save')
+    const saveData = vi.spyOn(db as any, 'saveData')
+    await emailService.addContactsToList(id, rows)
+    expect(saveData.mock.calls.length).toBeLessThanOrEqual(3)
+    save.mockRestore()
+    saveData.mockRestore()
+    expect(db.data.contacts.find((c) => c.email === 'many7@example.com')?.custom).toEqual({ seats: 8 })
+
+    const again = await emailService.addContactsToList(id, [{ email: 'many7@example.com', custom: { seats: '' } }, { email: 'many8@example.com', custom: { seats: 'lots' } }])
+    expect(again.fieldWarnings).toBe(1)
+    expect(db.data.contacts.find((c) => c.email === 'many7@example.com')?.custom).toEqual({ seats: 8 })
+    expect(db.data.contacts.find((c) => c.email === 'many8@example.com')?.custom).toEqual({ seats: 9 })
+  })
+})
+
 describe('reading contacts', () => {
   it('gives the page everything on the record, on all contacts and on a list', async () => {
     const { id } = await emailService.createList('Read')

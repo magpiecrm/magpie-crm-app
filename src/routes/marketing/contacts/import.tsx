@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { 
   listsFn, 
-  addContactsFn 
+  addContactsFn,
+  getContactFieldsFn
 } from '../../../server/functions'
 import { 
   ArrowLeft, 
@@ -17,168 +18,17 @@ import {
   AlertCircle
 } from 'lucide-react'
 import { Select } from '../../../components/ui/Select'
+import { Dialog } from '../../../components/ui/Dialog'
+import { Notice } from '../../../components/ui/Notice'
+import { ContactFieldForm } from '../../../features/contacts/components/ContactFieldForm'
+import { invalidateContactFields } from '../../../features/contacts/contactCache'
+import { autoDetectMappings, cleanCustomCell, detectDelimiter, guessField, importProblems, isSpreadsheetFile, parseCSV, parseSpreadsheet } from '../../../features/contacts/contactImport'
 
 export const Route = createFileRoute('/marketing/contacts/import')({
   component: ImportContactsPage,
 })
 
 type ImportMode = 'select' | 'file' | 'copy-paste' | 'another-tool'
-
-// Helper to detect CSV delimiter
-function detectDelimiter(text: string): string {
-  const lines = text.split('\n').slice(0, 5).filter(Boolean)
-  const counts = { ',': 0, ';': 0, '\t': 0 }
-  for (const line of lines) {
-    counts[','] += (line.match(/,/g) || []).length
-    counts[';'] += (line.match(/;/g) || []).length
-    counts['\t'] += (line.match(/\t/g) || []).length
-  }
-  if (counts[';'] > counts[','] && counts[';'] > counts['\t']) return ';'
-  if (counts['\t'] > counts[','] && counts['\t'] > counts[';']) return '\t'
-  return ','
-}
-
-// Robust CSV/text parser supporting quotes and empty cells
-function parseCSV(text: string, delimiter: string): string[][] {
-  const grid: string[][] = []
-  let row: string[] = []
-  let currentValue = ''
-  let inQuotes = false
-
-  const pushRow = () => {
-    row.push(currentValue.trim())
-    currentValue = ''
-    // Skip blank lines, but keep rows where only some cells are empty.
-    if (row.some(cell => cell !== '')) grid.push(row)
-    row = []
-  }
-
-  // Scanned over the whole text rather than line-by-line so that quoted fields
-  // may themselves contain the delimiter or a newline.
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]
-
-    if (inQuotes) {
-      if (char !== '"') {
-        currentValue += char
-      } else if (text[i + 1] === '"') {
-        currentValue += '"' // "" inside a quoted field is a literal quote
-        i++
-      } else {
-        inQuotes = false
-      }
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = true
-    } else if (char === delimiter) {
-      row.push(currentValue.trim())
-      currentValue = ''
-    } else if (char === '\n' || char === '\r') {
-      if (char === '\r' && text[i + 1] === '\n') i++
-      pushRow()
-    } else {
-      currentValue += char
-    }
-  }
-  pushRow()
-
-  return grid
-}
-
-const SPREADSHEET_EXTENSIONS = ['.xlsx', '.xlsm', '.xlsb', '.xls', '.ods']
-
-function isSpreadsheetFile(file: File): boolean {
-  const name = file.name.toLowerCase()
-  return SPREADSHEET_EXTENSIONS.some(ext => name.endsWith(ext))
-}
-
-// Read the first sheet of an Excel/ODS workbook into the same string grid
-// shape the CSV parser produces
-async function parseSpreadsheet(file: File): Promise<string[][]> {
-  const { read, utils } = await import('xlsx')
-  const workbook = read(await file.arrayBuffer(), { type: 'array' })
-  const sheetName = workbook.SheetNames[0]
-  if (!sheetName) return []
-
-  const rows = utils.sheet_to_json<any[]>(workbook.Sheets[sheetName], {
-    header: 1,
-    blankrows: false,
-    raw: false, // let SheetJS format dates/numbers as display strings
-    defval: '',
-  })
-
-  return rows
-    .map(row => row.map(cell => (cell == null ? '' : String(cell).trim())))
-    .filter(row => row.some(cell => cell !== ''))
-}
-
-// Auto detect fields from columns
-function autoDetectMappings(grid: string[][], hasHeaders: boolean): Record<number, string> {
-  const mappings: Record<number, string> = {}
-  if (grid.length === 0) return mappings
-  
-  const numCols = Math.max(...grid.map(row => row.length))
-  
-  // 1. Try to match headers if present
-  if (hasHeaders) {
-    const firstRow = grid[0]
-    for (let colIdx = 0; colIdx < firstRow.length; colIdx++) {
-      const val = (firstRow[colIdx] || '').toLowerCase().trim()
-      if (val.includes('email') || val.includes('mail') || val === 'addr') {
-        mappings[colIdx] = 'email'
-      } else if (val.includes('first') || val.includes('fname') || val === 'name') {
-        mappings[colIdx] = 'firstName'
-      } else if (val.includes('last') || val.includes('lname')) {
-        mappings[colIdx] = 'lastName'
-      } else if (val.includes('company') || val.includes('org') || val.includes('business')) {
-        mappings[colIdx] = 'company'
-      } else if (val.includes('title') || val.includes('role') || val.includes('job')) {
-        mappings[colIdx] = 'jobTitle'
-      } else if (val.includes('country')) {
-        mappings[colIdx] = 'country'
-      }
-    }
-  }
-  
-  // 2. Scan first few data rows to locate the column containing email if not found
-  const hasEmailMap = Object.values(mappings).includes('email')
-  if (!hasEmailMap) {
-    const startRow = hasHeaders ? 1 : 0
-    const colScore: Record<number, number> = {}
-    const sampleRows = grid.slice(startRow, startRow + 5)
-    for (const row of sampleRows) {
-      for (let colIdx = 0; colIdx < row.length; colIdx++) {
-        const val = row[colIdx]
-        if (val && val.includes('@') && val.includes('.')) {
-          colScore[colIdx] = (colScore[colIdx] || 0) + 1
-        }
-      }
-    }
-    let bestCol = -1
-    let maxScore = 0
-    for (const colIdxStr in colScore) {
-      const colIdx = Number(colIdxStr)
-      if (colScore[colIdx] > maxScore) {
-        maxScore = colScore[colIdx]
-        bestCol = colIdx
-      }
-    }
-    if (bestCol !== -1) {
-      mappings[bestCol] = 'email'
-    }
-  }
-  
-  // 3. Fill remaining columns with 'skip'
-  for (let colIdx = 0; colIdx < numCols; colIdx++) {
-    if (!mappings[colIdx]) {
-      mappings[colIdx] = 'skip'
-    }
-  }
-  
-  return mappings;
-}
 
 function ImportContactsPage() {
   const navigate = useNavigate()
@@ -192,6 +42,13 @@ function ImportContactsPage() {
   const [hasHeaders, setHasHeaders] = useState(true)
   const [mappings, setMappings] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
+  /** The column a new field is being made for. */
+  const [newFieldFor, setNewFieldFor] = useState<number | null>(null)
+
+  const { data: contactFields = [] } = useQuery({
+    queryKey: queryKeys.email.contactFields(),
+    queryFn: () => getContactFieldsFn(),
+  })
 
   // Fetch lists for the target dropdown
   const { data: listsData } = useQuery({
@@ -202,14 +59,15 @@ function ImportContactsPage() {
 
   // Mutation to add contacts to a list
   const importMutation = useMutation({
-    mutationFn: (data: { listId: number; contacts: any[] }) => addContactsFn({ data }),
+    mutationFn: (data: { listId: number; contacts: Array<{ email: string; attributes?: Record<string, string>; custom?: Record<string, unknown> }> }) => addContactsFn({ data }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
+      const left = res.fieldWarnings ? ` ${res.fieldWarnings} ${res.fieldWarnings === 1 ? "value didn't fit its field and wasn't" : "values didn't fit their fields and weren't"} saved.` : ''
       alert(
-        res?.skipped
-          ? `Imported ${res.added} contact${res.added === 1 ? '' : 's'}. ${res.skipped} ${res.skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.`
-          : 'Contacts imported successfully!',
+        res.skipped
+          ? `Imported ${res.added} contact${res.added === 1 ? '' : 's'}. ${res.skipped} ${res.skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.${left}`
+          : `Contacts imported successfully!${left}`,
       )
       navigate({ to: '/marketing/contacts' })
     },
@@ -230,7 +88,7 @@ function ImportContactsPage() {
     }
 
     setGrid(parsedGrid)
-    const initialMappings = autoDetectMappings(parsedGrid, hasHeaders)
+    const initialMappings = autoDetectMappings(parsedGrid, hasHeaders, contactFields)
     setMappings(initialMappings)
   }
 
@@ -241,7 +99,7 @@ function ImportContactsPage() {
       return
     }
     setGrid(parsedGrid)
-    setMappings(autoDetectMappings(parsedGrid, hasHeaders))
+    setMappings(autoDetectMappings(parsedGrid, hasHeaders, contactFields))
   }
 
   // Handle CSV/text or spreadsheet file upload
@@ -298,7 +156,7 @@ function ImportContactsPage() {
 
   const handleToggleHeaders = (checked: boolean) => {
     setHasHeaders(checked)
-    setMappings(autoDetectMappings(grid, checked))
+    setMappings(autoDetectMappings(grid, checked, contactFields))
   }
 
   const handleSubmit = () => {
@@ -330,7 +188,9 @@ function ImportContactsPage() {
     const countryColIdxStr = Object.keys(mappings).find(key => mappings[Number(key)] === 'country')
     const countryColIdx = countryColIdxStr !== undefined ? Number(countryColIdxStr) : -1
 
-    const contactsList: { email: string; attributes?: any }[] = []
+    const customColumns = Object.entries(mappings).filter(([, target]) => target.startsWith('custom:')).map(([col, target]) => [Number(col), target.slice('custom:'.length)] as const)
+
+    const contactsList: { email: string; attributes?: any; custom?: Record<string, unknown> }[] = []
     const startRow = hasHeaders ? 1 : 0
 
     for (let i = startRow; i < grid.length; i++) {
@@ -349,7 +209,8 @@ function ImportContactsPage() {
 
       contactsList.push({
         email,
-        attributes: Object.keys(attributes).length > 0 ? attributes : undefined
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        ...(customColumns.length ? { custom: Object.fromEntries(customColumns.map(([col, key]) => [key, cleanCustomCell(row[col] ?? '')])) } : {}),
       })
     }
 
@@ -367,6 +228,21 @@ function ImportContactsPage() {
   // Preview properties
   const numColumns = grid.length > 0 ? Math.max(...grid.map(row => row.length)) : 0
   const sampleRows = grid.slice(0, 6)
+  const problems = useMemo(() => importProblems(grid, hasHeaders, mappings, contactFields), [grid, hasHeaders, mappings, contactFields])
+  const setColumn = (colIdx: number, val: string) =>
+    setMappings(prev => {
+      const next = { ...prev }
+      if (val !== 'skip') {
+        // Enforce uniqueness of mapping fields
+        for (const idx in next) {
+          if (next[idx] === val) {
+            next[idx] = 'skip'
+          }
+        }
+      }
+      next[colIdx] = val
+      return next
+    })
 
   return (
     <div className="p-4 lg:p-8 max-w-5xl mx-auto min-h-[100dvh]">
@@ -500,7 +376,7 @@ function ImportContactsPage() {
                   </>
                 )}
               </p>
-              <p className="text-xs text-muted-foreground">Excel (.xlsx, .xls), CSV, or plain text. You can map headers to Email, First Name, Last Name, and Company in the next step.</p>
+              <p className="text-xs text-muted-foreground">Excel (.xlsx, .xls), CSV, or plain text. You can map headers to Email, First Name, Last Name, Company and your custom fields in the next step.</p>
             </div>
             <label className={`px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-semibold transition-all ${
               isParsingFile ? 'opacity-60 pointer-events-none' : 'hover:brightness-110 active:scale-95 cursor-pointer'
@@ -584,22 +460,7 @@ function ImportContactsPage() {
                         
                         <Select
                           value={mappings[colIdx] || 'skip'}
-                          onChange={(e) => {
-                            const val = e.target.value
-                            setMappings(prev => {
-                              const next = { ...prev }
-                              if (val !== 'skip') {
-                                // Enforce uniqueness of mapping fields
-                                for (const idx in next) {
-                                  if (next[idx] === val) {
-                                    next[idx] = 'skip'
-                                  }
-                                }
-                              }
-                              next[colIdx] = val
-                              return next
-                            })
-                          }}
+                          onChange={(e) => (e.target.value === 'new' ? setNewFieldFor(colIdx) : setColumn(colIdx, e.target.value))}
                           className={`w-full text-xs font-semibold px-2 py-1.5 rounded border bg-background focus:outline-none focus:ring-1 focus:ring-accent ${
                             mappings[colIdx] === 'email' ? 'border-emerald-500/50 text-emerald-600' :
                             mappings[colIdx] && mappings[colIdx] !== 'skip' ? 'border-accent/50 text-accent' : 'border-border text-muted-foreground'
@@ -612,6 +473,16 @@ function ImportContactsPage() {
                           <option value="company">Company</option>
                           <option value="jobTitle">Job Title</option>
                           <option value="country">Country</option>
+                          {contactFields.length > 0 && (
+                            <optgroup label="Custom fields">
+                              {contactFields.map((field) => (
+                                <option key={field.key} value={`custom:${field.key}`}>
+                                  {field.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <option value="new">Create a new field…</option>
                         </Select>
                       </div>
                     </th>
@@ -648,6 +519,28 @@ function ImportContactsPage() {
           <p className="text-[11px] text-muted-foreground italic">
             * Showing up to 5 rows of sample data.
           </p>
+
+          {problems.map((p) => (
+            <Notice key={p.label} level="warning">
+              {p.count.toLocaleString()} {p.count === 1 ? 'value' : 'values'} in {p.label} won't fit, like "{p.example}". {p.problem} Those contacts still import, without this value.
+            </Notice>
+          ))}
+
+          {newFieldFor !== null && (
+            <Dialog isOpen onClose={() => setNewFieldFor(null)} title="New field" className="max-w-lg" padded>
+              <ContactFieldForm
+                initial={guessField(grid, hasHeaders, newFieldFor)}
+                showIn="contacts"
+                submitLabel="Create field"
+                onCreated={(field) => {
+                  queryClient.setQueryData(queryKeys.email.contactFields(), [...contactFields, field])
+                  invalidateContactFields(queryClient)
+                  setColumn(newFieldFor, `custom:${field.key}`)
+                  setNewFieldFor(null)
+                }}
+              />
+            </Dialog>
+          )}
 
           <div className="space-y-4 pt-4 border-t border-border">
             {/* Destination list select */}

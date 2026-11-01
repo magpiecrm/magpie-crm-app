@@ -43,8 +43,13 @@ export const createContactFn = createServerFn({ method: 'POST' })
     return createContact(data)
   })
 
+const contactsToAdd = z.object({
+  listId: z.number(),
+  contacts: z.array(z.object({ email: z.string().max(320), attributes: z.record(z.string(), z.string()).optional(), custom: z.record(z.string(), z.unknown()).optional() })),
+})
+
 export const addContactsFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { listId: number; contacts: any[] }) => d)
+  .inputValidator((d: z.input<typeof contactsToAdd>) => contactsToAdd.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const { addContactsToList } = await import('../emailService')
