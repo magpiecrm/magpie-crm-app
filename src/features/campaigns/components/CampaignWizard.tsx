@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { Save, Layout, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCircle, ChevronRight, Search, Clock } from 'lucide-react'
-import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn } from '../../../server/functions'
+import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn, getContactFieldsFn } from '../../../server/functions'
 import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
 import { ScheduleDrawer } from './ScheduleDrawer'
@@ -12,6 +12,7 @@ import { Switch } from '../../../components/ui/Switch'
 import { TemplatePicker } from '../../templates/components/TemplatePicker'
 import { extractDesign } from '../../email-builder/utils/design'
 import { Select } from '../../../components/ui/Select'
+import { mergeTagOptions, mergeTagText } from '../../contacts/mergeTagOptions'
 
 interface CampaignWizardProps {
   onClose: () => void
@@ -66,6 +67,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const [variableSearchQuery, setVariableSearchQuery] = useState('')
 
   // When the host runs sending, every campaign carries an unsubscribe link.
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const { data: sendingSettings } = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
   const unsubscribeLocked = Boolean(sendingSettings?.success && sendingSettings.managed)
 
@@ -580,14 +582,14 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
 
                       {/* Attribute Selection Panel */}
                       <div className="pl-9 pt-1.5 grid grid-cols-2 gap-1.5 border-t border-border/30 mt-1.5">
-                        {['FIRSTNAME', 'LASTNAME', 'EMAIL', 'COMPANY', 'JOB_TITLE']
-                          .filter(attr => attr.toLowerCase().includes(variableSearchQuery.toLowerCase()))
-                          .map(attr => (
+                        {mergeTagOptions(contactFields)
+                          .filter(option => `${option.path} ${option.label}`.toLowerCase().includes(variableSearchQuery.toLowerCase()))
+                          .map(option => (
                             <button
-                              key={attr}
+                              key={option.path}
                               type="button"
                               onClick={() => {
-                                const variableStr = `{{ contact.${attr} }}`
+                                const variableStr = mergeTagText(option)
                                 if (activeInputForVariable === 'subject') {
                                   setFormData(prev => ({ ...prev, subject: prev.subject + variableStr }))
                                 } else {
@@ -598,7 +600,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
                               }}
                               className="px-2 py-1.5 bg-muted/45 hover:bg-accent/10 border border-border hover:border-accent/30 text-left text-[11px] rounded-lg text-foreground hover:text-accent font-medium font-mono transition-colors truncate"
                             >
-                              {attr}
+                              {option.path.startsWith('contact.custom.') ? option.label : option.path.replace('contact.', '')}
                             </button>
                           ))}
                       </div>

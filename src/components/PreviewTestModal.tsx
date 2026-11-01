@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import { User, Send, Laptop, Smartphone, Search, Check, Loader2 } from 'lucide-react'
-import { contactsFn, sendTestEmailFn } from '../server/functions'
+import { contactsFn, getContactFieldsFn, sendTestEmailFn } from '../server/functions'
+import { mergeContact, unfilledMergeTags } from '../server/mergeTags'
+import { Notice } from './ui/Notice'
 import { Button } from './ui/Button'
 import { Dialog } from './ui/Dialog'
 
@@ -35,6 +37,9 @@ export function PreviewTestModal({
   const [selectedTestRecipients, setSelectedTestRecipients] = useState<string[]>([])
   
   // Load contacts
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn(), enabled: isOpen })
+  const unfilled = isOpen ? unfilledMergeTags(`${campaignSubject}\n${campaignPreviewText ?? ''}\n${htmlContent}`, contactFields.map((f) => f.key)) : []
+
   const { data: contactsData, isLoading: isLoadingContacts } = useQuery({
     queryKey: queryKeys.email.contactsAll(),
     queryFn: () => contactsFn(),
@@ -49,7 +54,7 @@ export function PreviewTestModal({
           sender: campaignSender,
           to: recipients,
           subject: `[TEST] ${campaignSubject || 'No Subject'}`,
-          htmlContent: replacePlaceholders(htmlContent, selectedContact),
+          htmlContent: replacePlaceholders(htmlContent, selectedContact, true),
           previewText: getPreviewText()
         }
       }),
@@ -76,28 +81,10 @@ export function PreviewTestModal({
   })
 
   // Utility to replace placeholders
-  function replacePlaceholders(html: string, contact: any): string {
-    if (!contact) return html
-    let processed = html
-    const attributes = contact.attributes || {}
-    
-    // Core attributes replacement
-    processed = processed.replace(/\{\{\s*contact\.FIRSTNAME\s*\}\}/gi, attributes.FIRSTNAME || '')
-    processed = processed.replace(/\{\{\s*contact\.LASTNAME\s*\}\}/gi, attributes.LASTNAME || '')
-    processed = processed.replace(/\{\{\s*contact\.EMAIL\s*\}\}/gi, contact.email || '')
-    processed = processed.replace(/\{\{\s*contact\.COMPANY\s*\}\}/gi, attributes.COMPANY || '')
-    processed = processed.replace(/\{\{\s*contact\.JOB_TITLE\s*\}\}/gi, attributes.JOB_TITLE || '')
-    
-    // Extra/Dynamic attribute replacement mapping
-    processed = processed.replace(/\{\{\s*contact\.([A-Za-z0-9_]+)\s*\}\}/gi, (match, fieldName) => {
-      const key = fieldName.toUpperCase()
-      if (attributes[key] !== undefined) return String(attributes[key])
-      if (attributes[fieldName] !== undefined) return String(attributes[fieldName])
-      if (key === 'EMAIL') return contact.email || ''
-      return match
-    })
-    
-    return processed
+  function replacePlaceholders(text: string, contact: any, html = false): string {
+    if (!contact) return text
+    const a = contact.attributes || {}
+    return mergeContact(text, { email: contact.email, first_name: a.FIRSTNAME, last_name: a.LASTNAME, company: a.COMPANY, custom: contact.custom }, { html })
   }
 
   // Get preview text line (fallback to stripping HTML)
@@ -227,7 +214,7 @@ export function PreviewTestModal({
             >
               <iframe
                 sandbox="allow-same-origin"
-                srcDoc={replacePlaceholders(htmlContent, selectedContact)}
+                srcDoc={replacePlaceholders(htmlContent, selectedContact, true)}
                 title="Compiled Test Output"
                 className="w-full min-h-[500px] border-none"
                 style={{ height: '58vh' }}
@@ -241,6 +228,12 @@ export function PreviewTestModal({
         <div className="w-full lg:w-[380px] shrink-0 overflow-y-auto bg-card p-4 sm:p-6 flex flex-col justify-between border-t lg:border-t-0 border-border">
           
           {/* Tab: Preview configurations */}
+          {unfilled.length > 0 && (
+            <Notice level="warning" className="mb-4">
+              This won't send until these are fixed: {unfilled.join(', ')}. They aren't contact fields.
+            </Notice>
+          )}
+
           {activeTab === 'preview' && (
             <div className="space-y-5 flex-1 flex flex-col min-h-0">
               <div>

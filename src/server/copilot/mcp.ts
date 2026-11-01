@@ -204,6 +204,8 @@ Sequences (cold outreach): createSequence drafts a first email and follow-ups (p
 
 Lists from existing contacts: previewListFilters says how many match and can be emailed, then createListFromFilters makes the list. It fills once; addNewListMatches adds who matches later. Show the user the count first.
 
+Custom contact fields: getContactFields lists them and createContactField adds one; setContactValues writes values, as does addContacts with custom; emails use them as {{ contact.custom.<key> }}. Built-in details like a contact's name can't be changed.
+
 Every marketing email needs an {{ unsubscribe }} link (the footer block has one), images need alt text, and image URLs come from searchImages, never invented.
 
 searchPeople uses one of the account's prospect credits for each person it shows, so only search when the user asked for it.

@@ -1,4 +1,8 @@
 import { AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../../queryKeys'
+import { getContactFieldsFn } from '../../../server/functions'
+import { mergeTagOptions } from '../../contacts/mergeTagOptions'
 import type { EmailBlock, GlobalStyle } from '../types'
 import { AltTextControl, ItemListEditor, LinkListEditor, PaddingControl, SocialListEditor, SummaryRowEditor } from './BlockEditorControls'
 import { ImageUrlField } from './ImageUrlField'
@@ -11,7 +15,27 @@ interface BlockEditorProps {
   updateBlockContent: (id: string, updates: Partial<EmailBlock>) => void
 }
 
+/** Buttons that add a contact's details to a block's text. */
+function MergeTagButtons({ onInsert }: { onInsert: (tag: string) => void }) {
+  const { data: fields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
+  return (
+    <div className="flex gap-2 pt-1 flex-wrap">
+      {mergeTagOptions(fields)
+        .filter((o) => o.path !== 'contact.EMAIL')
+        .map((o) => {
+          const tag = `{{${o.path}}}`
+          return (
+            <button key={o.path} type="button" onClick={() => onInsert(tag)} title={tag} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">
+              {o.path.startsWith('contact.custom.') ? o.label : tag}
+            </button>
+          )
+        })}
+    </div>
+  )
+}
+
 export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: BlockEditorProps) {
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   return (
     <div className="space-y-4 animate-in fade-in duration-200">
       {selectedBlock.type === 'survey' && (
@@ -112,11 +136,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
               onChange={(e) => updateBlockContent(selectedBlock.id, { content: e.target.value })}
               className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
             />
-            <div className="flex gap-2 pt-1 flex-wrap">
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.FIRSTNAME}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.FIRSTNAME}}'}</button>
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.LASTNAME}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.LASTNAME}}'}</button>
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.COMPANY}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.COMPANY}}'}</button>
-            </div>
+            <MergeTagButtons onInsert={(tag) => updateBlockContent(selectedBlock.id, { content: `${selectedBlock.content} ${tag}` })} />
           </div>
           <div className="space-y-2">
             <label className="block text-xs text-muted-foreground font-semibold">Heading Preset</label>
@@ -303,11 +323,7 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
               onChange={(e) => updateBlockContent(selectedBlock.id, { content: e.target.value })}
               className="w-full h-32 px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none focus:ring-1 focus:ring-accent text-sm resize-none"
             />
-            <div className="flex gap-2 pt-1 flex-wrap">
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.FIRSTNAME}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.FIRSTNAME}}'}</button>
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.LASTNAME}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.LASTNAME}}'}</button>
-              <button type="button" onClick={() => updateBlockContent(selectedBlock.id, { content: selectedBlock.content + ' {{contact.COMPANY}}' })} className="px-2 py-1 bg-background border border-border rounded text-[10px] hover:bg-muted text-muted-foreground transition-colors">{'{{contact.COMPANY}}'}</button>
-            </div>
+            <MergeTagButtons onInsert={(tag) => updateBlockContent(selectedBlock.id, { content: `${selectedBlock.content} ${tag}` })} />
           </div>
           <div className="space-y-2">
             <label className="block text-xs text-muted-foreground font-semibold">Block Position on Page</label>
@@ -559,10 +575,11 @@ export function BlockEditor({ selectedBlock, globalStyle, updateBlockContent }: 
               onChange={(e) => updateBlockContent(selectedBlock.id, { content: e.target.value })}
               className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-foreground focus:outline-none text-xs"
             >
-              <option value="contact.FIRSTNAME">contact.FIRSTNAME</option>
-              <option value="contact.LASTNAME">contact.LASTNAME</option>
-              <option value="contact.EMAIL">contact.EMAIL</option>
-              <option value="contact.COMPANY">contact.COMPANY</option>
+              {mergeTagOptions(contactFields).map((o) => (
+                <option key={o.path} value={o.path}>
+                  {o.path.startsWith('contact.custom.') ? o.label : o.path}
+                </option>
+              ))}
             </Select>
             <p className="text-[10px] text-muted-foreground mt-1">This will render dynamically as a contact attribute tag when sending the newsletter.</p>
           </div>

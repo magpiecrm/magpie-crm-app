@@ -11,6 +11,7 @@
 // sequence, with a notification, when the plan's emails run out or the
 // sending domain isn't ready, resuming by itself once they are.
 
+import { mergeTagProblem } from './index'
 import { randomUUID } from 'node:crypto'
 import { db, type DbSchema } from '../db'
 import type { Enrollment, Sequence } from '../../features/sequences/types'
@@ -171,6 +172,13 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     return false
   }
   const from = sender.name ? `"${sender.name}" <${sender.email}>` : sender.email
+
+  // A field deleted since it started would otherwise go out blank.
+  const badTag = mergeTagProblem(db.data, s)
+  if (badTag) {
+    pause(s, badTag)
+    return false
+  }
 
   const due = mine
     .filter((e) => e.status === 'active' && !e.claim && e.next_send_at && Date.parse(e.next_send_at) <= now.getTime())

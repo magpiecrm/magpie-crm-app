@@ -77,6 +77,25 @@ describe('writeCustomValues', () => {
   })
 })
 
+describe('the copilot', () => {
+  it('asks first, and sets values only through the same door', async () => {
+    const { contactTools } = await import('./copilot/tools/contacts')
+    const { needsApproval } = await import('./copilot/permissions')
+    expect(needsApproval('setContactValues', 'auto-safe')).toBe(true)
+    const tool = contactTools.find((t) => t.name === 'setContactValues')!
+    const out = (await (tool.handler as any)({ updates: [{ email: 'a@x.co', values: { seats: 3, first_name: 'Mallory' } }] }, {} as any)) as { updated: number; problems: unknown[] }
+    expect(out).toMatchObject({ updated: 1, problems: [{ field: 'first_name' }] })
+    expect(db.data.contacts[0]).toMatchObject({ first_name: 'Jo', custom: { plan: 'Pro', seats: 3 } })
+  })
+
+  it('finds contacts by their custom values', async () => {
+    const { contactTools } = await import('./copilot/tools/contacts')
+    const tool = contactTools.find((t) => t.name === 'getContacts')!
+    const out = (await (tool.handler as any)({ search: 'pro' }, {} as any)) as { contacts: Array<{ email: string }> }
+    expect(out.contacts.map((c) => c.email)).toEqual(['a@x.co'])
+  })
+})
+
 describe('fields', () => {
   it('stops at the limit', () => {
     for (let i = 0; i < 48; i++) createField({ key: `f${i}`, label: `F${i}`, type: 'text' })

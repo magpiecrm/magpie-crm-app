@@ -285,6 +285,21 @@ describe('the engine', () => {
     expect(notices.some((n) => n.includes('unconfirmed addresses bounced'))).toBe(true)
   })
 
+  it('pauses rather than send a blank when a custom field it uses is deleted', async () => {
+    db.mutate((d) => {
+      d.contact_fields = [{ key: 'plan', label: 'Plan', type: 'text', created_at: 'now' }]
+    })
+    contact('ava@larkspur.test', { custom: { plan: 'Pro' } })
+    const id = makeSequence({ steps: [{ delay_days: 0, subject: 'Your plan', body: 'You are on {{ contact.custom.plan }}.' }] })
+    sequences.enroll(id, ['ava@larkspur.test'], {}, null)
+    db.deleteContactField('plan')
+    expect(await runSequences(new Date(), () => 1)).toBe(0)
+    expect(sent).toHaveLength(0)
+    expect(sequences.get(id).sequence).toMatchObject({ status: 'paused', auto_paused: null })
+    expect(notices[0]).toMatch(/\{\{ contact\.custom\.plan \}\}, which isn't a contact field/)
+    expect(() => sequences.setStatus(id, 'active')).toThrow(/isn't a contact field/)
+  })
+
   it("won't start until it's ready", () => {
     const s = sequences.create({ name: 'Draft', senderId: 1 }, null)
     expect(() => sequences.setStatus(s.id, 'active')).toThrow('The first email needs a subject.')

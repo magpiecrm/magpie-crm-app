@@ -5,7 +5,8 @@
 // The fallback's quote marks are taken however they arrive: the email builder
 // writes them into HTML as &quot;, and people paste curly ones. A contact tag
 // that isn't one of ours is left as it is, and a campaign with one isn't sent
-// (unfilledMergeTags), rather than going out with the tag showing.
+// (unfilledMergeTags), rather than going out with the tag showing. Nor is a
+// sequence's next email: it pauses until someone looks.
 
 import { formatCustomValue } from '../features/contacts/contactFields'
 
@@ -71,15 +72,18 @@ export function mergeContact(text: string, contact: MergeContact, opts: { html: 
 
 /**
  * Contact tags in `text` that merging would leave showing: a field we don't
- * have ({{ contact.job_title }}), or a tag written some way we can't read.
- * For refusing to send a campaign with one in it.
+ * have ({{ contact.job_title }}), or a tag written some way we can't read. A
+ * custom field that doesn't exist (`customKeys` are those that do) counts too,
+ * fallback or not: a mistyped key would blank it, or give everyone the fallback.
+ * For refusing to send an email with one in it.
  */
-export function unfilledMergeTags(text: string): string[] {
+export function unfilledMergeTags(text: string, customKeys: string[]): string[] {
   const left = new Set<string>()
   for (const m of text.matchAll(ANY_CONTACT_TAG)) {
     TAG.lastIndex = 0
     const read = TAG.exec(m[0])
-    if (!read || read[0] !== m[0] || valueOf(read[1], { email: '' }) === undefined) left.add(m[0].replace(/&quot;/g, '"').replace(/&nbsp;/g, ' '))
+    const unknownField = read && /^custom\./i.test(read[1]) && !customKeys.includes(read[1].slice('custom.'.length))
+    if (!read || read[0] !== m[0] || unknownField || valueOf(read[1], { email: '' }) === undefined) left.add(m[0].replace(/&quot;/g, '"').replace(/&nbsp;/g, ' '))
   }
   TAG.lastIndex = 0
   return [...left]

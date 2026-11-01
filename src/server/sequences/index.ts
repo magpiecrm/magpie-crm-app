@@ -15,6 +15,7 @@ import {
   type SequenceStep,
   type SequenceSummary,
 } from '../../features/sequences/types'
+import { unfilledMergeTags } from '../mergeTags'
 import { isUnconfirmedGuess } from '../prospecting/types'
 import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { dueAfter, firstSendable, isTimeZone, remapStep } from './schedule'
@@ -96,6 +97,13 @@ function cleanSettings(patch: Partial<SequenceSettings>, base: SequenceSettings)
 }
 
 /** What's missing before a sequence can send, or null when it's ready. */
+/** Why a sequence's emails can't be merged, or null: a tag that would show, or a custom field that's gone. */
+export function mergeTagProblem(data: DbSchema, s: Sequence): string | null {
+  const keys = (data.contact_fields ?? []).map((f) => f.key)
+  const [tag] = [...s.steps.flatMap((st) => [st.subject ?? '', st.body]), s.settings.footer].flatMap((text) => unfilledMergeTags(text, keys))
+  return tag ? `Its emails use ${tag}, which isn't a contact field. Fix it or add the field, so no one gets a blank.` : null
+}
+
 export function notReady(data: DbSchema, s: Sequence): string | null {
   if (!data.senders.some((x) => x.id === s.sender_id)) return 'Choose who it sends from.'
   if (!s.steps.length) return 'Add at least one email.'
@@ -104,7 +112,7 @@ export function notReady(data: DbSchema, s: Sequence): string | null {
   if (empty >= 0) return `Email ${empty + 1} has no text.`
   if (!/\{\{\s*unsubscribe\s*\}\}/i.test(s.settings.footer)) return 'The last line needs the {{ unsubscribe }} link, so people can opt out.'
   if (!s.settings.days.length) return 'Choose at least one day to send on.'
-  return null
+  return mergeTagProblem(data, s)
 }
 
 /** Why someone can't be emailed at all, or null when they can. */

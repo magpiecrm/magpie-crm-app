@@ -693,7 +693,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
 
   // A contact tag we can't fill in (a field that doesn't exist, or a tag
   // written some way we can't read) would reach every recipient as written.
-  const unfilled = [...new Set([campaign.subject, campaign.previewText, withoutBuilderData(campaign.htmlContent ?? '')].flatMap((text) => unfilledMergeTags(text ?? '')))]
+  const customKeys = (db.data.contact_fields ?? []).map((f) => f.key)
+  const unfilled = [...new Set([campaign.subject, campaign.previewText, withoutBuilderData(campaign.htmlContent ?? '')].flatMap((text) => unfilledMergeTags(text ?? '', customKeys)))]
   if (unfilled.length) {
     throw new Error(
       `Campaign not sent: ${unfilled.length === 1 ? 'a merge tag' : `${unfilled.length} merge tags`} in it can't be filled in and would show as written: ${unfilled.slice(0, 3).join(', ')}${unfilled.length > 3 ? '…' : ''}. ` +

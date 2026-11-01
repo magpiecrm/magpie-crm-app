@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, Eye, Plus, Trash2 } from 'lucide-react'
 import { getContactFieldsFn, previewSequenceStepFn, updateSequenceFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
+import { mergeTagOptions, mergeTagText } from '../../contacts/mergeTagOptions'
 import { Select } from '../../../components/ui/Select'
 import { queryKeys } from '../../../queryKeys'
 import { FIELD_CLASS } from '../../sales/forms'
@@ -20,13 +21,6 @@ interface StepStats {
   bounced: number
   waiting: number
 }
-
-const MERGE_TAGS = [
-  { tag: '{{ contact.first_name | default: "there" }}', label: 'First name' },
-  { tag: '{{ contact.last_name }}', label: 'Last name' },
-  { tag: '{{ contact.COMPANY }}', label: 'Company' },
-  { tag: '{{ contact.EMAIL }}', label: 'Email' },
-]
 
 /** The sequence's emails: what each says, and how long after the one before it goes. */
 export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: StepStats[] }) {
@@ -199,14 +193,9 @@ function StepCard({
           className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
         >
           <option value="">Insert a detail…</option>
-          {MERGE_TAGS.map((m) => (
-            <option key={m.tag} value={m.tag}>
-              {m.label}
-            </option>
-          ))}
-          {fields.map((f: { key: string; label: string }) => (
-            <option key={f.key} value={`{{ contact.custom.${f.key} }}`}>
-              {f.label}
+          {mergeTagOptions(fields).map((o) => (
+            <option key={o.path} value={o.path === 'contact.FIRSTNAME' ? '{{ contact.first_name | default: "there" }}' : mergeTagText(o)}>
+              {o.label}
             </option>
           ))}
         </Select>

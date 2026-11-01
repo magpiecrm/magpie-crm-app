@@ -2,12 +2,15 @@ import { z } from 'zod'
 import { defineTool } from '../types'
 import { listRef, resolveListId } from './shared'
 
+const customValues = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]))
+
 const contactInput = z.object({
   email: z.string().email(),
   attributes: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
     .optional()
     .describe('Contact fields: FIRSTNAME, LASTNAME, JOB_TITLE, COMPANY, COUNTRY, e.g. { "FIRSTNAME": "Ada", "COMPANY": "Analytical Engines" }.'),
+  custom: customValues.optional().describe('Custom field values by key (getContactFields).'),
 })
 
 export const contactTools = [
@@ -20,29 +23,16 @@ export const contactTools = [
         .describe('Defaults to 50.'),
       offset: z.number().int().min(0).optional(),
       search: z.string().optional()
-        .describe('Case-insensitive match against email, name, or company.'),
+        .describe('Case-insensitive match against email, name, company, job title, country and custom field values.'),
     },
     target: 'server',
     readOnly: true,
     handler: async ({ limit, offset, search }) => {
       const { getContacts } = await import('../../emailService')
+      const { contactSearchText } = await import('../../../features/contacts/contactFilters')
       const { contacts, count } = await getContacts()
 
-      const filtered = search
-        ? contacts.filter((c: any) => {
-            const haystack = [
-              c.email,
-              c.attributes?.FIRSTNAME,
-              c.attributes?.LASTNAME,
-              c.attributes?.COMPANY,
-              c.attributes?.JOB_TITLE,
-            ]
-              .filter(Boolean)
-              .join(' ')
-              .toLowerCase()
-            return haystack.includes(search.toLowerCase())
-          })
-        : contacts
+      const filtered = search ? contacts.filter((c) => contactSearchText(c).includes(search.toLowerCase())) : contacts
 
       const start = offset ?? 0
       return {
@@ -66,8 +56,26 @@ export const contactTools = [
     handler: async ({ list, contacts }) => {
       const { addContactsToList } = await import('../../emailService')
       const listId = await resolveListId(list)
-      const { added, skipped } = await addContactsToList(listId, contacts as any)
-      return { listId, added, skippedOptedOut: skipped }
+      const { added, skipped, fieldWarnings } = await addContactsToList(listId, contacts as any)
+      return { listId, added, skippedOptedOut: skipped, customValuesRefused: fieldWarnings }
+    },
+  }),
+
+  defineTool({
+    name: 'setContactValues',
+    description:
+      "Set existing contacts' custom field values, by field key (getContactFields lists them; createContactField adds one). A value must fit its field's type and options; a null or empty value clears it. Built-in details like first_name can't be changed this way.",
+    input: {
+      updates: z
+        .array(z.object({ email: z.string().email(), values: customValues }))
+        .min(1)
+        .max(500),
+    },
+    target: 'server',
+    destructive: true,
+    handler: async ({ updates }) => {
+      const { writeCustomValues } = await import('../../contactFieldValues')
+      return writeCustomValues(updates, { blanks: 'clear' })
     },
   }),
 

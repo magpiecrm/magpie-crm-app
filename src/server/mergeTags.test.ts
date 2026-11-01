@@ -47,10 +47,15 @@ describe('mergeContact', () => {
 describe('unfilledMergeTags', () => {
   it('names the contact tags that would go out showing', () => {
     const html = '<p>Hi {{ contact.FIRSTNAME | default: &quot;there&quot; }}, {{ contact.job_title }} at {{ contact.COMPANY }}. {{ contact.first_name | default: there }} {{ unsubscribe }}</p>'
-    expect(unfilledMergeTags(html)).toEqual(['{{ contact.job_title }}', '{{ contact.first_name | default: there }}'])
-    expect(unfilledMergeTags('Hi {{ contact.first_name }}, {{ contact.custom.plan | default: "free" }} {{ unsubscribe }}')).toEqual([])
+    expect(unfilledMergeTags(html, [])).toEqual(['{{ contact.job_title }}', '{{ contact.first_name | default: there }}'])
+    expect(unfilledMergeTags('Hi {{ contact.first_name }}, {{ contact.custom.plan | default: "free" }} {{ unsubscribe }}', ['plan'])).toEqual([])
     // Asked twice, the same answer: the check keeps no place between calls.
-    expect(unfilledMergeTags(html)).toHaveLength(2)
+    expect(unfilledMergeTags(html, [])).toHaveLength(2)
+  })
+
+  it('names a custom field that does not exist, even with a fallback', () => {
+    expect(unfilledMergeTags('{{ contact.custom.plan }}', ['plans'])).toEqual(['{{ contact.custom.plan }}'])
+    expect(unfilledMergeTags('{{ contact.custom.plan | default: "free" }}', [])).toEqual(['{{ contact.custom.plan | default: "free" }}'])
   })
 })
 

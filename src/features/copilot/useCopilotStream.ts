@@ -45,6 +45,7 @@ const TOOL_INVALIDATIONS: Record<string, Array<readonly unknown[]>> = {
   createListFromFilters: [queryKeys.email.lists()],
   addNewListMatches: [queryKeys.email.lists(), ['email', 'list'], ['email', 'contacts', 'list']],
   addContacts: [queryKeys.email.lists(), queryKeys.email.contacts(), queryKeys.email.contactsAll()],
+  setContactValues: [queryKeys.email.contacts(), queryKeys.email.listPages(), queryKeys.email.contactDetails()],
   createCampaign: [queryKeys.email.campaigns()],
   updateCampaign: [queryKeys.email.campaigns()],
   deleteCampaign: [queryKeys.email.campaigns()],
