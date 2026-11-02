@@ -8,7 +8,7 @@ const scratchDir = mkdtempSync(join(tmpdir(), 'allowance-test-'))
 const dbFile = join(scratchDir, 'local_db.json')
 process.env.DATABASE_PATH = dbFile
 
-const { setAllowance, clearAllowance, getAllowance, remaining, requireAllowance, AllowanceError } = await import('./allowance')
+const { allowanceItems, setAllowance, clearAllowance, getAllowance, remaining, requireAllowance, AllowanceError } = await import('./allowance')
 const { recordUsage, getUsage } = await import('./usage')
 const { Route } = await import('../routes/api/usage.allowance')
 const handlers = (Route as any).options.server.handlers
@@ -93,6 +93,24 @@ describe('allowances', () => {
     expect(() => requireAllowance('emailsSent', 1, 'Sending this campaign')).toThrow('Sending is paused on this workspace by your hosting provider')
     setAllowance({ ...period, prospects: 100, emailsSent: 10000 })
     expect(remaining('emailsSent')).toBe(10000)
+  })
+
+  it('shows what is left of each limit, in whole units and never below none', () => {
+    setAllowance({ ...period, prospects: 100, emailsSent: 1000 })
+    recordUsage({ prospectCredits: 25.5, emailsSent: 1200 })
+    expect(allowanceItems(getAllowance()!)).toEqual([
+      { kind: 'prospects', left: 74, limit: 100 },
+      { kind: 'emailsSent', left: 0, limit: 1000 },
+    ])
+    // Less than one credit left is none: search stops there.
+    recordUsage({ prospectCredits: 74.25 })
+    expect(allowanceItems(getAllowance()!)[0]).toMatchObject({ left: 0 })
+  })
+
+  it('still shows the emails left while sending is paused', () => {
+    setAllowance({ ...period, emailsSent: 1000, sendingPaused: true })
+    recordUsage({ emailsSent: 300 })
+    expect(allowanceItems(getAllowance()!)).toEqual([{ kind: 'emailsSent', left: 700, limit: 1000 }])
   })
 
   it('is saved with the usage counts', async () => {

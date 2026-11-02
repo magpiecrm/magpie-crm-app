@@ -3,12 +3,12 @@ import { ArrowUpRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 
-const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsSent: 'Emails sent' } as const
+const LABEL = { prospects: 'Prospect credits', reveals: 'Email reveals', emailsSent: 'Emails' } as const
 
 /**
- * This period's allowances as bars, with an Upgrade button, when whoever
- * hosts this copy sells usage up front (see server/allowance.ts). Renders
- * nothing otherwise.
+ * What's left of this period's allowances, as bars that empty as they're
+ * used, with an Upgrade button, when whoever hosts this copy sells usage up
+ * front (see server/allowance.ts). Renders nothing otherwise.
  */
 export function AllowanceMeter({
   compact = false,
@@ -24,7 +24,7 @@ export function AllowanceMeter({
   const allowance = data?.allowance
   if (!allowance || allowance.items.length === 0) return null
 
-  const nearlyOut = allowance.items.some((i) => i.used >= i.limit * 0.9)
+  const nearlyOut = allowance.items.some((i) => i.left <= i.limit * 0.1)
   const resets = allowance.periodEnd
     ? new Date(allowance.periodEnd).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
     : null
@@ -43,27 +43,27 @@ export function AllowanceMeter({
           Sending is paused by your hosting provider.
         </p>
       )}
-      {allowance.items.map(({ kind, used, limit }) => {
-        const share = limit > 0 ? Math.min(1, used / limit) : 1
-        const out = used >= limit
+      {allowance.items.map(({ kind, left, limit }) => {
+        const share = limit > 0 ? left / limit : 0
+        const out = left === 0
         return (
           <div key={kind} className="flex flex-col gap-1">
             <div className={`flex justify-between gap-2 ${compact ? 'text-[10px]' : 'text-xs'}`}>
               <span className={out ? 'text-destructive font-semibold' : 'text-foreground'}>{LABEL[kind]}</span>
               <span className="tabular-nums text-muted-foreground">
-                {used.toLocaleString()} / {limit.toLocaleString()}
+                {left.toLocaleString()} left{limit > 0 && ` of ${limit.toLocaleString()}`}
               </span>
             </div>
             <div
-              className="h-1.5 rounded-full bg-muted overflow-hidden"
+              className={`h-1.5 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-muted'}`}
               role="progressbar"
               aria-label={LABEL[kind]}
               aria-valuemin={0}
               aria-valuemax={limit}
-              aria-valuenow={Math.min(used, limit)}
+              aria-valuenow={left}
             >
               <div
-                className={`h-full rounded-full ${out ? 'bg-destructive' : share >= 0.9 ? 'bg-amber-500' : 'bg-accent'}`}
+                className={`h-full rounded-full ${share <= 0.1 ? 'bg-amber-500' : 'bg-accent'}`}
                 style={{ width: `${share * 100}%` }}
               />
             </div>

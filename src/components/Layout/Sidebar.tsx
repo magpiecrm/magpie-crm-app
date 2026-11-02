@@ -66,24 +66,25 @@ function UsageStrip({ usage, status, onNavigate }: { usage?: Usage; status?: Sta
   if (items.length) {
     return (
       <Link to="/settings" onClick={onNavigate} className="flex gap-3 rounded-md-s px-1 py-1 hover:bg-muted transition-colors" title="Your plan this month">
-        {items.map(({ kind, used, limit }) => {
-          const share = limit > 0 ? Math.min(1, used / limit) : 1
-          const out = used >= limit
+        {items.map(({ kind, left, limit }) => {
+          const share = limit > 0 ? left / limit : 0
+          const out = left === 0
           return (
             <span key={kind} className="flex-1 min-w-0 flex flex-col gap-1">
               <span className="flex justify-between gap-1 text-[11px] leading-none">
                 <span className={out ? 'text-destructive font-semibold' : 'text-muted-foreground'}>{SHORT_LABEL[kind]}</span>
-                <span className="tabular-nums text-foreground">{used.toLocaleString()}</span>
+                {/* Three side by side have no room for the word; the bar and its label still say it. */}
+                <span className="tabular-nums text-foreground">{left.toLocaleString()}{items.length < 3 && ' left'}</span>
               </span>
               <span
-                className="h-1 rounded-full bg-muted overflow-hidden"
+                className={`h-1 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-muted'}`}
                 role="progressbar"
-                aria-label={`${SHORT_LABEL[kind]}: ${used.toLocaleString()} of ${limit.toLocaleString()}`}
+                aria-label={`${SHORT_LABEL[kind]}: ${left.toLocaleString()} left of ${limit.toLocaleString()}`}
                 aria-valuemin={0}
                 aria-valuemax={limit}
-                aria-valuenow={Math.min(used, limit)}
+                aria-valuenow={left}
               >
-                <span className={`block h-full rounded-full ${out ? 'bg-destructive' : share >= 0.9 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${share * 100}%` }} />
+                <span className={`block h-full rounded-full ${share <= 0.1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${share * 100}%` }} />
               </span>
             </span>
           )

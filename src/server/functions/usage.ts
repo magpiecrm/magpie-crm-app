@@ -5,7 +5,7 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
   const { requireAuth } = await import('../auth.server')
   await requireAuth()
   const { monthOf, usageForMonth } = await import('../usage')
-  const { ALLOWANCE_KINDS, getAllowance } = await import('../allowance')
+  const { allowanceItems, getAllowance } = await import('../allowance')
   const { env } = await import('../env')
   const month = monthOf(new Date())
   const a = getAllowance()
@@ -17,8 +17,7 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
     sendingPaused: Boolean(a.sendingPaused),
     /** Prospect credits each email reveal uses, when reveals draw on them. */
     revealCredits: a.revealCredits ?? null,
-    // Prospect credits are counted to the hundredth; shown whole.
-    items: ALLOWANCE_KINDS.flatMap((kind) => (a.limits[kind] === undefined ? [] : [{ kind, used: Math.round(a.used[kind]), limit: a.limits[kind]! }])),
+    items: allowanceItems(a),
   }
   return { month, ...usageForMonth(month), allowance, billingManaged }
 })

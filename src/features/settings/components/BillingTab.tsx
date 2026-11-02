@@ -27,7 +27,7 @@ const orThrow = <T extends Outcome>(r: T) => {
 
 /**
  * Settings → Plan and billing, when the host bills for this workspace: the
- * plan and this month's use of it, changing it, the card and invoices, and
+ * plan and what's left of it this month, changing it, the card and invoices, and
  * cancelling (at the end of the paid month, undoable until then).
  */
 export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
@@ -170,7 +170,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
         {b.live && (
           <SettingsBlock
             title="Your plan"
-            description={`What you've used of your plan.${b.periodEnd ? ` It resets on ${day(b.periodEnd)}; unused amounts don't roll over.` : ''}`}
+            description={`What you have left of your plan.${b.periodEnd ? ` It resets on ${day(b.periodEnd)}; unused amounts don't roll over.` : ''}`}
           >
             {b.monthlyPence !== null && (
               <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">

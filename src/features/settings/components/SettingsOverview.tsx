@@ -89,7 +89,7 @@ export function SettingsOverview({
     <div className="flex flex-col gap-4">
       <SettingsPanel>
         {hasPlan && (
-          <SettingsBlock title="Your plan" description="What your plan gives you each month, and how much of it you've used.">
+          <SettingsBlock title="Your plan" description="What your plan gives you each month, and how much of it you have left.">
             <AllowanceMeter heading={false} />
           </SettingsBlock>
         )}

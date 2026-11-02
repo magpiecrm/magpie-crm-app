@@ -112,6 +112,19 @@ export function remaining(kind: AllowanceKind): number {
 }
 
 /**
+ * What's left of each limit, for showing: whole units only, as search stops
+ * with less than one credit left, and never below none (a smaller plan can
+ * leave more used than it allows). Paused sending keeps its number: it has
+ * its own message, and the emails are still there when it resumes.
+ */
+export function allowanceItems(a: Allowance) {
+  return ALLOWANCE_KINDS.flatMap((kind) => {
+    const limit = a.limits[kind]
+    return limit === undefined ? [] : [{ kind, left: Math.floor(Math.max(0, limit - a.used[kind])), limit }]
+  })
+}
+
+/**
  * Throws an AllowanceError unless `n` more of `kind` fit in this period's
  * allowance. `action` is how the message starts when only part fits, e.g.
  * "Sending this campaign".
