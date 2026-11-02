@@ -11,6 +11,7 @@ import { sendTurn, takeClientActions } from '../../../server/copilot/session'
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from '../../../server/copilot/permissions'
 import type { CopilotClientState } from '../../../server/copilot/types'
 import type { SessionEvent } from '../../../server/copilot/events'
+import { ownPagesRoute } from '../../../ownPages'
 
 interface TurnRequest {
   sessionId?: string
@@ -31,6 +32,7 @@ interface TurnRequest {
  */
 export const Route = createFileRoute('/api/copilot/stream')({
   server: {
+    middleware: [ownPagesRoute],
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         const { requireAuth } = await import('../../../server/auth.server')

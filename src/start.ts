@@ -8,17 +8,13 @@
 // session a request has is always read from its cookie, never from middleware
 // context, which the browser can add to.
 //
-// Server functions answer this copy's own pages and nothing else. The session
-// cookie's SameSite=Lax doesn't stop a page on a sibling subdomain, which counts
-// as the same site. The framework only adds this check itself where there's no
-// start instance, so it has to be named here. Routes are left out: the public
-// and token ones are meant to be called from elsewhere.
+// Server functions answer this copy's own pages and nothing else (ownPages.ts).
 
-import { createCsrfMiddleware, createMiddleware, createServerOnlyFn, createStart } from '@tanstack/react-start'
+import { createMiddleware, createStart } from '@tanstack/react-start'
+import { ownPagesFunctions } from './ownPages'
 import { VIEW_ONLY_REFUSED, VIEW_ONLY_REFUSED_EVENT, viewOnlyMayCall } from './viewOnly'
 
 export const UNREACHABLE = "Couldn't reach your workspace. It may be restarting after an update: wait a few seconds and try again."
-export const OTHER_SITE_REFUSED = "That didn't come from this workspace's own pages, so it was refused. Reload the page and try again."
 
 /**
  * Fetch for server function calls. A dropped connection, or a reply that
@@ -39,23 +35,6 @@ export async function workspaceFetch(input: RequestInfo | URL, init?: RequestIni
   if (!type || (res.status >= 502 && res.status <= 504 && !/json|tss/i.test(type))) throw new Error(UNREACHABLE)
   return res
 }
-
-// Wrapped so the client build drops the body, and with it auth.server.
-const isOwnOrigin = createServerOnlyFn(async (origin: string, request: Request) => {
-  const { isOwnOrigin } = await import('./server/auth.server')
-  return isOwnOrigin(origin, request)
-})
-
-const otherSiteFunctions = createCsrfMiddleware({
-  filter: ({ handlerType }) => handlerType === 'serverFn',
-  origin: (origin, { request }) => isOwnOrigin(origin, request),
-  // Plain text: the client throws this as the error's message. JSON would come back as a result.
-  failureResponse: ({ request }) => {
-    const seen = ['sec-fetch-site', 'origin'].map((name) => `${name}=${request.headers.get(name)}`).join(' ')
-    console.warn(`[csrf] Refused a server function call: ${seen}`)
-    return new Response(OTHER_SITE_REFUSED, { status: 403 })
-  },
-})
 
 const viewOnlyFunctions = createMiddleware({ type: 'function' })
   .client(async ({ next }) => {
@@ -83,5 +62,5 @@ const viewOnlyRoutes = createMiddleware().server(async ({ next, request, handler
 export const startInstance = createStart(() => ({
   serverFns: { fetch: workspaceFetch },
   functionMiddleware: [viewOnlyFunctions],
-  requestMiddleware: [otherSiteFunctions, viewOnlyRoutes],
+  requestMiddleware: [ownPagesFunctions, viewOnlyRoutes],
 }))

@@ -197,14 +197,17 @@ key), with the app's actions as tools.
   that only reads goes on the list in `viewOnly.ts`. A GET must check
   `isViewOnly` itself if it reaches outside this copy or hands out a link that
   acts on its own (`getSendingDomainsFn`, proposals).
-- **Calls from elsewhere** (`src/start.ts`) — server functions answer this copy's
-  own pages and nothing else: `Sec-Fetch-Site: same-origin`, or for a browser
-  that doesn't send it, an Origin or Referer that `isOwnOrigin` (`auth.server.ts`)
-  takes as this copy's, by what the proxy forwards or `PUBLIC_URL`. A caller that
-  sends none of these is refused, so anything meant to be called from outside a
-  browser, or from another site, has to be a route. The framework adds this check
-  itself only where there's no start instance, so it can't be dropped from
-  `requestMiddleware`. Routes aren't covered.
+- **Calls from elsewhere** (`src/ownPages.ts`) — server functions, and the routes
+  that go by the session cookie, answer this copy's own pages and nothing else:
+  `Sec-Fetch-Site: same-origin`, or for a browser that doesn't send it, an Origin
+  or Referer that `isOwnOrigin` (`auth.server.ts`) takes as this copy's, by what
+  the proxy forwards or `PUBLIC_URL`. A caller that sends none of these is refused,
+  so anything meant to be called from outside a browser, or from another site,
+  has to be a public or token route. A route that uses `requireAuth` and changes
+  anything takes `server: { middleware: [ownPagesRoute], ... }`, on the route
+  rather than a list of paths, which a different spelling would get round;
+  `start.test.ts` fails if one doesn't. The framework adds this check itself only
+  where there's no start instance, so it can't be dropped from `requestMiddleware`.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so
   invalidation stays consistent.

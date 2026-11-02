@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { ownPagesRoute } from '../../../ownPages'
 
 /**
  * A people search that sends its people as each batch of them is ready, so
@@ -14,6 +15,7 @@ const STILL_HERE_MS = 15_000
 
 export const Route = createFileRoute('/api/prospects/search')({
   server: {
+    middleware: [ownPagesRoute],
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         const { requireAuth } = await import('../../../server/auth.server')

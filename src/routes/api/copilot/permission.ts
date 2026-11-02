@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { resolveApproval } from '../../../server/copilot/state'
+import { ownPagesRoute } from '../../../ownPages'
 
 /**
  * Resolve a tool call the copilot is blocked on.
@@ -10,6 +11,7 @@ import { resolveApproval } from '../../../server/copilot/state'
  */
 export const Route = createFileRoute('/api/copilot/permission')({
   server: {
+    middleware: [ownPagesRoute],
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         const { requireAuth } = await import('../../../server/auth.server')

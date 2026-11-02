@@ -1,5 +1,8 @@
+import { readFileSync, readdirSync } from 'fs'
+import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { OTHER_SITE_REFUSED, UNREACHABLE, startInstance, workspaceFetch } from './start'
+import { OTHER_SITE_REFUSED, ownPagesRoute } from './ownPages'
+import { UNREACHABLE, startInstance, workspaceFetch } from './start'
 
 const reply = (status: number, type: string | null) =>
   new Response(status === 204 ? null : 'x', { status, headers: type ? { 'content-type': type } : {} })
@@ -10,11 +13,16 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-/** Runs the first request middleware on a call to this address, as the server would. */
-async function call(headers: Record<string, string>, { url = 'http://hq.example.com/_serverFn/x', handlerType = 'serverFn', method = 'POST' } = {}) {
+type Middleware = { options: { server: (ctx: unknown) => Promise<Response> } }
+
+/** Runs a middleware on a call to this address, as the server would: by default the first request middleware. */
+async function call(
+  headers: Record<string, string>,
+  { url = 'http://hq.example.com/_serverFn/x', handlerType = 'serverFn', method = 'POST', middleware = undefined as Middleware | undefined } = {},
+) {
   const options = await startInstance.getOptions()
-  const [middleware] = options.requestMiddleware as unknown as [{ options: { server: (ctx: unknown) => Promise<Response> } }]
-  return middleware.options.server({
+  const [first] = options.requestMiddleware as unknown as [Middleware]
+  return (middleware ?? first).options.server({
     request: new Request(url, { method, headers }),
     pathname: new URL(url).pathname,
     context: {},
@@ -73,9 +81,36 @@ describe('server function calls from elsewhere', () => {
     expect(await ran(await call({ origin: 'https://crm.example.com' }, { url: 'http://app:3000/_serverFn/x' }))).toBe(true)
   })
 
-  it('leaves routes alone: the public and token ones are called from elsewhere', async () => {
+  it('leaves routes to themselves: the public and token ones are called from elsewhere', async () => {
     const elsewhere = { 'sec-fetch-site': 'cross-site', origin: 'https://evil.example' }
     expect(await ran(await call(elsewhere, { url: 'http://hq.example.com/api/subscribe', handlerType: 'router' }))).toBe(true)
+  })
+})
+
+describe('routes that go by the session cookie', () => {
+  const route = { url: 'http://hq.example.com/api/uploads/', handlerType: 'router', middleware: ownPagesRoute as unknown as Middleware }
+
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  it("lets this copy's own pages through", async () => {
+    expect(await ran(await call({ 'sec-fetch-site': 'same-origin' }, route))).toBe(true)
+    expect(await ran(await call({ ...caddy, origin: 'https://hq.example.com' }, route))).toBe(true)
+  })
+
+  it('refuses anywhere else, as JSON, which is what their callers read', async () => {
+    const res = await call({ 'sec-fetch-site': 'same-site', origin: 'https://other.example.com' }, route)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: OTHER_SITE_REFUSED })
+  })
+
+  it('is on every one of them that changes anything, so a new one fails here until it is', () => {
+    const routes = (readdirSync('src/routes', { recursive: true }) as string[]).filter((file) => /\.tsx?$/.test(file) && !file.includes('.test.'))
+    const sources = routes.map((file) => readFileSync(join('src/routes', file), 'utf8'))
+    const byCookie = sources.filter((source) => source.includes('requireAuth') && /\b(POST|PUT|PATCH|DELETE):/.test(source))
+    expect(byCookie.length).toBeGreaterThanOrEqual(4)
+    for (const source of byCookie) expect(source).toContain('middleware: [ownPagesRoute]')
   })
 })
 

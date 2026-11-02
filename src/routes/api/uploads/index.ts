@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { ownPagesRoute } from '../../../ownPages'
 
 // Accepts an image from the email builder and returns an absolute URL for it.
 // Absolute, not relative: the compiler only rewrites <a href> to be absolute
@@ -6,6 +7,7 @@ import { createFileRoute } from '@tanstack/react-router'
 // fine in the builder's own preview but break the moment a campaign is sent.
 export const Route = createFileRoute('/api/uploads/')({
   server: {
+    middleware: [ownPagesRoute],
     handlers: {
       POST: async ({ request }: { request: Request }) => {
         const { requireAuth } = await import('../../../server/auth.server')
