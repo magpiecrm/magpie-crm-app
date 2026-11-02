@@ -1,5 +1,6 @@
 import { deleteCookie, getCookie, getRequest, setCookie } from '@tanstack/react-start/server'
 import { db } from './db'
+import { env } from './env'
 
 const SESSION_COOKIE = 'auth_token'
 const WEEK_SECONDS = 7 * 24 * 60 * 60
@@ -59,6 +60,19 @@ export async function requireAuth() {
  */
 export function clientAddress(): string | null {
   return getRequest()?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null
+}
+
+/**
+ * Whether an Origin header is this copy's own address. The request's URL alone
+ * can't say: behind a proxy it reads http, whatever the browser used, so what
+ * the proxy forwards counts too, and PUBLIC_URL for one that changes the Host.
+ * A cross-site page can't add these headers without a preflight nothing answers.
+ */
+export function isOwnOrigin(origin: string, request: Request): boolean {
+  const url = new URL(request.url)
+  const proto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || url.protocol.slice(0, -1)
+  const host = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() || url.host
+  return origin === `${proto}://${host}` || origin === env.publicUrl()?.replace(/\/$/, '')
 }
 
 /**

@@ -82,7 +82,8 @@ TRACKING_SECRET=...      # required in production — signs tracking/unsubscribe
 CREDENTIALS_SECRET=...   # optional — separate key for stored credentials
 WEBHOOK_SECRET=...       # needed for bounce and complaint tracking: the
                          # webhooks refuse every request until it's set
-PUBLIC_URL=...           # optional — this app's public origin, for links in emails
+PUBLIC_URL=...           # optional — this app's public origin, for links in emails;
+                         # set it behind a proxy that changes the Host header
 PUBLIC_SITE_URL=...      # optional — your website; unsubscribe page links back to it
 SUBSCRIBE_ALLOWED_ORIGINS=...  # optional — comma-separated origins allowed to
                                # embed the signup form (POST /api/subscribe)

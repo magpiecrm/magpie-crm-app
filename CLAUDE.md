@@ -197,6 +197,14 @@ key), with the app's actions as tools.
   that only reads goes on the list in `viewOnly.ts`. A GET must check
   `isViewOnly` itself if it reaches outside this copy or hands out a link that
   acts on its own (`getSendingDomainsFn`, proposals).
+- **Calls from elsewhere** (`src/start.ts`) — server functions answer this copy's
+  own pages and nothing else: `Sec-Fetch-Site: same-origin`, or for a browser
+  that doesn't send it, an Origin or Referer that `isOwnOrigin` (`auth.server.ts`)
+  takes as this copy's, by what the proxy forwards or `PUBLIC_URL`. A caller that
+  sends none of these is refused, so anything meant to be called from outside a
+  browser, or from another site, has to be a route. The framework adds this check
+  itself only where there's no start instance, so it can't be dropped from
+  `requestMiddleware`. Routes aren't covered.
 - **Query keys** live in `src/queryKeys.ts`. Use the `queryKeys` factory for
   every `useQuery`/`invalidateQueries` call instead of inline arrays, so
   invalidation stays consistent.
