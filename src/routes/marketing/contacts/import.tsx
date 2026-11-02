@@ -259,7 +259,7 @@ function ImportContactsPage() {
           {mode === 'select' ? 'Import contacts for bulk creation or updating' : `Import contacts via ${mode === 'file' ? 'File' : 'Copy-paste'}`}
         </h1>
         <p className="text-muted-foreground text-sm max-w-2xl">
-          Create, update, or blocklist contacts in bulk locally. Keep in mind you must have your contacts' consent to send them campaigns.
+          Create, update, or blocklist contacts in bulk locally. Keep in mind you must have your contacts' consent or legitimate interests to send them campaigns.
         </p>
       </div>
 
