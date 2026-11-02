@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { refreshHostRules } from './hostRules'
-import { contribute, contributeSaved, knownPeople, setContributing, sharedEmail } from './sharedPeople'
+import { contribute, contributeSaved, knownPeople, searchDetailsHash, setContributing, sharedEmail } from './sharedPeople'
 import { profileHash } from './suppressionHash'
 import type { PersonResult } from './types'
 
@@ -108,10 +108,14 @@ describe('the shared database', () => {
   })
 
   describe('contacts saved before joining', () => {
-    const contact = (n: number, over: Record<string, unknown> = {}) => ({
-      email: `p${n}@acme.co.uk`, first_name: 'Pat', last_name: `Lee${n}`, job_title: 'Buyer', company: 'Acme', status: 'subscribed',
-      created_at: `2026-0${1 + Math.floor(n / 10)}-1${n % 10}T10:00:00.000Z`, source: 'socialfetch', email_status: 'verified', ...over,
-    })
+    /** As search saved them (`over`), then changed by anything else (`since`). */
+    const contact = (n: number, over: Record<string, unknown> = {}, since: Record<string, unknown> = {}) => {
+      const saved: any = {
+        email: `p${n}@acme.co.uk`, first_name: 'Pat', last_name: `Lee${n}`, job_title: 'Buyer', company: 'Acme', status: 'subscribed',
+        created_at: `2026-0${1 + Math.floor(n / 10)}-1${n % 10}T10:00:00.000Z`, source: 'socialfetch', email_status: 'verified', ...over,
+      }
+      return { ...saved, search_hash: searchDetailsHash(saved), ...since }
+    }
     function store(contacts: any[]) {
       let settings: any = null
       return {
@@ -158,6 +162,29 @@ describe('the shared database', () => {
       await contributeSaved(db, fetchImpl)
       expect(JSON.stringify(sent)).not.toContain('SECRET')
       expect(Object.keys(sent[0].body.people[0]).sort()).toEqual(['company', 'email', 'emailStatus', 'firstName', 'lastName', 'source', 'title', 'verifiedAt'])
+    })
+
+    it.each([
+      ['first name', { first_name: 'Patricia' }],
+      ['last name', { last_name: 'Smith' }],
+      ['job title', { job_title: 'CEO' }],
+      ['company', { company: 'Globex' }],
+      ['country', { country: 'Portugal' }],
+    ])("leave out someone whose %s has changed since search saved them, and offer the rest", async (_field, since) => {
+      const db = store([contact(1), contact(2, {}, since), contact(4)])
+      const { fetchImpl, sent } = host({ contributing: true })
+      await refreshHostRules(fetchImpl)
+      await contributeSaved(db, fetchImpl)
+      expect(sent[0].body.people.map((p: any) => p.email)).toEqual(['p1@acme.co.uk', 'p4@acme.co.uk'])
+      expect(JSON.stringify(sent)).not.toContain(Object.values(since)[0])
+    })
+
+    it("leave out a contact saved before search's details were kept: nothing shows they're still what it found", async () => {
+      const db = store([contact(1, {}, { search_hash: undefined })])
+      const { fetchImpl, sent } = host({ contributing: true })
+      await refreshHostRules(fetchImpl)
+      expect(await contributeSaved(db, fetchImpl)).toBe(0)
+      expect(sent).toEqual([])
     })
 
     it("are offered once more with their profile link and country, where an older copy offered them without", async () => {

@@ -15,7 +15,10 @@
 // fields, or anything about what was emailed to them. A copy that isn't hosted, or
 // isn't contributing, sends nothing. Contacts saved the same way before the copy
 // joined are offered too, a batch at a time, except anyone who has
-// unsubscribed, complained or bounced here.
+// unsubscribed, complained or bounced here, and anyone whose details aren't
+// plainly still search's: a re-import, the create form or a survey answer can
+// change a contact's, so the offer leaves out one that no longer matches the
+// hash `save.ts` kept (`search_hash`), or was saved before it kept one.
 //
 // Any hosted copy's searches can also use that database, where the host has
 // switched it on. The search itself is unchanged; of the people it finds, the
@@ -25,6 +28,7 @@
 // their email from the host instead of being worked out. That's free to a
 // copy that contributes; the host says when it isn't.
 
+import crypto from 'crypto'
 import { env } from '../env'
 import { refreshHostRules, sharedDatabase } from './hostRules'
 import { profileHash } from './suppressionHash'
@@ -52,13 +56,18 @@ type Db = typeof import('../db')['db']
 const BATCH = 150
 const HOST_MAX = 200
 
+/** Hashes what `contributeSaved` would send that a customer can change, so a contact can be told from what search saved. */
+export function searchDetailsHash(c: { first_name: string; last_name: string; job_title: string; company: string; country?: string }): string {
+  return crypto.createHash('sha256').update(JSON.stringify([c.first_name, c.last_name, c.job_title, c.company, c.country ?? ''])).digest('hex')
+}
+
 /**
  * Offers the host the contacts this copy saved from prospect search before
  * it joined (or that the host had no room for then): oldest first, one batch
  * a call, carrying on next time from where the host stopped taking them.
  * Returns how many it took. Only contacts with a verified email who can
- * still be emailed here; one whose email came from the database itself
- * (source `shared`) is never sent back.
+ * still be emailed here, with the details search saved; one whose email came
+ * from the database itself (source `shared`) is never sent back.
  */
 export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getProspectingSettings' | 'saveProspectingSettings'>, fetchImpl: typeof fetch = fetch): Promise<number> {
   if (!sharedDatabase()?.contributing) return 0
@@ -70,7 +79,7 @@ export async function contributeSaved(db: Pick<Db, 'data' | 'emailStop' | 'getPr
   }
   const from = settings?.shared_offered_until ?? ''
   const waiting = db.data.contacts
-    .filter((c) => sharedWithHost(c.source) && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email))
+    .filter((c) => sharedWithHost(c.source) && c.email_status === 'verified' && c.status === 'subscribed' && c.created_at > from && !db.emailStop(c.email) && c.search_hash === searchDetailsHash(c))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
   if (waiting.length === 0) return 0
   let size = Math.min(BATCH, waiting.length)

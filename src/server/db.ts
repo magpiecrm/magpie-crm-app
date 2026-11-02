@@ -104,6 +104,8 @@ export interface DbSchema {
     /** Their LinkedIn profile and the country on it, for contacts saved from prospect search (0.9.71+). */
     linkedin_url?: string
     country?: string
+    /** Hash of the details search saved them with: differs once anything else has changed one (sharedPeople.ts contributeSaved). */
+    search_hash?: string
     /** Whether this person has been told we hold their details. Prospected contacts start `pending`. */
     notice_status?: NoticeStatus
     /**
@@ -1104,7 +1106,7 @@ class JsonDb {
   }
 
   /** Patches the prospecting fields on an existing contact without touching its status. */
-  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status' | 'linkedin_url' | 'country'>>) {
+  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status' | 'linkedin_url' | 'country' | 'search_hash'>>) {
     const contact = this.getContact(email)
     if (!contact) return null
     Object.assign(contact, patch)

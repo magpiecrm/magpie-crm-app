@@ -64,7 +64,10 @@ key), with the app's actions as tools.
     anyone found on their company's website (`fromWebsite`, a host's verified
     search can add these for founder-type titles at small companies, contact
     source `website`), and
-    a copy that isn't hosted or isn't contributing sends nothing. Where the host
+    a copy that isn't hosted or isn't contributing sends nothing. Those saved
+    earlier are offered later from the contact record, so only while it still
+    matches the hash of what search saved (`search_hash`); nothing else that
+    writes a contact needs to know about this. Where the host
     has switched searching on, any hosted copy's search also asks it which of
     the people found it already holds (by profile hash): their job and
     employer then come from the host instead of a profile lookup, and their

@@ -208,6 +208,16 @@ describe('saveProspects', () => {
     expect(contributed).toHaveLength(1)
   })
 
+  it('keeps a hash of the details it saved, which the contact matches until one changes', async () => {
+    const { searchDetailsHash } = await import('./sharedPeople')
+    await saveProspects(1, [person('Jane', 'Smith', { country: ' United Kingdom ' })], { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any })
+    const saved = fakeDb.getContact('jane.smith@acme.com') as any
+    expect(saved.country).toBe('United Kingdom')
+    expect(saved.search_hash).toBe(searchDetailsHash(saved))
+    saved.job_title = 'CEO'
+    expect(saved.search_hash).not.toBe(searchDetailsHash(saved))
+  })
+
   it("saves someone the host's shared database holds with the email it gives, and doesn't send them back to it", async () => {
     const contributed: unknown[] = []
     const check = vi.fn()

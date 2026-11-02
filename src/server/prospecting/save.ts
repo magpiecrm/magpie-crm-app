@@ -19,6 +19,7 @@ import { bucketTop, handsOver, ProfileUnconfirmed, type CompanySource, type Emai
 import { recordLookup, recordUsage } from '../usage'
 import { noteSearchLookup } from './searchLog'
 import { remaining } from '../allowance'
+import { searchDetailsHash } from './sharedPeople'
 import { rememberIfUnverifiable } from './unverifiable'
 
 const SYNC_LIMIT = 10
@@ -253,6 +254,7 @@ async function processPerson(
     email_status: found.status,
     notice_status: 'pending',
     ...profile,
+    search_hash: searchDetailsHash({ first_name: person.firstName, last_name: person.lastName, job_title: person.title, company: person.company, country: profile.country }),
   })
   deps.db.addDisclosure({
     contact_hash: emailHash(found.email),

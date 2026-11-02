@@ -15,6 +15,7 @@ vi.mock('./notify', () => ({ notify: () => {} }))
 const { db } = await import('./db')
 const emailService = await import('./emailService')
 const { isUnconfirmedGuess } = await import('./prospecting/types')
+const { searchDetailsHash } = await import('./prospecting/sharedPeople')
 
 afterAll(() => {
   delete process.env.DATABASE_PATH
@@ -123,6 +124,34 @@ describe('adding someone who is already a contact', () => {
     contact().status = 'unsubscribed'
     await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { FIRSTNAME: 'Janet' } } as any])
     expect(contact().status).toBe('unsubscribed')
+  })
+
+  it("shows the shared database when a detail is no longer what search saved, by every route, and not when it's the same", async () => {
+    const saved = () => {
+      prospect()
+      contact().search_hash = searchDetailsHash(contact())
+    }
+    const unchanged = () => contact().search_hash === searchDetailsHash(contact())
+
+    saved()
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { FIRSTNAME: 'Jane', JOB_TITLE: '', COUNTRY: 'United Kingdom' } } as any])
+    expect(unchanged()).toBe(true)
+
+    saved()
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { COMPANY: 'Globex' } } as any])
+    expect(unchanged()).toBe(false)
+
+    saved()
+    await emailService.addContactsToList(listId, [{ email: EMAIL, attributes: { COUNTRY: 'Portugal' } } as any])
+    expect(unchanged()).toBe(false)
+
+    saved()
+    await emailService.createContact({ email: EMAIL, attributes: { JOB_TITLE: 'VP Sales' } })
+    expect(unchanged()).toBe(false)
+
+    saved()
+    db.upsertContact(EMAIL, { builtin: { last_name: 'Smith' } }, { create: false })
+    expect(unchanged()).toBe(false)
   })
 
   it('still adds them to the list, once', async () => {
