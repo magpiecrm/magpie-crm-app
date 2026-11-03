@@ -15,13 +15,13 @@ type Variant = 'default' | 'success' | 'warning' | 'error' | 'info'
 /** The pool's word for how a sender is doing, in ours. */
 const HEALTH: Record<string, { label: string; variant: Variant; about: string }> = {
   healthy: { label: 'Healthy', variant: 'success', about: '' },
-  watch: { label: 'Watch', variant: 'warning', about: 'Some of its warmup is landing in spam, so the pool is replying to and rescuing more of it.' },
+  watch: { label: 'Watch', variant: 'warning', about: 'Too much of its warmup is landing in spam. Its sending limits hold until that improves.' },
   throttled: { label: 'Slowed', variant: 'warning', about: "Enough of its warmup lands in spam that it's sending half as much until that improves." },
   quarantined: { label: 'Held', variant: 'error', about: 'The pool has taken it out for a while: its mail drew complaints or bounced.' },
   blocked: { label: 'Blocked', variant: 'error', about: 'The pool has taken it out until it requalifies.' },
 }
 
-const GROUPS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', yahoo: 'Yahoo', other: 'Other providers' }
+const GROUPS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', yahoo: 'Yahoo', other: 'Other providers', all: 'All providers' }
 
 const pct = (n: number, of: number) => `${Math.round((n / of) * 100)}%`
 
@@ -50,11 +50,11 @@ export function WarmupTab() {
         <SettingsBlock title="How it works">
           <p className="text-sm leading-relaxed text-muted-foreground">
             A new sender that suddenly emails hundreds of strangers looks like a spammer to Gmail and Outlook. Warmup gives each sender a steady, growing
-            stream of ordinary email with a pool of other real inboxes, which open it, reply to some of it and move it out of spam. It's sent through
-            our mail server, the same way as your campaigns, starting at about 10 a day and rising to about 40.
+            stream of ordinary email with a pool of other real inboxes, which open it and reply to some of it. It's sent through our mail server,
+            the same way as your campaigns, starting with a few a day and rising to about 40 over a month.
           </p>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            The warmup that arrives in your inbox is filed in a folder called Warmbly and deleted after 30 days. Keep warmup running alongside your
+            The warmup that arrives in your inbox is filed in a folder called Mailivery, after the service that runs the pool. Keep warmup running alongside your
             campaigns. It helps, but it can't promise your email reaches the inbox: what you send, and who to, matters most.
           </p>
         </SettingsBlock>

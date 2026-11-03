@@ -5,7 +5,7 @@
 // the warmup it receives away in that inbox.
 //
 // Switching it on sends the inbox's login to the host, which hands it to the
-// pool's operator (Warmbly, run by Mindroot Ltd) and doesn't keep it; whoever
+// pool's operator (Mailivery, run by SourceIT Technologies) and doesn't keep it; whoever
 // switches it on agrees to that first (CONSENT_POINTS, recorded in
 // warmup_consents). A new inbox password goes the same way. A sender's warmup
 // lives with the host, so this asks it each time:
@@ -24,11 +24,12 @@ import { canSendFrom } from './sendingDomains'
 import type { PlacementTestResult, WarmupDay, WarmupPage, WarmupPlacement, WarmupSender, WarmupSenderRow } from '../features/settings/warmupTypes'
 
 /** The wording agreed to before a sender's warmup starts; a new version means a new agreement. */
-export const CONSENT_VERSION = '2026-11-03'
+export const CONSENT_VERSION = '2026-11-03.2'
 export const CONSENT_POINTS = [
-  "Each day this sender exchanges a small number of ordinary-looking emails with other mailboxes in a warmup pool: about 10 a day at first, rising to about 40. They're sent through MagpieCRM's mail server, like your campaigns.",
-  "The pool is run by Warmbly (Mindroot Ltd, UK). It's given this inbox's login and uses it to find the warmup mail in the inbox, move it out of spam, mark it read or important, file it in a folder called Warmbly, and delete it after 30 days. It doesn't keep your other mail, but the login lets it into the whole inbox.",
-  "Some mail providers' terms don't allow automated mail like this, and warmup can't promise your email lands in the inbox.",
+  "Each day this sender exchanges a small number of ordinary-looking emails with other mailboxes in a warmup pool: a few a day at first, rising to about 40 over a month. They're sent through MagpieCRM's mail server, like your campaigns.",
+  "The pool is run by Mailivery (SourceIT Technologies, Inc., in the United States, where its servers are). It's given this inbox's login and uses it to find the warmup mail in the inbox, reply to some of it, and file it in a folder called Mailivery. It doesn't keep your other mail, but the login lets it into the whole inbox.",
+  "The warmup mail you receive comes from other people's mailboxes in the pool: don't mark it as spam, and don't use their addresses. Warmup is only for warming this sender, and the law on unsolicited email (such as PECR, GDPR or CAN-SPAM) still applies to everything you send.",
+  "Some mail providers' terms don't allow automated mail like this. Warmup is provided as it is: it can't promise your email lands in the inbox, as our Terms set out.",
   'You can pause it or stop it at any time. Stopping takes the login out of the pool.',
 ]
 

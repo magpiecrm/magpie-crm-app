@@ -125,7 +125,7 @@ key), with the app's actions as tools.
     sent too little to judge, never one whose own mail was received badly.
   - `inboxWarmup.ts` — inbox warmup, only where the host offers it
     (`hostRules.ts` `hostInboxWarmup`): a sender whose inbox is connected
-    (Reply detection) warms in the host's pool (Warmbly Cloud), which sends
+    (Reply detection) warms in the host's pool (Mailivery), which sends
     its warmup through the host's mail server and files the warmup it
     receives away in that inbox. Switching it on sends the inbox's login to
     the host, after someone agrees to the wording in `CONSENT_POINTS`
@@ -133,8 +133,9 @@ key), with the app's actions as tools.
     doesn't keep it. Everything else about a sender's warmup lives with the
     host (`/v1/inbox-warmup/*`); this copy only decides whether a sender can
     warm yet (ready domain, its own working inbox, SPF and DMARC). Warmup mail
-    in a connected inbox (`X-Mailtrace-Verify`) is never a reply
-    (`mailboxes/classify.ts`). Placement tests (the campaign preview's third
+    in a connected inbox with a pool's token header (`X-Mailtrace-Verify`) is
+    never a reply (`mailboxes/classify.ts`); Mailivery's carries only a code
+    in its signature, so it isn't told apart yet. Placement tests (the campaign preview's third
     tab) go through the host too.
   - `functions/` — `createServerFn` endpoints split by domain (`prospects`,
     `contacts`, `lists`, `campaigns`, `copilot`, and others). They are
