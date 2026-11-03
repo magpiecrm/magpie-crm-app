@@ -4,7 +4,7 @@
 // from its host, which sets them in its admin portal:
 //
 //   GET {REACHER_URL}/v1/prospecting  (x-reacher-secret)
-//     → { rules, formatSharing, eventsPending }
+//     → { rules, formatSharing, eventsPending, …, inboxWarmup }
 //
 // refreshed every 10 minutes by the email scheduler. Anywhere else, and until
 // the host first answers, the defaults below apply.
@@ -50,6 +50,20 @@ interface HostAnswer {
   webPeopleSearch: boolean
   /** The host runs a verified people search (liscrape over OpenSERP): each person is confirmed against their live profile. Slower, streamed. */
   verifiedPeopleSearch: boolean
+  /** The host's inbox warmup, when it's offered to this copy (inboxWarmup.ts). */
+  inboxWarmup: InboxWarmup | null
+}
+
+export interface InboxWarmup {
+  /** Senders this copy may warm at once. */
+  maxSenders: number
+  /**
+   * How this copy's warming senders stand, for the sending ramp
+   * (sendingLimits.ts): trouble when any is landing in spam or held by the
+   * pool, healthy when all are doing well, null with none warming or too
+   * little to go on.
+   */
+  signal: 'trouble' | 'healthy' | null
 }
 
 export interface SharedDatabase {
@@ -118,9 +132,19 @@ function sharedDatabaseFrom(p: any): SharedDatabase | null {
   return { canJoin, search, contributing: p.contributing === true, byDefault: p.byDefault === true, termsVersion: p.termsVersion, termsUrl }
 }
 
+function inboxWarmupFrom(w: any): InboxWarmup | null {
+  if (w?.available !== true) return null
+  return { maxSenders: whole(w.maxSenders) ?? 3, signal: w.signal === 'trouble' || w.signal === 'healthy' ? w.signal : null }
+}
+
 /** Daily sending limits the host set for this copy, if any. */
 export function hostSendLimits(): SendLimits | null {
   return env.sendingManaged() ? (g.__hostRules?.sendLimits ?? null) : null
+}
+
+/** The host's inbox warmup, when it's offered to this copy: only where the host's mail server sends. */
+export function hostInboxWarmup(): InboxWarmup | null {
+  return env.sendingManaged() ? (g.__hostRules?.inboxWarmup ?? null) : null
 }
 
 export function prospectingRules(): ProspectingRules {
@@ -206,6 +230,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       noTitleBatches: body?.noTitleBatches !== false,
       webPeopleSearch: body?.peopleSearch === 'web',
       verifiedPeopleSearch: body?.verifiedPeopleSearch === true,
+      inboxWarmup: inboxWarmupFrom(body?.inboxWarmup),
     }
     g.__hostRules = answer
     return answer

@@ -5,6 +5,7 @@ import { Save, Layout, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCir
 import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn, getContactFieldsFn } from '../../../server/functions'
 import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
+import { SenderWarmupNote } from './SenderWarmupNote'
 import { ScheduleDrawer } from './ScheduleDrawer'
 import { Button } from '../../../components/ui/Button'
 import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
@@ -361,6 +362,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
                       <option key={s.id} value={s.email} className="bg-card text-foreground">{s.name} ({s.email})</option>
                     ))}
                   </Select>
+                  <SenderWarmupNote email={formData.senderEmail} />
                   {formData.senderEmail.match(/@(gmail|yahoo|outlook|hotmail|aol|icloud)\./i) && (
                     <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/25 flex gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />

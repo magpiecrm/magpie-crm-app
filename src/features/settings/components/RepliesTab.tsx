@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Inbox, RefreshCw } from 'lucide-react'
-import { checkMailboxesNowFn, deleteMailboxFn, getSendersFn, mailboxesFn, saveMailboxFn } from '../../../server/functions'
+import { checkMailboxesNowFn, deleteMailboxFn, getSendersFn, mailboxesFn, saveMailboxFn, warmupStandingFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
@@ -45,6 +45,7 @@ export function RepliesTab() {
     mutationFn: () => checkMailboxesNowFn(),
     onSuccess: (list) => queryClient.setQueryData(queryKeys.sequences.mailboxes(), list),
   })
+  const { data: warmup } = useQuery({ queryKey: queryKeys.settings.warmupStanding(), queryFn: () => warmupStandingFn(), staleTime: 60_000 })
 
   return (
     <div className="flex flex-col gap-4">
@@ -58,6 +59,8 @@ export function RepliesTab() {
           <p className="text-sm leading-relaxed text-muted-foreground">
             Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
             is kept, and the app can't send or delete mail.
+            {warmup?.offered &&
+              " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
           </p>
           <p className="text-sm leading-relaxed text-muted-foreground">
             While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.

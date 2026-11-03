@@ -2,6 +2,8 @@
 // it answers. Pure, so it can be tested with real messages' headers.
 //
 //   own         the sender's own mail (Gmail's All Mail holds sent mail too)
+//   warmup      inbox warmup's mail (it carries the pool's token header): not
+//               a reply, even from someone the sequence has emailed
 //   bounce      a delivery failure report
 //   auto_reply  out-of-office and other automatic replies: not a reply, the
 //               sequence carries on
@@ -14,7 +16,7 @@
 
 import type { InboundMessage } from './imap'
 
-export type InboundKind = 'own' | 'bounce' | 'auto_reply' | 'reply'
+export type InboundKind = 'own' | 'warmup' | 'bounce' | 'auto_reply' | 'reply'
 
 const AUTO_SUBJECT =
   /^\s*(automatic reply|auto[- ]?reply|autoreply|auto[- ]?response|out of (the )?office|ooo\b|abwesenheit|abwesend|absence|r[ée]ponse automatique|respuesta autom[aá]tica|risposta automatica|automatisch antwoord|autosvar|automaattinen vastaus|i'?m away|away from (the )?office|on (annual )?leave|on holiday|on vacation)/i
@@ -26,6 +28,7 @@ const lower = (s: string | null | undefined) => (s ?? '').toLowerCase()
 export function classifyInbound(m: InboundMessage, ownAddresses: string[]): InboundKind {
   const from = lower(m.from)
   if (from && ownAddresses.some((a) => lower(a) === from)) return 'own'
+  if (m.headers['x-mailtrace-verify']) return 'warmup'
   const ct = lower(m.headers['content-type'])
   if (BOUNCE_FROM.test(from) || /report-type\s*=\s*"?delivery-status/.test(ct) || m.headers['x-failed-recipients'] || BOUNCE_SUBJECT.test(m.subject)) return 'bounce'
   const auto = lower(m.headers['auto-submitted'])

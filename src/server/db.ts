@@ -428,6 +428,8 @@ export interface DbSchema {
   sequence_enrollments?: Enrollment[]
   /** Senders' inboxes, read for replies to sequence emails (server/mailboxes/). */
   mailboxes?: MailboxRecord[]
+  /** Who agreed to inbox warmup for each sender address, to which wording, and when (inboxWarmup.ts). */
+  warmup_consents?: Array<{ address: string; at: string; by: string; version: string }>
   /**
    * Prospecting integrations set from Settings → Data source and Email verification. Single row.
    * `secrets` is an AES-256-GCM blob (see prospecting/settings.ts) holding the

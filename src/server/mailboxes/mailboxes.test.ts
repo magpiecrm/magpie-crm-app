@@ -60,6 +60,8 @@ describe('classifying a message', () => {
     expect(classifyInbound(msg({ headers: { 'x-autoreply': 'yes' } }), own)).toBe('auto_reply')
     expect(classifyInbound(msg({ from: 'MAILER-DAEMON@mx.google.com', subject: 'Delivery Status Notification (Failure)' }), own)).toBe('bounce')
     expect(classifyInbound(msg({ from: 'postmaster@larkspur.test', headers: { 'content-type': 'multipart/report; report-type=delivery-status; boundary="x"' } }), own)).toBe('bounce')
+    // Inbox warmup's mail, even from someone the sequence has emailed, isn't a reply.
+    expect(classifyInbound(msg({ headers: { 'x-mailtrace-verify': 'tok_1' } }), own)).toBe('warmup')
   })
 
   it('reads header blocks and message ids', () => {

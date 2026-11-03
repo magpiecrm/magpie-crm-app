@@ -34,6 +34,12 @@ function loginOf(m: MailboxRecord): MailboxLogin | null {
   return secret?.password ? { host: m.host, port: m.port, secure: m.secure, user: m.user, password: String(secret.password) } : null
 }
 
+/** A sender's connected inbox and its login, for inbox warmup to hand on (inboxWarmup.ts); null when none is connected. */
+export function inboxOf(senderId: number): { record: MailboxRecord; login: MailboxLogin | null } | null {
+  const m = db.data.mailboxes?.find((x) => x.sender_id === senderId)
+  return m ? { record: m, login: loginOf(m) } : null
+}
+
 /** Logs in and opens the folder it would read, then logs out. */
 export async function testLogin(login: MailboxLogin, connect: Connect = imapConnect): Promise<{ ok: true; folder: string } | { ok: false; error: string; authFailed: boolean }> {
   try {
@@ -99,7 +105,7 @@ export const mailboxes = {
       return last!
     })()
     if (!tested.ok) throw new Error(tested.error)
-    return db.mutate((data) => {
+    const saved = db.mutate((data) => {
       const at = now()
       const record: MailboxRecord = {
         id: existing?.id ?? randomUUID(),
@@ -124,12 +130,26 @@ export const mailboxes = {
       data.mailboxes = [...(data.mailboxes ?? []).filter((m) => m.sender_id !== input.senderId), record]
       return view(data, record)
     })
+    // A warming sender's pool gets the new login too.
+    if (input.password) void warmupFollows(input.senderId, true)
+    return saved
   },
 
-  remove: (id: string) =>
+  remove: (id: string) => {
+    const senderId = db.data.mailboxes?.find((m) => m.id === id)?.sender_id
     db.mutate((data) => {
       data.mailboxes = (data.mailboxes ?? []).filter((m) => m.id !== id)
-    }),
+    })
+    // Without its inbox a sender can't warm: its login comes out of the pool.
+    if (senderId !== undefined) void warmupFollows(senderId, false)
+  },
+}
+
+/** Tells inbox warmup a sender's inbox changed (inboxWarmup.ts); a failure is logged, not the user's to see here. */
+function warmupFollows(senderId: number, connected: boolean) {
+  return import('../inboxWarmup')
+    .then((w) => w.inboxChanged(senderId, connected))
+    .catch((err) => console.warn(`[inbox-warmup] couldn't pass on sender ${senderId}'s inbox: ${err?.message ?? err}`))
 }
 
 /** Sequence emails a mailbox's sender sent that a reply could answer, for matching. */
@@ -174,7 +194,7 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
     const { replyReceived } = await import('../sequences')
     for (const msg of messages) {
       const kind = classifyInbound(msg, own)
-      if (kind === 'own' || kind === 'auto_reply') continue
+      if (kind === 'own' || kind === 'warmup' || kind === 'auto_reply') continue
       if (kind === 'bounce') {
         const bounce = parseBounce(await client.source(msg.uid, SOURCE_BYTES))
         const hit = bounce && index.byEmail.get(bounce.recipient)

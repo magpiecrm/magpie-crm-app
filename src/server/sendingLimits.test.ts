@@ -188,6 +188,41 @@ describe('the limit follows how the email is received', () => {
       for (const k of ['PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET']) delete process.env[k]
     }
   })
+
+  it('lets inbox warmup hold the limit, or step up a workspace that sent too little to judge, never over mail received badly', async () => {
+    Object.assign(process.env, { PROSPECTING_MANAGED: 'on', REACHER_URL: 'https://services.magpie.test', REACHER_SECRET: 'vt_mc_acme' })
+    const warmup = async (signal: 'healthy' | 'trouble') => {
+      vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ rules: {}, inboxWarmup: { available: true, maxSenders: 3, signal } })))
+      await refreshHostRules()
+    }
+    try {
+      // Too little sent to judge, and warmup going well: a step up.
+      await warmup('healthy')
+      weekOf(10, { opened: 5 })
+      expect(dailyLimits()!.cold).toMatchObject({ limit: RAMP.cold[2], status: 'unknown' })
+      // A week received well, but a warming sender in trouble: held.
+      db.mutate((d) => (d.campaign_recipients = []))
+      await warmup('trouble')
+      weekOf(40, { opened: 12 })
+      expect(dailyLimits()!.cold).toMatchObject({ limit: RAMP.cold[1], status: 'good' })
+      // Received badly: a step down, whatever warmup says.
+      db.mutate((d) => (d.campaign_recipients = []))
+      await warmup('healthy')
+      weekOf(40, { opened: 12, bounced: 3 })
+      expect(dailyLimits()!.cold).toMatchObject({ limit: RAMP.cold[0], status: 'poor' })
+      // Nothing sent at all: warmup alone doesn't climb it.
+      db.mutate((d) => {
+        d.campaign_recipients = []
+        d.sending_ramp = { cold: { level: 1, since: new Date(Date.now() - 8 * DAY).toISOString() } }
+      })
+      expect(dailyLimits()!.cold).toMatchObject({ limit: RAMP.cold[1], status: 'unknown' })
+    } finally {
+      vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ rules: {} })))
+      await refreshHostRules()
+      vi.unstubAllGlobals()
+      for (const k of ['PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET']) delete process.env[k]
+    }
+  })
 })
 
 describe('reputation', () => {

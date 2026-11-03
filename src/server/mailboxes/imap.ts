@@ -45,7 +45,7 @@ export interface MailClient {
 
 export type Connect = (login: MailboxLogin) => Promise<MailClient>
 
-const HEADERS = ['in-reply-to', 'references', 'auto-submitted', 'x-autoreply', 'x-autorespond', 'precedence', 'content-type', 'x-failed-recipients', 'x-auto-response-suppress']
+const HEADERS = ['in-reply-to', 'references', 'auto-submitted', 'x-autoreply', 'x-autorespond', 'precedence', 'content-type', 'x-failed-recipients', 'x-auto-response-suppress', 'x-mailtrace-verify']
 
 /** A header block's fields, unfolded, by lower-cased name. */
 export function parseHeaderBlock(raw: string): Record<string, string> {

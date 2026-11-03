@@ -7,7 +7,7 @@ import { notify } from './notify'
 import { getAppUrl } from './appUrl'
 import { normalizeHref } from '../features/email-builder/utils/html'
 import { expandSurveyPlaceholders, referencedSurveyIds } from './surveyLinks'
-import { mergeContact, unfilledMergeTags } from './mergeTags'
+import { mergeContact, unfilledMergeTags, type MergeContact } from './mergeTags'
 import { AllowanceError, requireAllowance } from './allowance'
 import { resumeAfterLimit, takeDailyShare } from './sendingLimits'
 import { requireSendingDomain } from './sendingDomains'
@@ -962,38 +962,49 @@ export async function sendTestEmail(payload: {
     // Lookup recipient in contacts table to use real data for the test email if available
     const normalizedEmail = recipient.toLowerCase().trim()
     const contact = db.data.contacts.find(c => c.email === normalizedEmail) || ({} as any)
-    
-    const fn = contact.first_name || 'TestFirstName'
-    const ln = contact.last_name || 'TestLastName'
-    const comp = contact.company || 'TestCompany'
-
-    const personalize = (text: string, isHtml: boolean) =>
-      mergeContact(text, { email: recipient, first_name: fn, last_name: ln, company: comp, custom: contact.custom }, { html: isHtml, customFallback: (key) => `Test${key}` })
-
-    const subject = personalize(payload.subject, false)
-    let htmlWithVars = personalize(withoutBuilderData(payload.htmlContent), true)
-
-    // A test send has no campaign to unsubscribe from, but the token must still
-    // go — left in place it ships as a literal `href="{{ unsubscribe }}"`, which
-    // is not a valid URL and de-anchors the link in the client.
-    htmlWithVars = absolutizeHrefs(htmlWithVars.replace(/\{\{\s*unsubscribe\s*\}\}/gi, '#'))
-    // Test survey links work end to end (even for drafts) but are flagged, so
-    // they never touch contacts or results.
-    htmlWithVars = expandSurveyPlaceholders(htmlWithVars, { appUrl: await getAppUrl(), email: normalizedEmail, campaignId: null, test: true })
-
-    const finalHtml = payload.previewText
-      ? injectPreviewText(htmlWithVars, personalize(payload.previewText, false))
-      : htmlWithVars
+    const { subject, html } = await renderTestCopy(payload, recipient, contact)
 
     await sendMail({
       from,
       to: recipient,
       subject: `[TEST] ${subject}`,
-      html: finalHtml,
+      html,
     })
   }
 
   return { success: true }
+}
+
+/**
+ * An email as a test sends it to `recipient`: `contact`'s details where it
+ * has them, stand-ins where not, and the unsubscribe and survey links made
+ * safe for a test.
+ */
+export async function renderTestCopy(
+  payload: { subject: string; htmlContent: string; previewText?: string },
+  recipient: string,
+  contact: Omit<MergeContact, 'email'>,
+) {
+  const personalize = (text: string, isHtml: boolean) =>
+    mergeContact(
+      text,
+      { email: recipient, first_name: contact.first_name || 'TestFirstName', last_name: contact.last_name || 'TestLastName', company: contact.company || 'TestCompany', custom: contact.custom },
+      { html: isHtml, customFallback: (key) => `Test${key}` },
+    )
+
+  const subject = personalize(payload.subject, false)
+  let htmlWithVars = personalize(withoutBuilderData(payload.htmlContent), true)
+
+  // A test send has no campaign to unsubscribe from, but the token must still
+  // go — left in place it ships as a literal `href="{{ unsubscribe }}"`, which
+  // is not a valid URL and de-anchors the link in the client.
+  htmlWithVars = absolutizeHrefs(htmlWithVars.replace(/\{\{\s*unsubscribe\s*\}\}/gi, '#'))
+  // Test survey links work end to end (even for drafts) but are flagged, so
+  // they never touch contacts or results.
+  htmlWithVars = expandSurveyPlaceholders(htmlWithVars, { appUrl: await getAppUrl(), email: recipient.toLowerCase().trim(), campaignId: null, test: true })
+
+  const html = payload.previewText ? injectPreviewText(htmlWithVars, personalize(payload.previewText, false)) : htmlWithVars
+  return { subject, html }
 }
 
 // --- Analytics ---

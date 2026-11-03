@@ -15,14 +15,17 @@
 //   opt-in      200  500  1,000  2,500  5,000   (plan allowance)
 //
 // A week with a `poor` reputation steps the limit down; `at_risk`, or too few
-// sends to judge, holds it. The host can set either limit for a workspace
-// itself (its admin portal, through hostRules.ts). Anything over today's
+// sends to judge, holds it. Inbox warmup (the host's, inboxWarmup.ts) has a
+// say only within that: a warming sender in trouble holds the limit, and
+// warmup going well steps up a workspace whose own sending was too little to
+// judge, never one whose mail was received badly. The host can set either
+// limit for a workspace itself (its admin portal, through hostRules.ts). Anything over today's
 // limit isn't refused: campaigns carry on the next day (emailService.ts) and
 // sequences wait (sequences/engine.ts).
 
 import { db } from './db'
 import { env } from './env'
-import { hostSendLimits } from './prospecting/hostRules'
+import { hostInboxWarmup, hostSendLimits } from './prospecting/hostRules'
 import { judge, kindResolver, sendingStats, MIN_SAMPLE, type ReputationStatus } from './sendingReputation'
 
 export type MailKind = 'cold' | 'optIn'
@@ -80,8 +83,13 @@ function rampState(kind: MailKind, now: Date): RampState {
   }
   if (now.getTime() - Date.parse(saved.since) < STEP_MS) return saved
   // A week on: up if it was received well, down if badly, else as it was.
-  const { status } = judge(sendingStats(now).byKind[kind])
-  const level = status === 'good' ? Math.min(saved.level + 1, topLevel(kind)) : status === 'poor' ? Math.max(saved.level - 1, 0) : saved.level
+  // Warmup holds it while in trouble, and speaks only for a workspace that
+  // has sent, but too little to judge: an idle one doesn't climb on warmup alone.
+  const stats = sendingStats(now).byKind[kind]
+  const { status } = judge(stats)
+  const warm = hostInboxWarmup()?.signal ?? null
+  const up = status === 'good' || (status === 'unknown' && warm === 'healthy' && stats.sent > 0)
+  const level = status === 'poor' ? Math.max(saved.level - 1, 0) : warm === 'trouble' ? saved.level : up ? Math.min(saved.level + 1, topLevel(kind)) : saved.level
   const state: RampState = { level, since: now.toISOString() }
   db.mutate((d) => (d.sending_ramp = { ...d.sending_ramp, [kind]: state }))
   return state

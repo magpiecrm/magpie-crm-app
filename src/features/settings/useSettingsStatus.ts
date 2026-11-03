@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, prospectingStatusFn } from '../../server/functions'
+import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, inboxWarmupFn, prospectingStatusFn } from '../../server/functions'
 import { formatPence } from './planMath'
 import type { SettingsSection } from './sections'
 
@@ -25,6 +25,8 @@ export function useSettingsStatus(): {
   managed: boolean
   /** The host bills for this workspace: Plan and billing is shown. */
   billingManaged: boolean
+  /** The host offers inbox warmup here: Warmup is shown. */
+  warmupOffered: boolean
 } {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
@@ -33,6 +35,7 @@ export function useSettingsStatus(): {
   // When the host runs sending, its status is about your sending domains.
   const sendingManaged = Boolean(sending.data?.success && sending.data.managed)
   const domains = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: sendingManaged })
+  const warmup = useQuery({ queryKey: queryKeys.settings.warmup(), queryFn: () => inboxWarmupFn(), enabled: sendingManaged })
   const team = useQuery({ queryKey: queryKeys.settings.team(), queryFn: () => getUsersFn() })
   const usage = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn() })
   const billingManaged = Boolean(usage.data?.billingManaged)
@@ -85,6 +88,19 @@ export function useSettingsStatus(): {
           : { level: 'ok', text: `Sending through ${label}, from ${s.settings.defaultSender}.` }
   }
 
+  const w = warmup.data
+  if (w?.offered) {
+    const on = w.senders.filter((s) => s.warmup && s.warmup.state !== 'failed')
+    const trouble = on.filter((s) => s.warmup!.problem || ['throttled', 'quarantined', 'blocked'].includes(s.warmup!.health?.state ?? ''))
+    statuses.warmup = w.stopped
+      ? { level: 'error', text: `Warmup is stopped: ${w.stopped}`, action: 'Review' }
+      : trouble.length > 0
+        ? { level: 'warning', text: `${trouble.map((s) => s.email).join(', ')} ${trouble.length === 1 ? 'needs' : 'need'} a look.`, action: 'Review' }
+        : on.length > 0
+          ? { level: 'ok', text: `${on.length} ${on.length === 1 ? 'sender' : 'senders'} warming.` }
+          : { level: 'info', text: 'Warm up a sender before your campaigns go out.', action: 'Set up' }
+  }
+
   const senderCount = senders.data?.senders?.length
   if (senderCount !== undefined) {
     statuses.senders =
@@ -125,5 +141,5 @@ export function useSettingsStatus(): {
   }
 
   const isLoading = [prospecting, copilot, sending, senders, team].some((q) => q.isLoading)
-  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged }
+  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged, warmupOffered: Boolean(w?.offered) }
 }

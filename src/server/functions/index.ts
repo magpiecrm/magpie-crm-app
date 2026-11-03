@@ -22,6 +22,7 @@ export * from './sales'
 export * from './proposals'
 export * from './sequences'
 export * from './mailboxes'
+export * from './inboxWarmup'
 export * from './billing'
 
 // Background jobs start on the server only. Wrapped in createServerOnlyFn so

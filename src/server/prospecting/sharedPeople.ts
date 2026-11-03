@@ -5,8 +5,9 @@
 // them again. The host is the controller of that database: it tells each
 // person before anyone can be shown them, and takes their opt-out.
 //
-// This is the one place a copy sends personal data to its host, and only
-// while the host says this copy contributes: because someone here agreed to
+// This is the one place a copy sends the people it found to its host (inbox
+// warmup, inboxWarmup.ts, sends its own senders' inbox logins, each with their
+// agreement), and only while the host says this copy contributes: because someone here agreed to
 // the host's Contributor Terms (Settings → Prospect search), or, where the
 // host's own terms have every copy contribute, until someone here switches
 // it off in the same place. What's sent is what search itself held: name, job title,
