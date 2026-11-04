@@ -33,6 +33,13 @@ describe("the host's billing API", () => {
     expect(await getBilling(deps(() => Response.json({ managed: true, status: 'active' })))).toMatchObject({ status: 'active' })
   })
 
+  it('keeps the add-ons this copy knows from the catalogue, and has none from an older host', async () => {
+    const warmup = { id: 'warmup', name: 'Inbox warmup', unit: 'one sender warmed with up to 20 emails a day', unitMillipence: 500000, available: false, note: 'Inbox warmup is full right now.' }
+    const status = await getBilling(deps(() => Response.json({ managed: true, status: 'active', catalogue: { kinds: [], addons: [warmup, { id: 'seats', name: 'Seats', unit: 'seat', unitMillipence: 1 }, { ...warmup, unitMillipence: 'x' }] } })))
+    expect(status?.catalogue.addons).toEqual([warmup])
+    expect((await getBilling(deps(() => Response.json({ managed: true, status: 'active', catalogue: { kinds: [] } }))))?.catalogue.addons).toEqual([])
+  })
+
   it("only hands the browser the payment provider's own pages", () => {
     expect(isPaymentPage('https://checkout.stripe.com/c/pay/cs_1')).toBe(true)
     expect(isPaymentPage('https://billing.stripe.com/p/session/x')).toBe(true)

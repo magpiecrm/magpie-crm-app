@@ -124,7 +124,11 @@ key), with the app's actions as tools.
     trouble holds the limit, and warmup going well steps up a workspace that
     sent too little to judge, never one whose own mail was received badly.
   - `inboxWarmup.ts` — inbox warmup, only where the host offers it
-    (`hostRules.ts` `hostInboxWarmup`): a sender whose inbox is connected
+    (`hostRules.ts` `hostInboxWarmup`). On hosted plans it's a paid add-on
+    (one sender, up to 20 warmup emails a day), bought on Settings → Plan and
+    billing (`catalogue.addons`, `warmup` on the plan); the host decides who
+    has it, and where it isn't on the plan `hostWarmupPurchase` gives the
+    Warmup page a price to offer it at. A sender whose inbox is connected
     (Reply detection) warms in the host's pool (Mailivery), which sends
     its warmup through the host's mail server and files the warmup it
     receives away in that inbox. Switching it on sends the inbox's login to

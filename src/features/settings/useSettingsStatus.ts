@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, inboxWarmupFn, prospectingStatusFn } from '../../server/functions'
-import { formatPence } from './planMath'
+import { addonsOn, formatPence } from './planMath'
 import type { SettingsSection } from './sections'
 
 export type StatusLevel = 'ok' | 'warning' | 'error' | 'info'
@@ -25,8 +25,8 @@ export function useSettingsStatus(): {
   managed: boolean
   /** The host bills for this workspace: Plan and billing is shown. */
   billingManaged: boolean
-  /** The host offers inbox warmup here: Warmup is shown. */
-  warmupOffered: boolean
+  /** The host offers inbox warmup here, or it can be added to the plan: Warmup is shown. */
+  warmupShown: boolean
 } {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
@@ -99,6 +99,8 @@ export function useSettingsStatus(): {
         : on.length > 0
           ? { level: 'ok', text: `${on.length} ${on.length === 1 ? 'sender' : 'senders'} warming.` }
           : { level: 'info', text: 'Warm up a sender before your campaigns go out.', action: 'Set up' }
+  } else if (w?.purchasable) {
+    statuses.warmup = { level: 'info', text: `Not on your plan: add it for ${w.purchasable.price} a month.`, action: 'Add' }
   }
 
   const senderCount = senders.data?.senders?.length
@@ -127,7 +129,8 @@ export function useSettingsStatus(): {
   const b = billing.data
   if (b) {
     const on = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
-    const price = b.monthlyPence !== null ? `${formatPence(b.monthlyPence, b.currency)} a month` : 'Your plan'
+    const extras = addonsOn(b.plan, b.catalogue.addons).map((a) => a.name.toLowerCase())
+    const price = `${b.monthlyPence !== null ? `${formatPence(b.monthlyPence, b.currency)} a month` : 'Your plan'}${extras.length ? ` with ${extras.join(' and ')}` : ''}`
     statuses.billing =
       b.status === 'past_due'
         ? { level: 'error', text: "Your last payment didn't go through. Update your card.", action: 'Update' }
@@ -141,5 +144,5 @@ export function useSettingsStatus(): {
   }
 
   const isLoading = [prospecting, copilot, sending, senders, team].some((q) => q.isLoading)
-  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged, warmupOffered: Boolean(w?.offered) }
+  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged, warmupShown: Boolean(w && (w.offered || w.purchasable)) }
 }

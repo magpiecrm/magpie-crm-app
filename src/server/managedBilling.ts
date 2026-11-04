@@ -10,7 +10,16 @@
 import { env } from './env'
 
 export type PlanKind = 'prospects' | 'reveals' | 'emails'
-export type Plan = Record<PlanKind, number>
+/** Bought whole rather than in amounts, ticked on or off (warmup: one sender warmed). */
+export type PlanAddon = 'warmup'
+/**
+ * A plan: an amount of each kind, and 1 for each add-on it has. An add-on
+ * missing from the host's answer (an older host) is off; missing from a plan
+ * sent to the host, it keeps what the plan has.
+ */
+export type Plan = Record<PlanKind, number> & Partial<Record<PlanAddon, 0 | 1>>
+
+const ADDONS: readonly PlanAddon[] = ['warmup']
 
 export interface CatalogueKind {
   id: PlanKind
@@ -25,6 +34,19 @@ export interface CatalogueKind {
   unitMillipence: number
   /** At most this share of another kind (reveals: 30% of prospect credits). */
   maxShareOf?: { kind: PlanKind; share: number }
+}
+
+export interface CatalogueAddon {
+  id: PlanAddon
+  name: string
+  /** What it is, e.g. "one sender warmed with up to 20 emails a day". */
+  unit: string
+  /** Price a month, in thousandths of a penny. */
+  unitMillipence: number
+  /** Whether it can be added now; one already on the plan can be kept either way. */
+  available: boolean
+  /** Why it can't be added now, e.g. "Inbox warmup is full right now." */
+  note: string | null
 }
 
 export interface BillingStatus {
@@ -52,6 +74,8 @@ export interface BillingStatus {
     minimumPence: number
     cancelReasons: Array<{ id: string; label: string }>
     kinds: CatalogueKind[]
+    /** None from a host that sells no add-ons. */
+    addons: CatalogueAddon[]
   }
 }
 
@@ -136,11 +160,22 @@ export async function hostBilling<T>(
   return json as T
 }
 
+/** The add-ons this copy knows how to show, from the host's catalogue. */
+function addonsFrom(list: unknown): CatalogueAddon[] {
+  if (!Array.isArray(list)) return []
+  return list.flatMap((a: any) =>
+    ADDONS.includes(a?.id) && typeof a.name === 'string' && typeof a.unit === 'string' && Number.isFinite(a.unitMillipence) && a.unitMillipence >= 0
+      ? [{ id: a.id, name: a.name, unit: a.unit, unitMillipence: a.unitMillipence, available: a.available === true, note: typeof a.note === 'string' && a.note ? a.note : null }]
+      : [],
+  )
+}
+
 /** The host's answer, if it's this workspace's plan (a host that stopped billing answers 404 managed:false). */
 export async function getBilling(deps: ManagedBillingDeps = {}): Promise<BillingStatus | null> {
   try {
     const status = await hostBilling<BillingStatus>('GET', '', undefined, {}, deps)
-    return status?.managed === true ? status : null
+    if (status?.managed !== true) return null
+    return { ...status, catalogue: { ...status.catalogue, addons: addonsFrom(status.catalogue?.addons) } }
   } catch (err) {
     if (err instanceof BillingFailure && err.code === 'http_404') return null
     throw err

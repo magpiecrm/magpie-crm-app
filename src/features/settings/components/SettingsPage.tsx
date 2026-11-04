@@ -51,10 +51,10 @@ function groupsOf(sections: readonly Section[]) {
 export function SettingsPage({ initialSection, checkoutSession }: { initialSection?: SettingsSection; checkoutSession?: string }) {
   const [active, setActive] = useState<SettingsSection>(initialSection ?? 'overview')
   const queryClient = useQueryClient()
-  const { statuses, isLoading, managed, billingManaged, warmupOffered } = useSettingsStatus()
-  // Plan and billing only when the host bills for this workspace; Warmup only where the host offers it.
+  const { statuses, isLoading, managed, billingManaged, warmupShown } = useSettingsStatus()
+  // Plan and billing only when the host bills for this workspace; Warmup only where the host offers it, or it can be added to the plan.
   const visible = SETTINGS_SECTIONS.filter(
-    (s) => !(managed && MANAGED_HIDDEN.has(s.id)) && (s.id !== 'billing' || billingManaged) && (s.id !== 'warmup' || warmupOffered),
+    (s) => !(managed && MANAGED_HIDDEN.has(s.id)) && (s.id !== 'billing' || billingManaged) && (s.id !== 'warmup' || warmupShown),
   )
   const GROUPS = groupsOf(visible)
   const hiddenPage = managed && MANAGED_HIDDEN.has(active)
@@ -163,7 +163,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {active === 'sending' && <EmailSendingTab />}
           {active === 'senders' && <SendersTab />}
           {active === 'replies' && <RepliesTab />}
-          {active === 'warmup' && <WarmupTab />}
+          {active === 'warmup' && <WarmupTab onOpen={open} />}
           {active === 'pipelines' && <PipelineSettings />}
           {active === 'copilot' && <CopilotTab />}
           {active === 'mcp' && <McpTab />}

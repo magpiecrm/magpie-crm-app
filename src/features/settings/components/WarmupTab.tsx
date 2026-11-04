@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Flame } from 'lucide-react'
+import { ArrowRight, Flame } from 'lucide-react'
 import { inboxWarmupFn, pauseWarmupFn, resumeWarmupFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -8,6 +8,7 @@ import { Dialog } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import type { SettingsSection } from '../sections'
 import type { Tally, WarmupSender, WarmupSenderRow } from '../warmupTypes'
 
 type Variant = 'default' | 'success' | 'warning' | 'error' | 'info'
@@ -33,42 +34,77 @@ function landed(t: Tally, need = 0) {
   return `${pct(t.inbox, total)} inbox · ${pct(t.tabs, total)} tabs · ${pct(t.spam, total)} spam (${total} delivered)`
 }
 
-/** Settings → Warmup: each sender's warmup in the host's pool, and where it lands. */
-export function WarmupTab() {
+/** What warmup is, for a workspace that has it and one that could add it. */
+function HowItWorks() {
+  return (
+    <SettingsBlock title="How it works">
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        A new sender that suddenly emails hundreds of strangers looks like a spammer to Gmail and Outlook. Warmup gives a sender a steady, growing
+        stream of ordinary email with a pool of other real inboxes, which open it and reply to some of it. It's sent through our mail server,
+        the same way as your campaigns, starting with a few a day and rising to about 20 over a month.
+      </p>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        The warmup that arrives in your inbox is filed in a folder called Mailivery, after the service that runs the pool. Keep warmup running alongside your
+        campaigns. It helps, but it can't promise your email reaches the inbox: what you send, and who to, matters most.
+      </p>
+    </SettingsBlock>
+  )
+}
+
+/** Settings → Warmup: each sender's warmup in the host's pool, and where it lands; or, where it isn't on the plan, what adding it costs. */
+export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => void }) {
   const { data, isLoading } = useQuery({ queryKey: queryKeys.settings.warmup(), queryFn: () => inboxWarmupFn(), refetchInterval: 60_000 })
   const [consentFor, setConsentFor] = useState<WarmupSenderRow | null>(null)
 
   if (isLoading || !data) return <SettingsEmpty>Loading…</SettingsEmpty>
+  if (!data.offered && data.purchasable) {
+    return (
+      <SettingsPanel>
+        <HowItWorks />
+        <SettingsBlock title="Add it to your plan">
+          <p className="text-sm leading-relaxed text-foreground">
+            Inbox warmup isn't on your plan. Add it for {data.purchasable.price} a month: one sender warmed with up to {data.purchasable.perDay} emails a day.
+          </p>
+          <SettingsActions>
+            <Button rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
+              Go to Plan and billing
+            </Button>
+          </SettingsActions>
+        </SettingsBlock>
+      </SettingsPanel>
+    )
+  }
   if (!data.offered) return <Notice>Inbox warmup isn't available on this workspace.</Notice>
   const warming = data.senders.filter((s) => s.warmup && s.warmup.state !== 'failed').length
+  const one = data.maxSenders === 1
 
   return (
     <div className="flex flex-col gap-4">
       {data.stopped && <Notice level="error" title="MagpieCRM has stopped warmup for this workspace">{data.stopped}</Notice>}
       {data.error && <Notice level="error" title="The warmup service couldn't be reached">{data.error}</Notice>}
       <SettingsPanel>
-        <SettingsBlock title="How it works">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            A new sender that suddenly emails hundreds of strangers looks like a spammer to Gmail and Outlook. Warmup gives each sender a steady, growing
-            stream of ordinary email with a pool of other real inboxes, which open it and reply to some of it. It's sent through our mail server,
-            the same way as your campaigns, starting with a few a day and rising to about 40 over a month.
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            The warmup that arrives in your inbox is filed in a folder called Mailivery, after the service that runs the pool. Keep warmup running alongside your
-            campaigns. It helps, but it can't promise your email reaches the inbox: what you send, and who to, matters most.
-          </p>
-        </SettingsBlock>
+        <HowItWorks />
 
         <SettingsBlock
           title="Senders"
-          description={`Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.`}
+          description={
+            one
+              ? 'One sender can warm at a time. It needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.'
+              : `Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.`
+          }
         >
           {data.senders.length === 0 ? (
             <SettingsEmpty>Add a sender address first (Settings → Sender addresses).</SettingsEmpty>
           ) : (
             <SettingsList>
               {data.senders.map((s) => (
-                <SenderWarmup key={s.senderId} row={s} full={warming >= data.maxSenders} stopped={Boolean(data.stopped)} onStart={() => setConsentFor(s)} />
+                <SenderWarmup
+                  key={s.senderId}
+                  row={s}
+                  full={warming >= data.maxSenders ? (one ? 'One sender can warm at a time, and another is warming.' : 'As many senders as can warm at once are warming.') : null}
+                  stopped={Boolean(data.stopped)}
+                  onStart={() => setConsentFor(s)}
+                />
               ))}
             </SettingsList>
           )}
@@ -82,7 +118,8 @@ export function WarmupTab() {
   )
 }
 
-function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; full: boolean; stopped: boolean; onStart: () => void }) {
+/** `full`: why no more can start, when as many as can warm are warming. */
+function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; full: string | null; stopped: boolean; onStart: () => void }) {
   const queryClient = useQueryClient()
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.settings.warmup() })
   const pause = useMutation({ mutationFn: () => pauseWarmupFn({ data: { address: row.email } }), onSuccess: refresh })
@@ -119,7 +156,7 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
       badge={badge}
       actions={
         !on ? (
-          <Button size="sm" onClick={onStart} disabled={row.blockers.length > 0 || full || stopped} title={full ? 'As many senders as can warm at once are warming.' : undefined}>
+          <Button size="sm" onClick={onStart} disabled={row.blockers.length > 0 || Boolean(full) || stopped} title={full ?? undefined}>
             {w?.state === 'failed' ? 'Try again' : 'Start warmup'}
           </Button>
         ) : w.state === 'warming' ? (

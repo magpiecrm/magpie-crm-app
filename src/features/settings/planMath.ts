@@ -2,9 +2,14 @@
 // (what it sells, in which steps, at what unit price). Pure, so it's tested
 // on its own and the page only draws it.
 
-import type { CatalogueKind, Plan, PlanKind } from '../../server/managedBilling'
+import type { CatalogueAddon, CatalogueKind, Plan, PlanAddon, PlanKind } from '../../server/managedBilling'
 
 export const PLAN_KINDS: PlanKind[] = ['prospects', 'reveals', 'emails']
+export const PLAN_ADDONS: PlanAddon[] = ['warmup']
+export const isAddon = (id: string): id is PlanAddon => (PLAN_ADDONS as string[]).includes(id)
+
+/** The add-ons a plan has, as the host's catalogue names them. */
+export const addonsOn = (plan: Plan | null, addons: CatalogueAddon[]) => addons.filter((a) => plan?.[a.id] === 1)
 
 /** The position of the step nearest `n` (a plan bought before the steps changed lands on the closest). */
 export function nearestStep(steps: number[], n: number): number {
@@ -30,9 +35,12 @@ export function capped(plan: Plan, kinds: CatalogueKind[]): Plan {
  */
 export const moneyLocale = (currency: string) => (currency.toUpperCase() === 'USD' ? 'en-US' : 'en-GB')
 
-/** The monthly price in pence or cents (unit prices are in thousandths of one). */
-export function monthlyPence(plan: Plan, kinds: CatalogueKind[]): number {
-  return kinds.reduce((sum, k) => sum + (plan[k.id] * k.unitMillipence) / 1000, 0)
+/** The monthly price in pence or cents (unit prices are in thousandths of one), add-ons ticked included. */
+export function monthlyPence(plan: Plan, kinds: CatalogueKind[], addons: CatalogueAddon[] = []): number {
+  return (
+    kinds.reduce((sum, k) => sum + (plan[k.id] * k.unitMillipence) / 1000, 0) +
+    addonsOn(plan, addons).reduce((sum, a) => sum + a.unitMillipence / 1000, 0)
+  )
 }
 
 export function formatPence(pence: number, currency = 'GBP'): string {
@@ -46,19 +54,27 @@ export function unitPrice(kind: CatalogueKind, currency = 'GBP'): string {
   return kind.per === 1 ? `${text} each` : `${text} per ${kind.per.toLocaleString('en-GB')}`
 }
 
+/** An add-on's price: "£5.00 a month". */
+export const addonPrice = (addon: CatalogueAddon, currency = 'GBP') => `${formatPence(addon.unitMillipence / 1000, currency)} a month`
+
 export interface PlanChange {
-  kind: PlanKind
+  kind: PlanKind | PlanAddon
+  /** For an add-on, 1 when it's on. */
   from: number
   to: number
 }
 
-/** What goes up (applies now, charged for the rest of the period) and what goes down (from renewal). */
+/**
+ * What goes up (applies now, charged for the rest of the period) and what
+ * goes down (from renewal). An add-on ticked is up, unticked down; one the
+ * new plan leaves out stays as it is.
+ */
 export function planChanges(current: Plan | null, next: Plan): { up: PlanChange[]; down: PlanChange[] } {
   const up: PlanChange[] = []
   const down: PlanChange[] = []
-  for (const kind of PLAN_KINDS) {
+  for (const kind of [...PLAN_KINDS, ...PLAN_ADDONS]) {
     const from = current?.[kind] ?? 0
-    const to = next[kind]
+    const to = next[kind] ?? from
     if (to > from) up.push({ kind, from, to })
     else if (to < from) down.push({ kind, from, to })
   }

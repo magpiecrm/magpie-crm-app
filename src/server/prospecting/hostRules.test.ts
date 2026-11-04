@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_RULES, formatSharingOn, prospectingRules, refreshHostRules } from './hostRules'
 
-const KEYS = ['PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET'] as const
+const KEYS = ['PROSPECTING_MANAGED', 'SENDING_MANAGED', 'REACHER_URL', 'REACHER_SECRET'] as const
 const original = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]))
 const reply = (body: unknown, status = 200) => (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch
 
@@ -49,6 +49,28 @@ describe('host rules', () => {
     expect(sharedDatabase()).toMatchObject({ canJoin: false, search: true })
     delete process.env.PROSPECTING_MANAGED
     expect(sharedDatabase()).toBeNull()
+  })
+
+  it('say whether inbox warmup is on the plan, or what adding it would cost', async () => {
+    process.env.SENDING_MANAGED = 'on'
+    const { hostInboxWarmup, hostWarmupPurchase } = await import('./hostRules')
+    await refreshHostRules(reply({ rules: {}, inboxWarmup: { available: true, maxSenders: 1, signal: 'healthy' } }))
+    expect(hostInboxWarmup()).toEqual({ maxSenders: 1, signal: 'healthy' })
+    expect(hostWarmupPurchase()).toBeNull()
+    // Not on the plan but for sale: still no warmup, as a copy from before it was sold sees it.
+    await refreshHostRules(reply({ rules: {}, inboxWarmup: { available: false, purchasable: { price: ' $7 ', perDay: 20 } } }))
+    expect(hostInboxWarmup()).toBeNull()
+    expect(hostWarmupPurchase()).toEqual({ price: '$7', perDay: 20 })
+    for (const purchasable of [{ price: '', perDay: 20 }, { price: 5, perDay: 20 }, { price: 'x'.repeat(17), perDay: 20 }, { price: '£5', perDay: 0 }, { price: '£5', perDay: 2.5 }, { price: '£5' }, null]) {
+      await refreshHostRules(reply({ rules: {}, inboxWarmup: { available: false, purchasable } }))
+      expect(hostWarmupPurchase()).toBeNull()
+    }
+    await refreshHostRules(reply({ rules: {} }))
+    expect([hostInboxWarmup(), hostWarmupPurchase()]).toEqual([null, null])
+    // Only where the host's mail server sends.
+    await refreshHostRules(reply({ rules: {}, inboxWarmup: { available: false, purchasable: { price: '£5', perDay: 20 } } }))
+    delete process.env.SENDING_MANAGED
+    expect(hostWarmupPurchase()).toBeNull()
   })
 
   it('keep the last answer when the host fails, and are never asked outside a hosted copy', async () => {

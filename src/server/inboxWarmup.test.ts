@@ -19,7 +19,7 @@ const warmup = await import('./inboxWarmup')
 
 afterAll(() => {
   vi.unstubAllGlobals()
-  for (const k of ['DATABASE_PATH', 'SENDING_MANAGED', 'PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET']) delete process.env[k]
+  for (const k of ['DATABASE_PATH', 'SENDING_MANAGED', 'PROSPECTING_MANAGED', 'REACHER_URL', 'REACHER_SECRET', 'MANAGED_BILLING_URL']) delete process.env[k]
   rmSync(scratchDir, { recursive: true, force: true })
 })
 
@@ -73,6 +73,28 @@ describe('inbox warmup', () => {
   it("isn't there unless the host offers it", async () => {
     await hostOffers(false)
     expect(await warmup.warmupPage(deps(fakeHost()))).toEqual({ offered: false })
+  })
+
+  it("offers to add it to the plan where it's for sale but not on the plan", async () => {
+    const forSale = { available: false, purchasable: { price: '£5', perDay: 20 } }
+    process.env.MANAGED_BILLING_URL = 'https://services.magpie.test/v1/billing/acme'
+    try {
+      vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ rules: {}, inboxWarmup: forSale })))
+      await refreshHostRules()
+      const fake = fakeHost()
+      expect(await warmup.warmupPage(deps(fake))).toEqual({ offered: false, purchasable: { price: '£5', perDay: 20 } })
+      // Nothing can start, and the warmup service isn't asked.
+      await expect(warmup.startWarmup(1, 'owner@acme.test', deps(fake))).rejects.toThrow(/isn't offered/)
+      expect(fake.calls).toEqual([])
+      // Taken off the plan since the host's rules were last asked: its warmup service says so.
+      await hostOffers(true)
+      expect(await warmup.warmupPage(deps(fakeHost(forSale)))).toEqual({ offered: false, purchasable: { price: '£5', perDay: 20 } })
+      // Where the host doesn't bill for this copy there's no plan to add it to.
+      delete process.env.MANAGED_BILLING_URL
+      expect(await warmup.warmupPage(deps(fakeHost(forSale)))).toEqual({ offered: false })
+    } finally {
+      delete process.env.MANAGED_BILLING_URL
+    }
   })
 
   it("says why each sender can't warm yet", async () => {

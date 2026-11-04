@@ -15,18 +15,22 @@
 // What this copy decides itself is whether a sender can warm yet: a ready
 // sending domain, its own inbox connected and working, and SPF and DMARC
 // records on its domain, which the pool needs.
+//
+// On a hosted plan warmup is a paid add-on (one sender), and the host decides
+// who has it. Where it isn't on the plan but can be added, the Warmup page
+// says what it costs and sends them to Settings → Plan and billing.
 
 import { resolveTxt } from 'node:dns/promises'
 import { db } from './db'
 import { env } from './env'
-import { hostInboxWarmup } from './prospecting/hostRules'
+import { hostInboxWarmup, hostWarmupPurchase, warmupPurchaseFrom, type WarmupPurchase } from './prospecting/hostRules'
 import { canSendFrom } from './sendingDomains'
 import type { PlacementTestResult, WarmupDay, WarmupPage, WarmupPlacement, WarmupSender, WarmupSenderRow } from '../features/settings/warmupTypes'
 
 /** The wording agreed to before a sender's warmup starts; a new version means a new agreement. */
-export const CONSENT_VERSION = '2026-11-03.2'
+export const CONSENT_VERSION = '2026-11-04'
 export const CONSENT_POINTS = [
-  "Each day this sender exchanges a small number of ordinary-looking emails with other mailboxes in a warmup pool: a few a day at first, rising to about 40 over a month. They're sent through MagpieCRM's mail server, like your campaigns.",
+  "Each day this sender exchanges a small number of ordinary-looking emails with other mailboxes in a warmup pool: a few a day at first, rising to about 20 over a month. They're sent through MagpieCRM's mail server, like your campaigns.",
   "The pool is run by Mailivery (SourceIT Technologies, Inc., in the United States, where its servers are). It's given this inbox's login and uses it to find the warmup mail in the inbox, reply to some of it, and file it in a folder called Mailivery. It doesn't keep your other mail, but the login lets it into the whole inbox.",
   "The warmup mail you receive comes from other people's mailboxes in the pool: don't mark it as spam, and don't use their addresses. Warmup is only for warming this sender, and the law on unsolicited email (such as PECR, GDPR or CAN-SPAM) still applies to everything you send.",
   "Some mail providers' terms don't allow automated mail like this. Warmup is provided as it is: it can't promise your email lands in the inbox, as our Terms set out.",
@@ -111,14 +115,20 @@ export async function eligibility(deps: WarmupDeps = {}): Promise<Array<Omit<War
   return rows
 }
 
+/** Warmup isn't on this workspace: what adding it costs, where the host bills for the plan here. */
+function notOffered(purchasable: WarmupPurchase | null = hostWarmupPurchase()): WarmupPage {
+  return purchasable && env.managedBillingUrl() ? { offered: false, purchasable } : { offered: false }
+}
+
 /** The Warmup page: each sender, whether it can warm, and its warmup from the host. */
 export async function warmupPage(deps: WarmupDeps = {}): Promise<WarmupPage> {
-  if (!warmupOffered()) return { offered: false }
+  if (!warmupOffered()) return notOffered()
   const senders = await eligibility(deps)
   const consent = { version: CONSENT_VERSION, points: CONSENT_POINTS }
   try {
     const view = await ask<any>(deps, 'GET', '')
-    if (view?.available !== true) return { offered: false }
+    // Taken off the plan since the host's rules were last asked.
+    if (view?.available !== true) return notOffered(warmupPurchaseFrom(view?.purchasable) ?? hostWarmupPurchase())
     const warming = new Map<string, WarmupSender>((view.senders as WarmupSender[]).map((w) => [w.address, w]))
     return {
       offered: true,
@@ -129,7 +139,7 @@ export async function warmupPage(deps: WarmupDeps = {}): Promise<WarmupPage> {
       consent,
     }
   } catch (err: any) {
-    const max = hostInboxWarmup()?.maxSenders ?? 3
+    const max = hostInboxWarmup()?.maxSenders ?? 1
     return { offered: true, stopped: null, maxSenders: max, senders: senders.map((s) => ({ ...s, warmup: null })), placementTests: { used: 0, limit: 0 }, consent, error: err?.message ?? String(err) }
   }
 }

@@ -2,6 +2,8 @@
 // warmup lives with the host; these are its answers, plus what this copy
 // knows itself: whether each sender can warm yet, and why not.
 
+import type { WarmupPurchase } from '../../server/prospecting/hostRules'
+
 export interface Tally {
   inbox: number
   tabs: number
@@ -36,7 +38,11 @@ export interface WarmupSenderRow {
 }
 
 export type WarmupPage =
-  | { offered: false }
+  | {
+      offered: false
+      /** It isn't on this workspace's plan, but can be added to it (Settings → Plan and billing) at this price. */
+      purchasable?: WarmupPurchase
+    }
   | {
       offered: true
       /** Set while MagpieCRM has stopped all of this workspace's warmup. */

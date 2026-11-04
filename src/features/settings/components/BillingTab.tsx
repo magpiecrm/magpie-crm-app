@@ -8,7 +8,7 @@ import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { billingPortalFn, cancelPlanFn, changePlanFn, checkoutFn, finishCheckoutFn, getBillingFn, keepPlanFn } from '../../../server/functions'
 import type { Plan } from '../../../server/managedBilling'
-import { formatPence } from '../planMath'
+import { addonsOn, formatPence } from '../planMath'
 import { AllowanceMeter } from './AllowanceMeter'
 import { PlanEditor } from './PlanEditor'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsOption, SettingsPanel } from './SettingsBlock'
@@ -39,6 +39,8 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.billing() })
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.usage() })
+    // Inbox warmup comes and goes with the plan.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.settings.warmup() })
   }
 
   // Back from paying: record the new plan now rather than waiting on the host to hear from Stripe.
@@ -69,7 +71,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
     onSuccess: (r) => {
       if (!r) return
       setNotice(
-        r.changed === 'up' ? 'Done: your new amounts apply now.' : r.changed === 'down' ? 'Done: your plan gets smaller at your next renewal.' : r.changed === 'both' ? 'Done: increases apply now, decreases at your next renewal.' : null,
+        r.changed === 'up' ? 'Done: your new plan applies now.' : r.changed === 'down' ? 'Done: your plan gets smaller at your next renewal.' : r.changed === 'both' ? 'Done: increases apply now, decreases at your next renewal.' : null,
       )
       refresh()
     },
@@ -126,6 +128,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
 
   const b = billing.data
   const busy = change.isPending || keep.isPending || cancel.isPending
+  const extras = addonsOn(b.plan, b.catalogue.addons)
   const failed = (change.error ?? keep.error ?? (finishError ? new Error(finishError) : null)) as Error | null
 
   return (
@@ -172,14 +175,27 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
             title="Your plan"
             description={`What you have left of your plan.${b.periodEnd ? ` It resets on ${day(b.periodEnd)}; unused amounts don't roll over.` : ''}`}
           >
-            {b.monthlyPence !== null && (
+            {(b.monthlyPence !== null || extras.length > 0) && (
               <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-                <dt className="text-muted-foreground">Price</dt>
-                <dd className="text-foreground tabular-nums">{formatPence(b.monthlyPence, b.currency)} a month</dd>
+                {b.monthlyPence !== null && (
+                  <>
+                    <dt className="text-muted-foreground">Price</dt>
+                    <dd className="text-foreground tabular-nums">{formatPence(b.monthlyPence, b.currency)} a month</dd>
+                  </>
+                )}
                 {b.periodEnd && !b.cancelAt && (
                   <>
                     <dt className="text-muted-foreground">Renews</dt>
                     <dd className="text-foreground tabular-nums">{day(b.periodEnd)}</dd>
+                  </>
+                )}
+                {extras.length > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Add-ons</dt>
+                    <dd className="text-foreground">
+                      {/* One taken off stays until the renewal. */}
+                      {extras.map((a) => `${a.name}${b.nextPlan?.[a.id] !== 1 && b.periodEnd ? `, until ${day(b.periodEnd)}` : ''}`).join('; ')}
+                    </dd>
                   </>
                 )}
               </dl>

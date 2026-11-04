@@ -52,10 +52,12 @@ interface HostAnswer {
   verifiedPeopleSearch: boolean
   /** The host's inbox warmup, when it's offered to this copy (inboxWarmup.ts). */
   inboxWarmup: InboxWarmup | null
+  /** Inbox warmup that isn't on this copy's plan but can be added to it. */
+  warmupPurchase: WarmupPurchase | null
 }
 
 export interface InboxWarmup {
-  /** Senders this copy may warm at once. */
+  /** Senders this copy may warm at once (one, on a hosted plan). */
   maxSenders: number
   /**
    * How this copy's warming senders stand, for the sending ramp
@@ -64,6 +66,14 @@ export interface InboxWarmup {
    * little to go on.
    */
   signal: 'trouble' | 'healthy' | null
+}
+
+/** Inbox warmup as a paid add-on the plan doesn't have yet (Settings → Plan and billing). */
+export interface WarmupPurchase {
+  /** A month, already written in the plan's currency ("£5", "$7"). */
+  price: string
+  /** Warmup emails a day the sender works up to. */
+  perDay: number
 }
 
 export interface SharedDatabase {
@@ -132,9 +142,19 @@ function sharedDatabaseFrom(p: any): SharedDatabase | null {
   return { canJoin, search, contributing: p.contributing === true, byDefault: p.byDefault === true, termsVersion: p.termsVersion, termsUrl }
 }
 
+// Anything but `available: true` is no warmup, so a copy from before warmup
+// was sold doesn't take an offer to buy it for warmup itself.
 function inboxWarmupFrom(w: any): InboxWarmup | null {
   if (w?.available !== true) return null
-  return { maxSenders: whole(w.maxSenders) ?? 3, signal: w.signal === 'trouble' || w.signal === 'healthy' ? w.signal : null }
+  return { maxSenders: whole(w.maxSenders) ?? 1, signal: w.signal === 'trouble' || w.signal === 'healthy' ? w.signal : null }
+}
+
+/** `{ price: "£5", perDay: 20 }` from the host (its prospecting rules, or its warmup service), or null. */
+export function warmupPurchaseFrom(p: any): WarmupPurchase | null {
+  const price = typeof p?.price === 'string' ? p.price.trim() : ''
+  const perDay = p?.perDay
+  if (!price || price.length > 16 || !Number.isInteger(perDay) || perDay < 1 || perDay > 1000) return null
+  return { price, perDay }
 }
 
 /** Daily sending limits the host set for this copy, if any. */
@@ -145,6 +165,11 @@ export function hostSendLimits(): SendLimits | null {
 /** The host's inbox warmup, when it's offered to this copy: only where the host's mail server sends. */
 export function hostInboxWarmup(): InboxWarmup | null {
   return env.sendingManaged() ? (g.__hostRules?.inboxWarmup ?? null) : null
+}
+
+/** Inbox warmup the host sells but this copy's plan doesn't have: its price, to offer it. */
+export function hostWarmupPurchase(): WarmupPurchase | null {
+  return env.sendingManaged() ? (g.__hostRules?.warmupPurchase ?? null) : null
 }
 
 export function prospectingRules(): ProspectingRules {
@@ -231,6 +256,7 @@ export async function refreshHostRules(fetchImpl: typeof fetch = fetch): Promise
       webPeopleSearch: body?.peopleSearch === 'web',
       verifiedPeopleSearch: body?.verifiedPeopleSearch === true,
       inboxWarmup: inboxWarmupFrom(body?.inboxWarmup),
+      warmupPurchase: body?.inboxWarmup?.available === true ? null : warmupPurchaseFrom(body?.inboxWarmup?.purchasable),
     }
     g.__hostRules = answer
     return answer

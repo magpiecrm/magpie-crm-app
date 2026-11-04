@@ -2,15 +2,16 @@ import { useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
-import type { BillingStatus, Plan } from '../../../server/managedBilling'
-import { capped, formatPence, monthlyPence, nearestStep, planChanges, unitPrice, PLAN_KINDS, type PlanChange } from '../planMath'
-import { SettingsActions, SettingsList, SettingsRow } from './SettingsBlock'
+import type { BillingStatus, Plan, PlanAddon } from '../../../server/managedBilling'
+import { addonPrice, capped, formatPence, isAddon, monthlyPence, nearestStep, planChanges, unitPrice, PLAN_KINDS, type PlanChange } from '../planMath'
+import { SettingsActions, SettingsCheck, SettingsList, SettingsRow } from './SettingsBlock'
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
 
 /**
- * Sliders for each kind the host sells, the monthly total, and a review step
- * that says what changes when before anything is charged.
+ * Sliders for each kind the host sells, a tick box for each add-on, the
+ * monthly total, and a review step that says what changes when before
+ * anything is charged.
  */
 export function PlanEditor({
   billing,
@@ -21,12 +22,16 @@ export function PlanEditor({
   busy: boolean
   onSubmit: (plan: Plan) => void
 }) {
-  const { kinds, minimumPence } = billing.catalogue
+  const { kinds, addons, minimumPence } = billing.catalogue
   const current = billing.live ? billing.nextPlan : null
   // A first plan starts where the website's pricing does.
   const start: Plan = current ?? { prospects: 1250, reveals: 250, emails: 5000 }
   const [at, setAt] = useState<Record<string, number>>(() =>
     Object.fromEntries(kinds.map((k) => [k.id, nearestStep(k.steps, start[k.id])])),
+  )
+  // Only the add-ons the host lists are sent: one it doesn't keeps what the plan has.
+  const [ticked, setTicked] = useState<Partial<Record<PlanAddon, 0 | 1>>>(() =>
+    Object.fromEntries(addons.map((a) => [a.id, start[a.id] === 1 ? 1 : 0])),
   )
   const [reviewing, setReviewing] = useState(false)
 
@@ -35,12 +40,12 @@ export function PlanEditor({
     for (const k of kinds) raw[k.id] = k.steps[positions[k.id]] ?? 0
     return capped(raw, kinds)
   }
-  const plan = useMemo(() => planAt(at), [at, kinds])
-  const pence = monthlyPence(plan, kinds)
+  const plan: Plan = useMemo(() => ({ ...planAt(at), ...ticked }), [at, kinds, ticked])
+  const pence = monthlyPence(plan, kinds, addons)
   const underMinimum = pence < minimumPence
   const { up, down } = planChanges(current, plan)
   const unchanged = billing.live && up.length === 0 && down.length === 0
-  const nameOf = (id: string) => kinds.find((k) => k.id === id)?.name ?? id
+  const nameOf = (id: string) => [...kinds, ...addons].find((k) => k.id === id)?.name ?? id
 
   // Moving one slider can pull another down with it (reveals follow prospects).
   const move = (id: string, i: number) => {
@@ -52,6 +57,10 @@ export function PlanEditor({
       return next
     })
   }
+  const tick = (id: PlanAddon, on: boolean) => {
+    setReviewing(false)
+    setTicked((prev) => ({ ...prev, [id]: on ? 1 : 0 }))
+  }
 
   if (reviewing && billing.live) {
     const line = (c: PlanChange, more: boolean) => (
@@ -59,11 +68,15 @@ export function PlanEditor({
         key={c.kind}
         icon={more ? <ArrowUp className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : <ArrowDown className="h-4 w-4" />}
         title={
-          <>
-            {nameOf(c.kind)}: <span className="tabular-nums">{c.to.toLocaleString()}</span>
-          </>
+          isAddon(c.kind) ? (
+            nameOf(c.kind)
+          ) : (
+            <>
+              {nameOf(c.kind)}: <span className="tabular-nums">{c.to.toLocaleString()}</span>
+            </>
+          )
         }
-        detail={`${more ? 'Up' : 'Down'} from ${c.from.toLocaleString()}`}
+        detail={isAddon(c.kind) ? (more ? 'Added' : 'Removed') : `${more ? 'Up' : 'Down'} from ${c.from.toLocaleString()}`}
       />
     )
     return (
@@ -81,7 +94,7 @@ export function PlanEditor({
           <div className="flex flex-col gap-2">
             <p className="text-xs text-muted-foreground">
               <span className="font-semibold text-foreground">From {billing.periodEnd ? day(billing.periodEnd) : 'your next renewal'}:</span> you keep this
-              month's amounts until then, with no refund.
+              month's plan until then, with no refund.
             </p>
             <SettingsList>{down.map((c) => line(c, false))}</SettingsList>
           </div>
@@ -138,6 +151,24 @@ export function PlanEditor({
             </div>
           )
         })}
+        {addons.map((a) => {
+          // One that can't be added now can still be kept by a plan that has it.
+          const closed = !a.available && billing.plan?.[a.id] !== 1 && current?.[a.id] !== 1
+          return (
+            <SettingsCheck
+              key={a.id}
+              checked={plan[a.id] === 1}
+              onChange={(on) => tick(a.id, on)}
+              disabled={busy || closed}
+              label={<span className="font-medium">{a.name}</span>}
+              hint={
+                <>
+                  {addonPrice(a, billing.currency)}: {a.unit}.{closed && ` ${a.note ?? "It can't be added right now."}`}
+                </>
+              }
+            />
+          )
+        })}
       </div>
 
       <div className="flex flex-col">
@@ -151,8 +182,9 @@ export function PlanEditor({
       )}
       {billing.live && (
         <p className="text-xs text-muted-foreground">
-          More of anything applies straight away, and you pay the difference for the rest of this month. Less of anything applies from your
-          next renewal{billing.periodEnd ? ` on ${day(billing.periodEnd)}` : ''}.
+          More of anything{addons.length > 0 ? ', or an add-on ticked,' : ''} applies straight away, and you pay the difference for the rest of this
+          month. Less of anything{addons.length > 0 ? ', or an add-on unticked,' : ''} applies from your next renewal
+          {billing.periodEnd ? ` on ${day(billing.periodEnd)}` : ''}.
         </p>
       )}
       <SettingsActions>

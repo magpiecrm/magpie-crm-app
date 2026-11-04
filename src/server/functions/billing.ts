@@ -6,7 +6,8 @@ import { z } from 'zod'
 // { success, error } so the section can show the host's reason.
 
 const amount = z.number().int().min(0).max(100_000_000)
-const plan = z.object({ prospects: amount, reveals: amount, emails: amount })
+// An add-on left out keeps what the plan has (the host's catalogue doesn't list it).
+const plan = z.object({ prospects: amount, reveals: amount, emails: amount, warmup: z.union([z.literal(0), z.literal(1)]).optional() })
 
 async function signedIn() {
   const { requireAuth } = await import('../auth.server')
@@ -28,6 +29,16 @@ async function change<T>(fn: () => Promise<T>): Promise<Outcome<T>> {
   }
 }
 
+/**
+ * After a plan grows: the host's rules say whether inbox warmup is on it, so
+ * ask them now rather than at the next 10-minute refresh, and the Warmup page
+ * opens as soon as it's bought.
+ */
+async function planGrew() {
+  const { refreshHostRules } = await import('../prospecting/hostRules')
+  await refreshHostRules()
+}
+
 /** Their plan, or null when this copy isn't billed by its host. */
 export const getBillingFn = createServerFn({ method: 'GET' }).handler(async () => {
   await signedIn()
@@ -42,9 +53,11 @@ export const changePlanFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const actor = await signedIn()
     const { hostBilling } = await import('../managedBilling')
-    return change(() =>
-      hostBilling<{ changed: 'up' | 'down' | 'both' | 'none' }>('POST', '/plan', { plan: data.plan, actor }, { idempotencyKey: crypto.randomUUID() }).then((r) => ({ changed: r.changed })),
-    )
+    return change(async () => {
+      const r = await hostBilling<{ changed: 'up' | 'down' | 'both' | 'none' }>('POST', '/plan', { plan: data.plan, actor }, { idempotencyKey: crypto.randomUUID() })
+      if (r.changed === 'up' || r.changed === 'both') await planGrew()
+      return { changed: r.changed }
+    })
   })
 
 export const cancelPlanFn = createServerFn({ method: 'POST' })
@@ -80,7 +93,7 @@ export const finishCheckoutFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     await signedIn()
     const { hostBilling } = await import('../managedBilling')
-    return change(() => hostBilling('POST', '/checkout/finish', { sessionId: data.sessionId }).then(() => ({})))
+    return change(() => hostBilling('POST', '/checkout/finish', { sessionId: data.sessionId }).then(planGrew).then(() => ({})))
   })
 
 /** Stripe's billing page, for their card and invoices. */
