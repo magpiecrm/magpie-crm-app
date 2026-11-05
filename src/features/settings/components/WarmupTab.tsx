@@ -356,10 +356,11 @@ function SenderCheck({ senders, tests, stopped }: { senders: string[]; tests: { 
 
 /** A sender check's verdict, then where its copies landed at each provider. */
 function CheckResult({ result }: { result: PlacementTestResult | null }) {
-  if (!result) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
-  const sum = (k: 'inbox' | 'tabs' | 'spam' | 'missing' | 'waiting') => result.families.reduce((n, f) => n + f[k], 0)
+  const sum = (k: 'inbox' | 'tabs' | 'spam' | 'missing' | 'waiting') => (result?.families ?? []).reduce((n, f) => n + f[k], 0)
   const [inbox, tabs, spam, missing, waiting] = [sum('inbox'), sum('tabs'), sum('spam'), sum('missing'), sum('waiting')]
   const arrived = inbox + tabs + spam
+  // Nothing counted either way yet: no verdict to give.
+  if (!result || arrived + missing + waiting === 0) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
   const where = (k: 'spam' | 'missing') => result.families.filter((f) => f[k] > 0).map((f) => PROVIDERS[f.family] ?? f.family).join(', ')
   const when = `Checked ${longDate(result.startedAt)}.`
   return (
