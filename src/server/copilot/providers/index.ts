@@ -1,4 +1,5 @@
 import { hasKey } from '../settings'
+import { copilotManaged, MANAGED_MODEL_LABEL } from '../managedAi'
 import type { ModelAdapter } from '../agent'
 import { anthropicAdapter } from './anthropic'
 import { openaiAdapter } from './openai'
@@ -13,8 +14,9 @@ export function getAdapter(id: string): ModelAdapter {
   return adapter
 }
 
-/** Provider list for the chat's model picker: which ones have a key saved. */
+/** Provider list for the chat's model picker: which ones have a key saved. Where the host runs the copilot, just its one. */
 export function listProviders() {
+  if (copilotManaged()) return [{ id: 'claude', label: MANAGED_MODEL_LABEL, keySet: true }]
   return ADAPTERS.map((a) => ({
     id: a.id,
     label: a.id === 'claude' ? 'Claude' : a.label,

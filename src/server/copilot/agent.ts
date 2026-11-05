@@ -14,6 +14,7 @@ import { db } from '../db'
 import { COPILOT_TOOLS, getTool } from './tools'
 import { executeTool, sessionGate, sessionToolContext, type ToolOutcome } from './mcp'
 import { buildSystemPrompt } from './prompt'
+import { copilotManaged, MANAGED_MODEL_LABEL } from './managedAi'
 import { emitEvent, getSession, onSessionEnd } from './state'
 import type { CopilotEvent } from './providers/types'
 import type { CopilotTool } from './types'
@@ -225,12 +226,14 @@ export async function runTurn(adapter: ModelAdapter, turn: Turn, fetchImpl: type
     conv.items.length = before
     // Stopped on purpose (chat deleted): nobody is listening.
     if (abort.signal.aborted) return
+    // Where the host runs the copilot, people know it by its name, not the provider's.
+    const label = copilotManaged() ? MANAGED_MODEL_LABEL : adapter.label
     emit({
       type: 'error',
       message:
         err?.name === 'TimeoutError'
-          ? `${adapter.label} took too long to answer. Try again.`
-          : `Couldn't reach ${adapter.label}. Check this server's internet connection and try again.`,
+          ? `${label} took too long to answer. Try again.`
+          : `Couldn't reach ${label}. Check this server's internet connection and try again.`,
     })
   } finally {
     conv.abort = null

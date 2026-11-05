@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Bot, ArrowUp, BrainCircuit, Cpu, AlertCircle, Trash2, User, X, Check, Loader2, ShieldAlert, ShieldCheck, ShieldOff, Gauge, Search, ChevronDown, Wrench, SquarePen, History, MessageSquare } from 'lucide-react'
+import { Bot, ArrowUp, BrainCircuit, Cpu, AlertCircle, Trash2, User, X, Check, Loader2, ShieldAlert, ShieldCheck, ShieldOff, Gauge, Search, ChevronDown, Wrench, SquarePen, History, MessageSquare, Sparkles } from 'lucide-react'
 import type { PersonaFormValues, PersonaUpdates } from '../../prospects/components/PersonaForm'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
@@ -393,6 +393,8 @@ export function AIChat({
     queryFn: () => getCopilotProvidersFn(),
     staleTime: 60_000,
   })
+  // Where the host runs the copilot there's one model, shown by its name, and nothing to pick.
+  const managedLabel = providerInfo?.managed ? providerInfo.modelLabel : null
   const keySet = (id: string) => providerInfo?.providers.some(p => p.id === id && p.keySet) ?? false
   const selectedModel = pickedModel ?? (!keySet('claude') && keySet('openai') ? OPENAI_DEFAULT_OPTION : '')
   const provider = selectedModel.startsWith(OPENAI_PREFIX) ? 'openai' : 'claude'
@@ -408,7 +410,7 @@ export function AIChat({
     ? 'Hi! I can help you build this persona. Describe your product and who you sell to, and I will fill in the targeting criteria, pain points, and value proposition as we go.'
     : surveyBuilderContext
     ? 'Hi! I can help you build this survey: add questions, set up skip logic, style it, or map answers to contact fields.'
-    : 'Hello! I am your AI Copilot. I can help you manage contacts, import subscribers, build email campaigns, and analyze marketing performance.'
+    : `Hello! I am ${managedLabel ? `${managedLabel}, your AI copilot` : 'your AI Copilot'}. I can help you manage contacts, import subscribers, build email campaigns, and analyze marketing performance.`
 
   /**
    * Browser-owned state, sent alongside each turn.
@@ -702,6 +704,8 @@ export function AIChat({
               <span className="text-xs text-muted-foreground font-mono">
                 {activeTools.some(t => t.status === 'running')
                   ? `Running ${activeTools.filter(t => t.status === 'running').map(t => t.name).join(', ')}...`
+                  : managedLabel
+                  ? `${managedLabel} is thinking...`
                   : 'Thinking with Claude...'}
               </span>
             </div>
@@ -745,8 +749,17 @@ export function AIChat({
                 selectedId={permissionMode}
                 onSelect={(id) => setPermissionMode(id as PermissionMode)}
               />
-              <ComposerDropdown options={MODEL_OPTIONS} selectedId={selectedModel} onSelect={setPickedModel} />
-              <ComposerDropdown options={EFFORT_OPTIONS} selectedId={effort} onSelect={setEffort} align="right" />
+              {managedLabel ? (
+                <span className="flex items-center gap-1 min-w-0 px-1.5 py-1 text-[11px] font-medium text-muted-foreground" title={managedLabel}>
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 text-accent" />
+                  <span className="min-w-0 truncate">{managedLabel}</span>
+                </span>
+              ) : (
+                <>
+                  <ComposerDropdown options={MODEL_OPTIONS} selectedId={selectedModel} onSelect={setPickedModel} />
+                  <ComposerDropdown options={EFFORT_OPTIONS} selectedId={effort} onSelect={setEffort} align="right" />
+                </>
+              )}
             </div>
 
             <button

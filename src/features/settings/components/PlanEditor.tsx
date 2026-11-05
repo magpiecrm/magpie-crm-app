@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
 import type { BillingStatus, Plan, PlanAddon } from '../../../server/managedBilling'
-import { addonPrice, capped, formatPence, isAddon, monthlyPence, nearestStep, planChanges, unitPrice, PLAN_KINDS, type PlanChange } from '../planMath'
+import { addonPrice, capped, formatPence, isAddon, isBudget, kindAmount, monthlyPence, nearestStep, planChanges, unitPrice, type PlanChange } from '../planMath'
 import { SettingsActions, SettingsCheck, SettingsList, SettingsRow } from './SettingsBlock'
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
@@ -27,7 +27,7 @@ export function PlanEditor({
   // A first plan starts where the website's pricing does.
   const start: Plan = current ?? { prospects: 1250, reveals: 250, emails: 5000 }
   const [at, setAt] = useState<Record<string, number>>(() =>
-    Object.fromEntries(kinds.map((k) => [k.id, nearestStep(k.steps, start[k.id])])),
+    Object.fromEntries(kinds.map((k) => [k.id, nearestStep(k.steps, start[k.id] ?? 0)])),
   )
   // Only the add-ons the host lists are sent: one it doesn't keeps what the plan has.
   const [ticked, setTicked] = useState<Partial<Record<PlanAddon, 0 | 1>>>(() =>
@@ -36,7 +36,8 @@ export function PlanEditor({
   const [reviewing, setReviewing] = useState(false)
 
   const planAt = (positions: Record<string, number>) => {
-    const raw = Object.fromEntries(PLAN_KINDS.map((k) => [k, 0])) as Plan
+    // An AI budget the host doesn't list is left out, so the plan keeps what it has.
+    const raw: Plan = { prospects: 0, reveals: 0, emails: 0 }
     for (const k of kinds) raw[k.id] = k.steps[positions[k.id]] ?? 0
     return capped(raw, kinds)
   }
@@ -46,6 +47,10 @@ export function PlanEditor({
   const { up, down } = planChanges(current, plan)
   const unchanged = billing.live && up.length === 0 && down.length === 0
   const nameOf = (id: string) => [...kinds, ...addons].find((k) => k.id === id)?.name ?? id
+  const amountOf = (id: string, n: number) => {
+    const kind = kinds.find((k) => k.id === id)
+    return kind ? kindAmount(kind, n, billing.currency) : n.toLocaleString()
+  }
 
   // Moving one slider can pull another down with it (reveals follow prospects).
   const move = (id: string, i: number) => {
@@ -53,7 +58,7 @@ export function PlanEditor({
     setAt((prev) => {
       const next = { ...prev, [id]: i }
       const fitted = planAt(next)
-      for (const k of kinds) next[k.id] = nearestStep(k.steps, fitted[k.id])
+      for (const k of kinds) next[k.id] = nearestStep(k.steps, fitted[k.id] ?? 0)
       return next
     })
   }
@@ -72,11 +77,11 @@ export function PlanEditor({
             nameOf(c.kind)
           ) : (
             <>
-              {nameOf(c.kind)}: <span className="tabular-nums">{c.to.toLocaleString()}</span>
+              {nameOf(c.kind)}: <span className="tabular-nums">{amountOf(c.kind, c.to)}</span>
             </>
           )
         }
-        detail={isAddon(c.kind) ? (more ? 'Added' : 'Removed') : `${more ? 'Up' : 'Down'} from ${c.from.toLocaleString()}`}
+        detail={isAddon(c.kind) ? (more ? 'Added' : 'Removed') : `${more ? 'Up' : 'Down'} from ${amountOf(c.kind, c.from)}`}
       />
     )
     return (
@@ -125,14 +130,14 @@ export function PlanEditor({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-4">
         {kinds.map((k) => {
-          const shown = plan[k.id]
+          const shown = plan[k.id] ?? 0
           return (
             <div key={k.id} className="flex flex-col gap-1.5">
               <div className="flex items-baseline justify-between gap-3 text-sm">
                 <label htmlFor={`plan-${k.id}`} className="font-medium text-foreground">
                   {k.name}
                 </label>
-                <span className="font-medium tabular-nums text-foreground">{shown.toLocaleString()}</span>
+                <span className="font-medium tabular-nums text-foreground">{kindAmount(k, shown, billing.currency)}</span>
               </div>
               <input
                 id={`plan-${k.id}`}
@@ -145,7 +150,11 @@ export function PlanEditor({
                 className="w-full accent-accent cursor-pointer"
               />
               <p className="text-xs text-muted-foreground">
-                {unitPrice(k, billing.currency)}: {k.unit}.
+                {/* A budget is its own price: say what it's for, not a unit price. */}
+                {isBudget(k.id)
+                  ? 'For the copilot, which uses it as it works. Settings → Copilot shows how much of it is used'
+                  : `${unitPrice(k, billing.currency)}: ${k.unit}`}
+                .
                 {k.maxShareOf && ` Up to ${Math.round(k.maxShareOf.share * 100)}% of your ${nameOf(k.maxShareOf.kind).toLowerCase()}.`}
               </p>
             </div>

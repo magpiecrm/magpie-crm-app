@@ -14,10 +14,15 @@
 // what's been used. Each allowance stops only its own action: out of prospects,
 // search stops but sending still works (and so do reveals, unless they draw on
 // prospect credits).
+//
+// `ai` is the copilot's AI budget where the host runs the copilot
+// (COPILOT_MANAGED, copilot/managedAi.ts), in thousandths of a penny or cent
+// of the plan's currency: the host says what each call used. It's shown as a
+// share of the budget, never as an amount.
 
 import { db } from './db'
 
-export const ALLOWANCE_KINDS = ['prospects', 'reveals', 'emailsSent'] as const
+export const ALLOWANCE_KINDS = ['prospects', 'reveals', 'emailsSent', 'ai'] as const
 
 /*
  * The `prospects` allowance is in prospect credits, one for each person a
@@ -48,6 +53,7 @@ const WHAT: Record<AllowanceKind, [one: string, many: string]> = {
   prospects: ['prospect credit', 'prospect credits'],
   reveals: ['email reveal', 'email reveals'],
   emailsSent: ['email', 'emails'],
+  ai: ['of the AI budget', 'of the AI budget'],
 }
 
 const fmt = (n: number) => Math.floor(n).toLocaleString('en-GB')
@@ -86,7 +92,8 @@ export function setAllowance(
     periodStart: input.periodStart,
     periodEnd: input.periodEnd ?? null,
     limits,
-    used: samePeriod ? current!.used : { prospects: 0, reveals: 0, emailsSent: 0 },
+    // An allowance saved before the AI budget existed has no count for it.
+    used: samePeriod ? { ...current!.used, ai: current!.used.ai ?? 0 } : { prospects: 0, reveals: 0, emailsSent: 0, ai: 0 },
     upgradeUrl: input.upgradeUrl ?? null,
     ...(input.sendingPaused ? { sendingPaused: true } : {}),
     ...(input.revealCredits && input.revealCredits > 0 ? { revealCredits: input.revealCredits } : {}),
@@ -108,7 +115,7 @@ export function remaining(kind: AllowanceKind): number {
   if (kind === 'reveals' && a?.revealCredits) return Math.floor(remaining('prospects') / a.revealCredits)
   const limit = a?.limits[kind]
   if (!a || limit === undefined) return Infinity
-  return Math.max(0, limit - a.used[kind])
+  return Math.max(0, limit - (a.used[kind] ?? 0))
 }
 
 /**
@@ -120,8 +127,21 @@ export function remaining(kind: AllowanceKind): number {
 export function allowanceItems(a: Allowance) {
   return ALLOWANCE_KINDS.flatMap((kind) => {
     const limit = a.limits[kind]
-    return limit === undefined ? [] : [{ kind, left: Math.floor(Math.max(0, limit - a.used[kind])), limit }]
+    // The AI budget is a share, not a count (aiBudgetUsed).
+    return kind === 'ai' || limit === undefined ? [] : [{ kind, left: Math.floor(Math.max(0, limit - (a.used[kind] ?? 0))), limit }]
   })
+}
+
+/**
+ * How much of this period's AI budget is used, in whole percent, or null
+ * when there's no limit on it. `none`: the plan has no AI budget at all.
+ */
+export function aiBudgetUsed(a: Allowance): { percent: number; out: boolean; none: boolean } | null {
+  const limit = a.limits.ai
+  if (limit === undefined) return null
+  const used = a.used.ai ?? 0
+  const out = used >= limit
+  return { percent: out ? 100 : Math.min(99, Math.floor((used / limit) * 100)), out, none: limit === 0 }
 }
 
 /**
@@ -148,6 +168,15 @@ export function requireAllowance(kind: AllowanceKind, n = 1, action?: string) {
     )
   }
   const limit = a.limits[kind]!
+  if (kind === 'ai') {
+    throw new AllowanceError(
+      kind,
+      limit === 0
+        ? 'Your plan has no AI budget, so the copilot is off. Add one in Settings → Plan and billing.'
+        : "You've used this month's AI budget. Raise it in Settings → Plan and billing, or wait for it to reset.",
+      a.upgradeUrl,
+    )
+  }
   const message =
     limit === 0
       ? `Your plan has no ${noun(kind, limit)} available right now. See Settings → Billing.`
@@ -163,7 +192,7 @@ export function countAgainstAllowance(deltas: Partial<Record<AllowanceKind, numb
   if (!a) return
   for (const kind of ALLOWANCE_KINDS) {
     const n = deltas[kind]
-    if (n) a.used[kind] += n
+    if (n) a.used[kind] = (a.used[kind] ?? 0) + n
   }
   // Reveals drawing on prospect credits use them too (and are still counted).
   if (a.revealCredits && deltas.reveals) a.used.prospects += deltas.reveals * a.revealCredits

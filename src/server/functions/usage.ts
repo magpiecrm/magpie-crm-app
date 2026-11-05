@@ -5,7 +5,7 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
   const { requireAuth } = await import('../auth.server')
   await requireAuth()
   const { monthOf, usageForMonth } = await import('../usage')
-  const { allowanceItems, getAllowance } = await import('../allowance')
+  const { aiBudgetUsed, allowanceItems, getAllowance } = await import('../allowance')
   const { env } = await import('../env')
   const month = monthOf(new Date())
   const a = getAllowance()
@@ -18,6 +18,8 @@ export const getUsageFn = createServerFn({ method: 'GET' }).handler(async () => 
     /** Prospect credits each email reveal uses, when reveals draw on them. */
     revealCredits: a.revealCredits ?? null,
     items: allowanceItems(a),
+    /** The copilot's AI budget, as a share used (none where the host doesn't run the copilot). */
+    ai: aiBudgetUsed(a),
   }
   return { month, ...usageForMonth(month), allowance, billingManaged }
 })

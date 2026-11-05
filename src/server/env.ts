@@ -112,6 +112,13 @@ export const env = {
   openai: {
     apiKey: () => readEnv('OPENAI_API_KEY'),
   },
+  /**
+   * COPILOT_MANAGED=on: the copilot runs on the host's AI, through its
+   * /v1/ai/messages at REACHER_URL with this copy's REACHER_SECRET, and is
+   * paid for from the plan's AI budget (copilot/managedAi.ts). No keys of
+   * this copy's own are used, and Settings → Copilot shows the budget instead.
+   */
+  copilotManaged: () => ['on', 'true', '1', 'yes'].includes(readEnv('COPILOT_MANAGED')?.toLowerCase() ?? ''),
   // The email verification server runs as its own service. Optional:
   // without it, email finding falls back to an unverified best-guess candidate.
   // URL, secret, FROM and HELO can also be set in Settings → Email verification.

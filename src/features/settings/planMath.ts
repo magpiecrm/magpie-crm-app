@@ -4,7 +4,9 @@
 
 import type { CatalogueAddon, CatalogueKind, Plan, PlanAddon, PlanKind } from '../../server/managedBilling'
 
-export const PLAN_KINDS: PlanKind[] = ['prospects', 'reveals', 'emails']
+export const PLAN_KINDS: PlanKind[] = ['prospects', 'reveals', 'emails', 'ai']
+/** Kinds bought as an amount of money a month rather than a count (the AI budget). */
+export const isBudget = (id: string) => id === 'ai'
 export const PLAN_ADDONS: PlanAddon[] = ['warmup']
 export const isAddon = (id: string): id is PlanAddon => (PLAN_ADDONS as string[]).includes(id)
 
@@ -21,8 +23,8 @@ export function capped(plan: Plan, kinds: CatalogueKind[]): Plan {
   const out = { ...plan }
   for (const kind of kinds) {
     if (!kind.maxShareOf) continue
-    const cap = Math.floor(out[kind.maxShareOf.kind] * kind.maxShareOf.share)
-    if (out[kind.id] <= cap) continue
+    const cap = Math.floor((out[kind.maxShareOf.kind] ?? 0) * kind.maxShareOf.share)
+    if ((out[kind.id] ?? 0) <= cap) continue
     out[kind.id] = [...kind.steps].reverse().find((s) => s <= cap) ?? 0
   }
   return out
@@ -38,7 +40,7 @@ export const moneyLocale = (currency: string) => (currency.toUpperCase() === 'US
 /** The monthly price in pence or cents (unit prices are in thousandths of one), add-ons ticked included. */
 export function monthlyPence(plan: Plan, kinds: CatalogueKind[], addons: CatalogueAddon[] = []): number {
   return (
-    kinds.reduce((sum, k) => sum + (plan[k.id] * k.unitMillipence) / 1000, 0) +
+    kinds.reduce((sum, k) => sum + ((plan[k.id] ?? 0) * k.unitMillipence) / 1000, 0) +
     addonsOn(plan, addons).reduce((sum, a) => sum + a.unitMillipence / 1000, 0)
   )
 }
@@ -52,6 +54,12 @@ export function unitPrice(kind: CatalogueKind, currency = 'GBP'): string {
   const pounds = (kind.unitMillipence * kind.per) / 100_000
   const text = pounds.toLocaleString(moneyLocale(currency), { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 4 })
   return kind.per === 1 ? `${text} each` : `${text} per ${kind.per.toLocaleString('en-GB')}`
+}
+
+/** An amount of a kind as people read it: "1,250", or for a budget "£10 a month". */
+export function kindAmount(kind: CatalogueKind, n: number, currency = 'GBP'): string {
+  if (!isBudget(kind.id)) return n.toLocaleString()
+  return `${formatPence((n * kind.unitMillipence) / 1000, currency).replace(/\.00$/, '')} a month`
 }
 
 /** An add-on's price: "£5.00 a month". */

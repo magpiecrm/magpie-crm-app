@@ -6,8 +6,8 @@ import { z } from 'zod'
 // { success, error } so the section can show the host's reason.
 
 const amount = z.number().int().min(0).max(100_000_000)
-// An add-on left out keeps what the plan has (the host's catalogue doesn't list it).
-const plan = z.object({ prospects: amount, reveals: amount, emails: amount, warmup: z.union([z.literal(0), z.literal(1)]).optional() })
+// An add-on or AI budget left out keeps what the plan has (the host's catalogue doesn't list it).
+const plan = z.object({ prospects: amount, reveals: amount, emails: amount, ai: amount.optional(), warmup: z.union([z.literal(0), z.literal(1)]).optional() })
 
 async function signedIn() {
   const { requireAuth } = await import('../auth.server')

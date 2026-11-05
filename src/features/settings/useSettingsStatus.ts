@@ -27,6 +27,8 @@ export function useSettingsStatus(): {
   billingManaged: boolean
   /** The host offers inbox warmup here, or it can be added to the plan: Warmup is shown. */
   warmupShown: boolean
+  /** COPILOT_MANAGED: the host runs the copilot, so Copilot is about its AI budget, not keys. */
+  copilotManaged: boolean
 } {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
@@ -112,7 +114,17 @@ export function useSettingsStatus(): {
   }
 
   const c = copilot.data
-  if (c) {
+  const ai = usage.data?.allowance?.ai
+  if (c?.managed) {
+    // The host runs the copilot: what matters is the AI budget.
+    statuses.copilot = !ai
+      ? { level: 'info', text: 'Runs on your plan.' }
+      : ai.none
+        ? { level: 'warning', text: 'Add an AI budget to your plan to use the copilot.', action: 'Add budget' }
+        : ai.out
+        ? { level: 'warning', text: "This month's AI budget is used up.", action: 'Raise budget' }
+        : { level: 'ok', text: `${ai.percent}% of this month's AI budget used.` }
+  } else if (c) {
     const keys = [c.anthropic.isSet && 'Anthropic', c.openai.isSet && 'OpenAI'].filter(Boolean)
     statuses.copilot = c.credsUnreadable
       ? { level: 'error', text: "The saved API keys can't be read. Enter them again.", action: 'Fix' }
@@ -144,5 +156,12 @@ export function useSettingsStatus(): {
   }
 
   const isLoading = [prospecting, copilot, sending, senders, team].some((q) => q.isLoading)
-  return { statuses, isLoading, managed: Boolean(p?.managed), billingManaged, warmupShown: Boolean(w && (w.offered || w.purchasable)) }
+  return {
+    statuses,
+    isLoading,
+    managed: Boolean(p?.managed),
+    billingManaged,
+    warmupShown: Boolean(w && (w.offered || w.purchasable)),
+    copilotManaged: Boolean(c?.managed),
+  }
 }

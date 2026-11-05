@@ -1,8 +1,10 @@
 // Claude models through Anthropic's Messages API, with the user's own
 // Anthropic API key (never a Claude.ai login: Anthropic's terms don't allow
-// apps to offer or share one).
+// apps to offer or share one). Where the host runs the copilot, the same
+// request goes to the host instead (managedAi.ts).
 
 import { errorBody, toolSchema, type ModelAdapter, type ToolCall } from '../agent'
+import { budgetRefusal, copilotManaged, managedError, managedUrl, recordManagedCall } from '../managedAi'
 import { requireAnthropicKey } from '../settings'
 import type { ToolOutcome } from '../mcp'
 
@@ -43,9 +45,18 @@ export const anthropicAdapter: ModelAdapter = {
     const toolDefs: any[] = tools.map((t) => ({ name: t.name, description: t.description, input_schema: toolSchema(t) }))
     toolDefs[toolDefs.length - 1] = { ...toolDefs[toolDefs.length - 1], cache_control: { type: 'ephemeral' } }
     const useEffort = effort && EFFORTS.has(effort) && supportsEffort(model)
-    const res = await fetchImpl(API_URL, {
+    const managed = copilotManaged()
+    if (managed) {
+      const refused = budgetRefusal()
+      if (refused) return refused
+    }
+    const res = await fetchImpl(managed ? managedUrl()! : API_URL, {
       method: 'POST',
-      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      headers: {
+        ...(managed ? { 'x-reacher-secret': apiKey } : { 'x-api-key': apiKey }),
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
       body: JSON.stringify({
         model,
         max_tokens: effort === 'xhigh' || effort === 'max' ? 32_000 : 16_000,
@@ -56,6 +67,7 @@ export const anthropicAdapter: ModelAdapter = {
       }),
       signal,
     })
+    if (!res.ok && managed) return managedError(res)
     if (!res.ok) {
       const error = await errorBody(res)
       if (res.status === 401) return { ok: false, fatal: true, message: 'Anthropic rejected the copilot\'s API key. Check it in Settings → Copilot.' }
@@ -67,6 +79,7 @@ export const anthropicAdapter: ModelAdapter = {
       return { ok: false, message: `Anthropic returned HTTP ${res.status}${error?.message ? `: ${error.message}` : '.'}` }
     }
 
+    if (managed) recordManagedCall(res)
     const json: any = await res.json()
     const content: any[] = json.content ?? []
     const texts: string[] = []

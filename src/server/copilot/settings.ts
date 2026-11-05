@@ -7,10 +7,14 @@
 // (code.claude.com/docs/en/legal-and-compliance). So a key is the only way in:
 // saved here (encrypted, like the prospecting keys) or set as
 // ANTHROPIC_API_KEY / OPENAI_API_KEY. Usage is billed to whoever owns the key.
+//
+// Where the host runs the copilot (COPILOT_MANAGED, managedAi.ts) none of
+// this copy's keys are used, and none can be saved.
 
 import { db } from '../db'
 import { env } from '../env'
 import { decryptToken, encryptToken } from '../crypto'
+import { copilotManaged, requireManagedSecret } from './managedAi'
 
 interface Secrets {
   anthropicApiKey?: string
@@ -41,8 +45,9 @@ function readKey(field: KeyField): { value?: string; source: Source } {
   return fromEnv ? { value: fromEnv, source: 'env' } : { source: null }
 }
 
-/** The key Claude runs with. Throws a message that points at Settings. */
+/** The key Claude runs with (the host's secret where it runs the copilot). Throws a message that points at Settings. */
 export function requireAnthropicKey(): string {
+  if (copilotManaged()) return requireManagedSecret()
   const { value } = readKey('anthropicApiKey')
   if (!value) throw new Error('The copilot needs an Anthropic API key for Claude models. Add one in Settings → Copilot.')
   return value
@@ -50,12 +55,14 @@ export function requireAnthropicKey(): string {
 
 /** The key OpenAI models run with. Throws a message that points at Settings. */
 export function requireOpenAIKey(): string {
+  if (copilotManaged()) throw new Error('The copilot here runs on your plan, not on OpenAI.')
   const { value } = readKey('openaiApiKey')
   if (!value) throw new Error('The copilot needs an OpenAI API key for OpenAI models. Add one in Settings → Copilot.')
   return value
 }
 
 export function hasKey(field: KeyField): boolean {
+  if (copilotManaged()) return false
   return Boolean(readKey(field).value)
 }
 
@@ -75,6 +82,7 @@ const KEY_FORMAT: Record<KeyField, { test: (key: string) => boolean; error: stri
 }
 
 export function saveCopilotSettings(input: { anthropicApiKey?: string; openaiApiKey?: string; clear?: KeyField[] }) {
+  if (copilotManaged()) throw new Error('The copilot here runs on your plan, so it takes no API keys.')
   const { secrets, unreadable } = readSecrets()
   const next: Secrets = unreadable ? {} : { ...secrets }
   const typed: Array<[KeyField, string]> = []
@@ -104,6 +112,8 @@ function masked(field: KeyField) {
 /** What the settings form shows. The keys themselves are never sent back. */
 export function getMaskedCopilotSettings() {
   return {
+    /** The host runs the copilot: the page shows the AI budget instead of keys. */
+    managed: copilotManaged(),
     anthropic: masked('anthropicApiKey'),
     openai: masked('openaiApiKey'),
     credsUnreadable: readSecrets().unreadable,

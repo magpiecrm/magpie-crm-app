@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CatalogueAddon, CatalogueKind } from '../../server/managedBilling'
-import { addonPrice, addonsOn, capped, formatPence, monthlyPence, nearestStep, planChanges, unitPrice } from './planMath'
+import { addonPrice, addonsOn, capped, formatPence, kindAmount, monthlyPence, nearestStep, planChanges, unitPrice } from './planMath'
 
 const kinds: CatalogueKind[] = [
   { id: 'prospects', name: 'Prospects', unit: 'person found', per: 1, steps: [0, 100, 500, 1000, 2000], unitMillipence: 900 },
@@ -65,5 +65,19 @@ describe('plan maths', () => {
     // Left out of the new plan (no add-ons in the catalogue): it stays as it is.
     expect(planChanges({ ...plan, warmup: 1 }, plan)).toEqual({ up: [], down: [] })
     expect(planChanges(null, { ...plan, warmup: 1 }).up.map((c) => c.kind)).toEqual(['prospects', 'emails', 'warmup'])
+  })
+
+  it('prices an AI budget as money a month, and keeps one an older host leaves out', () => {
+    const ai: CatalogueKind = { id: 'ai', name: 'AI budget', unit: 'of the copilot a month', per: 1, steps: [0, 5, 10, 20], unitMillipence: 100_000 }
+    expect(kindAmount(ai, 10, 'GBP')).toBe('£10 a month')
+    expect(kindAmount(ai, 5, 'USD')).toBe('$5 a month')
+    expect(kindAmount(kinds[0], 1250)).toBe('1,250')
+    const plan = { prospects: 1000, reveals: 0, emails: 0, ai: 10 }
+    // 1,000 × £0.009 + £10.
+    expect(monthlyPence(plan, [...kinds, ai])).toBe(1900)
+    // A host that doesn't list it: the budget isn't priced here, and a plan without it changes nothing.
+    expect(monthlyPence(plan, kinds)).toBe(900)
+    expect(planChanges(plan, { prospects: 1000, reveals: 0, emails: 0 })).toEqual({ up: [], down: [] })
+    expect(planChanges(plan, { ...plan, ai: 20 }).up).toEqual([{ kind: 'ai', from: 10, to: 20 }])
   })
 })

@@ -99,6 +99,13 @@ const USAGE_COUNTERS = [
   /** Web searches this copy ran itself for hiring and funding signals (companySignals.ts; a hosted copy's host runs its own). */
   'signalSearches',
   /**
+   * Where the host runs the copilot (copilot/managedAi.ts): its model calls,
+   * and what they used of the AI budget, in thousandths of a penny or cent
+   * as the host charged them. This is what a plan's `ai` allowance counts.
+   */
+  'aiRequests',
+  'aiCharge',
+  /**
    * How each finished email lookup ended (by Reveal or when saving), one
    * counter per outcome: `lookupVerified`, and the reasons no address was
    * confirmed (`lookupCatchAll`, `lookupRejected`, …). Their total is every
@@ -156,7 +163,7 @@ export function recordUsage(deltas: Partial<UsageCounts>, now = new Date()) {
   }
   pending.set(day, row)
   // Straight away, so the next search or send already sees what's left.
-  countAgainstAllowance({ prospects: deltas.prospectCredits, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent })
+  countAgainstAllowance({ prospects: deltas.prospectCredits, reveals: deltas.emailsFound, emailsSent: deltas.emailsSent, ai: deltas.aiCharge })
   // unref: a pending count must not keep the process (or a test run) alive.
   g.__usageTimer ??= setTimeout(flush, FLUSH_MS).unref?.() ?? null
 }

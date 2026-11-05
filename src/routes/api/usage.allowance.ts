@@ -7,7 +7,8 @@ import { z } from 'zod'
  *
  *   GET    /api/usage/allowance   the allowance and what's been used
  *   PUT    /api/usage/allowance   set it: { periodStart, periodEnd?, prospects?,
- *                                 reveals?, emailsSent?, upgradeUrl?, sendingPaused?,
+ *                                 reveals?, emailsSent?, ai? (the copilot's AI budget),
+ *                                 upgradeUrl?, sendingPaused?,
  *                                 revealCredits? (reveals use this many prospect credits) }
  *   DELETE /api/usage/allowance   no limits
  *   Authorization: Bearer <USAGE_API_TOKEN>
@@ -25,6 +26,8 @@ const allowanceInput = z.object({
   prospects: amount,
   reveals: amount,
   emailsSent: amount,
+  /** The copilot's AI budget, in thousandths of a penny or cent (allowance.ts). */
+  ai: amount,
   upgradeUrl: z.string().url().startsWith('https://').nullable().optional(),
   sendingPaused: z.boolean().optional(),
   revealCredits: z.number().int().min(1).max(100).nullable().optional(),

@@ -9,6 +9,7 @@ import { queryKeys } from '../../../queryKeys'
 import { billingPortalFn, cancelPlanFn, changePlanFn, checkoutFn, finishCheckoutFn, getBillingFn, keepPlanFn } from '../../../server/functions'
 import type { Plan } from '../../../server/managedBilling'
 import { addonsOn, formatPence } from '../planMath'
+import { AiBudgetMeter } from './AiBudgetMeter'
 import { AllowanceMeter } from './AllowanceMeter'
 import { PlanEditor } from './PlanEditor'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsOption, SettingsPanel } from './SettingsBlock'
@@ -201,6 +202,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
               </dl>
             )}
             <AllowanceMeter showUpgrade={false} heading={false} />
+            <AiBudgetMeter />
           </SettingsBlock>
         )}
 

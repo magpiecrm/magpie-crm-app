@@ -9,15 +9,16 @@
 
 import { env } from './env'
 
-export type PlanKind = 'prospects' | 'reveals' | 'emails'
+/** `ai` is the copilot's AI budget, in whole pounds or dollars a month, where the host runs the copilot. */
+export type PlanKind = 'prospects' | 'reveals' | 'emails' | 'ai'
 /** Bought whole rather than in amounts, ticked on or off (warmup: one sender warmed). */
 export type PlanAddon = 'warmup'
 /**
- * A plan: an amount of each kind, and 1 for each add-on it has. An add-on
- * missing from the host's answer (an older host) is off; missing from a plan
- * sent to the host, it keeps what the plan has.
+ * A plan: an amount of each kind, and 1 for each add-on it has. An add-on or
+ * AI budget missing from the host's answer (an older host) is none; missing
+ * from a plan sent to the host, it keeps what the plan has.
  */
-export type Plan = Record<PlanKind, number> & Partial<Record<PlanAddon, 0 | 1>>
+export type Plan = Record<Exclude<PlanKind, 'ai'>, number> & { ai?: number } & Partial<Record<PlanAddon, 0 | 1>>
 
 const ADDONS: readonly PlanAddon[] = ['warmup']
 

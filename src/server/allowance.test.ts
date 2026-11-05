@@ -8,7 +8,7 @@ const scratchDir = mkdtempSync(join(tmpdir(), 'allowance-test-'))
 const dbFile = join(scratchDir, 'local_db.json')
 process.env.DATABASE_PATH = dbFile
 
-const { allowanceItems, setAllowance, clearAllowance, getAllowance, remaining, requireAllowance, AllowanceError } = await import('./allowance')
+const { aiBudgetUsed, allowanceItems, setAllowance, clearAllowance, getAllowance, remaining, requireAllowance, AllowanceError } = await import('./allowance')
 const { recordUsage, getUsage } = await import('./usage')
 const { Route } = await import('../routes/api/usage.allowance')
 const handlers = (Route as any).options.server.handlers
@@ -113,6 +113,35 @@ describe('allowances', () => {
     expect(allowanceItems(getAllowance()!)).toEqual([{ kind: 'emailsSent', left: 700, limit: 1000 }])
   })
 
+  it('counts the AI budget as a share used, never as an amount', () => {
+    setAllowance({ ...period, prospects: 100, ai: 500_000 })
+    recordUsage({ aiRequests: 2, aiCharge: 212_345 })
+    expect(aiBudgetUsed(getAllowance()!)).toEqual({ percent: 42, out: false, none: false })
+    // Not one of the counted allowances (the sidebar and plan meters show those).
+    expect(allowanceItems(getAllowance()!)).toEqual([{ kind: 'prospects', left: 100, limit: 100 }])
+    recordUsage({ aiCharge: 290_000 })
+    expect(aiBudgetUsed(getAllowance()!)).toEqual({ percent: 100, out: true, none: false })
+    expect(() => requireAllowance('ai')).toThrow(/used this month's AI budget/)
+  })
+
+  it('stops the copilot when the plan has no AI budget, and leaves it unlimited without one set', () => {
+    setAllowance({ ...period, prospects: 100, ai: 0 })
+    expect(aiBudgetUsed(getAllowance()!)).toMatchObject({ none: true })
+    expect(() => requireAllowance('ai')).toThrow(/no AI budget/)
+    setAllowance({ ...period, prospects: 100 })
+    expect(aiBudgetUsed(getAllowance()!)).toBeNull()
+    expect(() => requireAllowance('ai')).not.toThrow()
+  })
+
+  it('counts the AI budget on an allowance saved before it existed', () => {
+    setAllowance({ ...period, prospects: 100 })
+    const saved = getAllowance()!
+    delete (saved.used as any).ai
+    setAllowance({ ...period, prospects: 100, ai: 1000 })
+    recordUsage({ aiCharge: 250 })
+    expect(getAllowance()!.used.ai).toBe(250)
+  })
+
   it('is saved with the usage counts', async () => {
     setAllowance({ ...period, reveals: 50 })
     recordUsage({ emailsFound: 4 })
@@ -149,6 +178,12 @@ describe('/api/usage/allowance', () => {
     expect((await (await call('GET', 'tok_123')).json()).allowance.used.prospects).toBe(7)
     expect((await call('DELETE', 'tok_123')).status).toBe(200)
     expect(remaining('prospects')).toBe(Infinity)
+  })
+
+  it('takes an AI budget', async () => {
+    process.env.USAGE_API_TOKEN = 'tok_123'
+    const put = await call('PUT', 'tok_123', { ...period, prospects: 500, ai: 1_000_000 })
+    expect((await put.json()).allowance).toMatchObject({ limits: { prospects: 500, ai: 1_000_000 }, used: { ai: 0 } })
   })
 
   it('refuses a malformed allowance', async () => {

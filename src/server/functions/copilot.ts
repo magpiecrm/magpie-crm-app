@@ -3,8 +3,9 @@ import { z } from 'zod'
 
 // The copilot itself lives in `src/server/copilot/` (entry point:
 // `src/routes/api/copilot/stream.ts`). What's here is its settings: the
-// user's own Anthropic and OpenAI API keys (see `copilot/settings.ts`), plus
-// the stored chat history.
+// user's own Anthropic and OpenAI API keys (see `copilot/settings.ts`), or
+// where the host runs it, its AI budget (`copilot/managedAi.ts`), plus the
+// stored chat history.
 
 export const getCopilotSettingsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -58,8 +59,13 @@ export const getCopilotProvidersFn = createServerFn({ method: 'GET' })
     await requireAuth()
     const { listProviders } = await import('../copilot/providers')
     const { PERMISSION_MODES, DEFAULT_PERMISSION_MODE } = await import('../copilot/permissions')
+    const { copilotManaged, MANAGED_MODEL_LABEL } = await import('../copilot/managedAi')
+    const managed = copilotManaged()
     return {
       providers: listProviders(),
+      /** The host runs the copilot: one model, shown by this name, and no picker. */
+      managed,
+      modelLabel: managed ? MANAGED_MODEL_LABEL : null,
       permissionModes: PERMISSION_MODES,
       defaultPermissionMode: DEFAULT_PERMISSION_MODE,
     }

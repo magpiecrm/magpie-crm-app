@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, Save, Trash2, Zap } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ArrowUpRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Field } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { SecretInput } from '../../../components/ui/SecretInput'
+import { queryKeys } from '../../../queryKeys'
 import {
+  getCopilotProvidersFn,
   getCopilotSettingsFn,
+  getUsageFn,
   saveCopilotSettingsFn,
   testAnthropicKeyFn,
   testOpenAIKeyFn,
 } from '../../../server/functions'
+import { AiBudgetMeter } from './AiBudgetMeter'
 import { SettingsActions, SettingsBlock, SettingsPanel } from './SettingsBlock'
 
 type Masked = Awaited<ReturnType<typeof getCopilotSettingsFn>>
@@ -150,9 +155,68 @@ function KeySection({ spec, settings, onSaved }: { spec: KeySpec; settings: Mask
 }
 
 /**
+ * Where the host runs the copilot (COPILOT_MANAGED): there are no keys, just
+ * how much of this month's AI budget it has used, and where to change it.
+ */
+function ManagedCopilot() {
+  const { data: usage } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn() })
+  const { data: providers } = useQuery({ queryKey: queryKeys.copilot.providers(), queryFn: () => getCopilotProvidersFn() })
+  // Null: no limit on this workspace (e.g. its host's own).
+  const ai = usage?.allowance?.ai ?? null
+  const name = providers?.modelLabel ?? 'The copilot'
+  const billingManaged = Boolean(usage?.billingManaged)
+
+  return (
+    <div className="flex flex-col gap-4">
+      {ai?.none ? (
+        <Notice level="warning">Your plan has no AI budget, so {name} is off until you add one.</Notice>
+      ) : ai?.out ? (
+        <Notice level="warning">{name} has used this month's AI budget, so it's off until the budget resets or you raise it.</Notice>
+      ) : null}
+      <SettingsPanel>
+        <SettingsBlock
+          title="AI budget"
+          description={
+            <p>
+              {name} runs on your plan. It uses the AI budget as it works: a quick question takes a little, a long task with many
+              steps takes more. The budget resets with your plan each month.
+            </p>
+          }
+        >
+          {!ai ? (
+            <p className="text-sm text-muted-foreground">There's no limit on this workspace's AI use.</p>
+          ) : ai.none ? (
+            <p className="text-sm text-muted-foreground">No AI budget on your plan.</p>
+          ) : (
+            <AiBudgetMeter />
+          )}
+          {billingManaged && (
+            <SettingsActions>
+              <a
+                href="/settings?tab=billing"
+                className="inline-flex items-center gap-1 rounded-md-s border border-border px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
+              >
+                Change budget <ArrowUpRight className="h-3.5 w-3.5" />
+              </a>
+            </SettingsActions>
+          )}
+        </SettingsBlock>
+        <SettingsBlock title="Your data">
+          <Notice>
+            What you ask {name}, and the contact data it reads to answer, is processed by Anthropic for your hosting provider, under its
+            data processing terms.
+          </Notice>
+        </SettingsBlock>
+      </SettingsPanel>
+    </div>
+  )
+}
+
+/**
  * Settings → Copilot: the user's own Anthropic and/or OpenAI API key, which
  * the copilot calls those APIs with. There is deliberately no Claude.ai or
- * ChatGPT sign-in here; see server/copilot/settings.ts.
+ * ChatGPT sign-in here; see server/copilot/settings.ts. Where the host runs
+ * the copilot, its AI budget instead (ManagedCopilot).
  */
 export function CopilotTab() {
   const [settings, setSettings] = useState<Masked | null>(null)
@@ -162,6 +226,7 @@ export function CopilotTab() {
     getCopilotSettingsFn().then(setSettings).catch((e) => setLoadError(e?.message || 'Failed to load settings'))
   }, [])
 
+  if (settings?.managed) return <ManagedCopilot />
   const noKey = settings && !settings.anthropic.isSet && !settings.openai.isSet
 
   return (

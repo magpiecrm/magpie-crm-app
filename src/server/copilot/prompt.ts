@@ -3,6 +3,7 @@ import { COPILOT_TOOLS } from './tools'
 import { BLOCK_TYPES, GLOBAL_STYLE_KEYS } from '../../features/email-builder/types'
 import { SURVEY_BLOCK_TYPES, SURVEY_THEME_KEYS } from '../../features/survey-builder/types'
 import type { CopilotClientState } from './types'
+import { copilotManaged, MANAGED_NAME_LINE } from './managedAi'
 
 /**
  * Render one Zod field as a compact type hint. Deliberately shallow: the model
@@ -277,6 +278,8 @@ raw JSON or tool output back at the user.`
 export function buildSystemPrompt(state: CopilotClientState, brand?: Record<string, any> | null): string {
   return [
     BEHAVIOUR,
+    // Where the host runs the copilot it goes by a name of its own.
+    copilotManaged() ? MANAGED_NAME_LINE : null,
     renderBrand(brand),
     renderBlockReference(),
     renderSurveyReference(),

@@ -30,6 +30,9 @@ const DOT: Record<StatusLevel, string> = {
 
 type Section = (typeof SETTINGS_SECTIONS)[number]
 
+/** Copilot's intro where the host runs the copilot (COPILOT_MANAGED): there are no keys to add. */
+const COPILOT_MANAGED_INTRO = "The in-app copilot, and how much of this month's AI budget it has used."
+
 /** Pages a managed copy (PROSPECTING_MANAGED) doesn't show: its host runs them. */
 const MANAGED_HIDDEN = new Set<SettingsSection>(['source', 'verification'])
 
@@ -51,7 +54,7 @@ function groupsOf(sections: readonly Section[]) {
 export function SettingsPage({ initialSection, checkoutSession }: { initialSection?: SettingsSection; checkoutSession?: string }) {
   const [active, setActive] = useState<SettingsSection>(initialSection ?? 'overview')
   const queryClient = useQueryClient()
-  const { statuses, isLoading, managed, billingManaged, warmupShown } = useSettingsStatus()
+  const { statuses, isLoading, managed, billingManaged, warmupShown, copilotManaged } = useSettingsStatus()
   // Plan and billing only when the host bills for this workspace; Warmup only where the host offers it, or it can be added to the plan.
   const visible = SETTINGS_SECTIONS.filter(
     (s) => !(managed && MANAGED_HIDDEN.has(s.id)) && (s.id !== 'billing' || billingManaged) && (s.id !== 'warmup' || warmupShown),
@@ -150,7 +153,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                 </span>
               )}
             </div>
-            <p className="text-sm text-muted-foreground max-w-2xl">{current.intro}</p>
+            <p className="text-sm text-muted-foreground max-w-2xl">{copilotManaged && current.id === 'copilot' ? COPILOT_MANAGED_INTRO : current.intro}</p>
           </header>
 
           {active === 'overview' && <SettingsOverview statuses={statuses} isLoading={isLoading} onOpen={open} />}

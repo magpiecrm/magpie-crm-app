@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
 import { getCopilotChatFn } from '../../server/functions'
@@ -96,6 +96,11 @@ interface UseCopilotStreamOptions {
 export function useCopilotStream({ getClientState, onClientAction, greeting }: UseCopilotStreamOptions) {
   const queryClient = useQueryClient()
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'assistant', content: greeting }])
+  // The greeting can change after the first render (the copilot's name arrives with its
+  // providers); follow it while it's still all the chat holds.
+  useEffect(() => {
+    setMessages((prev) => (prev.length === 1 && prev[0].role === 'assistant' && prev[0].content !== greeting ? [{ role: 'assistant', content: greeting }] : prev))
+  }, [greeting])
   const [isStreaming, setIsStreaming] = useState(false)
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null)
   const [activeTools, setActiveTools] = useState<ToolCall[]>([])

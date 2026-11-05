@@ -1,4 +1,5 @@
 import { getAdapter } from './providers'
+import { copilotManaged, MANAGED_EFFORT, MANAGED_MODEL } from './managedAi'
 import { runTurn, stopConversation } from './agent'
 import { drainClientActions } from './state'
 
@@ -17,8 +18,12 @@ export interface TurnOptions {
  * Throws only for an unknown provider; everything else arrives as events.
  */
 export function sendTurn(opts: TurnOptions): void {
-  const adapter = getAdapter(opts.providerId)
-  void runTurn(adapter, { sessionId: opts.sessionId, message: opts.message, model: opts.model, effort: opts.effort })
+  // Where the host runs the copilot there's one model, whatever the chat asked for.
+  const managed = copilotManaged()
+  const adapter = getAdapter(managed ? 'claude' : opts.providerId)
+  const model = managed ? MANAGED_MODEL : opts.model
+  const effort = managed ? MANAGED_EFFORT : opts.effort
+  void runTurn(adapter, { sessionId: opts.sessionId, message: opts.message, model, effort })
 }
 
 /** Drain any client-side mutations queued by tools during this turn. */

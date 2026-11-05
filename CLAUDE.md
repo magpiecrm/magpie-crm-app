@@ -155,7 +155,12 @@ key), with the app's actions as tools.
     The SSE turn endpoint is `src/routes/api/copilot/stream.ts`.
     `settings.ts` holds the user's own Anthropic and OpenAI API keys (never a
     Claude.ai or ChatGPT login — Anthropic's terms don't allow apps to offer
-    or share one). `src/routes/api/mcp.ts` exposes the same tools to outside
+    or share one). A hosted copy (`COPILOT_MANAGED`) uses none of those:
+    `managedAi.ts` sends the same Claude requests to the host's
+    `/v1/ai/messages` (with `REACHER_SECRET`), which picks the model and
+    says what each call used of the plan's AI budget (the `ai` allowance,
+    shown as a percentage); the model is shown as "Maggy", never by name.
+    `src/routes/api/mcp.ts` exposes the same tools to outside
     AI apps (`PUBLIC_TOOLS` in `mcp.ts`: server-side tools not marked
     `browserOnly`), authorised by MCP-scoped API keys.
 - **Custom contact fields**: definitions in `db.ts` (`contact_fields`), values on
