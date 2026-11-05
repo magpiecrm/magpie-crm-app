@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Flame, Inbox } from 'lucide-react'
 import { inboxWarmupFn, pauseWarmupFn, placementTestFn, resumeWarmupFn, startSenderCheckFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
@@ -317,6 +317,11 @@ function SenderCheck({ senders, tests, stopped }: { senders: string[]; tests: { 
     enabled: Boolean(id),
     refetchInterval: (q) => (!q.state.data || q.state.data.families.some((f) => f.waiting > 0) ? 15_000 : false),
   })
+  // A failed check gives the month's back once the host has read it as failed.
+  const failed = result.data?.status === 'failed' || result.data?.status === 'detection_failed'
+  useEffect(() => {
+    if (failed) void queryClient.invalidateQueries({ queryKey: queryKeys.settings.warmup() })
+  }, [failed, queryClient])
   const usedUp = tests.used >= tests.limit
   const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString()
 
@@ -359,6 +364,14 @@ function CheckResult({ result }: { result: PlacementTestResult | null }) {
   const sum = (k: 'inbox' | 'tabs' | 'spam' | 'missing' | 'waiting') => (result?.families ?? []).reduce((n, f) => n + f[k], 0)
   const [inbox, tabs, spam, missing, waiting] = [sum('inbox'), sum('tabs'), sum('spam'), sum('missing'), sum('waiting')]
   const arrived = inbox + tabs + spam
+  // The pool gave up without finding any copy: no verdict, and it isn't one of the month's.
+  if (result && (result.status === 'failed' || result.status === 'detection_failed')) {
+    return (
+      <Notice level="warning" title="The check didn't finish">
+        The test inboxes never reported back, so there's no result. It doesn't count as this month's check: run it again. {`Started ${longDate(result.startedAt)}.`}
+      </Notice>
+    )
+  }
   // Nothing counted either way yet: no verdict to give.
   if (!result || arrived + missing + waiting === 0) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
   const where = (k: 'spam' | 'missing') => result.families.filter((f) => f[k] > 0).map((f) => PROVIDERS[f.family] ?? f.family).join(', ')
