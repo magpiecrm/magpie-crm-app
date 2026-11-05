@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
-import { User, Send, Laptop, Smartphone, Search, Check, Loader2, Inbox } from 'lucide-react'
-import { contactsFn, getContactFieldsFn, sendTestEmailFn, warmupStandingFn } from '../server/functions'
-import { PlacementTest } from '../features/campaigns/components/PlacementTest'
+import { User, Send, Laptop, Smartphone, Search, Check, Loader2 } from 'lucide-react'
+import { contactsFn, getContactFieldsFn, sendTestEmailFn } from '../server/functions'
 import { mergeContact, unfilledMergeTags } from '../server/mergeTags'
 import { Notice } from './ui/Notice'
 import { Button } from './ui/Button'
@@ -26,9 +25,7 @@ export function PreviewTestModal({
   campaignSender,
   campaignPreviewText
 }: PreviewTestModalProps) {
-  const [activeTab, setActiveTab] = useState<'preview' | 'send' | 'placement'>('preview')
-  // Placement tests come with the host's inbox warmup.
-  const { data: warmup } = useQuery({ queryKey: queryKeys.settings.warmupStanding(), queryFn: () => warmupStandingFn(), enabled: isOpen, staleTime: 60_000 })
+  const [activeTab, setActiveTab] = useState<'preview' | 'send'>('preview')
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [selectedContact, setSelectedContact] = useState<any | null>(null)
   
@@ -154,17 +151,6 @@ export function PreviewTestModal({
               <Send className="w-4 h-4" />
               Send test email
             </button>
-            {warmup?.offered && (
-              <button
-                onClick={() => setActiveTab('placement')}
-                className={`flex items-center gap-2 pb-2 text-sm font-semibold transition-all border-b-2 px-1 ${
-                  activeTab === 'placement' ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Inbox className="w-4 h-4" />
-                Placement test
-              </button>
-            )}
           </div>
         </div>
       }
@@ -321,10 +307,6 @@ export function PreviewTestModal({
                 </div>
               )}
             </div>
-          )}
-
-          {activeTab === 'placement' && (
-            <PlacementTest sender={campaignSender} subject={campaignSubject} htmlContent={htmlContent} previewText={campaignPreviewText} />
           )}
 
           {/* Tab: Send configurations */}

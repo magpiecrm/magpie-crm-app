@@ -48,8 +48,8 @@ const hostApi: HostCall = async (method, path, body) => {
     method,
     headers: { 'x-reacher-secret': secret, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
-    // A placement test sends its copies before it answers.
-    signal: AbortSignal.timeout(path === '/placement-tests' && method === 'POST' ? 120_000 : 20_000),
+    // A sender check sends its copies before it answers.
+    signal: AbortSignal.timeout(path === '/sender-check' && method === 'POST' ? 120_000 : 20_000),
   })
   return { status: res.status, json: res.status === 204 ? null : await res.json().catch(() => null) }
 }
@@ -135,12 +135,12 @@ export async function warmupPage(deps: WarmupDeps = {}): Promise<WarmupPage> {
       stopped: view.stopped ?? null,
       maxSenders: view.maxSenders,
       senders: senders.map((s) => ({ ...s, warmup: warming.get(s.email) ?? null })),
-      placementTests: view.placementTests,
+      placementTests: { ...view.placementTests, last: view.placementTests?.last ?? null },
       consent,
     }
   } catch (err: any) {
     const max = hostInboxWarmup()?.maxSenders ?? 1
-    return { offered: true, stopped: null, maxSenders: max, senders: senders.map((s) => ({ ...s, warmup: null })), placementTests: { used: 0, limit: 0 }, consent, error: err?.message ?? String(err) }
+    return { offered: true, stopped: null, maxSenders: max, senders: senders.map((s) => ({ ...s, warmup: null })), placementTests: { used: 0, limit: 0, last: null }, consent, error: err?.message ?? String(err) }
   }
 }
 
@@ -209,20 +209,13 @@ export async function warmupStanding(deps: WarmupDeps = {}): Promise<Record<stri
 }
 
 /**
- * A placement test: the email, as a test renders it for a stand-in contact
- * (no lead's details reach the seed inboxes), sent from the sender to each of
- * the pool's seed inboxes through the host's mail server, to see where it lands.
+ * The month's sender check: the host sends the same short, plain email from a
+ * warming sender to each of the pool's seed inboxes, through its mail server,
+ * to see where a sender's mail lands apart from what a campaign says.
  */
-export async function startPlacementTest(
-  email: { sender: { name: string; email: string }; subject: string; htmlContent: string; previewText?: string },
-  deps: WarmupDeps = {},
-): Promise<{ id: string; seeds: number }> {
-  if (!warmupOffered()) throw new Error("Placement tests aren't available on this workspace.")
-  if (!canSendFrom(email.sender.email)) throw new Error(`${email.sender.email} isn't on a sending domain that's ready yet.`)
-  const { renderTestCopy } = await import('./emailService')
-  const { subject, html } = await renderTestCopy(email, 'seed@placement.invalid', { first_name: 'Alex', last_name: 'Morgan', company: 'Acme' })
-  const text = html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-  return ask<{ id: string; seeds: number }>(deps, 'POST', '/placement-tests', { from: { name: email.sender.name, address: email.sender.email }, subject, html, text })
+export async function startSenderCheck(address: string, deps: WarmupDeps = {}): Promise<{ id: string; seeds: number }> {
+  if (!warmupOffered()) throw new Error("Sender checks aren't available on this workspace.")
+  return ask<{ id: string; seeds: number }>(deps, 'POST', '/sender-check', { address: address.toLowerCase() })
 }
 
 export const placementTestResult = (id: string, deps: WarmupDeps = {}) => ask<PlacementTestResult>(deps, 'GET', `/placement-tests/${encodeURIComponent(id)}`)

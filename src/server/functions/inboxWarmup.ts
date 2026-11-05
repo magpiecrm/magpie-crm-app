@@ -50,25 +50,17 @@ export const warmupPlacementFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { days?: number }) => z.object({ days: z.number().int().min(1).max(90).default(7) }).parse(d))
   .handler(async ({ data }) => (await signedIn()).warmup.warmupPlacement(data.days))
 
-/** Whether placement tests are offered here, and each warming sender's standing by address. */
+/** Whether warmup is offered here, and each warming sender's standing by address. */
 export const warmupStandingFn = createServerFn({ method: 'GET' }).handler(async () => {
   const { warmup } = await signedIn()
   return { offered: warmup.warmupOffered(), senders: await warmup.warmupStanding() }
 })
 
-export const startPlacementTestFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { sender: { name: string; email: string }; subject: string; htmlContent: string; previewText?: string }) =>
-    z
-      .object({
-        sender: z.object({ name: z.string().max(200), email: z.string().trim().email().max(320) }),
-        subject: z.string().trim().min(1).max(300),
-        htmlContent: z.string().min(1).max(500_000),
-        previewText: z.string().max(500).optional(),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data }) => (await signedIn()).warmup.startPlacementTest(data))
+export const startSenderCheckFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { address: string }) => address.parse(d))
+  .handler(async ({ data }) => (await signedIn()).warmup.startSenderCheck(data.address))
 
+/** A sender check's results: the pool's test ids are numbers. */
 export const placementTestFn = createServerFn({ method: 'GET' })
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().regex(/^\d{1,15}$/) }).parse(d))
   .handler(async ({ data }) => (await signedIn()).warmup.placementTestResult(data.id))

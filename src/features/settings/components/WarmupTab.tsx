@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Flame } from 'lucide-react'
-import { inboxWarmupFn, pauseWarmupFn, resumeWarmupFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
+import { ArrowRight, Flame, Inbox } from 'lucide-react'
+import { inboxWarmupFn, pauseWarmupFn, placementTestFn, resumeWarmupFn, startSenderCheckFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Dialog } from '../../../components/ui/Dialog'
@@ -9,7 +9,7 @@ import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 import type { SettingsSection } from '../sections'
-import type { Tally, WarmupSender, WarmupSenderRow } from '../warmupTypes'
+import type { PlacementTestResult, Tally, WarmupSender, WarmupSenderRow } from '../warmupTypes'
 
 type Variant = 'default' | 'success' | 'warning' | 'error' | 'info'
 
@@ -111,6 +111,14 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
         </SettingsBlock>
 
         {warming > 0 && <Placement />}
+
+        {(warming > 0 || data.placementTests.last) && (
+          <SenderCheck
+            senders={data.senders.filter((s) => s.warmup && s.warmup.state !== 'failed').map((s) => s.email)}
+            tests={data.placementTests}
+            stopped={Boolean(data.stopped)}
+          />
+        )}
       </SettingsPanel>
 
       {consentFor && <Consent row={consentFor} consent={data.consent} onClose={() => setConsentFor(null)} />}
@@ -265,6 +273,138 @@ function Consent({ row, consent, onClose }: { row: WarmupSenderRow; consent: { v
         </SettingsActions>
       </div>
     </Dialog>
+  )
+}
+
+/** The pool's seed inboxes, by their mail provider (its own ids). */
+const PROVIDERS: Record<string, string> = {
+  gmail: 'Gmail',
+  google_workspace: 'Google Workspace',
+  outlook: 'Outlook.com',
+  microsoft365: 'Microsoft 365',
+  yahoo: 'Yahoo',
+  aol: 'AOL',
+  icloud: 'iCloud',
+  zoho: 'Zoho',
+  fastmail: 'Fastmail',
+  proton: 'Proton',
+  gmx: 'GMX',
+  other: 'Other',
+}
+
+const longDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
+
+/**
+ * The month's sender check: one short, plain email (no links, images or
+ * tracking) from a warming sender to the pool's test inboxes. An email like
+ * that should reach the inbox, so where it lands says how the sender stands.
+ */
+function SenderCheck({ senders, tests, stopped }: { senders: string[]; tests: { used: number; limit: number; last: { id: string; at: string } | null }; stopped: boolean }) {
+  const queryClient = useQueryClient()
+  const [from, setFrom] = useState(senders[0] ?? '')
+  const [started, setStarted] = useState<string | null>(null)
+  const id = started ?? tests.last?.id ?? null
+  const start = useMutation({
+    mutationFn: () => startSenderCheckFn({ data: { address: from } }),
+    onSuccess: (r) => {
+      setStarted(r.id)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.settings.warmup() })
+    },
+  })
+  const result = useQuery({
+    queryKey: queryKeys.settings.placementTest(id ?? ''),
+    queryFn: () => placementTestFn({ data: { id: id! } }),
+    enabled: Boolean(id),
+    refetchInterval: (q) => (!q.state.data || q.state.data.families.some((f) => f.waiting > 0) ? 15_000 : false),
+  })
+  const usedUp = tests.used >= tests.limit
+  const nextMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString()
+
+  return (
+    <SettingsBlock
+      title="Sender check"
+      description="Once a month, sends one short, plain email from your warming sender to about 20 test inboxes at Gmail, Outlook, Yahoo and others, through our mail server like a campaign. It has no links, images or tracking, so it should reach the inbox. Where it lands shows how your sender stands, whatever your campaigns say."
+    >
+      {id && (result.error ? <Notice level="error">{(result.error as Error).message}</Notice> : <CheckResult result={result.data ?? null} />)}
+      {start.error && <Notice level="error">{(start.error as Error).message}</Notice>}
+      <SettingsActions>
+        {senders.length > 1 && (
+          <select className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" value={from} onChange={(e) => setFrom(e.target.value)} aria-label="Sender to check">
+            {senders.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
+        <Button
+          leftIcon={<Inbox className="h-4 w-4" />}
+          isLoading={start.isPending}
+          disabled={!from || usedUp || stopped}
+          title={!from ? 'Start warmup on a sender first.' : usedUp ? `This month's check is used. Another from ${longDate(nextMonth)}.` : undefined}
+          onClick={() => start.mutate()}
+        >
+          {senders.length === 1 ? `Check ${from}` : 'Run sender check'}
+        </Button>
+        <span className="text-xs text-muted-foreground">
+          {usedUp ? `This month's check is used. Another from ${longDate(nextMonth)}.` : `${tests.limit - tests.used} left this month.`}
+        </span>
+      </SettingsActions>
+    </SettingsBlock>
+  )
+}
+
+/** A sender check's verdict, then where its copies landed at each provider. */
+function CheckResult({ result }: { result: PlacementTestResult | null }) {
+  if (!result) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
+  const sum = (k: 'inbox' | 'tabs' | 'spam' | 'missing' | 'waiting') => result.families.reduce((n, f) => n + f[k], 0)
+  const [inbox, tabs, spam, missing, waiting] = [sum('inbox'), sum('tabs'), sum('spam'), sum('missing'), sum('waiting')]
+  const arrived = inbox + tabs + spam
+  const where = (k: 'spam' | 'missing') => result.families.filter((f) => f[k] > 0).map((f) => PROVIDERS[f.family] ?? f.family).join(', ')
+  const when = `Checked ${longDate(result.startedAt)}.`
+  return (
+    <div className="flex flex-col gap-3">
+      {waiting > 0 ? (
+        <Notice level="info" title="Still looking">
+          {arrived} of {arrived + missing + waiting} found so far. The rest are looked for over the next few minutes.
+        </Notice>
+      ) : spam > 0 ? (
+        <Notice level="error" title={`${spam} of ${arrived + missing} landed in spam`}>
+          At {where('spam')}. An email this plain shouldn't go to spam, so it's the sender being held back there: its domain, or our mail server's
+          standing with that provider, not your wording. Keep warmup running and check again next month. {when}
+        </Notice>
+      ) : missing > 0 ? (
+        <Notice level="warning" title={`${missing} of ${arrived + missing} never arrived`}>
+          At {where('missing')}. None went to spam, but some providers didn't deliver it at all. {when}
+        </Notice>
+      ) : (
+        <Notice level="success" title="It reached the inbox">
+          All {arrived} arrived{tabs > 0 ? `, ${tabs} of them in a tab like Promotions` : ''}, and none went to spam. {when}
+        </Notice>
+      )}
+      <table className="w-full text-xs tabular-nums">
+        <thead>
+          <tr className="text-left text-muted-foreground">
+            <th className="py-1 font-medium">Provider</th>
+            <th className="py-1 text-right font-medium">Inbox</th>
+            <th className="py-1 text-right font-medium">Tabs</th>
+            <th className="py-1 text-right font-medium">Spam</th>
+            <th className="py-1 text-right font-medium">Missing</th>
+          </tr>
+        </thead>
+        <tbody>
+          {result.families.map((f) => (
+            <tr key={f.family} className="border-t border-border">
+              <td className="py-1.5 text-foreground">{PROVIDERS[f.family] ?? f.family}</td>
+              <td className="py-1.5 text-right">{f.inbox}</td>
+              <td className="py-1.5 text-right">{f.tabs}</td>
+              <td className={`py-1.5 text-right ${f.spam ? 'text-destructive' : ''}`}>{f.spam}</td>
+              <td className="py-1.5 text-right text-muted-foreground">{f.waiting ? `${f.missing} (+${f.waiting} to come)` : f.missing}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

@@ -152,10 +152,19 @@ describe('inbox warmup', () => {
   it("shows each sender with its warmup from the host, and the senders still when the host can't be reached", async () => {
     const sender = { address: 'sales@acme.test', state: 'warming', pausedBy: null, reason: null, health: { state: 'healthy', score: 92, reason: null, until: null } }
     const page = await warmup.warmupPage(deps(fakeHost({ available: true, stopped: null, maxSenders: 3, senders: [sender], placementTests: { used: 1, limit: 2 } })))
-    expect(page).toMatchObject({ offered: true, maxSenders: 3, placementTests: { used: 1, limit: 2 }, consent: { version: warmup.CONSENT_VERSION } })
+    // A host from before sender checks says nothing of the last one.
+    expect(page).toMatchObject({ offered: true, maxSenders: 3, placementTests: { used: 1, limit: 2, last: null }, consent: { version: warmup.CONSENT_VERSION } })
     if (!page.offered) throw new Error('offered')
     expect(page.senders.map((s) => [s.email, s.warmup?.state ?? null])).toEqual([['sales@acme.test', 'warming'], ['jo@other.test', null]])
     const down = await warmup.warmupPage({ ...deps(fakeHost()), host: async () => ({ status: 503, json: { error: "The warmup pool couldn't be reached." } }) })
     expect(down).toMatchObject({ offered: true, error: "The warmup pool couldn't be reached." })
+  })
+
+  it("asks the host for the month's sender check from a sender, and only where warmup is offered", async () => {
+    const fake = fakeHost()
+    await warmup.startSenderCheck('Sales@acme.test', deps(fake))
+    expect(fake.calls.at(-1)).toEqual({ method: 'POST', path: '/sender-check', body: { address: 'sales@acme.test' } })
+    await hostOffers(false)
+    await expect(warmup.startSenderCheck('sales@acme.test', deps(fake))).rejects.toThrow("aren't available")
   })
 })

@@ -49,7 +49,8 @@ export type WarmupPage =
       stopped: string | null
       maxSenders: number
       senders: WarmupSenderRow[]
-      placementTests: { used: number; limit: number }
+      /** This month's sender checks, and the latest one, whose results stay on the page. */
+      placementTests: { used: number; limit: number; last: { id: string; at: string } | null }
       consent: { version: string; points: string[] }
       /** The warmup service couldn't be reached: the senders are shown without their warmup. */
       error?: string
