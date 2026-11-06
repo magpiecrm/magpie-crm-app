@@ -60,7 +60,22 @@ export function allowedLinks(step: Pick<SequenceStep, 'subject' | 'body' | 'pers
 }
 
 /** What's wrong with a draft, in words for the AI's second try (and the People tab), or null when it can be sent. */
-export function checkDraft(draft: { subject: string; body: string }, allowed: Set<string>): string | null {
+/**
+ * The email opens by telling them what their own company does ("Acme is a…",
+ * "Acme's app…", "At Acme, you…"), rather than what that means for them.
+ */
+export function restatesCompany(body: string, company: string | null | undefined): boolean {
+  const name = company?.trim().replace(/[,.]?\s+(ltd|limited|llc|inc|plc|gmbh)\.?$/i, '')
+  if (!name) return false
+  // The first sentence after the greeting.
+  const first = body.trim().replace(/^(hi|hello|hey|dear)\b[^\n]*\n+/i, '').split(/(?<=[.!?])\s/)[0] ?? ''
+  const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const verbs = '(is|are|was|makes|builds|helps|provides|offers|runs|sells|lets|gives|has|does|handles|serves|works)'
+  // "Acme's two new sites mean…" is about them, and passes; "Acme's app handles…" describes it back.
+  return new RegExp(`^(${n}('s|’s)?\\s+(\\w+\\s+){0,3}${verbs}\\b|at\\s+${n},?\\s+(you|your team)\\b)`, 'i').test(first.trim())
+}
+
+export function checkDraft(draft: { subject: string; body: string }, allowed: Set<string>, company?: string | null): string | null {
   const subject = draft.subject.trim()
   const body = draft.body.trim()
   if (!subject) return 'The subject is empty.'
@@ -75,15 +90,22 @@ export function checkDraft(draft: { subject: string; body: string }, allowed: Se
   if (/unsubscribe/i.test(body)) return 'It mentions unsubscribing; that line is added to every email already.'
   const foreign = [...text.matchAll(URL_RE)].map((m) => m[0]).find((u) => !allowed.has(normUrl(u)))
   if (foreign) return `It links to ${foreign}, which wasn't in the brief or the example email.`
+  if (restatesCompany(body, company)) return "It opens by telling them what their own company does. Open with what their situation means for them, and how the offer helps a business like theirs."
   return null
 }
 
-const SYSTEM = `You write the first cold email from a salesperson to one person, in the salesperson's voice. You're given a brief, an example email that shows the offer and style, the recipient's name, job and company, and a few facts about their company with their sources.
+const SYSTEM = `You write the first cold email from a salesperson to one person, in the salesperson's voice. You're given a brief (what's being offered), an example email that shows the offer and style, the recipient's name, job and company, and a few facts about their company with their sources.
+
+The email's job is to show how the offer would help their company in particular. They know what their own company does, so never tell them: don't describe their business, products or customers back to them. Use the facts to work out what their business is likely dealing with (the customers it serves, how it sells and delivers, its size or growth, what it has just launched) and explain the offer in those terms: what it would do for a business like theirs, and for someone in their job.
+
+For example, writing for a payroll service to someone at a restaurant group that has just opened two sites:
+- Not: "Larch Kitchens runs six restaurants across Leeds and has just opened two more."
+- But: "Two new sites means two more rotas, and a lot more shift changes to get right in payroll each month."
 
 Write like one person to another:
-- Plain text, 50 to 140 words, short paragraphs. A subject line under 60 characters, specific to them, never clickbait.
-- Open with something specific to their company or role, from the facts given, so it's plainly written for them. Then the offer from the brief, in a sentence or two, tied to why it matters for them. End with one simple question.
-- Use only the facts given. Never invent anything about them or their company, and don't mention that you researched them. If there are no facts, personalise from their job and company alone.
+- Plain text, 50 to 140 words, short paragraphs. A subject line under 60 characters about what the offer would do for them, never clickbait.
+- Open with what their situation means for them, in a sentence or two. Then how the offer fits it, tied to how their business works. Only claim what the brief says the offer does. End with one simple question.
+- Use only the facts given. Never invent anything about them or their company, and don't say you looked them up or came across their website. If there are no facts, tailor it to their job and the kind of company theirs is.
 - Follow the brief. Keep the example's offer, tone and any link it has; don't copy it word for word.
 - No greeting placeholder, merge tags ({{ … }}) or [brackets]: write their first name itself. No sign-off or signature, and no unsubscribe line: both are added after your text.
 - Answer by calling the writeEmail tool.`
@@ -116,7 +138,7 @@ export function draftPrompt(input: {
     `## Brief\n${step.personalise?.brief.trim() || '(none: follow the example)'}`,
     `## Example email\nSubject: ${fill(step.subject ?? '')}\n\n${fill(step.body)}`,
     `## To\n${[`First name: ${contact.first_name?.trim() || '(not known: start with a plain "Hi")'}`, contact.job_title ? `Job: ${contact.job_title}` : null, contact.company ? `Company: ${contact.company}` : null, contact.country ? `Country: ${contact.country}` : null].filter(Boolean).join('\n')}`,
-    `## Facts about their company\n${facts.length ? facts.map((f, i) => `${i + 1}. ${f.text}${f.url ? ` (${f.url})` : ''}`).join('\n') : '(nothing found)'}`,
+    `## Facts about their company (they know all this: use it to tailor the offer, don't repeat it)\n${facts.length ? facts.map((f, i) => `${i + 1}. ${f.text}${f.url ? ` (${f.url})` : ''}`).join('\n') : '(nothing found)'}`,
     input.problem ? `## Fix this\nYour last version couldn't be sent: ${input.problem} Write it again without that.` : null,
   ]
     .filter(Boolean)
@@ -146,7 +168,7 @@ export async function writeDraft(
       answer: ANSWER,
     })
     const draft = { subject: answer.subject.trim(), body: answer.body.trim() }
-    problem = checkDraft(draft, allowed) ?? undefined
+    problem = checkDraft(draft, allowed, contact.company) ?? undefined
     if (!problem) {
       const used = [...new Set(answer.facts_used)].map((n) => research.facts[n - 1]).filter((f): f is ResearchFact => !!f)
       return { status: 'ready', ...draft, facts: used }

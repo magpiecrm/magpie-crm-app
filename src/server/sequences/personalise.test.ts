@@ -103,6 +103,20 @@ describe('checking a draft', () => {
     expect(checkDraft({ ...ok, subject: 'Two\nlines' }, allowed)).toMatch(/line break/)
     expect(checkDraft({ ...ok, body: 'Too short.' }, allowed)).toMatch(/too short/)
   })
+
+  it('stops an email that tells them what their own company does, and passes one about what it means for them', () => {
+    const tailored = `Hi Ava,\n\nTwo new offices means twice the client paperwork landing on operations. ${BODY.split('\n\n').slice(2).join('\n\n')}`
+    expect(checkDraft({ ...ok, body: tailored }, allowed, 'Larkspur Ltd')).toBeNull()
+    expect(checkDraft({ ...ok, body: `Hi Ava,\n\nLarkspur's two new offices mean twice the client paperwork. ${'We help with that. '.repeat(4)}` }, allowed, 'Larkspur')).toBeNull()
+    for (const opener of [
+      'Larkspur is an accounting firm for small businesses in Yorkshire.',
+      "Larkspur's onboarding app handles client paperwork.",
+      'Larkspur Ltd makes onboarding software.',
+      'At Larkspur, you help small firms with their books.',
+    ]) {
+      expect(checkDraft({ ...ok, body: `Hi Ava,\n\n${opener} ${'We help with that. '.repeat(4)}` }, allowed, 'Larkspur Ltd')).toMatch(/what their own company does/)
+    }
+  })
 })
 
 describe('what the AI is given', () => {
