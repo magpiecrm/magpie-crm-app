@@ -149,7 +149,7 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
         <textarea id="seq-set-signature" value={s.signature} onChange={(e) => set({ signature: e.target.value })} rows={3} maxLength={2000} placeholder={'Jo Smith\nFounder, Acme'} className={`${FIELD_CLASS} resize-y`} />
       </Field>
 
-      <Field label="Last line" htmlFor="seq-set-footer" hint="Must include {{ unsubscribe }}, which becomes their unsubscribe link. Unsubscribing stops the sequence for them.">
+      <Field label="Last line" htmlFor="seq-set-footer" hint='Must include {{ unsubscribe }}, which becomes the words "Unsubscribe here", linked. Unsubscribing stops the sequence for them.'>
         <textarea id="seq-set-footer" value={s.footer} onChange={(e) => set({ footer: e.target.value })} rows={2} maxLength={1000} className={`${FIELD_CLASS} resize-y`} />
         {!footerOk && <p className="mt-1 text-xs text-destructive">Add {'{{ unsubscribe }}'}: the sequence can't run without an unsubscribe link.</p>}
       </Field>

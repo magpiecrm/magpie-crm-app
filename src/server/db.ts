@@ -5,7 +5,7 @@ import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
 import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sales/types'
-import type { Enrollment, Sequence } from '../features/sequences/types'
+import { DEFAULT_FOOTER, FIRST_DEFAULT_FOOTER, type Enrollment, type Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef, ContactTableView } from '../features/contacts/contactFields'
@@ -672,6 +672,10 @@ class JsonDb {
     if (!loaded.survey_responses) loaded.survey_responses = []
     if (!loaded.email_templates) loaded.email_templates = []
     if (!loaded.contact_fields) loaded.contact_fields = []
+    // Sequences still on the first default last line: it would now read "…email you again: unsubscribe here".
+    for (const s of loaded.sequences ?? []) {
+      if (s.settings?.footer === FIRST_DEFAULT_FOOTER) s.settings.footer = DEFAULT_FOOTER
+    }
 
     return loaded
   }

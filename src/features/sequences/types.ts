@@ -149,7 +149,10 @@ export const isPersonalised = (s: Pick<Sequence, 'steps'>) => !!s.steps[0]?.pers
 /** A first email waiting to be written. */
 export const pendingDraft = (now = new Date()): PersonalDraft => ({ status: 'pending', at: now.toISOString(), attempts: 0 })
 
-const DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
+/** `{{ unsubscribe }}` becomes the words "Unsubscribe here", linked (server/sequences/render.ts). */
+export const DEFAULT_FOOTER = "Not interested? {{ unsubscribe }} and I won't email you again."
+/** The default before the link was words: its address showed after the colon. */
+export const FIRST_DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
 
 export function defaultSettings(timeZone = 'Europe/London'): SequenceSettings {
   return {

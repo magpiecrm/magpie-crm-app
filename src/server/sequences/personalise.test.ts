@@ -154,7 +154,7 @@ describe('the engine with personalised first emails', () => {
 
     expect(await runSequences(t0, () => 0.5)).toBe(1)
     expect(sent[0].subject).toBe('Onboarding at Larkspur')
-    expect(sent[0].text).toMatch(/^Hi Ava,\n\nI saw Larkspur makes onboarding software[\s\S]*next week be useful\?\n\nJo, Acme\n\nNot interested\? Unsubscribe here .*https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
+    expect(sent[0].text).toMatch(/^Hi Ava,\n\nI saw Larkspur makes onboarding software[\s\S]*next week be useful\?\n\nJo, Acme\n\nNot interested\? Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
     // Kept as the record of what went out, and too late to change.
     expect(() => sequences.draft(enrollmentOf(id, 'ava@larkspur.test').id, { rewrite: true })).toThrow(/already gone/)
 

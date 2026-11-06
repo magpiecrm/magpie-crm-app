@@ -137,9 +137,13 @@ describe('the email', () => {
   it('is plain text with the sign-off and unsubscribe link, and the same words as escaped HTML', () => {
     const r = renderStep({ ...base, settings, unsubscribeUrl: 'https://app/u?t=1' }, { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` })
     expect(r.subject).toBe('Hi Ava')
-    expect(r.text).toBe('Hello <b>Ava</b>, see https://acme.example/a?b=1.\n\nJo\n\nUnsubscribe: https://app/u?t=1')
+    expect(r.text).toBe('Hello <b>Ava</b>, see https://acme.example/a?b=1.\n\nJo\n\nUnsubscribe: unsubscribe here (https://app/u?t=1)')
     expect(r.html).toContain('Hello &lt;b&gt;Ava&lt;/b&gt;, see <a href="https://acme.example/a?b=1">https://acme.example/a?b=1</a>.<br>')
-    expect(r.html).toContain('Unsubscribe: <a href="https://app/u?t=1">https://app/u?t=1</a>')
+    // The link is words, not its long address.
+    expect(r.html).toContain('Unsubscribe: <a href="https://app/u?t=1">unsubscribe here</a>')
+    expect(r.html).not.toContain('>https://app/u?t=1<')
+    const preview = renderStep({ ...base, settings: { ...settings, footer: "Not interested? {{ unsubscribe }} and I won't email you again." }, unsubscribeUrl: '' })
+    expect(preview.text).toMatch(/Not interested\? Unsubscribe here and I won't email you again\.$/)
     expect(r.html).not.toContain('https://app/o')
     expect(r.html).not.toContain('https://app/c')
   })
@@ -162,7 +166,8 @@ describe('the engine', () => {
     const t0 = new Date()
     expect(await runSequences(t0, () => 0.5)).toBe(1)
     expect(sent[0]).toMatchObject({ to: 'ava@larkspur.test', subject: 'Quick question, ava' })
-    expect(sent[0].text).toMatch(/^Hi ava,\n\nSee https:\/\/acme\.example\/pilot\.\n\nJo, Acme\n\nNot interested\? Unsubscribe here .*: https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
+    expect(sent[0].text).toMatch(/^Hi ava,\n\nSee https:\/\/acme\.example\/pilot\.\n\nJo, Acme\n\nNot interested\? Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe\?t=[^)]+\) and I won't email you again\.$/)
+    expect(sent[0].html).toMatch(/Not interested\? <a href="https:\/\/app\.example\.test\/api\/unsubscribe\?t=[^"]+">Unsubscribe here<\/a> and I won&#039;t email you again\./)
     expect(sent[0].messageId).toMatch(/^<[\w-]+@acme\.test>$/)
     expect(sent[0].inReplyTo).toBeUndefined()
 
