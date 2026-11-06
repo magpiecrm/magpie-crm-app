@@ -128,8 +128,8 @@ export function notReady(data: DbSchema, s: Sequence): string | null {
 }
 
 /** What a hand-edited first email may not hold: nothing at all, or merge tags that can't be filled. */
-export function checkEdit(draft: { subject: string; body: string }, fieldKeys: string[]): string | null {
-  if (!draft.subject) return 'Give it a subject.'
+export function checkEdit(draft: { subject: string; body: string }, fieldKeys: string[], needsSubject = true): string | null {
+  if (needsSubject && !draft.subject) return 'Give it a subject.'
   if (/[\r\n]/.test(draft.subject)) return "The subject can't have a line break."
   if (draft.subject.length > SUBJECT_MAX) return `Keep the subject under ${SUBJECT_MAX} characters.`
   if (!draft.body) return 'Write the email.'
@@ -138,16 +138,31 @@ export function checkEdit(draft: { subject: string; body: string }, fieldKeys: s
   return tag ? `It uses ${tag}, which isn't a contact field.` : null
 }
 
-/** What the AI writes each person's first email from: when it changes, drafts not yet sent are written again. */
-const draftInputs = (st: SequenceStep | undefined) => JSON.stringify([st?.id, st?.subject, st?.body, st?.personalise ?? null])
+/** What the AI writes a step's email from, besides the brief. */
+const draftInputs = (st: SequenceStep | undefined) => JSON.stringify([st?.subject ?? null, st?.body ?? null])
 
-/** First emails not yet sent, after the first step changed: written again (unless edited by hand), or dropped when it's no longer personalised. */
-function redraft(data: DbSchema, s: Sequence) {
+/**
+ * After the steps change, each person's emails not yet sent: written again
+ * where what they're written from changed (a new brief changes them all),
+ * unless edited by hand; dropped once it's no longer personalised, or the
+ * step is gone; and their next email gets one to write when it's just been
+ * switched on.
+ */
+function redraft(data: DbSchema, s: Sequence, old: SequenceStep[]) {
   const on = isPersonalised(s)
+  const briefChanged = JSON.stringify(old[0]?.personalise ?? null) !== JSON.stringify(s.steps[0]?.personalise ?? null)
+  const changed = new Set(s.steps.filter((st) => briefChanged || draftInputs(old.find((o) => o.id === st.id)) !== draftInputs(st)).map((st) => st.id))
+  const kept = new Set(s.steps.map((st) => st.id))
   for (const e of enrollmentsOf(data, s.id)) {
-    if (e.next_step !== 0 || e.sends.length || e.claim || (e.status !== 'active' && e.status !== 'paused')) continue
-    if (!on) delete e.personal
-    else if (!e.personal?.edited) e.personal = pendingDraft()
+    if (e.claim || (e.status !== 'active' && e.status !== 'paused')) continue
+    const sent = new Set(e.sends.map((x) => x.step_id))
+    for (const [stepId, d] of Object.entries(e.drafts ?? {})) {
+      if (sent.has(stepId)) continue
+      if (!on || !kept.has(stepId)) delete e.drafts![stepId]
+      else if (changed.has(stepId) && !d.edited) e.drafts![stepId] = pendingDraft()
+    }
+    const next = s.steps[e.next_step]?.id
+    if (on && next && !e.drafts?.[next]) (e.drafts ??= {})[next] = pendingDraft()
   }
 }
 
@@ -244,7 +259,7 @@ export const sequences = {
           }
         }
         s.steps = steps
-        if (draftInputs(old[0]) !== draftInputs(steps[0])) redraft(data, s)
+        redraft(data, s, old)
       }
       if (s.status === 'active' && notReady(data, s)) throw new Error(notReady(data, s)!)
       s.updated_at = now()
@@ -323,7 +338,7 @@ export const sequences = {
             reply: null,
             enrolled_at: at,
             enrolled_by: actor,
-            ...(isPersonalised(s) ? { personal: pendingDraft() } : {}),
+            ...(isPersonalised(s) ? { drafts: { [s.steps[0].id]: pendingDraft() } } : {}),
           })
         }
         s.updated_at = at
@@ -383,26 +398,27 @@ export const sequences = {
     }),
 
   /**
-   * One person's first email, before it's sent: write it again, or keep it
-   * as edited by hand (sent as it is, even if the first step changes).
+   * One person's own version of one email, before it's gone: write it again,
+   * or keep it as edited by hand (sent as it is, even if the step changes).
+   * A follow-up that replies in the thread has no subject of its own.
    */
-  draft: (enrollmentId: string, change: { rewrite: true } | { subject: string; body: string }) =>
+  draft: (enrollmentId: string, stepId: string, change: { rewrite: true } | { subject?: string; body: string }) =>
     write((data) => {
       const e = (data.sequence_enrollments ?? []).find((x) => x.id === enrollmentId)
       if (!e) throw new Error('They\'re not in this sequence any more.')
       const s = seqOf(data, e.sequence_id)
-      if (!isPersonalised(s)) throw new Error("This sequence's first email isn't written for each person.")
-      if (e.sends.length || e.claim || e.next_step !== 0) throw new Error('Their first email has already gone.')
-      if ('rewrite' in change) {
-        e.personal = pendingDraft()
-        return e.personal
-      }
-      const draft = { subject: change.subject.trim(), body: change.body.trim() }
-      const why = checkEdit(draft, (data.contact_fields ?? []).map((f) => f.key))
+      if (!isPersonalised(s)) throw new Error("This sequence's emails aren't written for each person.")
+      const index = s.steps.findIndex((st) => st.id === stepId)
+      if (index < 0) throw new Error('That email has been taken out of the sequence.')
+      if (index < e.next_step || e.sends.some((x) => x.step_id === stepId) || e.claim?.step_id === stepId) throw new Error('That email has already gone to them.')
+      const drafts = (e.drafts ??= {})
+      if ('rewrite' in change) return (drafts[stepId] = pendingDraft())
+      const threaded = index > 0 && !s.steps[index].subject?.trim()
+      const draft = { subject: threaded ? '' : (change.subject ?? '').trim(), body: change.body.trim() }
+      const why = checkEdit(draft, (data.contact_fields ?? []).map((f) => f.key), !threaded)
       if (why) throw new Error(why)
-      e.personal = { ...e.personal, status: 'ready', ...draft, facts: e.personal?.facts ?? [], edited: true, at: now(), attempts: 0 }
-      delete e.personal.reason
-      return e.personal
+      drafts[stepId] = { status: 'ready', ...(draft.subject ? { subject: draft.subject } : {}), body: draft.body, facts: drafts[stepId]?.facts ?? [], edited: true, at: now(), attempts: 0 }
+      return drafts[stepId]
     }),
 
   /** A contact's sequences, for their page. */

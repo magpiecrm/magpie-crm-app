@@ -124,17 +124,17 @@ export const enrollmentActionFn = createServerFn({ method: 'POST' })
     return sequences.act(data.ids, data.action)
   })
 
-/** One person's first email, before it's sent: write it again, or keep it as edited by hand. */
+/** One person's own version of one email, before it's gone: write it again, or keep it as edited by hand. */
 export const sequenceDraftFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { enrollmentId: string; rewrite?: boolean; subject?: string; body?: string }) =>
+  .inputValidator((d: { enrollmentId: string; stepId: string; rewrite?: boolean; subject?: string; body?: string }) =>
     z
-      .object({ enrollmentId: id, rewrite: z.boolean().optional(), subject: z.string().max(200).optional(), body: z.string().max(10_000).optional() })
-      .refine((v) => v.rewrite || (v.subject !== undefined && v.body !== undefined), 'Give the subject and the email, or ask for it to be written again.')
+      .object({ enrollmentId: id, stepId: id, rewrite: z.boolean().optional(), subject: z.string().max(200).optional(), body: z.string().max(10_000).optional() })
+      .refine((v) => v.rewrite || v.body !== undefined, 'Give the email, or ask for it to be written again.')
       .parse(d),
   )
   .handler(async ({ data }) => {
     const { sequences } = await signedIn()
-    return sequences.draft(data.enrollmentId, data.rewrite ? { rewrite: true } : { subject: data.subject!, body: data.body! })
+    return sequences.draft(data.enrollmentId, data.stepId, data.rewrite ? { rewrite: true } : { subject: data.subject, body: data.body! })
   })
 
 /** A first email written now for one contact from the step as it's being edited, for "Try it on…": not kept, and nothing is sent. */

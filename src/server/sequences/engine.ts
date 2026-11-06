@@ -217,12 +217,15 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       end(e, blocked.status, blocked.reason)
       continue
     }
-    // Their own first email waits until it's written (personalise.ts runDrafts).
-    let own: { subject: string; body: string } | null = null
-    if (e.next_step === 0 && isPersonalised(s)) {
-      if (!e.personal) db.mutate(() => (e.personal = pendingDraft(now)))
-      if (e.personal!.status === 'pending') continue
-      if (e.personal!.status === 'ready' && e.personal!.subject && e.personal!.body) own = { subject: e.personal!.subject, body: e.personal!.body }
+    // Their own version of this email waits until it's written (personalise.ts runDrafts).
+    let own: { subject: string | null; body: string } | null = null
+    if (isPersonalised(s)) {
+      const drafts = (e.drafts ??= {})
+      if (!drafts[step.id]) db.mutate(() => (drafts[step.id] = pendingDraft(now)))
+      const d = drafts[step.id]
+      if (d.status === 'pending') continue
+      // A follow-up in the thread has no subject of its own: it keeps "Re: …".
+      if (d.status === 'ready' && d.body) own = { subject: d.subject?.trim() ? d.subject : step.subject, body: d.body }
     }
     if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now))) continue
     // Today's sending limit for this kind of contact is used up (sendingLimits.ts): they wait, others may still go.

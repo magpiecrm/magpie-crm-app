@@ -86,9 +86,11 @@ key), with the app's actions as tools.
     companies first and screen each batch before searching for people. Company
     staff counts from company pages are kept over time
     (`prospect_companies.headcount_history`) for a later growth signal.
-    A sequence's first email can be written for each person by the AI
-    (`sequences/personalise.ts`, run each minute by the scheduler, sent
-    without review once it passes `checkDraft`). Its research
+    A sequence's emails, first and follow-ups, can be written for each
+    person by the AI (`sequences/personalise.ts`, run each minute by the
+    scheduler, a follow-up from what they've already been sent; kept per
+    step in `Enrollment.drafts`, sent without review once it passes
+    `checkDraft`). Its research
     (`companyResearch.ts`) uses Claude's own web search and fetch through
     `copilot/generate.ts`, never `webSearch.ts` or live signal lookups, and
     is given only the company's name, website and country, never the

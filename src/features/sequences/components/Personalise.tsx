@@ -9,11 +9,12 @@ import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
 import { Switch } from '../../../components/ui/Switch'
 import { queryKeys } from '../../../queryKeys'
-import { BRIEF_MAX, SUBJECT_MAX, type EnrollmentView, type ResearchFact, type Sequence, type SequenceStep } from '../types'
+import { BRIEF_MAX, SUBJECT_MAX, type EnrollmentView, type PersonalDraft, type ResearchFact, type Sequence, type SequenceStep } from '../types'
+import { when } from './labels'
 
-// Personalised first emails (server/sequences/personalise.ts): the switch and
-// brief on the first email, "Try it on…", and each person's own email on the
-// People tab.
+// Personalised emails (server/sequences/personalise.ts): the switch and brief
+// on the first email (for the whole sequence), "Try it on…" for the first
+// email, and each person's own emails on the People tab.
 
 /** Whether the AI can write them here (server/copilot/availability.ts). */
 export type AiState = { ok: true; web: boolean } | { ok: false; reason: string }
@@ -31,16 +32,16 @@ export function PersonaliseBox({ sequence, step, ai, onChange }: { sequence: Seq
           id="personalise"
           checked={on}
           onChange={(v) => onChange({ personalise: v ? { brief: step.personalise?.brief ?? '' } : null })}
-          label="Write each person's version with AI"
+          label="Write each person's emails with AI"
           disabled={blocked && !on}
         />
         <label htmlFor="personalise" className="min-w-0 cursor-pointer">
           <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-accent" /> Write each person's version with AI
+            <Sparkles className="h-3.5 w-3.5 text-accent" /> Write each person's emails with AI
           </span>
           <span className="block text-xs text-muted-foreground leading-relaxed">
-            It looks up their company on the web, then writes them their own email from your brief. The email below is the example it follows, and what's sent
-            when it can't write one.
+            It looks up their company on the web, then writes them their own first email and follow-ups from your brief, each from what they've already been
+            sent. Each email below is the example it follows, and what's sent when it can't write one.
           </span>
         </label>
       </div>
@@ -60,7 +61,7 @@ export function PersonaliseBox({ sequence, step, ai, onChange }: { sequence: Seq
               className={`${INPUT_CLASS} resize-y font-[inherit]`}
             />
           </Field>
-          <Notice level="warning">Each person's email sends as the AI writes it, without review. Try it on a few people before you start the sequence.</Notice>
+          <Notice level="warning">Each person's emails send as the AI writes them, without review. Try the first one on a few people before you start the sequence.</Notice>
           <TryItOn sequence={sequence} step={step} disabled={blocked} />
         </>
       )}
@@ -146,20 +147,55 @@ export function Facts({ facts }: { facts: ResearchFact[] | undefined }) {
   )
 }
 
-/** Where a person's own first email is, for the People tab. */
-export function FirstEmailBadge({ e }: { e: EnrollmentView }) {
-  const p = e.personal
-  if (!p) return <span className="text-xs text-muted-foreground">—</span>
-  if (p.status === 'pending') return <Badge variant="info">{p.attempts ? 'Writing… (trying again)' : 'Writing…'}</Badge>
-  if (p.status === 'fallback') return <Badge variant="warning">Standard email</Badge>
-  return <Badge variant="success">{p.edited ? 'Personalised · edited' : 'Personalised'}</Badge>
+const emailLabel = (index: number) => (index === 0 ? 'First email' : `Follow-up ${index}`)
+
+/** The email of theirs that matters now: the next one, or the last one sent. */
+function currentDraft(sequence: Sequence, e: EnrollmentView): { index: number; draft: PersonalDraft } | null {
+  const next = sequence.steps[e.next_step]
+  if (next && e.drafts?.[next.id] && (e.status === 'active' || e.status === 'paused')) return { index: e.next_step, draft: e.drafts[next.id] }
+  for (let i = sequence.steps.length - 1; i >= 0; i--) {
+    const d = e.drafts?.[sequence.steps[i].id]
+    if (d && e.sends.some((x) => x.step_id === sequence.steps[i].id)) return { index: i, draft: d }
+  }
+  return null
 }
 
-/** One person's own first email: what it says and was written from, and, before it's sent, edit or write it again. */
-export function PersonalDraftPanel({ sequence, e }: { sequence: Sequence; e: EnrollmentView }) {
+/** Where a person's own emails are, for the People tab. */
+export function PersonalBadge({ sequence, e }: { sequence: Sequence; e: EnrollmentView }) {
+  const now = currentDraft(sequence, e)
+  if (!now) return <span className="text-xs text-muted-foreground">—</span>
+  const { index, draft: p } = now
+  const label = `${emailLabel(index)} · `
+  if (p.status === 'pending') return <Badge variant="info">{label}{p.attempts ? 'writing… (trying again)' : 'writing…'}</Badge>
+  if (p.status === 'fallback') return <Badge variant="warning">{label}standard email</Badge>
+  return <Badge variant="success">{label}{p.edited ? 'personalised, edited' : 'personalised'}</Badge>
+}
+
+/** Every email written for them, in order: what each says and was written from, and, before it's gone, edit it or write it again. */
+export function PersonalDraftsPanel({ sequence, e }: { sequence: Sequence; e: EnrollmentView }) {
+  const shown = sequence.steps.map((step, index) => ({ step, index })).filter(({ step }) => e.drafts?.[step.id])
+  if (!shown.length) return <p className="text-sm text-muted-foreground">Nothing written for them yet.</p>
+  return (
+    <div className="space-y-5">
+      {shown.map(({ step, index }) => (
+        <div key={step.id} className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground">
+            {emailLabel(index)}
+            {e.sends.find((x) => x.step_id === step.id) ? ` · sent ${when(e.sends.find((x) => x.step_id === step.id)!.at)}` : index === e.next_step ? ' · next' : ''}
+          </p>
+          <DraftView sequence={sequence} e={e} stepId={step.id} index={index} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DraftView({ sequence, e, stepId, index }: { sequence: Sequence; e: EnrollmentView; stepId: string; index: number }) {
   const queryClient = useQueryClient()
-  const p = e.personal
-  const sent = e.sends.length > 0
+  const p = e.drafts?.[stepId]
+  const sent = e.sends.some((x) => x.step_id === stepId) || index < e.next_step
+  // A follow-up that replies in the thread has no subject of its own.
+  const threaded = index > 0 && !sequence.steps[index]?.subject?.trim()
   const [editing, setEditing] = useState(false)
   const [subject, setSubject] = useState(p?.subject ?? '')
   const [body, setBody] = useState(p?.body ?? '')
@@ -170,33 +206,34 @@ export function PersonalDraftPanel({ sequence, e }: { sequence: Sequence; e: Enr
   }, [p?.subject, p?.body, editing])
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.enrollments(sequence.id) })
   const change = useMutation({
-    mutationFn: (rewrite: boolean) => sequenceDraftFn({ data: rewrite ? { enrollmentId: e.id, rewrite: true } : { enrollmentId: e.id, subject, body } }),
+    mutationFn: (rewrite: boolean) =>
+      sequenceDraftFn({ data: rewrite ? { enrollmentId: e.id, stepId, rewrite: true } : { enrollmentId: e.id, stepId, ...(threaded ? {} : { subject }), body } }),
     onSuccess: () => {
       setEditing(false)
       refresh()
     },
   })
   if (!p) return null
-  const canChange = !sent && e.status !== 'stopped' && e.status !== 'finished' && sequence.status !== 'archived'
+  const canChange = !sent && e.status !== 'stopped' && e.status !== 'finished' && e.status !== 'replied' && sequence.status !== 'archived'
 
   return (
     <div className="space-y-3 text-sm">
       {p.status === 'pending' && (
         <p className="text-muted-foreground">
-          {sequence.status === 'active' ? 'Being written: it’s done in the day before their first email is due.' : 'It’s written once the sequence is running, in the day before their first email is due.'}
+          {sequence.status === 'active' ? 'Being written: it’s done in the day before it’s due.' : 'It’s written once the sequence is running, in the day before it’s due.'}
         </p>
       )}
       {p.status === 'fallback' && <Notice level="warning">{sent ? 'The standard email went to them' : 'The standard email goes to them'}: {p.reason}</Notice>}
       {p.status === 'ready' &&
         (editing ? (
           <div className="space-y-2">
-            <input aria-label="Subject" value={subject} onChange={(ev) => setSubject(ev.target.value)} maxLength={SUBJECT_MAX} className={INPUT_CLASS} />
+            {!threaded && <input aria-label="Subject" value={subject} onChange={(ev) => setSubject(ev.target.value)} maxLength={SUBJECT_MAX} className={INPUT_CLASS} />}
             <textarea aria-label="Email text" value={body} onChange={(ev) => setBody(ev.target.value)} rows={8} className={`${INPUT_CLASS} resize-y font-[inherit]`} />
             <p className="text-xs text-muted-foreground">Your sign-off and the unsubscribe line are added below it. Edited emails stay as you wrote them.</p>
           </div>
         ) : (
           <div className="rounded-lg border border-border bg-background p-3">
-            <p className="font-medium text-foreground mb-2">{p.subject}</p>
+            <p className="font-medium text-foreground mb-2">{threaded ? 'Re: (the email before)' : p.subject}</p>
             <pre className="whitespace-pre-wrap break-words font-[inherit] text-foreground">{p.body}</pre>
           </div>
         ))}

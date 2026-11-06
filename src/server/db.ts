@@ -5,7 +5,7 @@ import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
 import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sales/types'
-import { DEFAULT_FOOTER, FIRST_DEFAULT_FOOTER, type Enrollment, type Sequence } from '../features/sequences/types'
+import { DEFAULT_FOOTER, FIRST_DEFAULT_FOOTER, moveFirstEmailDrafts, type Enrollment, type Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef, ContactTableView } from '../features/contacts/contactFields'
@@ -676,6 +676,8 @@ class JsonDb {
     for (const s of loaded.sequences ?? []) {
       if (s.settings?.footer === FIRST_DEFAULT_FOOTER) s.settings.footer = DEFAULT_FOOTER
     }
+    // A draft for every email, not just the first (sequences/personalise.ts).
+    moveFirstEmailDrafts(loaded.sequences ?? [], loaded.sequence_enrollments ?? [])
 
     return loaded
   }

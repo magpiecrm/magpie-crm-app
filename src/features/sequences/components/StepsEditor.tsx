@@ -121,6 +121,7 @@ export function StepsEditor({ sequence, stats, ai }: { sequence: Sequence; stats
             stats={stats.find((s) => s.id === step.id)}
             spam={spam.data?.steps?.[i]}
             ai={ai}
+            personalised={!!steps[0]?.personalise}
             onChange={(patch) => change(i, patch)}
             onRemove={steps.length > 1 ? () => setSteps((all) => all.filter((_, j) => j !== i)) : undefined}
           />
@@ -150,6 +151,7 @@ function StepCard({
   stats,
   spam,
   ai,
+  personalised,
   onChange,
   onRemove,
 }: {
@@ -159,6 +161,8 @@ function StepCard({
   stats?: StepStats
   spam?: SpamStepScore
   ai?: AiState
+  /** The sequence's emails are written for each person (the switch on the first). */
+  personalised?: boolean
   onChange: (patch: Partial<Draft>) => void
   onRemove?: () => void
 }) {
@@ -203,6 +207,11 @@ function StepCard({
 
       {index === 0 && <PersonaliseBox sequence={sequence} step={step} ai={ai} onChange={onChange} />}
       {index === 0 && step.personalise && <p className="text-xs font-semibold text-muted-foreground">Example email, and the standard one</p>}
+      {index > 0 && personalised && (
+        <p className="text-xs text-muted-foreground">
+          Written for each person by the AI, from your brief and what they've already been sent. This is the example it follows, and what's sent when it can't write one.
+        </p>
+      )}
       {index > 0 && (
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">

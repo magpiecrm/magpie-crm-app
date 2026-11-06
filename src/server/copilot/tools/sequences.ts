@@ -45,7 +45,7 @@ const stepInput = z.object({
     .nullable()
     .optional()
     .describe(
-      "First email only: the AI writes each person their own version, from this brief (what's offered, what to ask, anything to avoid) and what it finds on the web about their company; the subject and body above become the example it follows, and what's sent when it can't write one. Sent without review. null turns it off; left out, it stays as it is.",
+      "First email only, for the whole sequence: the AI writes each person their own version of every email, the first and the follow-ups, from this brief (what's offered, what to ask, anything to avoid), what it finds on the web about their company, and what they've already been sent; each email's subject and body become the example it follows, and what's sent when it can't write one. Sent without review. null turns it off; left out, it stays as it is.",
     ),
 })
 

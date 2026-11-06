@@ -8,7 +8,7 @@ import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
 import { queryKeys } from '../../../queryKeys'
 import { EnrollDialog } from './EnrollDialog'
-import { FirstEmailBadge, PersonalDraftPanel } from './Personalise'
+import { PersonalBadge, PersonalDraftsPanel } from './Personalise'
 import { ENROLLMENT_STATUS, when } from './labels'
 import { isPersonalised, type EnrollmentStatus, type Sequence } from '../types'
 
@@ -97,7 +97,7 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Emails sent</th>
                 <th className="px-4 py-3">Next email</th>
-                {personal && <th className="px-4 py-3">First email</th>}
+                {personal && <th className="px-4 py-3">Written by AI</th>}
               </tr>
             </thead>
             <tbody>
@@ -144,19 +144,19 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                   </td>
                   {personal && (
                     <td className="px-4 py-3">
-                      {e.personal ? (
+                      {e.drafts && Object.keys(e.drafts).length ? (
                         <button
                           type="button"
                           onClick={() => setOpen(open === e.id ? null : e.id)}
                           aria-expanded={open === e.id}
-                          aria-label={`${open === e.id ? 'Hide' : 'Show'} ${e.name ?? e.contact_email}'s first email`}
+                          aria-label={`${open === e.id ? 'Hide' : 'Show'} ${e.name ?? e.contact_email}'s emails`}
                           className="inline-flex items-center gap-1"
                         >
                           {open === e.id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
-                          <FirstEmailBadge e={e} />
+                          <PersonalBadge sequence={sequence} e={e} />
                         </button>
                       ) : (
-                        <FirstEmailBadge e={e} />
+                        <PersonalBadge sequence={sequence} e={e} />
                       )}
                     </td>
                   )}
@@ -165,7 +165,7 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                   <tr className="border-b border-border last:border-0 bg-muted/20">
                     <td />
                     <td colSpan={5} className="px-4 py-4">
-                      <PersonalDraftPanel sequence={sequence} e={e} />
+                      <PersonalDraftsPanel sequence={sequence} e={e} />
                     </td>
                   </tr>
                 )}

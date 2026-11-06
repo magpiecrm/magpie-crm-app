@@ -1,18 +1,21 @@
-// Personalised first emails (SequenceStep.personalise): for each person
-// enrolled, the AI writes their own version of a sequence's first email, from
-// the step's brief, what it finds about their company (companyResearch.ts)
-// and their name, job and company. The step's own subject and body are the
-// example it follows, and what's sent when it can't write one.
+// Personalised emails (SequenceStep.personalise on the first step): for each
+// person enrolled, the AI writes their own version of every email in the
+// sequence, from the brief, what it finds about their company
+// (companyResearch.ts) and their name, job and company. A follow-up is
+// written from what they've already been sent, with a new reason to reply.
+// Each step's own subject and body are the example it follows, and what's
+// sent when it can't write one.
 //
-// Drafts are written a little ahead of their send (runDrafts, from the email
-// scheduler, a few a minute), and the engine holds a first email until its
-// draft is there. They send without review, so each is checked first
-// (checkDraft): no merge tags or placeholders left in, no links that weren't
-// in the brief or the example, a sensible length. The signature and the
-// unsubscribe line are added at sending, as for every sequence email.
+// Each email is written a little ahead of its send (runDrafts, from the
+// email scheduler, a few a minute), once the one before it has gone, and the
+// engine holds it until it's there. They send without review, so each is
+// checked first (checkDraft): no merge tags or placeholders left in, no links
+// that weren't in the brief or the examples, not opening by describing their
+// own company, no "just checking in", a sensible length. The signature and
+// the unsubscribe line are added at sending, as for every sequence email.
 //
 // Where the AI can't be used at all (no key, no AI budget) the sequence
-// pauses rather than sending everyone the standard email, and carries on by
+// pauses rather than sending everyone the standard emails, and carries on by
 // itself once it can. Only the company is researched: what's known about the
 // person is what's already on the contact.
 
@@ -75,13 +78,20 @@ export function restatesCompany(body: string, company: string | null | undefined
   return new RegExp(`^(${n}('s|’s)?\\s+(\\w+\\s+){0,3}${verbs}\\b|at\\s+${n},?\\s+(you|your team)\\b)`, 'i').test(first.trim())
 }
 
-export function checkDraft(draft: { subject: string; body: string }, allowed: Set<string>, company?: string | null): string | null {
+export function checkDraft(
+  draft: { subject: string; body: string },
+  allowed: Set<string>,
+  company?: string | null,
+  opts: { needsSubject?: boolean; minBody?: number } = {},
+): string | null {
   const subject = draft.subject.trim()
   const body = draft.body.trim()
-  if (!subject) return 'The subject is empty.'
-  if (/[\r\n]/.test(subject)) return 'The subject has a line break in it.'
-  if (subject.length > SUBJECT_MAX) return `The subject is over ${SUBJECT_MAX} characters.`
-  if (body.length < 80) return 'The email is too short.'
+  if (opts.needsSubject !== false) {
+    if (!subject) return 'The subject is empty.'
+    if (/[\r\n]/.test(subject)) return 'The subject has a line break in it.'
+    if (subject.length > SUBJECT_MAX) return `The subject is over ${SUBJECT_MAX} characters.`
+  }
+  if (body.length < (opts.minBody ?? 80)) return 'The email is too short.'
   if (body.length > BODY_MAX) return `The email is over ${BODY_MAX} characters.`
   const text = `${subject}\n${body}`
   if (/\{\{|\}\}/.test(text)) return 'It has a merge tag ({{ … }}) in it; write the words themselves.'
@@ -120,23 +130,79 @@ const ANSWER = {
   },
 } satisfies GenerateOptions<any>['answer']
 
+const FOLLOW_UP_SYSTEM = `You write a follow-up cold email from a salesperson to one person who hasn't replied yet, in the salesperson's voice. You're given the brief (what's being offered), the emails they've already been sent, an example of what this follow-up is for, the recipient's name, job and company, and a few facts about their company with their sources.
+
+The follow-up's job is to give them one new reason to reply: a different angle on how the offer helps a business like theirs, drawn from a fact or a part of their situation the earlier emails didn't use. They know what their own company does, so never describe it back to them, and don't repeat or sum up what the earlier emails said.
+
+Write like one person to another:
+- Plain text, 30 to 90 words, one or two short paragraphs.
+- Never "just checking in", "following up", "bumping this" or "circling back", and no apology for writing again. Open with the new point.
+- Only claim what the brief says the offer does, and use only the facts given. Don't say you looked them up or came across their website.
+- Keep the example's purpose and tone; don't copy it word for word. End with one simple question, not one they've already been asked.
+- No greeting placeholder, merge tags ({{ … }}) or [brackets]: write their first name itself if you greet them. No sign-off or signature, and no unsubscribe line: both are added after your text.
+- Answer by calling the writeFollowUp tool.`
+
+const FOLLOW_UP_ANSWER = {
+  name: 'writeFollowUp',
+  description: 'Your answer: the follow-up to send this person.',
+  input: {
+    subject: z.string().optional().describe('Only when you were asked for a subject line; otherwise leave it out, as it replies in the same conversation.'),
+    body: z.string().describe('The follow-up itself, plain text, without a sign-off or unsubscribe line.'),
+    facts_used: z.array(z.number().int()).describe('The numbers of the facts it mentions.'),
+  },
+} satisfies GenerateOptions<any>['answer']
+
+/** An email they've already been sent, as they got it (without the sign-off and unsubscribe line). */
+export interface SentEmail {
+  label: string
+  subject: string
+  body: string
+}
+
+/** What they've been sent before step `stepIndex`: their own version where there was one, else the step's own email filled in for them. */
+export function sentBefore(
+  s: Pick<Sequence, 'steps'>,
+  e: Pick<Enrollment, 'sends' | 'drafts'>,
+  contact: Parameters<typeof mergeContact>[1],
+  stepIndex: number,
+): SentEmail[] {
+  return s.steps.slice(0, stepIndex).flatMap((step, j) => {
+    const send = e.sends.find((x) => x.step_id === step.id)
+    if (!send) return []
+    const own = e.drafts?.[step.id]
+    const body = own?.status === 'ready' && own.body ? own.body : mergeContact(step.body, contact, { html: false })
+    return [{ label: j === 0 ? 'First email' : `Follow-up ${j}`, subject: send.subject, body }]
+  })
+}
+
 export function draftPrompt(input: {
   step: Pick<SequenceStep, 'subject' | 'body' | 'personalise'>
+  /** The brief, for a follow-up (it's kept on the first step). */
+  brief?: string
   contact: Pick<Contact, 'email' | 'first_name' | 'last_name' | 'job_title' | 'company' | 'country' | 'custom'>
   facts: ResearchFact[]
   sender: { name?: string | null } | null
   brand: { name?: string; websiteUrl?: string; toneOfVoice?: string } | null
+  /** For a follow-up: what they've been sent, and whether it starts a new conversation with a subject of its own. */
+  followUp?: { sent: SentEmail[]; ownSubject: boolean }
   problem?: string
 }): string {
-  const { step, contact, facts, sender, brand } = input
+  const { step, contact, facts, sender, brand, followUp } = input
   const fill = (text: string) => mergeContact(text, contact, { html: false })
+  const brief = (input.brief ?? step.personalise?.brief ?? '').trim()
   return [
     `## From`,
     [sender?.name ? `Name: ${sender.name}` : null, brand?.name ? `Company: ${brand.name}` : null, brand?.websiteUrl ? `Website: ${brand.websiteUrl}` : null, brand?.toneOfVoice ? `Tone of voice: ${brand.toneOfVoice}` : null]
       .filter(Boolean)
       .join('\n') || '(not given)',
-    `## Brief\n${step.personalise?.brief.trim() || '(none: follow the example)'}`,
-    `## Example email\nSubject: ${fill(step.subject ?? '')}\n\n${fill(step.body)}`,
+    `## Brief\n${brief || '(none: follow the example)'}`,
+    followUp
+      ? `## What you've sent them so far (no reply yet)\n${followUp.sent.map((m) => `### ${m.label}\nSubject: ${m.subject}\n\n${m.body}`).join('\n\n') || '(nothing)'}`
+      : null,
+    followUp
+      ? `## What this follow-up is for (example)\n${followUp.ownSubject ? `Subject: ${fill(step.subject ?? '')}\n\n` : ''}${fill(step.body)}`
+      : `## Example email\nSubject: ${fill(step.subject ?? '')}\n\n${fill(step.body)}`,
+    followUp ? (followUp.ownSubject ? 'This follow-up starts a new conversation: give it a subject line under 60 characters.' : 'It replies in the same conversation: no subject line.') : null,
     `## To\n${[`First name: ${contact.first_name?.trim() || '(not known: start with a plain "Hi")'}`, contact.job_title ? `Job: ${contact.job_title}` : null, contact.company ? `Company: ${contact.company}` : null, contact.country ? `Country: ${contact.country}` : null].filter(Boolean).join('\n')}`,
     `## Facts about their company (they know all this: use it to tailor the offer, don't repeat it)\n${facts.length ? facts.map((f, i) => `${i + 1}. ${f.text}${f.url ? ` (${f.url})` : ''}`).join('\n') : '(nothing found)'}`,
     input.problem ? `## Fix this\nYour last version couldn't be sent: ${input.problem} Write it again without that.` : null,
@@ -145,33 +211,45 @@ export function draftPrompt(input: {
     .join('\n\n')
 }
 
-export type Written = { status: 'ready'; subject: string; body: string; facts: ResearchFact[] } | { status: 'fallback'; reason: string }
+/** A follow-up that only says it's following up. */
+const NUDGE = /\b(just (checking|following|circling) (in|up|back)|following up on my|bumping this|circling back|checking in again)\b/i
 
-/** Researches their company and writes their email. Throws the AI's errors (AiUnavailable, AiFailed). */
+export type Written = { status: 'ready'; subject?: string; body: string; facts: ResearchFact[] } | { status: 'fallback'; reason: string }
+
+/**
+ * Researches their company and writes their own version of one email: the
+ * first (`stepIndex` 0), or a follow-up, from what they've already been sent
+ * (`enrollment`). Throws the AI's errors (AiUnavailable, AiFailed).
+ */
 export async function writeDraft(
   s: Pick<Sequence, 'steps' | 'sender_id'>,
   contact: Contact,
   deps: { generate?: typeof generate; research?: typeof researchCompany; save?: boolean } = {},
+  at: { stepIndex: number; enrollment?: Pick<Enrollment, 'sends' | 'drafts'> } = { stepIndex: 0 },
 ): Promise<Written> {
-  const step = s.steps[0]
-  if (!step?.personalise) return { status: 'fallback', reason: "The first email isn't personalised." }
+  const first = s.steps[0]
+  const step = s.steps[at.stepIndex]
+  if (!first?.personalise || !step) return { status: 'fallback', reason: "This sequence's emails aren't written for each person." }
+  const followUp = at.stepIndex > 0 ? { sent: at.enrollment ? sentBefore(s, at.enrollment, contact, at.stepIndex) : [], ownSubject: !!step.subject?.trim() } : undefined
   const company = companyOf(contact)
   const research = company ? await (deps.research ?? researchCompany)(company, { save: deps.save }) : { facts: [] as ResearchFact[] }
   const sender = db.data.senders.find((x) => x.id === s.sender_id) ?? null
   const brand = db.getBrandKit()
-  const allowed = allowedLinks(step, brand?.websiteUrl)
+  // Links from the brief, this step and the first email's example may be used.
+  const allowed = new Set([...allowedLinks(first, brand?.websiteUrl), ...allowedLinks(step)])
   let problem: string | undefined
   for (let attempt = 0; attempt < 2; attempt++) {
-    const { answer } = await (deps.generate ?? generate)({
-      system: SYSTEM,
-      prompt: draftPrompt({ step, contact, facts: research.facts, sender, brand, problem }),
-      answer: ANSWER,
-    })
-    const draft = { subject: answer.subject.trim(), body: answer.body.trim() }
-    problem = checkDraft(draft, allowed, contact.company) ?? undefined
+    const prompt = draftPrompt({ step, brief: first.personalise.brief, contact, facts: research.facts, sender, brand, followUp, problem })
+    const { answer } = followUp
+      ? await (deps.generate ?? generate)({ system: FOLLOW_UP_SYSTEM, prompt, answer: FOLLOW_UP_ANSWER })
+      : await (deps.generate ?? generate)({ system: SYSTEM, prompt, answer: ANSWER })
+    const needsSubject = !followUp || followUp.ownSubject
+    const draft = { subject: needsSubject ? (answer.subject ?? '').trim() : '', body: answer.body.trim() }
+    problem = checkDraft(draft, allowed, contact.company, { needsSubject, minBody: followUp ? 40 : 80 }) ?? undefined
+    if (!problem && followUp && NUDGE.test(draft.body)) problem = 'It says it\'s following up or checking in; give the new reason to reply instead.'
     if (!problem) {
       const used = [...new Set(answer.facts_used)].map((n) => research.facts[n - 1]).filter((f): f is ResearchFact => !!f)
-      return { status: 'ready', ...draft, facts: used }
+      return { status: 'ready', ...(draft.subject ? { subject: draft.subject } : {}), body: draft.body, facts: used }
     }
   }
   return { status: 'fallback', reason: `The AI's email couldn't be sent as written: ${problem}` }
@@ -183,7 +261,7 @@ const lastNotice = new Map<string, number>()
 export function pauseForAi(s: Sequence, reason: string, now = new Date()) {
   db.mutate(() => {
     s.status = 'paused'
-    s.paused_reason = `Its first emails are written by the AI, which can't be used right now: ${reason}`
+    s.paused_reason = `Its emails are written for each person by the AI, which can't be used right now: ${reason}`
     s.auto_paused = 'ai'
     s.updated_at = now.toISOString()
   })
@@ -197,19 +275,25 @@ export function aiCleared(s: Pick<Sequence, 'updated_at'>, now = new Date()): bo
   return aiAvailable().ok && now.getTime() - Date.parse(s.updated_at) >= AI_RETRY_MS
 }
 
-/** The drafts to write now: pending first emails in running sequences, due within a day, soonest first. */
-export function dueDrafts(data: DbSchema, now = new Date()): Array<{ s: Sequence; e: Enrollment }> {
+/** The emails to write now: each person's next one in running sequences, due within a day and not yet written, soonest first. */
+export function dueDrafts(data: DbSchema, now = new Date()): Array<{ s: Sequence; e: Enrollment; stepIndex: number }> {
   const running = new Map((data.sequences ?? []).filter((s) => s.status === 'active' && isPersonalised(s)).map((s) => [s.id, s]))
   if (!running.size) return []
   const until = now.getTime() + AHEAD_MS
   return (data.sequence_enrollments ?? [])
-    .filter((e) => running.has(e.sequence_id) && e.status === 'active' && e.next_step === 0 && !e.claim && !e.sends.length)
-    .filter((e) => (!e.personal || e.personal.status === 'pending') && e.next_send_at && Date.parse(e.next_send_at) <= until)
-    .sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))
-    .map((e) => ({ s: running.get(e.sequence_id)!, e }))
+    .flatMap((e) => {
+      const s = running.get(e.sequence_id)
+      const step = s?.steps[e.next_step]
+      if (!s || !step || e.status !== 'active' || e.claim || !e.next_send_at || Date.parse(e.next_send_at) > until) return []
+      const d = e.drafts?.[step.id]
+      return !d || d.status === 'pending' ? [{ s, e, stepIndex: e.next_step }] : []
+    })
+    .sort((a, b) => a.e.next_send_at!.localeCompare(b.e.next_send_at!))
 }
 
-/** Writes the first emails due soon (the email scheduler, every minute). Returns how many it wrote. */
+const emailName = (stepIndex: number) => (stepIndex === 0 ? 'first email' : `follow-up ${stepIndex}`)
+
+/** Writes the emails due soon, first emails and follow-ups (the email scheduler, every minute). Returns how many it wrote. */
 export async function runDrafts(now = new Date(), deps: Parameters<typeof writeDraft>[2] = {}): Promise<number> {
   const due = dueDrafts(db.data, now)
   if (!due.length) return 0
@@ -219,20 +303,26 @@ export async function runDrafts(now = new Date(), deps: Parameters<typeof writeD
     return 0
   }
   let written = 0
-  for (const { s, e } of due.slice(0, PER_RUN)) {
+  for (const { s, e, stepIndex } of due.slice(0, PER_RUN)) {
     if (s.status !== 'active') continue
     const contact = db.getContact(e.contact_email)
     // Gone or unsubscribed: the engine ends them.
     if (!contact) continue
-    if (!e.personal) db.mutate(() => (e.personal = pendingDraft(now)))
-    const asked = e.personal!.at
+    const stepId = s.steps[stepIndex].id
+    const drafts = () => (e.drafts ??= {})
+    if (!drafts()[stepId]) db.mutate(() => (drafts()[stepId] = pendingDraft(now)))
+    const asked = drafts()[stepId].at
+    // Edited or rewritten meanwhile (the step changed, or someone asked again): this one's out of date.
+    const stale = () => drafts()[stepId]?.status !== 'pending' || drafts()[stepId].at !== asked
     try {
-      const out = await writeDraft(s, contact, deps)
-      // Edited or rewritten meanwhile (the step changed, or someone asked again): this one's out of date.
-      if (e.personal?.status !== 'pending' || e.personal.at !== asked) continue
+      const out = await writeDraft(s, contact, deps, { stepIndex, enrollment: e })
+      if (stale()) continue
       db.mutate(() => {
         const at = new Date().toISOString()
-        e.personal = out.status === 'ready' ? { status: 'ready', subject: out.subject, body: out.body, facts: out.facts, at, attempts: 0 } : { status: 'fallback', reason: out.reason, at, attempts: 0 }
+        drafts()[stepId] =
+          out.status === 'ready'
+            ? { status: 'ready', ...(out.subject ? { subject: out.subject } : {}), body: out.body, facts: out.facts, at, attempts: 0 }
+            : { status: 'fallback', reason: out.reason, at, attempts: 0 }
       })
       recordUsage(out.status === 'ready' ? { personalDrafts: 1 } : { personalFallbacks: 1 })
       written++
@@ -242,15 +332,14 @@ export async function runDrafts(now = new Date(), deps: Parameters<typeof writeD
         return written
       }
       // Busy, overloaded or a bad answer: tried again next run, then the step's own email.
-      const attempts = (e.personal?.attempts ?? 0) + 1
-      console.error(`[Sequences] Couldn't write a first email for "${s.name}" (try ${attempts}): ${err?.message ?? err}`)
-      if (e.personal?.status !== 'pending' || e.personal.at !== asked) continue
+      const attempts = (drafts()[stepId]?.attempts ?? 0) + 1
+      console.error(`[Sequences] Couldn't write a ${emailName(stepIndex)} for "${s.name}" (try ${attempts}): ${err?.message ?? err}`)
+      if (stale()) continue
       db.mutate(() => {
-        const at = e.personal?.at ?? now.toISOString()
-        e.personal =
+        drafts()[stepId] =
           attempts >= MAX_ATTEMPTS
             ? { status: 'fallback', reason: `The AI couldn't write it: ${err?.message ?? 'no answer'}`, at: new Date().toISOString(), attempts }
-            : { status: 'pending', at, attempts }
+            : { status: 'pending', at: asked, attempts }
       })
       if (attempts >= MAX_ATTEMPTS) recordUsage({ personalFallbacks: 1 })
     }

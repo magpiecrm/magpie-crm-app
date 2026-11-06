@@ -29,6 +29,7 @@ const { sequences } = await import('.')
 const { runSequences } = await import('./engine')
 const { allowedLinks, checkDraft, draftPrompt, runDrafts, AI_RETRY_MS } = await import('./personalise')
 const { AiFailed, AiUnavailable } = await import('../copilot/generate')
+const { moveFirstEmailDrafts } = await import('../../features/sequences/types')
 
 afterAll(() => {
   delete process.env.DATABASE_PATH
@@ -63,7 +64,7 @@ function makeSequence(brief: string | null = BRIEF) {
 
 const enrollmentOf = (sequenceId: string, email: string) => db.data.sequence_enrollments!.find((e) => e.sequence_id === sequenceId && e.contact_email === email)!
 const research = vi.fn(async () => ({ facts: FACTS, web: true, at: '' }))
-const writes = (...answers: Array<{ subject: string; body: string; facts_used?: number[] } | Error>) => {
+const writes = (...answers: Array<{ subject?: string; body: string; facts_used?: number[] } | Error>) => {
   const fn = vi.fn(async () => {
     const next = answers.shift()
     if (!next) throw new AiFailed('no more answers')
@@ -138,45 +139,80 @@ describe('what the AI is given', () => {
   })
 })
 
-describe('the engine with personalised first emails', () => {
-  it('holds the first email until it is written, sends it as written, and threads the follow-up to it', async () => {
+describe('the engine with personalised emails', () => {
+  it('holds each email until it is written and sends it as written: the first, then a follow-up in its thread', async () => {
     contact('ava@larkspur.test')
     const id = makeSequence()
     sequences.enroll(id, ['ava@larkspur.test'], {}, null)
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toMatchObject({ status: 'pending' })
+    const steps = sequences.get(id).sequence.steps
+    const draft = (i: number) => enrollmentOf(id, 'ava@larkspur.test').drafts?.[steps[i].id]
+    expect(draft(0)).toMatchObject({ status: 'pending' })
     const t0 = new Date()
     expect(await runSequences(t0, () => 0.5)).toBe(0)
 
     const generate = writes({ subject: 'Onboarding at Larkspur', body: BODY, facts_used: [1, 5] })
     expect(await runDrafts(t0, { generate, research })).toBe(1)
     expect(research).toHaveBeenCalledWith({ name: 'Larkspur', domain: 'larkspur.test', country: null }, expect.anything())
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toMatchObject({ status: 'ready', subject: 'Onboarding at Larkspur', facts: FACTS })
+    expect(draft(0)).toMatchObject({ status: 'ready', subject: 'Onboarding at Larkspur', facts: FACTS })
 
     expect(await runSequences(t0, () => 0.5)).toBe(1)
     expect(sent[0].subject).toBe('Onboarding at Larkspur')
     expect(sent[0].text).toMatch(/^Hi Ava,\n\nI saw Larkspur makes onboarding software[\s\S]*next week be useful\?\n\nJo, Acme\n\nNot interested\? Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
     // Kept as the record of what went out, and too late to change.
-    expect(() => sequences.draft(enrollmentOf(id, 'ava@larkspur.test').id, { rewrite: true })).toThrow(/already gone/)
+    expect(() => sequences.draft(enrollmentOf(id, 'ava@larkspur.test').id, steps[0].id, { rewrite: true })).toThrow(/already gone/)
 
-    expect(await runSequences(new Date(t0.getTime() + 3 * DAY + 60_000), () => 0.5)).toBe(1)
+    // The follow-up waits for its own, written from what they were sent.
+    const t3 = new Date(t0.getTime() + 3 * DAY + 60_000)
+    expect(await runSequences(t3, () => 0.5)).toBe(0)
+    expect(draft(1)).toMatchObject({ status: 'pending' })
+    const followUp = writes({ subject: 'Ignored: it replies in the thread', body: 'Ava, new clients usually arrive in batches after a launch, which is when onboarding backs up most. Want me to show you how firms handle that?' })
+    expect(await runDrafts(t3, { generate: followUp, research })).toBe(1)
+    const asked = followUp.mock.calls[0][0]
+    expect(asked.answer.name).toBe('writeFollowUp')
+    expect(asked.prompt).toContain("## What you've sent them so far (no reply yet)\n### First email\nSubject: Onboarding at Larkspur")
+    expect(asked.prompt).toContain('I saw Larkspur makes onboarding software')
+    expect(asked.prompt).toContain('It replies in the same conversation: no subject line.')
+    expect(draft(1)).toMatchObject({ status: 'ready' })
+    expect(draft(1)).not.toHaveProperty('subject')
+
+    expect(await runSequences(t3, () => 0.5)).toBe(1)
     expect(sent[1]).toMatchObject({ subject: 'Re: Onboarding at Larkspur', inReplyTo: expect.any(String) })
+    expect(sent[1].text).toMatch(/^Ava, new clients usually arrive in batches/)
   })
 
   it("sends the step's own email when the AI's can't pass the checks, or the AI keeps failing", async () => {
     contact('ava@larkspur.test')
     contact('bo@larkspur.test', { first_name: 'Bo' })
     const id = makeSequence()
+    const first = sequences.get(id).sequence.steps[0].id
     sequences.enroll(id, ['ava@larkspur.test'], {}, null)
     const t0 = new Date()
     await runDrafts(t0, { generate: writes({ subject: 'Hi', body: `${BODY} {{ contact.first_name }}` }, { subject: 'Hi', body: `${BODY} [Calendar link]` }), research })
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toMatchObject({ status: 'fallback', reason: expect.stringMatching(/placeholder/) })
+    expect(enrollmentOf(id, 'ava@larkspur.test').drafts?.[first]).toMatchObject({ status: 'fallback', reason: expect.stringMatching(/placeholder/) })
     await runSequences(t0, () => 0.5)
     expect(sent[0].subject).toBe('Quick question, Ava')
 
     sequences.enroll(id, ['bo@larkspur.test'], {}, null)
     const failing = writes(new AiFailed('busy'), new AiFailed('busy'), new AiFailed('busy'))
     for (let i = 0; i < 3; i++) await runDrafts(t0, { generate: failing, research })
-    expect(enrollmentOf(id, 'bo@larkspur.test').personal).toMatchObject({ status: 'fallback', attempts: 3, reason: expect.stringMatching(/busy/) })
+    expect(enrollmentOf(id, 'bo@larkspur.test').drafts?.[first]).toMatchObject({ status: 'fallback', attempts: 3, reason: expect.stringMatching(/busy/) })
+  })
+
+  it('refuses a follow-up that only says it is checking in, and sends the standard one if it keeps doing so', async () => {
+    contact('ava@larkspur.test')
+    const id = makeSequence()
+    sequences.enroll(id, ['ava@larkspur.test'], {}, null)
+    const t0 = new Date()
+    await runDrafts(t0, { generate: writes({ subject: 'Onboarding at Larkspur', body: BODY }), research })
+    await runSequences(t0, () => 0.5)
+    const t3 = new Date(t0.getTime() + 3 * DAY + 60_000)
+    const nudges = writes({ body: 'Hi Ava, just checking in on my last note about onboarding. Any thoughts?' }, { body: 'Hi Ava, just following up on my email below in case it got buried.' })
+    await runDrafts(t3, { generate: nudges, research })
+    expect(nudges.mock.calls[1][0].prompt).toMatch(/following up or checking in/)
+    const step = sequences.get(id).sequence.steps[1]
+    expect(enrollmentOf(id, 'ava@larkspur.test').drafts?.[step.id]).toMatchObject({ status: 'fallback' })
+    await runSequences(t3, () => 0.5)
+    expect(sent[1].text).toMatch(/^Following up, Ava\./)
   })
 
   it("pauses instead of sending everyone the standard email when the AI can't be used, and carries on later", async () => {
@@ -187,7 +223,7 @@ describe('the engine with personalised first emails', () => {
     await runDrafts(t0, { generate: writes(new AiUnavailable("You've used this month's AI budget.")), research })
     expect(sequences.get(id).sequence).toMatchObject({ status: 'paused', auto_paused: 'ai', paused_reason: expect.stringMatching(/AI budget/) })
     expect(notices).toHaveLength(1)
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toMatchObject({ status: 'pending' })
+    expect(enrollmentOf(id, 'ava@larkspur.test').drafts?.[sequences.get(id).sequence.steps[0].id]).toMatchObject({ status: 'pending' })
 
     // Stays paused while the AI is out, and for an hour after it failed even once it's back; then carries on.
     const row = db.data.sequences!.find((x) => x.id === id)!
@@ -205,36 +241,51 @@ describe('the engine with personalised first emails', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('writes unsent ones again when the first email changes, keeping hand edits, and drops them when switched off', async () => {
+  it('writes unsent ones again when what they come from changes, keeping hand edits, and drops them when switched off', async () => {
     contact('ava@larkspur.test')
     contact('bo@larkspur.test', { first_name: 'Bo' })
     const id = makeSequence()
     sequences.enroll(id, ['ava@larkspur.test', 'bo@larkspur.test'], {}, null)
     await runDrafts(new Date(), { generate: writes({ subject: 'One', body: BODY }, { subject: 'Two', body: BODY }), research })
-    const bo = enrollmentOf(id, 'bo@larkspur.test')
-    sequences.draft(bo.id, { subject: 'My own words', body: 'Hi Bo, written by hand.' })
-    expect(enrollmentOf(id, 'bo@larkspur.test').personal).toMatchObject({ status: 'ready', subject: 'My own words', edited: true })
-    expect(() => sequences.draft(bo.id, { subject: 'Hi', body: 'Hi {{ contact.nickname }}' })).toThrow(/isn't a contact field/)
-
     const steps = sequences.get(id).sequence.steps
-    sequences.update(id, { steps: [{ ...steps[0], personalise: { brief: `${BRIEF} Mention our free trial.` } }, steps[1]] })
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toMatchObject({ status: 'pending' })
-    expect(enrollmentOf(id, 'bo@larkspur.test').personal).toMatchObject({ subject: 'My own words' })
+    const draft = (email: string, i = 0) => enrollmentOf(id, email).drafts?.[steps[i].id]
+    const bo = enrollmentOf(id, 'bo@larkspur.test')
+    sequences.draft(bo.id, steps[0].id, { subject: 'My own words', body: 'Hi Bo, written by hand.' })
+    expect(draft('bo@larkspur.test')).toMatchObject({ status: 'ready', subject: 'My own words', edited: true })
+    expect(() => sequences.draft(bo.id, steps[0].id, { subject: 'Hi', body: 'Hi {{ contact.nickname }}' })).toThrow(/isn't a contact field/)
+    // A follow-up in the thread is edited without a subject.
+    sequences.draft(bo.id, steps[1].id, { body: 'Bo, one more thing.' })
+    expect(draft('bo@larkspur.test', 1)).toMatchObject({ status: 'ready', body: 'Bo, one more thing.', edited: true })
+    expect(draft('bo@larkspur.test', 1)).not.toHaveProperty('subject')
+
+    // Only the follow-up's text changes: only its unsent drafts are written again.
+    sequences.update(id, { steps: [steps[0], { ...steps[1], body: 'A new nudge, {{ contact.first_name }}.' }] })
+    expect(draft('ava@larkspur.test')).toMatchObject({ status: 'ready', subject: 'One' })
+    sequences.update(id, { steps: [{ ...steps[0], personalise: { brief: `${BRIEF} Mention our free trial.` } }, { ...steps[1], body: 'A new nudge, {{ contact.first_name }}.' }] })
+    expect(draft('ava@larkspur.test')).toMatchObject({ status: 'pending' })
+    expect(draft('bo@larkspur.test')).toMatchObject({ subject: 'My own words' })
 
     // Left out of an edit (the copilot changing the wait), it stays on.
     sequences.update(id, { steps: [{ id: steps[0].id, delay_days: 1, subject: steps[0].subject, body: steps[0].body }, steps[1]] })
     expect(sequences.get(id).sequence.steps[0].personalise).toBeTruthy()
     sequences.update(id, { steps: [{ ...steps[0], personalise: null }, steps[1]] })
-    expect(enrollmentOf(id, 'ava@larkspur.test').personal).toBeUndefined()
-    expect(enrollmentOf(id, 'bo@larkspur.test').personal).toBeUndefined()
+    expect(enrollmentOf(id, 'ava@larkspur.test').drafts).toEqual({})
+    expect(enrollmentOf(id, 'bo@larkspur.test').drafts).toEqual({})
   })
 
-  it("won't start a personalised sequence without the AI, and only the first email can be personalised", () => {
+  it("won't start a personalised sequence without the AI, and the switch is the first email's", () => {
     ai = { ok: false, reason: 'Add an Anthropic or OpenAI API key in Settings → Copilot.' }
     expect(() => makeSequence()).toThrow(/written for each person by the AI: Add an Anthropic/)
     ai = { ok: true, web: true }
     const s = sequences.create({ name: 'Two', senderId: 1 }, null)
     sequences.update(s.id, { steps: [{ delay_days: 0, subject: 'Hi', body: 'Hello' }, { delay_days: 2, subject: null, body: 'Again', personalise: { brief: 'x' } }] })
     expect(sequences.get(s.id).sequence.steps.map((st) => st.personalise ?? null)).toEqual([null, null])
+  })
+
+  it('moves an enrollment from before there was a draft for each email', () => {
+    const seqs = [{ id: 's1', steps: [{ id: 'a' }, { id: 'b' }] }] as any
+    const old = [{ id: 'e1', sequence_id: 's1', personal: { status: 'ready', subject: 'Hi', body: 'x', at: 'now', attempts: 0 } }] as any
+    expect(moveFirstEmailDrafts(seqs, old)).toBe(1)
+    expect(old[0]).toEqual({ id: 'e1', sequence_id: 's1', drafts: { a: { status: 'ready', subject: 'Hi', body: 'x', at: 'now', attempts: 0 } } })
   })
 })

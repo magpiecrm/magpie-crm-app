@@ -14,10 +14,11 @@ export interface SequenceStep {
   /** The hidden campaign row its sends are recorded under, from its first send (tracking and results). */
   campaign_id?: number
   /**
-   * First step only: the AI writes each person their own version of this
-   * email (server/sequences/personalise.ts), from this brief and what it
-   * finds about their company. The step's own subject and body are the
-   * example it follows, and what's sent when it can't write one.
+   * On the first step, and for the whole sequence: the AI writes each person
+   * their own version of every email, the first and the follow-ups
+   * (server/sequences/personalise.ts), from this brief and what it finds
+   * about their company. Each step's own subject and body are the example it
+   * follows, and what's sent when it can't write one.
    */
   personalise?: { brief: string } | null
 }
@@ -108,8 +109,8 @@ export interface Enrollment {
   reply: { at: string; matched_by: 'manual' | 'thread' | 'from' } | null
   enrolled_at: string
   enrolled_by: string | null
-  /** Their own first email, where the first step is personalised. */
-  personal?: PersonalDraft
+  /** Their own version of each email, by step id, where the sequence is personalised: written as each comes due. */
+  drafts?: Record<string, PersonalDraft>
 }
 
 /** A short fact about a person's company, and where it was read. */
@@ -119,13 +120,14 @@ export interface ResearchFact {
 }
 
 /**
- * One person's own first email (server/sequences/personalise.ts). `pending`
- * waits to be written, and the first email waits with it; `ready` is sent
- * as written; `fallback` sends the step's own email, for `reason`. Kept after
- * it's sent, as the record of what went out.
+ * One person's own version of one email (server/sequences/personalise.ts).
+ * `pending` waits to be written, and the email waits with it; `ready` is
+ * sent as written; `fallback` sends the step's own email, for `reason`. Kept
+ * after it's sent, as the record of what went out.
  */
 export interface PersonalDraft {
   status: 'pending' | 'ready' | 'fallback'
+  /** None for a follow-up that replies in the thread ("Re: …"). */
   subject?: string
   body?: string
   /** What it was written from: the company facts it used. */
@@ -143,8 +145,27 @@ export interface PersonalDraft {
 export const BRIEF_MAX = 2_000
 export const SUBJECT_MAX = 90
 
-/** The sequence's first email is written for each person (server/sequences/personalise.ts). */
+/** The sequence's emails are written for each person (server/sequences/personalise.ts). */
 export const isPersonalised = (s: Pick<Sequence, 'steps'>) => !!s.steps[0]?.personalise
+
+/** Their own version of a step's email, if there is one. */
+export const draftFor = (e: Pick<Enrollment, 'drafts'>, stepId: string | undefined): PersonalDraft | undefined => (stepId ? e.drafts?.[stepId] : undefined)
+
+/**
+ * Enrollments from before a draft was kept for each email, whose one draft
+ * (`personal`) was their first email's: moved to that step. Returns how many.
+ */
+export function moveFirstEmailDrafts(sequences: Array<Pick<Sequence, 'id' | 'steps'>>, enrollments: Array<Enrollment & { personal?: PersonalDraft }>): number {
+  let moved = 0
+  for (const e of enrollments) {
+    if (!e.personal) continue
+    const first = sequences.find((s) => s.id === e.sequence_id)?.steps[0]?.id
+    if (first) e.drafts = { [first]: e.personal, ...e.drafts }
+    delete e.personal
+    moved++
+  }
+  return moved
+}
 
 /** A first email waiting to be written. */
 export const pendingDraft = (now = new Date()): PersonalDraft => ({ status: 'pending', at: now.toISOString(), attempts: 0 })
