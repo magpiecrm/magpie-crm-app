@@ -41,6 +41,7 @@ export const POINTS = {
   bodyPhraseMax: 15,
   imagesOnly: 15,
   imageHeavy: 8,
+  littleText: 10,
   noAlt: 2,
   noAltMax: 6,
   placeholderImage: 5,
@@ -62,7 +63,7 @@ export const POINTS = {
   clickTrackingCold: 5,
 }
 
-const LIMITS = { coldLinks: 3, links: 20, linkDomains: 5, subjectLength: 70, coldWords: 200, fewWords: 40 }
+const LIMITS = { coldLinks: 3, links: 20, linkDomains: 5, subjectLength: 70, coldWords: 200, fewWords: 40, littleText: 5 }
 
 const SHORTENERS = new Set([
   'bit.ly', 'bitly.com', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'is.gd', 'buff.ly', 'rebrand.ly', 'cutt.ly',
@@ -194,6 +195,9 @@ export function contentFindings(input: ContentInput): SpamFinding[] {
       add('images_only', POINTS.imagesOnly, `The email is mostly images (${plural(images.length, 'image')}, ${plural(words, 'word')}). Filters can't read images, and spam often hides in them.`, 'Put the message in text, with images only to support it.')
     } else if (images.length >= 3 && words < images.length * 25) {
       add('image_heavy', POINTS.imageHeavy, `The email has ${images.length} images and only ${words} words.`, 'Add more text, or use fewer images.')
+    } else if (!images.length && words < LIMITS.littleText) {
+      // A blank design, or a lone link: filters have nothing to judge it by, and people nothing to read.
+      add('little_text', POINTS.littleText, words ? `The email has only ${plural(words, 'word')} of text.` : 'The email has no text yet.', 'Write the message itself in the design.')
     }
     const noAlt = images.filter((tag) => !attr(tag, 'alt')?.trim()).length
     if (noAlt) {

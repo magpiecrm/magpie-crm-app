@@ -78,6 +78,12 @@ describe('the body', () => {
     expect(codes(campaign({ html: '<img src="https://a.test/banner.png" alt="Sale"><p>Shop now</p>' }))).toContain('images_only')
   })
 
+  it('marks down an email with almost no text', () => {
+    expect(finding(campaign({ html: '<html><head><title>Email Newsletter</title></head><body></body></html>' }), 'little_text')?.text).toBe('The email has no text yet.')
+    expect(codes(campaign({ html: '<p><a href="https://a.test/offer">See the offer</a></p>' }))).toContain('little_text')
+    expect(codes(campaign())).not.toContain('little_text')
+  })
+
   it('counts images without alt text, and placeholder images', () => {
     const f = contentFindings(campaign({ html: `<p>${'word '.repeat(80)}</p><img src="https://via.placeholder.com/600x300"><img src="x.png" alt="">` }))
     expect(f.find((x) => x.code === 'no_alt')?.points).toBe(4)
