@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
 import type { SettingsSection } from '../sections'
 import type { PlacementTestResult, Tally, WarmupSender, WarmupSenderRow } from '../warmupTypes'
 
@@ -34,20 +34,20 @@ function landed(t: Tally, need = 0) {
   return `${pct(t.inbox, total)} inbox · ${pct(t.tabs, total)} tabs · ${pct(t.spam, total)} spam (${total} delivered)`
 }
 
-/** What warmup is, for a workspace that has it and one that could add it: last, after what there is to do. */
+/** What warmup is, for a workspace that has it and one that could add it, folded under the block's controls. */
 function HowItWorks() {
   return (
-    <SettingsBlock title="How it works">
-      <p className="text-sm leading-relaxed text-muted-foreground">
+    <SettingsMore>
+      <p>
         A new sender that suddenly emails hundreds of strangers looks like a spammer to Gmail and Outlook. Warmup gives a sender a steady, growing
         stream of ordinary email with a pool of other real inboxes, which open it and reply to some of it. It's sent through our mail server,
         the same way as your campaigns, starting with a few a day and rising to about 20 over a month.
       </p>
-      <p className="text-sm leading-relaxed text-muted-foreground">
+      <p>
         The warmup that arrives in your inbox is filed in a folder called Mailivery, after the service that runs the pool. Keep warmup running alongside your
         campaigns. It helps, but it can't promise your email reaches the inbox: what you send, and who to, matters most.
       </p>
-    </SettingsBlock>
+    </SettingsMore>
   )
 }
 
@@ -69,8 +69,8 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
               Go to Plan and billing
             </Button>
           </SettingsActions>
+          <HowItWorks />
         </SettingsBlock>
-        <HowItWorks />
       </SettingsPanel>
     )
   }
@@ -106,6 +106,7 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
               ))}
             </SettingsList>
           )}
+          <HowItWorks />
         </SettingsBlock>
 
         {warming > 0 && <Placement />}
@@ -117,7 +118,6 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
             stopped={Boolean(data.stopped)}
           />
         )}
-        <HowItWorks />
       </SettingsPanel>
 
       {consentFor && <Consent row={consentFor} consent={data.consent} onClose={() => setConsentFor(null)} />}

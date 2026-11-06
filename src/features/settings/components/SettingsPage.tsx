@@ -92,7 +92,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   return (
     // Centred once the window is wider than the menu and a full-width page together.
     <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[84rem] mx-auto">
-      <h1 className="lg:hidden text-sm font-semibold text-muted-foreground">Settings</h1>
+      <h1 className="lg:hidden text-base font-semibold text-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
         {/* Narrow screens: one dropdown instead of a menu column. */}
@@ -135,7 +135,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     onClick={() => open(s.id)}
                     aria-current={active === s.id ? 'page' : undefined}
                     className={`flex items-center justify-between gap-2 px-3 py-1.5 text-sm text-left rounded-md-s cursor-pointer transition-colors ${
-                      active === s.id ? 'relative bg-accent/10 text-accent font-semibold before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-accent' : 'text-foreground hover:bg-muted'
+                      active === s.id ? 'relative bg-accent/10 dark:bg-accent/15 text-accent font-semibold before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-accent' : 'text-foreground hover:bg-muted'
                     }`}
                   >
                     <span className="truncate">{s.label}</span>
@@ -159,10 +159,11 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
               {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
-              {active !== 'overview' && currentStatus && (
+              {/* Only a state or something to do: a plain fact ("2 people can sign in") is left to the page. */}
+              {active !== 'overview' && currentStatus && (currentStatus.level !== 'info' || currentStatus.action) && (
                 <span className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-[14px] border border-border bg-card px-2.5 py-1 text-xs leading-[18px] text-foreground">
                   <StatusIcon level={currentStatus.level} />
-                  <span className="min-w-0">{currentStatus.text.replace(/\.$/, '')}</span>
+                  <span className="min-w-0">{currentStatus.short ?? currentStatus.text.replace(/\.$/, '')}</span>
                 </span>
               )}
             </div>

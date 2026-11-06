@@ -171,14 +171,13 @@ export function TeamTab() {
                       className={INPUT_CLASS}
                     />
                   </Field>
-                  <Field label="Password">
+                  <Field label="Password" hint="At least 6 characters.">
                     <input
                       type="password"
                       required
                       minLength={6}
                       value={newUserPassword}
                       onChange={(e) => setNewUserPassword(e.target.value)}
-                      placeholder="At least 6 characters"
                       disabled={isAddingUser}
                       className={INPUT_CLASS}
                     />

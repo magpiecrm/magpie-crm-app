@@ -103,7 +103,7 @@ export function SettingsRow({
 
 /** While a block's contents load, or when it has nothing to list. */
 export function SettingsEmpty({ children }: { children: ReactNode }) {
-  return <p className="rounded-md-s border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">{children}</p>
+  return <p className="rounded-md-s bg-muted/60 px-3 py-3 text-sm text-muted-foreground">{children}</p>
 }
 
 /** One of a few choices, as a card: side by side in a FieldGrid, the chosen one outlined. */
@@ -163,7 +163,7 @@ export function SettingsCheck({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-accent focus:ring-accent"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-input text-accent focus:ring-accent"
       />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm text-foreground">{label}</span>

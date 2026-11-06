@@ -54,11 +54,11 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
             variant="ghost"
             size="sm"
             aria-expanded={open}
-            aria-label={open ? 'Hide DNS records' : 'DNS records'}
+            aria-label={open ? 'Hide DNS records' : 'Show DNS records'}
             leftIcon={open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             onClick={() => setOpen((o) => !o)}
           >
-            {open ? 'Hide records' : 'DNS records'}
+            {open ? 'Hide records' : 'Show records'}
           </Button>
           <Button
             variant="outline"
@@ -105,7 +105,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
                       {(['name', 'value'] as const).map((part) => (
                         <div key={part} className="contents">
                           <dt className="text-[13px] text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</dt>
-                          <dd className="min-w-0 overflow-x-auto whitespace-nowrap rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
+                          <dd className="min-w-0 break-all rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
                             {r[part]}
                           </dd>
                           <CopyButton value={r[part]} />

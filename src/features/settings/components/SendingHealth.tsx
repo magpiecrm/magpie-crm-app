@@ -61,8 +61,9 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
             <div className={`h-full rounded-full ${used >= 1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${Math.round(used * 100)}%` }} />
           </div>
         )}
-        <p className="text-[13px] leading-relaxed text-muted-foreground">
-          {about}{' '}
+        <p className="text-[13px] leading-relaxed text-muted-foreground">{about}</p>
+        {/* What happens next on its own line, so the date and the new limit can be found at a glance. */}
+        <p className="text-[13px] leading-relaxed font-medium text-foreground/85">
           {limit.limit === null
             ? 'Your plan’s monthly allowance is the only limit.'
             : limit.setByHost

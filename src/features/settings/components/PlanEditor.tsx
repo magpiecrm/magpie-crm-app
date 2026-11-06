@@ -182,8 +182,16 @@ export function PlanEditor({
       </div>
 
       <div className="flex flex-col">
-        <span className="text-[13px] text-muted-foreground">Per month</span>
-        <span className="text-2xl font-semibold tabular-nums text-foreground">{formatPence(pence, billing.currency)}</span>
+        <span className="text-[13px] text-muted-foreground">{unchanged ? 'Per month, as now' : 'Per month with these changes'}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold tabular-nums text-foreground">{formatPence(pence, billing.currency)}</span>
+          {!unchanged && billing.monthlyPence !== null && pence !== billing.monthlyPence && (
+            <span className="text-[13px] tabular-nums text-muted-foreground">
+              {pence > billing.monthlyPence ? '+' : '−'}
+              {formatPence(Math.abs(pence - billing.monthlyPence), billing.currency)} from {formatPence(billing.monthlyPence, billing.currency)}
+            </span>
+          )}
+        </span>
       </div>
       {underMinimum && (
         <Notice level="error">

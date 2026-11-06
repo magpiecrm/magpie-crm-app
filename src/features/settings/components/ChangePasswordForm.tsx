@@ -46,8 +46,8 @@ export function ChangePasswordForm() {
           <Field label="Current">
             <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} disabled={busy} className={INPUT_CLASS} />
           </Field>
-          <Field label="New">
-            <input type="password" autoComplete="new-password" required minLength={6} value={next} onChange={(e) => setNext(e.target.value)} placeholder="At least 6 characters" disabled={busy} className={INPUT_CLASS} />
+          <Field label="New" hint="At least 6 characters.">
+            <input type="password" autoComplete="new-password" required minLength={6} value={next} onChange={(e) => setNext(e.target.value)} disabled={busy} className={INPUT_CLASS} />
           </Field>
           <Field label="Confirm new" error={mismatch ? "Doesn't match the new password." : undefined}>
             <input type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} className={INPUT_CLASS} />

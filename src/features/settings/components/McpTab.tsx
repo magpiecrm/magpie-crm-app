@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, KeyRound, Trash2 } from 'lucide-react'
+import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { APP_NAME } from '../../../brand'
 import { createApiKeyFn, deleteApiKeyFn, getMcpKeysFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
 import { CODE_CLASS, Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 type McpKey = Awaited<ReturnType<typeof getMcpKeysFn>>['keys'][number]
 
@@ -140,18 +140,20 @@ export function McpTab() {
 
       <SettingsPanel>
         <SettingsBlock
-          title="How it works"
+          title="Before you connect"
           description="Each app gets its own key, which you can revoke at any time. Apps ask you before running anything that changes data."
         >
-          <p className="text-sm leading-relaxed text-foreground">
-            Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP. They can search prospects, manage lists,
-            contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
-            same builder tools as the copilot.
-          </p>
           <Notice>
             A key gives full access to your contacts and can run prospect searches. Data the AI reads is sent to that
             app's provider (Anthropic, OpenAI, …), so list them as sub-processors in your privacy notice.
           </Notice>
+          <SettingsMore summary="What apps can do">
+            <p>
+              Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP. They can search prospects, manage lists,
+              contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
+              same builder tools as the copilot.
+            </p>
+          </SettingsMore>
         </SettingsBlock>
 
         <SettingsBlock title="Your keys" description="One key per app, so you can revoke one without touching the others.">
@@ -202,7 +204,7 @@ export function McpTab() {
               </Notice>
             )}
             <SettingsActions>
-              <Button type="submit" isLoading={busy} leftIcon={<KeyRound className="h-4 w-4" />}>
+              <Button type="submit" isLoading={busy} leftIcon={<Plus className="h-4 w-4" />}>
                 Create key
               </Button>
             </SettingsActions>

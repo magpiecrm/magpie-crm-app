@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
+import { ArrowRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Field } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -196,7 +196,7 @@ function ManagedCopilot() {
                 href="/settings?tab=billing"
                 className="inline-flex items-center gap-1 rounded-md-s border border-border px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
               >
-                Change budget <ArrowUpRight className="h-3.5 w-3.5" />
+                Change budget <ArrowRight className="h-3.5 w-3.5" />
               </a>
             </SettingsActions>
           )}

@@ -201,8 +201,10 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
                 )}
               </dl>
             )}
-            <AllowanceMeter showUpgrade={false} heading={false} showResets={false} />
-            <AiBudgetMeter />
+            <div className="mt-2 flex flex-col gap-3 border-t border-border/70 pt-4">
+              <AllowanceMeter showUpgrade={false} heading={false} showResets={false} />
+              <AiBudgetMeter />
+            </div>
           </SettingsBlock>
         )}
 

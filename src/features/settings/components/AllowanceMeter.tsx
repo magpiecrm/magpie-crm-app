@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 
@@ -86,7 +86,8 @@ export function AllowanceMeter({
             nearlyOut ? 'bg-primary text-primary-foreground hover:bg-primary/85' : 'border border-border text-foreground hover:bg-muted'
           } ${compact ? 'text-[11px] px-2 py-1.5 mt-1' : 'text-sm px-3 py-2 self-start'}`}
         >
-          Upgrade <ArrowUpRight className="w-3.5 h-3.5" />
+          {/* ↗ only where it leaves the app (a host's own page); in-app it's →. */}
+          Upgrade {allowance.upgradeUrl.startsWith('/') ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
         </a>
       )}
     </div>
