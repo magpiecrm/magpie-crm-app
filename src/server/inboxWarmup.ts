@@ -20,11 +20,11 @@
 // who has it. Where it isn't on the plan but can be added, the Warmup page
 // says what it costs and sends them to Settings → Plan and billing.
 
-import { resolveTxt } from 'node:dns/promises'
 import { db } from './db'
 import { env } from './env'
 import { hostInboxWarmup, hostWarmupPurchase, warmupPurchaseFrom, type WarmupPurchase } from './prospecting/hostRules'
 import { canSendFrom } from './sendingDomains'
+import { authRecords } from './dnsAuth'
 import type { PlacementTestResult, WarmupDay, WarmupPage, WarmupPlacement, WarmupSender, WarmupSenderRow } from '../features/settings/warmupTypes'
 
 /** The wording agreed to before a sender's warmup starts; a new version means a new agreement. */
@@ -71,29 +71,6 @@ const sender = (address: string) => `/senders/${encodeURIComponent(address.toLow
 /** Whether the host offers inbox warmup to this copy. */
 export const warmupOffered = () => hostInboxWarmup() !== null
 
-/** Each domain's SPF and DMARC records, as last looked up (for 10 minutes). */
-const dnsSeen = new Map<string, { at: number; spf: boolean; dmarc: boolean }>()
-
-async function records(domain: string, deps: WarmupDeps) {
-  const now = (deps.now?.() ?? new Date()).getTime()
-  const seen = dnsSeen.get(domain)
-  if (seen && now - seen.at < 10 * 60_000) return seen
-  const txt = async (name: string) => ((await (deps.resolveTxt ?? resolveTxt)(name).catch(() => [])) as string[][]).map((r) => r.join(''))
-  const spf = (await txt(domain)).some((r) => /^v=spf1\b/i.test(r.trim()))
-  // A subdomain without its own DMARC record falls under its organisation's.
-  const labels = domain.split('.')
-  let dmarc = false
-  for (const name of [`_dmarc.${domain}`, ...(labels.length > 2 ? [`_dmarc.${labels.slice(-2).join('.')}`] : [])]) {
-    if ((await txt(name)).some((r) => /^v=DMARC1\b/i.test(r.trim()))) {
-      dmarc = true
-      break
-    }
-  }
-  const found = { at: now, spf, dmarc }
-  dnsSeen.set(domain, found)
-  return found
-}
-
 /** Why each sender can't warm yet, in the order to fix them; empty for one that can. */
 export async function eligibility(deps: WarmupDeps = {}): Promise<Array<Omit<WarmupSenderRow, 'warmup'>>> {
   const { inboxOf } = await import('./mailboxes')
@@ -107,7 +84,7 @@ export async function eligibility(deps: WarmupDeps = {}): Promise<Array<Omit<War
     if (!inbox) blockers.push("Connect this sender's inbox first, under Settings → Reply detection.")
     else if (inbox.record.user.trim().toLowerCase() !== email) blockers.push(`Its connected inbox is ${inbox.record.user}: warmup needs ${email}'s own inbox.`)
     else if (inbox.record.status !== 'ok' || !inbox.login) blockers.push("Its inbox login isn't working: reconnect it under Settings → Reply detection.")
-    const dns = await records(domain, deps)
+    const dns = await authRecords(domain, deps)
     if (!dns.spf) blockers.push(`${domain} has no SPF record. Add the one your mail provider gives you to its DNS.`)
     if (!dns.dmarc) blockers.push(`${domain} has no DMARC record. Add the one shown under Settings → Sending.`)
     rows.push({ senderId: s.id, name: s.name, email, blockers })

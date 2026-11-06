@@ -8,6 +8,8 @@ import { Select } from '../../../components/ui/Select'
 import { sendCampaignFn, unconfirmedInListFn, updateCampaignFn } from '../../../server/functions'
 import { BATCH_WAITS, everyText } from '../batches'
 import { sentMessage } from '../sendResult'
+import { SpamScoreCard, confirmSpamRisk } from '../../spam-score/SpamScoreCard'
+import { useCampaignSpamScore } from '../../spam-score/useSpamScore'
 
 interface ScheduleDrawerProps {
   isOpen: boolean
@@ -26,6 +28,8 @@ interface ScheduleDrawerProps {
     trackOpens: boolean
   }
   onSendSuccess?: () => void
+  /** "Fix with AI" on the spam score: saves the draft and asks the copilot. */
+  onFixWithAI?: () => void
 }
 
 type SendOption = 'now' | 'later' | 'batches'
@@ -33,7 +37,7 @@ type SendOption = 'now' | 'later' | 'batches'
 const hours = (h: number) => (h === 1 ? 'an hour' : `${h} hours`)
 const pct = (rate: number) => `${+(rate * 100).toFixed(1)}%`
 
-export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSendSuccess }: ScheduleDrawerProps) {
+export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSendSuccess, onFixWithAI }: ScheduleDrawerProps) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [selectedOption, setSelectedOption] = useState<SendOption>('now')
@@ -49,6 +53,18 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
     queryFn: () => unconfirmedInListFn({ data: { listId: listId! } }),
     enabled: isOpen && listId != null,
   })
+  const spam = useCampaignSpamScore(
+    {
+      subject: campaignData.subject,
+      previewText: campaignData.previewText ?? null,
+      htmlContent: campaignData.htmlContent,
+      senderId: campaignData.senderId,
+      listId,
+      trackOpens: campaignData.trackOpens,
+      unsubscribeEnabled: campaignData.unsubscribeEnabled,
+    },
+    isOpen,
+  )
 
   // Reset states when opening
   useEffect(() => {
@@ -165,6 +181,7 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
 
   const handleConfirm = () => {
     if (isCampaignInvalid) return
+    if (!confirmSpamRisk(spam.data, 'This campaign')) return
     setErrorMsg('')
     let batches: Batches = null
     if (selectedOption === 'batches') {
@@ -263,6 +280,9 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
                   : ' Some may bounce.'}
               </p>
             </div>
+          )}
+          {!isCampaignInvalid && (
+            <SpamScoreCard score={spam.data} loading={spam.isFetching} error={spam.error ? (spam.error as Error).message : null} defaultOpen={spam.data?.level === 'high'} onFixWithAI={onFixWithAI} />
           )}
           <div>
             <h4 className="text-base font-bold text-foreground">When would you like to send the campaign?</h4>

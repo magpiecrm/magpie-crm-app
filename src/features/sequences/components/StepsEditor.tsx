@@ -9,6 +9,11 @@ import { queryKeys } from '../../../queryKeys'
 import { FIELD_CLASS } from '../../sales/forms'
 import { percent } from './labels'
 import type { Sequence, SequenceStep } from '../types'
+import type { SpamStepScore } from '../../spam-score/types'
+import { SpamScoreCard, SpamStepChip } from '../../spam-score/SpamScoreCard'
+import { spamFixPrompt, useCopilotReady } from '../../spam-score/fixWithAI'
+import { copilotStore } from '../../copilot/copilotStore'
+import { useSequenceSpamScore } from '../../spam-score/useSpamScore'
 
 type Draft = Pick<SequenceStep, 'delay_days' | 'subject' | 'body'> & { id?: string }
 
@@ -28,7 +33,16 @@ export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: St
   const [steps, setSteps] = useState<Draft[]>(sequence.steps)
   const [saved, setSaved] = useState(false)
   useEffect(() => setSteps(sequence.steps), [sequence.id])
-  const dirty = JSON.stringify(steps) !== JSON.stringify(sequence.steps.map(({ campaign_id: _c, ...s }) => s))
+  const asSaved = (all: Array<Draft & { campaign_id?: number }>) => JSON.stringify(all.map(({ campaign_id: _c, ...s }) => s))
+  const dirty = JSON.stringify(steps) !== asSaved(sequence.steps)
+  // Saved elsewhere (the copilot's "Fix with AI"): take the new emails, unless there are edits here.
+  const lastSaved = useRef(asSaved(sequence.steps))
+  useEffect(() => {
+    const now = asSaved(sequence.steps)
+    if (now === lastSaved.current) return
+    setSteps((cur) => (asSaved(cur) === lastSaved.current ? sequence.steps : cur))
+    lastSaved.current = now
+  }, [sequence.steps])
   const save = useMutation({
     mutationFn: () => updateSequenceFn({ data: { id: sequence.id, steps: steps.map((s) => ({ id: s.id, delay_days: s.delay_days, subject: s.subject, body: s.body })) } }),
     onSuccess: (s) => {
@@ -44,10 +58,33 @@ export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: St
     return () => clearTimeout(t)
   }, [saved])
 
+  // Each email's spam score as written, saved or not.
+  const spam = useSequenceSpamScore(sequence.id, { steps: steps.map((s) => ({ subject: s.subject, body: s.body })) })
+  const copilotReady = useCopilotReady()
+  // Saved first, so the copilot edits what's on screen.
+  const fixWithAI = useMutation({
+    mutationFn: async () => {
+      if (dirty) await save.mutateAsync()
+    },
+    onSuccess: () => {
+      if (spam.data) copilotStore.ask(spamFixPrompt({ kind: 'sequence', id: sequence.id, name: sequence.name }, spam.data))
+    },
+  })
+
   const change = (i: number, patch: Partial<Draft>) => setSteps((all) => all.map((s, j) => (j === i ? { ...s, ...patch } : s)))
 
   return (
     <div className="space-y-3">
+      {steps.some((st) => st.body.trim()) && (
+        <SpamScoreCard
+          score={spam.data}
+          loading={spam.isFetching}
+          error={spam.error ? (spam.error as Error).message : null}
+          onFixWithAI={copilotReady && sequence.status !== 'archived' ? () => fixWithAI.mutate() : undefined}
+          fixing={fixWithAI.isPending}
+          className="mb-3"
+        />
+      )}
       {steps.map((step, i) => (
         <div key={step.id ?? `new-${i}`}>
           {i > 0 && (
@@ -71,6 +108,7 @@ export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: St
             index={i}
             step={step}
             stats={stats.find((s) => s.id === step.id)}
+            spam={spam.data?.steps?.[i]}
             onChange={(patch) => change(i, patch)}
             onRemove={steps.length > 1 ? () => setSteps((all) => all.filter((_, j) => j !== i)) : undefined}
           />
@@ -98,6 +136,7 @@ function StepCard({
   index,
   step,
   stats,
+  spam,
   onChange,
   onRemove,
 }: {
@@ -105,6 +144,7 @@ function StepCard({
   index: number
   step: Draft
   stats?: StepStats
+  spam?: SpamStepScore
   onChange: (patch: Partial<Draft>) => void
   onRemove?: () => void
 }) {
@@ -185,6 +225,7 @@ function StepCard({
         maxLength={10_000}
         className={`${FIELD_CLASS} resize-y font-[inherit]`}
       />
+      {step.body.trim() && <SpamStepChip step={spam} />}
       <div className="flex flex-wrap items-center gap-2">
         <Select
           aria-label="Insert a contact's detail"

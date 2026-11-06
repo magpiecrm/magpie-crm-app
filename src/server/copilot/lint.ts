@@ -8,7 +8,7 @@ export interface LintIssue {
 }
 
 /** Gmail clips messages past this size, hiding everything after the cut. */
-const GMAIL_CLIP_BYTES = 102_400
+export const GMAIL_CLIP_BYTES = 102_400
 
 /**
  * CSS that Outlook 2007-2019 silently drops, because it renders with the Word

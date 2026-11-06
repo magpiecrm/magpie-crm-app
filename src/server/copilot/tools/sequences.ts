@@ -8,7 +8,7 @@ import { defineTool } from '../types'
  */
 
 /** A sequence id, or its name matched the way a person would say it. */
-async function resolveSequenceId(ref: string): Promise<string> {
+export async function resolveSequenceId(ref: string): Promise<string> {
   const { sequences } = await import('../../sequences')
   const all = sequences.list()
   if (all.some((s) => s.id === ref)) return ref

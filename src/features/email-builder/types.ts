@@ -159,6 +159,8 @@ export interface EmailBuilderProps {
   campaignId?: number
   /** Set when editing a saved template rather than a campaign's body. */
   template?: { id: string; name: string }
+  /** A campaign's settings, so its preview can show the spam score of the design on screen. */
+  spamContext?: { senderId: number | null; listId: number | null; trackOpens: boolean; unsubscribeEnabled: boolean }
 }
 
 /**

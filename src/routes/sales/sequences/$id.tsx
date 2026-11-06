@@ -10,6 +10,8 @@ import { SEQUENCE_STATUS, percent } from '../../../features/sequences/components
 import { StepsEditor } from '../../../features/sequences/components/StepsEditor'
 import { PeopleTable } from '../../../features/sequences/components/PeopleTable'
 import { SequenceSettingsForm } from '../../../features/sequences/components/SequenceSettingsForm'
+import { confirmSpamRisk } from '../../../features/spam-score/SpamScoreCard'
+import { useSequenceSpamScore } from '../../../features/spam-score/useSpamScore'
 
 type Tab = 'emails' | 'people' | 'settings'
 
@@ -41,6 +43,8 @@ function SequencePage() {
     onSuccess: refresh,
   })
   const [confirm, setConfirm] = useState<'archive' | 'delete' | null>(null)
+  // As saved, for the check before it starts; the Emails tab shows it as it's being written.
+  const spam = useSequenceSpamScore(id, {}, Boolean(data) && data?.sequence.status !== 'archived')
   const remove = useMutation({
     mutationFn: () => deleteSequenceFn({ data: { id } }),
     onSuccess: () => {
@@ -89,7 +93,7 @@ function SequencePage() {
               Pause
             </Button>
           ) : s.status !== 'archived' ? (
-            <Button leftIcon={<Play className="w-4 h-4" />} isLoading={setStatus.isPending} disabled={!!notReady} onClick={() => setStatus.mutate('active')}>
+            <Button leftIcon={<Play className="w-4 h-4" />} isLoading={setStatus.isPending} disabled={!!notReady} onClick={() => confirmSpamRisk(spam.data, 'This sequence') && setStatus.mutate('active')}>
               {s.status === 'draft' ? 'Start sending' : 'Resume'}
             </Button>
           ) : null}

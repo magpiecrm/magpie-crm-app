@@ -29,6 +29,10 @@ import {
 
 import { AIChat } from '../copilot/components/AIChat'
 import { PreviewTestModal } from '../../components/PreviewTestModal'
+import { SpamScoreCard } from '../spam-score/SpamScoreCard'
+import { useCampaignSpamScore } from '../spam-score/useSpamScore'
+import { spamFixPrompt, useCopilotReady } from '../spam-score/fixWithAI'
+import { copilotStore } from '../copilot/copilotStore'
 import type { BlockType, EmailBlock, EmailBlockItem, EmailBuilderProps, EmailLink, EmailSocialLink, EmailSummaryRow, GlobalStyle } from './types'
 import { BLOCK_TYPES } from './types'
 import { applyBuilderAction, newBlockId } from './applyAction'
@@ -87,6 +91,7 @@ export function EmailBuilder({
   campaignPreviewText,
   campaignId,
   template,
+  spamContext,
 }: EmailBuilderProps) {
   const [blocks, setBlocks] = useState<EmailBlock[]>([])
   const [globalStyle, setGlobalStyle] = useState<GlobalStyle>(DEFAULT_GLOBAL_STYLE)
@@ -110,6 +115,30 @@ export function EmailBuilder({
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  // A campaign's spam score for the design on screen, while its preview is open.
+  const spam = useCampaignSpamScore(
+    {
+      subject: campaignSubject ?? '',
+      previewText: campaignPreviewText ?? null,
+      htmlContent: showPreviewModal && spamContext ? compileHTML(blocks, globalStyle) : '',
+      senderId: spamContext?.senderId ?? null,
+      listId: spamContext?.listId ?? null,
+      trackOpens: spamContext?.trackOpens ?? false,
+      unsubscribeEnabled: spamContext?.unsubscribeEnabled ?? true,
+    },
+    showPreviewModal && Boolean(spamContext),
+  )
+  const copilotReady = useCopilotReady()
+  // "Fix with AI" asks this builder's own chat, which can edit the blocks on screen.
+  const pendingPrompt = React.useSyncExternalStore(copilotStore.subscribe, () => copilotStore.pendingPrompt, () => null)
+  useEffect(() => {
+    if (pendingPrompt?.target === 'builder') setIsChatOpen(true)
+  }, [pendingPrompt])
+  const fixWithAI = () => {
+    if (!spam.data) return
+    setShowPreviewModal(false)
+    copilotStore.ask(spamFixPrompt({ kind: 'campaign', id: campaignId, name: campaignName, inBuilder: true }, spam.data), 'builder')
+  }
   const { data: savedTemplates } = useQuery({
     queryKey: queryKeys.templates.list(),
     queryFn: () => getTemplatesFn(),
@@ -716,6 +745,7 @@ export function EmailBuilder({
                 templateContext={template}
                 builderContext={{ blocks, globalStyle, selectedBlockId }}
                 onBuilderAction={applyBuilderActions}
+                promptTarget="builder"
               />
             </div>
           </aside>
@@ -739,6 +769,11 @@ export function EmailBuilder({
         campaignSubject={campaignSubject || ''}
         campaignSender={campaignSender || { name: '', email: '' }}
         campaignPreviewText={campaignPreviewText}
+        spamScore={
+          spamContext ? (
+            <SpamScoreCard score={spam.data} loading={spam.isFetching} error={spam.error ? (spam.error as Error).message : null} onFixWithAI={copilotReady ? fixWithAI : undefined} />
+          ) : undefined
+        }
       />
 
       <SaveTemplateDialog

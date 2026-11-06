@@ -19,6 +19,7 @@ import { canonicalCountry } from './prospecting/geo'
 import { prospectingRules, refreshHostRules } from './prospecting/hostRules'
 import { bouncesPolledUntil, pollsBounces } from './bouncePoller'
 import { isUnknownRecipient } from './providers/types'
+import { htmlToText } from './providers/plainText'
 
 
 /**
@@ -815,6 +816,8 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
           to: email,
           subject: personalizedSubject,
           html: personalizedHtml,
+          // Sent with every provider: HTML alone scores worse with spam filters (plainText.ts).
+          text: htmlToText(personalizedHtml),
           campaignId: id,
           // One-click unsubscribe in the mail client (List-Unsubscribe), which Gmail and Yahoo require of bulk senders.
           ...(unsubscribeEnabled ? { unsubscribeUrl } : {}),

@@ -128,3 +128,14 @@ export const previewSequenceStepFn = createServerFn({ method: 'POST' })
     const { previewStep } = await import('../sequences/preview')
     return previewStep(data.id, data.stepIndex, data.subject, data.body, data.contactEmail)
   })
+
+/** How likely a sequence's emails are to land in spam, each and at worst, with what to change; `steps` and `settings` score an unsaved draft. */
+export const sequenceSpamScoreFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; steps?: Array<{ subject: string | null; body: string }>; settings?: z.infer<typeof settings> }) =>
+    z.object({ id, steps: z.array(step.pick({ subject: true, body: true })).max(10).optional(), settings: settings.optional() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { sequenceSpamScore } = await import('../spamScore')
+    return sequenceSpamScore(data.id, { steps: data.steps, settings: data.settings })
+  })

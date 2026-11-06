@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '../types'
 import { listRef, resolveListIds } from './shared'
+import { resolveSequenceId } from './sequences'
 
 const senderInput = z.object({
   name: z.string().optional(),
@@ -169,6 +170,41 @@ export const campaignTools = [
     handler: async ({ id }) => {
       const { getCampaignStats } = await import('../../emailService')
       return getCampaignStats(id)
+    },
+  }),
+
+  defineTool({
+    name: 'checkSpamScore',
+    description:
+      "How likely a campaign or a sequence is to land in spam: a score out of 100 (under 25 low, 60 and over high) and each finding with how to fix it. Findings marked `fixable` can be fixed by editing the email (or its tracking switches); sender and recipient findings can't, so explain those instead. Check it after changing an email's words or design, and before it's sent. For a campaign open in the builder it scores the design on screen.",
+    input: {
+      campaignId: z.number().int().optional().describe('A campaign ID.'),
+      sequenceId: z.string().optional().describe('A sequence id from getSequences, or its name.'),
+    },
+    target: 'server',
+    readOnly: true,
+    handler: async ({ campaignId, sequenceId }, ctx) => {
+      if ((campaignId === undefined) === (sequenceId === undefined)) throw new Error('Give either a campaignId or a sequenceId.')
+      const { campaignSpamScore, sequenceSpamScore } = await import('../../spamScore')
+      if (sequenceId !== undefined) return sequenceSpamScore(await resolveSequenceId(sequenceId))
+      const { getCampaign } = await import('../../emailService')
+      const c = await getCampaign(campaignId!)
+      // The builder holds unsaved edits: score what the user sees.
+      const state = ctx.getClientState()
+      let htmlContent = c.htmlContent ?? ''
+      if (state.builder && state.campaign?.id === campaignId) {
+        const { compileHTML } = await import('../../../features/email-builder/utils/compiler')
+        htmlContent = compileHTML(state.builder.blocks as any, state.builder.globalStyle as any)
+      }
+      return campaignSpamScore({
+        subject: c.subject ?? '',
+        previewText: c.previewText,
+        htmlContent,
+        senderId: c.sender?.id ?? null,
+        listId: c.recipients?.listIds?.[0] ?? null,
+        trackOpens: c.trackOpens !== false,
+        unsubscribeEnabled: c.unsubscribeEnabled !== false,
+      })
     },
   }),
 ]

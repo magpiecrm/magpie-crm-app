@@ -24,7 +24,7 @@ export interface SendMailOptions {
   campaignId?: number
   /** The recipient's unsubscribe link, sent as one-click List-Unsubscribe headers. */
   unsubscribeUrl?: string
-  /** The plain-text part; made from the HTML when missing. */
+  /** The plain-text part. Only SMTP makes one from the HTML when it's missing; the HTTP providers send none. */
   text?: string
   /** Threading for a follow-up (OutboundMessage): our Message-ID, the one it replies to, and the thread's. */
   messageId?: string

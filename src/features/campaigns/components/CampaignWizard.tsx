@@ -7,6 +7,10 @@ import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
 import { SenderWarmupNote } from './SenderWarmupNote'
 import { ScheduleDrawer } from './ScheduleDrawer'
+import { SpamScoreCard } from '../../spam-score/SpamScoreCard'
+import { useCampaignSpamScore } from '../../spam-score/useSpamScore'
+import { spamFixPrompt, useCopilotReady } from '../../spam-score/fixWithAI'
+import { copilotStore } from '../../copilot/copilotStore'
 import { Button } from '../../../components/ui/Button'
 import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
 import { Switch } from '../../../components/ui/Switch'
@@ -71,6 +75,15 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const { data: sendingSettings } = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
   const unsubscribeLocked = Boolean(sendingSettings?.success && sendingSettings.managed)
+  const spamDraft = {
+    subject: formData.subject,
+    previewText: formData.previewText,
+    htmlContent: formData.htmlContent,
+    senderId: formData.senderId,
+    listId: formData.selectedListId,
+    trackOpens: formData.trackOpens,
+    unsubscribeEnabled: unsubscribeLocked || formData.unsubscribeEnabled,
+  }
 
   const { data: listsData } = useQuery({
     queryKey: queryKeys.email.lists(),
@@ -87,6 +100,43 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
     queryFn: () => getCampaignFn({ data: { id: campaignId! } }),
     enabled: !!campaignId,
   })
+
+  const spam = useCampaignSpamScore(spamDraft, campaignToEdit?.status !== 'sent')
+  // Saved first, so the copilot edits what's on screen; the editor reloads it after (useCopilotStream's invalidations).
+  const copilotReady = useCopilotReady()
+  const fixWithAI = useMutation({
+    mutationFn: () =>
+      updateCampaignFn({
+        data: {
+          id: campaignId!,
+          name: formData.name,
+          subject: formData.subject,
+          previewText: formData.previewText,
+          sender: formData.senderEmail ? { name: formData.senderName, email: formData.senderEmail, id: formData.senderId || undefined } : undefined,
+          htmlContent: formData.htmlContent,
+          recipients: { listIds: formData.selectedListId ? [formData.selectedListId] : [] },
+          unsubscribeEnabled: formData.unsubscribeEnabled,
+          trackOpens: formData.trackOpens,
+        },
+      }),
+    onSuccess: () => {
+      if (!spam.data) return
+      setShowPreviewModal(false)
+      setShowScheduleDrawer(false)
+      copilotStore.ask(spamFixPrompt({ kind: 'campaign', id: campaignId, name: formData.name || 'Untitled campaign' }, spam.data))
+    },
+    onError: (err: Error) => alert(`Couldn't save the campaign first: ${err.message}`),
+  })
+  const onFixWithAI = campaignId && copilotReady ? () => fixWithAI.mutate() : undefined
+  const spamCard = (
+    <SpamScoreCard
+      score={spam.data}
+      loading={spam.isFetching}
+      error={spam.error ? (spam.error as Error).message : null}
+      onFixWithAI={onFixWithAI}
+      fixing={fixWithAI.isPending}
+    />
+  )
 
   const { data: initialTemplate } = useQuery({
     queryKey: queryKeys.templates.template(initialTemplateId ?? ''),
@@ -224,6 +274,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
         campaignSender={{ name: formData.senderName, email: formData.senderEmail }}
         campaignPreviewText={formData.previewText}
         campaignId={campaignId}
+        spamContext={{ senderId: formData.senderId, listId: formData.selectedListId, trackOpens: formData.trackOpens, unsubscribeEnabled: spamDraft.unsubscribeEnabled }}
       />
     )
   }
@@ -307,6 +358,8 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           </div>
         </div>
       )}
+
+      {!isCampaignSent && spamCard}
 
       {/* Content list of sections */}
       <Accordion>
@@ -823,6 +876,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
         campaignSubject={formData.subject}
         campaignSender={{ name: formData.senderName, email: formData.senderEmail }}
         campaignPreviewText={formData.previewText}
+        spamScore={isCampaignSent ? undefined : spamCard}
       />
 
       {/* Schedule Campaign Drawer */}
@@ -833,6 +887,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           campaignId={campaignId}
           campaignData={formData}
           onSendSuccess={onClose}
+          onFixWithAI={onFixWithAI}
         />
       )}
 

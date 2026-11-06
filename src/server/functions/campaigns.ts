@@ -119,6 +119,36 @@ export const unconfirmedInListFn = createServerFn({ method: 'GET' })
     return { unconfirmed: subscribed.filter(isUnconfirmedGuess).length, total: subscribed.length, firstBatch, holdHours, maxBounceRate }
   })
 
+/** How likely a campaign as drafted is to land in spam, and what to change (server/spamScore). */
+export const campaignSpamScoreFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: {
+    subject: string
+    previewText?: string | null
+    htmlContent: string
+    senderId?: number | null
+    listId?: number | null
+    trackOpens: boolean
+    unsubscribeEnabled: boolean
+  }) =>
+    z
+      .object({
+        subject: z.string().max(1000),
+        previewText: z.string().max(2000).nullable().optional(),
+        htmlContent: z.string().max(5_000_000),
+        senderId: z.number().int().nullable().optional(),
+        listId: z.number().int().nullable().optional(),
+        trackOpens: z.boolean(),
+        unsubscribeEnabled: z.boolean(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { campaignSpamScore } = await import('../spamScore')
+    return campaignSpamScore(data)
+  })
+
 /** Takes a scheduled campaign off the schedule, back to a draft. */
 export const unscheduleCampaignFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { id: number }) => z.object({ id: z.number().int() }).parse(d))

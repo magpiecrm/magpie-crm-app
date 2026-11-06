@@ -212,6 +212,19 @@ describe('sendCampaign happy path still works', () => {
     // Contact rows are still untouched on the success path.
     expect(state.contacts.map((c) => c.status)).toEqual(['subscribed', 'unsubscribed'])
   })
+
+  it('sends a plain-text part with the HTML, whichever provider sends it', async () => {
+    const { sendMail } = await import('./nodemailer')
+    vi.mocked(sendMail).mockClear()
+    listOf({ email: 'yes@b.com', status: 'subscribed' })
+    state.html = '<p>Hello there</p><a href="https://site.test/x">Our site</a>'
+    await emailService.sendCampaign(1)
+    const msg = vi.mocked(sendMail).mock.calls[0][0]
+    expect(msg.text).toContain('Hello there')
+    // Links keep their (tracked) address; the hidden scanner trap stays out.
+    expect(msg.text).toMatch(/Our site \(https:\/\/example\.test\/api\/track\/click\?t=tok\)/)
+    expect(msg.text!.match(/api\/track\/click/g)).toHaveLength(1)
+  })
 })
 
 describe('sendCampaign with a survey block', () => {

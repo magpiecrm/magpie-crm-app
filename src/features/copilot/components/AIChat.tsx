@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { Bot, ArrowUp, BrainCircuit, Cpu, AlertCircle, Trash2, User, X, Check, Loader2, ShieldAlert, ShieldCheck, ShieldOff, Gauge, Search, ChevronDown, Wrench, SquarePen, History, MessageSquare, Sparkles } from 'lucide-react'
 import type { PersonaFormValues, PersonaUpdates } from '../../prospects/components/PersonaForm'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { listCopilotChatsFn, deleteCopilotChatFn, getCopilotProvidersFn } from '../../../server/functions'
 import { useCopilotStream, type PermissionMode, type ToolCall } from '../useCopilotStream'
+import { copilotStore, type CopilotChatTarget } from '../copilotStore'
 import { createPortal } from 'react-dom'
 import { Dialog } from '../../../components/ui/Dialog'
 import type { CopilotClientState } from '../../../server/copilot/types'
@@ -128,6 +129,8 @@ interface AIChatProps {
     selectedBlockId?: string | null
   }
   onBuilderAction?: (actions: BuilderAction[]) => void
+  /** Which requests made with copilotStore.ask this chat sends: the side panel's (default) or the builder's. */
+  promptTarget?: CopilotChatTarget
   personaContext?: {
     persona: PersonaFormValues
   }
@@ -385,6 +388,7 @@ export function AIChat({
   onPersonaAction,
   surveyBuilderContext,
   onSurveyBuilderAction,
+  promptTarget = 'main',
 }: AIChatProps) {
   // Until the user picks a model, use Claude unless only an OpenAI key is set.
   const [pickedModel, setPickedModel] = useState<string | null>(null)
@@ -526,6 +530,16 @@ export function AIChat({
     const model = provider === 'openai' ? selectedModel.slice(OPENAI_PREFIX.length) : selectedModel
     void send(text, { provider, model: model || undefined, effort: effort || undefined, permissionMode })
   }
+
+  // A request from elsewhere in the app ("Fix with AI"), sent once this chat is free.
+  const pendingPrompt = useSyncExternalStore(copilotStore.subscribe, () => copilotStore.pendingPrompt, () => null)
+  useEffect(() => {
+    if (pendingPrompt?.target !== promptTarget || isStreaming || !providerInfo) return
+    const text = copilotStore.takePrompt(promptTarget)
+    if (!text) return
+    const model = provider === 'openai' ? selectedModel.slice(OPENAI_PREFIX.length) : selectedModel
+    void send(text, { provider, model: model || undefined, effort: effort || undefined, permissionMode })
+  }, [pendingPrompt, promptTarget, isStreaming, providerInfo])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

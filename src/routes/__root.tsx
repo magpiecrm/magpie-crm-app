@@ -139,6 +139,11 @@ function RootDocument() {
 
   const personaContext = useSyncExternalStore(copilotStore.subscribe, () => copilotStore.personaContext, () => null)
   const onPersonaAction = useSyncExternalStore(copilotStore.subscribe, () => copilotStore.onPersonaAction, () => null)
+  // A request for the side panel ("Fix with AI") opens it; its chat sends it.
+  const pendingPrompt = useSyncExternalStore(copilotStore.subscribe, () => copilotStore.pendingPrompt, () => null)
+  useEffect(() => {
+    if (pendingPrompt?.target === 'main') setIsChatOpen(true)
+  }, [pendingPrompt])
 
   const startResizing = (e: React.PointerEvent) => {
     e.preventDefault()

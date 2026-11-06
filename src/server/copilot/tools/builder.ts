@@ -433,6 +433,12 @@ export const builderTools = [
       )
       const html = compileHTML(builder.blocks as any, builder.globalStyle as any)
       const issues = lintEmail(builder.blocks as any, html)
+      // What the design itself does to the spam score; checkSpamScore adds the sender and recipients.
+      const { contentFindings } = await import('../../spamScore/content')
+      const state = ctx.getClientState()
+      for (const f of contentFindings({ kind: 'campaign', subject: state.campaign?.subject ?? null, previewText: '-', html, cold: false, trackOpens: false, trackClicks: true, unsubscribe: true })) {
+        if (f.fixable && f.points > 0) issues.push({ severity: 'warning', message: `Spam score (+${f.points}): ${f.text} ${f.fix}` })
+      }
       return {
         bytes: Buffer.byteLength(html, 'utf8'),
         issues,

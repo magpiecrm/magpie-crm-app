@@ -95,7 +95,7 @@ const sameHost = (a: string, b: string) => a.toLowerCase().replace(/\.$/, '') ==
 const isRefusal = (code: string) => code.startsWith('127.255.255.')
 
 /** Listing codes, `[]` when not listed, null when the list couldn't be queried. */
-async function lookup(name: string, deps: HealthDeps): Promise<string[] | null> {
+async function lookup(name: string, deps: Pick<HealthDeps, 'resolve4'>): Promise<string[] | null> {
   try {
     const codes = await deps.resolve4(name)
     if (codes.some(isRefusal)) return null
@@ -114,6 +114,14 @@ async function spamhausReachable(deps: HealthDeps): Promise<{ ip: boolean; domai
   const [ip, domain] = await Promise.all([lookup('2.0.0.127.zen.spamhaus.org', deps), lookup('dbltest.com.dbl.spamhaus.org', deps)])
   return { ip: Boolean(ip?.length), domain: Boolean(domain?.length) }
 }
+
+/** Whether Spamhaus's domain blocklist answers here (its test entry is listed), for checks of other domains (dnsAuth.ts). */
+export async function domainBlocklistReachable(deps: Pick<HealthDeps, 'resolve4'>): Promise<boolean> {
+  return Boolean((await lookup('dbltest.com.dbl.spamhaus.org', deps))?.length)
+}
+
+/** A domain's Spamhaus DBL listing codes: `[]` when not listed, null when it couldn't be asked. */
+export const domainBlocklistCodes = (domain: string, deps: Pick<HealthDeps, 'resolve4'>) => lookup(`${domain}.dbl.spamhaus.org`, deps)
 
 const SPAMHAUS_BLOCKED =
   "Spamhaus couldn't be checked: it refuses lookups from public DNS resolvers (Google, Cloudflare). Run this from a server using its own resolver."

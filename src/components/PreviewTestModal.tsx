@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import { User, Send, Laptop, Smartphone, Search, Check, Loader2 } from 'lucide-react'
@@ -15,6 +15,8 @@ interface PreviewTestModalProps {
   campaignSubject: string
   campaignSender: { name: string; email: string }
   campaignPreviewText?: string
+  /** The campaign's spam score card, shown above the settings. */
+  spamScore?: ReactNode
 }
 
 export function PreviewTestModal({
@@ -23,7 +25,8 @@ export function PreviewTestModal({
   htmlContent,
   campaignSubject,
   campaignSender,
-  campaignPreviewText
+  campaignPreviewText,
+  spamScore,
 }: PreviewTestModalProps) {
   const [activeTab, setActiveTab] = useState<'preview' | 'send'>('preview')
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
@@ -233,6 +236,7 @@ export function PreviewTestModal({
               This won't send until these are fixed: {unfilled.join(', ')}. They aren't contact fields.
             </Notice>
           )}
+          {spamScore && <div className="mb-4">{spamScore}</div>}
 
           {activeTab === 'preview' && (
             <div className="space-y-5 flex-1 flex flex-col min-h-0">

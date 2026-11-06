@@ -47,7 +47,8 @@ const TOOL_INVALIDATIONS: Record<string, Array<readonly unknown[]>> = {
   addContacts: [queryKeys.email.lists(), queryKeys.email.contacts(), queryKeys.email.contactsAll()],
   setContactValues: [queryKeys.email.contacts(), queryKeys.email.listPages(), queryKeys.email.contactDetails()],
   createCampaign: [queryKeys.email.campaigns()],
-  updateCampaign: [queryKeys.email.campaigns()],
+  // Each campaign's own page and editor too (['email', 'campaign', id]), and its spam score.
+  updateCampaign: [queryKeys.email.campaigns(), ['email', 'campaign'], queryKeys.email.spamScores()],
   deleteCampaign: [queryKeys.email.campaigns()],
   duplicateCampaign: [queryKeys.email.campaigns()],
   // The survey builder only reads its query on mount, so refreshing these never resets an open design.

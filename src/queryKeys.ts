@@ -33,6 +33,9 @@ export const queryKeys = {
     campaigns: () => ['email', 'campaigns'] as const,
     campaign: (id: string | number | undefined) => ['email', 'campaign', id] as const,
     campaignActivity: (id: string | number) => ['email', 'campaign', id, 'activity'] as const,
+    /** A campaign draft's spam score; `draftKey` is a short hash of what's scored. Every one: `spamScores()`. */
+    spamScore: (draftKey: string) => ['email', 'spamScore', draftKey] as const,
+    spamScores: () => ['email', 'spamScore'] as const,
     contact: (email: string) => ['email', 'contact', email] as const,
     contactDetails: () => ['email', 'contact'] as const,
     forms: () => ['email', 'forms'] as const,
@@ -57,6 +60,8 @@ export const queryKeys = {
     list: () => ['sequences'] as const,
     sequence: (id: string) => ['sequences', id] as const,
     enrollments: (id: string) => ['sequences', id, 'enrollments'] as const,
+    /** Its spam score, for the steps and settings being edited (`draftKey`, a short hash). */
+    spamScore: (id: string, draftKey: string) => ['sequences', id, 'spamScore', draftKey] as const,
     mailboxes: () => ['mailboxes'] as const,
   },
   surveys: {
