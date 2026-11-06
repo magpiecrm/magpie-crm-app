@@ -99,6 +99,14 @@ const USAGE_COUNTERS = [
   /** Web searches this copy ran itself for hiring and funding signals (companySignals.ts; a hosted copy's host runs its own). */
   'signalSearches',
   /**
+   * Personalised first emails in sequences (sequences/personalise.ts): the
+   * AI's company research calls (companyResearch.ts, Claude's own web
+   * search), emails it wrote, and the times the step's own email went instead.
+   */
+  'researchCalls',
+  'personalDrafts',
+  'personalFallbacks',
+  /**
    * Where the host runs the copilot (copilot/managedAi.ts): its model calls,
    * and what they used of the AI budget, in thousandths of a penny or cent
    * as the host charged them. This is what a plan's `ai` allowance counts.

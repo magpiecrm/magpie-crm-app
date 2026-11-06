@@ -10,11 +10,14 @@
 // batch until their bounces are in (guessedRecipients.ts), and pauses the
 // sequence, with a notification, when the plan's emails run out or the
 // sending domain isn't ready, resuming by itself once they are.
+//
+// A personalised first email (personalise.ts) waits until the AI has written
+// it, then goes as written, or as the step's own email when it couldn't be.
 
 import { mergeTagProblem } from './index'
 import { randomUUID } from 'node:crypto'
 import { db, type DbSchema } from '../db'
-import type { Enrollment, Sequence } from '../../features/sequences/types'
+import { isPersonalised, pendingDraft, type Enrollment, type Sequence } from '../../features/sequences/types'
 import { sendMail } from '../nodemailer'
 import { encryptToken } from '../crypto'
 import { getAppUrl } from '../appUrl'
@@ -29,6 +32,7 @@ import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { dailyRoom } from '../sendingLimits'
 import { renderStep } from './render'
+import { aiCleared } from './personalise'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
 
 /**
@@ -149,7 +153,9 @@ function maybeResume(s: Sequence) {
       ? remaining('emailsSent') > 0
       : s.auto_paused === 'reply_detection'
         ? !box || box.status === 'ok'
-        : !!sender && (!env.sendingManaged() || canSendFrom(sender.email))
+        : s.auto_paused === 'ai'
+          ? aiCleared(s)
+          : !!sender && (!env.sendingManaged() || canSendFrom(sender.email))
   if (!cleared) return
   db.mutate(() => {
     s.status = 'active'
@@ -211,6 +217,13 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       end(e, blocked.status, blocked.reason)
       continue
     }
+    // Their own first email waits until it's written (personalise.ts runDrafts).
+    let own: { subject: string; body: string } | null = null
+    if (e.next_step === 0 && isPersonalised(s)) {
+      if (!e.personal) db.mutate(() => (e.personal = pendingDraft(now)))
+      if (e.personal!.status === 'pending') continue
+      if (e.personal!.status === 'ready' && e.personal!.subject && e.personal!.body) own = { subject: e.personal!.subject, body: e.personal!.body }
+    }
     if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now))) continue
     // Today's sending limit for this kind of contact is used up (sendingLimits.ts): they wait, others may still go.
     if (!(room ??= dailyRoom(now))(e.contact_email)) continue
@@ -233,10 +246,10 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       return id
     })
 
-    const thread = threadFor(step, e.sends, s.steps)
+    const thread = threadFor(own ?? step, e.sends, s.steps)
     const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`
     const rendered = renderStep(
-      { subject: thread.subject, body: step.body, contact: contact!, settings: s.settings, unsubscribeUrl },
+      { subject: thread.subject, body: own?.body ?? step.body, contact: contact!, settings: s.settings, unsubscribeUrl },
       {
         openUrl: `${appUrl}/api/track/open?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`,
         clickUrl: (url) => `${appUrl}/api/track/click?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid, url }))}`,

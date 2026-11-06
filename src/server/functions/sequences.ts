@@ -13,11 +13,15 @@ async function signedIn() {
   return { sequences, actor: session.email as string }
 }
 
+/** The first email written for each person by the AI, from this brief; null turns it off. */
+const personalise = z.object({ brief: z.string().max(2_000) }).nullable()
+
 const step = z.object({
   id: z.string().max(100).optional(),
   delay_days: z.number().int().min(0).max(90),
   subject: z.string().max(200).nullable(),
   body: z.string().max(10_000),
+  personalise: personalise.optional(),
 })
 
 const settings = z
@@ -43,7 +47,9 @@ export const sequenceFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
   .handler(async ({ data }) => {
     const { sequences } = await signedIn()
-    return { ...sequences.get(data.id), stepStats: sequences.stepStats(data.id) }
+    const { aiAvailable } = await import('../copilot/availability')
+    // Whether its first email can be written for each person here, and why not.
+    return { ...sequences.get(data.id), stepStats: sequences.stepStats(data.id), ai: aiAvailable() }
   })
 
 export const createSequenceFn = createServerFn({ method: 'POST' })
@@ -116,6 +122,30 @@ export const enrollmentActionFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { sequences } = await signedIn()
     return sequences.act(data.ids, data.action)
+  })
+
+/** One person's first email, before it's sent: write it again, or keep it as edited by hand. */
+export const sequenceDraftFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { enrollmentId: string; rewrite?: boolean; subject?: string; body?: string }) =>
+    z
+      .object({ enrollmentId: id, rewrite: z.boolean().optional(), subject: z.string().max(200).optional(), body: z.string().max(10_000).optional() })
+      .refine((v) => v.rewrite || (v.subject !== undefined && v.body !== undefined), 'Give the subject and the email, or ask for it to be written again.')
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sequences } = await signedIn()
+    return sequences.draft(data.enrollmentId, data.rewrite ? { rewrite: true } : { subject: data.subject!, body: data.body! })
+  })
+
+/** A first email written now for one contact from the step as it's being edited, for "Try it on…": not kept, and nothing is sent. */
+export const tryPersonalEmailFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; subject: string | null; body: string; brief: string; contactEmail: string }) =>
+    z.object({ id, subject: z.string().max(200).nullable(), body: z.string().max(10_000), brief: z.string().max(2_000), contactEmail: email }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { previewPersonal } = await import('../sequences/preview')
+    return previewPersonal(data.id, { subject: data.subject, body: data.body, personalise: { brief: data.brief } }, data.contactEmail)
   })
 
 /** One email as a contact would get it (merge tags filled in from a sample contact), for the editor's preview. */

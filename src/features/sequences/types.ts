@@ -13,6 +13,13 @@ export interface SequenceStep {
   body: string
   /** The hidden campaign row its sends are recorded under, from its first send (tracking and results). */
   campaign_id?: number
+  /**
+   * First step only: the AI writes each person their own version of this
+   * email (server/sequences/personalise.ts), from this brief and what it
+   * finds about their company. The step's own subject and body are the
+   * example it follows, and what's sent when it can't write one.
+   */
+  personalise?: { brief: string } | null
 }
 
 export interface SequenceSettings {
@@ -59,7 +66,7 @@ export interface Sequence {
   /** Why it paused itself (out of emails this month, sending domain not ready…); null when paused by hand. */
   paused_reason: string | null
   /** Paused itself for something that may clear (out of emails, sending domain not ready): resumes by itself once it has. */
-  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | null
+  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | 'ai' | null
   steps: SequenceStep[]
   settings: SequenceSettings
   guess_gate: SequenceGuessGate | null
@@ -101,7 +108,46 @@ export interface Enrollment {
   reply: { at: string; matched_by: 'manual' | 'thread' | 'from' } | null
   enrolled_at: string
   enrolled_by: string | null
+  /** Their own first email, where the first step is personalised. */
+  personal?: PersonalDraft
 }
+
+/** A short fact about a person's company, and where it was read. */
+export interface ResearchFact {
+  text: string
+  url: string | null
+}
+
+/**
+ * One person's own first email (server/sequences/personalise.ts). `pending`
+ * waits to be written, and the first email waits with it; `ready` is sent
+ * as written; `fallback` sends the step's own email, for `reason`. Kept after
+ * it's sent, as the record of what went out.
+ */
+export interface PersonalDraft {
+  status: 'pending' | 'ready' | 'fallback'
+  subject?: string
+  body?: string
+  /** What it was written from: the company facts it used. */
+  facts?: ResearchFact[]
+  /** Why the step's own email goes instead, in words. */
+  reason?: string
+  /** Edited by hand since it was written. */
+  edited?: boolean
+  at: string
+  /** Tries that failed, so a draft that keeps failing falls back. */
+  attempts: number
+}
+
+/** Longest brief for a personalised first email, and longest subject for one. */
+export const BRIEF_MAX = 2_000
+export const SUBJECT_MAX = 90
+
+/** The sequence's first email is written for each person (server/sequences/personalise.ts). */
+export const isPersonalised = (s: Pick<Sequence, 'steps'>) => !!s.steps[0]?.personalise
+
+/** A first email waiting to be written. */
+export const pendingDraft = (now = new Date()): PersonalDraft => ({ status: 'pending', at: now.toISOString(), attempts: 0 })
 
 const DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
 

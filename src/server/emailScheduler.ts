@@ -72,6 +72,22 @@ async function runDueSequences() {
   }
 }
 
+/**
+ * Personalised first emails due soon (sequences/personalise.ts), written by
+ * the AI; never two runs at once. Apart from sending, so a slow AI call never
+ * holds up an email that's ready.
+ */
+async function writeDueDrafts() {
+  if (g.__sequenceDraftsBusy) return
+  g.__sequenceDraftsBusy = true
+  try {
+    const { runDrafts } = await import('./sequences/personalise')
+    await runDrafts()
+  } finally {
+    g.__sequenceDraftsBusy = false
+  }
+}
+
 /** Finishes campaigns the server stopped in the middle of sending; everyone they reached is skipped. */
 async function resumeInterruptedSends() {
   for (const id of db.campaignsLeftSending()) {
@@ -115,6 +131,7 @@ export function startEmailScheduler() {
   g.__emailSchedulerInterval = setInterval(async () => {
     sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err))
     runDueSequences().catch((err) => console.error('[EmailScheduler] Sequences failed:', err))
+    writeDueDrafts().catch((err) => console.error('[EmailScheduler] Writing personalised emails failed:', err))
     remindDueTasks().catch((err) => console.error('[EmailScheduler] Task reminders failed:', err))
     const due = db.getDuePendingEmails()
     for (const e of due) {
