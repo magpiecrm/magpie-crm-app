@@ -10,7 +10,7 @@ import { z } from 'zod'
 const scratchDir = mkdtempSync(join(tmpdir(), 'generate-test-'))
 process.env.DATABASE_PATH = join(scratchDir, 'local_db.json')
 
-const { generate, AiFailed, AiUnavailable, aiAvailable, GENERATE_MODEL } = await import('./generate')
+const { generate, AiFailed, AiUnavailable, aiAvailable, GENERATE_MAX_TOKENS, GENERATE_MODEL } = await import('./generate')
 const { MANAGED_MODEL } = await import('./managedAi')
 
 const ENV = ['COPILOT_MANAGED', 'REACHER_URL', 'REACHER_SECRET', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'] as const
@@ -61,7 +61,7 @@ describe('generate', () => {
     const { fetchImpl, calls } = fake(answer({ colour: 'blue' }))
     expect(await ask(fetchImpl, { searches: 3, fetches: 2 })).toMatchObject({ answer: { colour: 'blue' }, web: true, model: MANAGED_MODEL })
     expect(calls[0].url).toBe('https://services.host.test/v1/ai/messages')
-    expect(calls[0].body.model).toBe(MANAGED_MODEL)
+    expect(calls[0].body).toMatchObject({ model: MANAGED_MODEL, max_tokens: GENERATE_MAX_TOKENS })
     expect(calls[0].body.tools.map((t: any) => t.type ?? t.name)).toEqual(['giveColour', 'web_search_20250305', 'web_fetch_20250910'])
     expect(calls[0].body.tools[1]).toMatchObject({ name: 'web_search', max_uses: 3 })
     expect(calls[0].body.tools[2]).toMatchObject({ name: 'web_fetch', max_uses: 2 })
@@ -72,7 +72,7 @@ describe('generate', () => {
     const { fetchImpl, calls } = fake(answer({ colour: 'blue' }))
     await ask(fetchImpl)
     expect(calls[0].url).toBe('https://api.anthropic.com/v1/messages')
-    expect(calls[0].body).toMatchObject({ model: GENERATE_MODEL, output_config: { effort: 'max' } })
+    expect(calls[0].body).toMatchObject({ model: GENERATE_MODEL, max_tokens: GENERATE_MAX_TOKENS, output_config: { effort: 'max' } })
     expect(calls[0].body.tools.map((t: any) => t.name)).toEqual(['giveColour'])
   })
 

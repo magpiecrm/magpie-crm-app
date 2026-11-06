@@ -27,8 +27,15 @@ export const GENERATE_EFFORT = 'max'
 /** The versions every Claude model takes (the newer ones, with filtering, aren't documented for Haiku 5.5). */
 export const WEB_SEARCH_TOOL = 'web_search_20250305'
 export const WEB_FETCH_TOOL = 'web_fetch_20250910'
+/**
+ * The longest reply. At effort max its thinking alone used all of the
+ * copilot's 32,000 on a company's research, leaving no answer (dev copy,
+ * 2026-11-06); the host's relay allows this much.
+ */
+export const GENERATE_MAX_TOKENS = 64_000
 
-const TIMEOUT_MS = 3 * 60_000
+/** A reply that long, with web searches, takes several minutes. */
+const TIMEOUT_MS = 10 * 60_000
 /** Calls in one answer: a paused web turn continued, or a nudge to use the tool. */
 const MAX_CALLS = 5
 
@@ -109,6 +116,7 @@ export async function generate<S extends ZodRawShape>(opts: GenerateOptions<S>):
       items,
       tools: [tool],
       serverTools,
+      maxTokens: GENERATE_MAX_TOKENS,
       signal,
       fetchImpl: opts.fetchImpl ?? fetch,
     })

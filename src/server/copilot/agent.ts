@@ -61,6 +61,8 @@ export interface CallOptions {
   tools: CopilotTool<any>[]
   /** The provider's own tools, as its API declares them (Claude's web search and fetch). The copilot sends none. */
   serverTools?: unknown[]
+  /** The longest reply, where the call needs more room than the effort's usual (Claude only). */
+  maxTokens?: number
   signal: AbortSignal
   fetchImpl: typeof fetch
 }

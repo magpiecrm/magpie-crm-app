@@ -43,7 +43,7 @@ export const anthropicAdapter: ModelAdapter = {
   requireKey: requireAnthropicKey,
   textItem: (role, text) => ({ role, content: text }),
 
-  async call({ apiKey, model, effort, system, items, tools, serverTools, signal, fetchImpl }) {
+  async call({ apiKey, model, effort, system, items, tools, serverTools, maxTokens, signal, fetchImpl }) {
     const toolDefs: any[] = tools.map((t) => ({ name: t.name, description: t.description, input_schema: toolSchema(t) }))
     if (toolDefs.length) toolDefs[toolDefs.length - 1] = { ...toolDefs[toolDefs.length - 1], cache_control: { type: 'ephemeral' } }
     if (serverTools?.length) toolDefs.push(...serverTools)
@@ -62,7 +62,7 @@ export const anthropicAdapter: ModelAdapter = {
       },
       body: JSON.stringify({
         model,
-        max_tokens: effort === 'xhigh' || effort === 'max' ? 32_000 : 16_000,
+        max_tokens: maxTokens ?? (effort === 'xhigh' || effort === 'max' ? 32_000 : 16_000),
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: withCachePoint(items as any[]),
         tools: toolDefs,

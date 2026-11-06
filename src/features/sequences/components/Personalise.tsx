@@ -104,7 +104,7 @@ function TryItOn({ sequence, step, disabled }: { sequence: Sequence; step: StepD
           Write theirs
         </Button>
       </div>
-      {tryIt.isPending && <p className="text-xs text-muted-foreground">Looking up their company and writing… this can take a minute.</p>}
+      {tryIt.isPending && <p className="text-xs text-muted-foreground">Looking up their company and writing… this can take a few minutes.</p>}
       {tryIt.error && <Notice level="error">{(tryIt.error as Error).message}</Notice>}
       {result && !tryIt.isPending && (
         <div className="rounded-lg border border-border bg-card p-4 text-sm space-y-3">
