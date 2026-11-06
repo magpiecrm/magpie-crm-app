@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { verifiedPeopleSearch, type VerifiedFunnel } from './verifiedPeopleSource'
+import { createCutShortBatches, verifiedPeopleSearch, type VerifiedFunnel } from './verifiedPeopleSource'
 import { logSearch } from './searchLog'
 import { recordUsage } from '../usage'
 import type { PersonResult } from './types'
@@ -223,7 +223,7 @@ describe('verifiedPeopleSearch', () => {
       expect(sent[0]).toMatchObject({ places: ['Boston', 'Seattle'], placesOnly: true })
       expect(sent[1]).not.toHaveProperty('places')
       expect(page.nextCursor).toBe('places:12')
-      expect(finish).toHaveBeenCalledWith([], true)
+      expect(finish).toHaveBeenCalledWith([], true, true)
       expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ page: 'more' }), counts: expect.objectContaining({ places: 2 }) }))
     })
 
@@ -231,7 +231,7 @@ describe('verifiedPeopleSearch', () => {
       const finish = vi.fn(() => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }))
       const c = { start: async () => ({ id: 's1' }), poll: async () => null }
       await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0, funnel: { ...funnel(), finish } })
-      expect(finish).toHaveBeenCalledWith([], false)
+      expect(finish).toHaveBeenCalledWith([], false, true)
     })
 
     describe('filling the page from the next cities', () => {
@@ -326,7 +326,144 @@ describe('verifiedPeopleSearch', () => {
         expect(polled).toBe(true)
         expect(page.items).toHaveLength(1)
         expect(page.warnings).toEqual([])
-        expect(r.f.finish).toHaveBeenCalledWith(page.items, false)
+        expect(r.f.finish).toHaveBeenCalledWith(page.items, false, true)
+      })
+    })
+
+    describe('a batch the time limit cuts short', () => {
+      const MIN = 60_000
+      const who = (name: string) => person({ profileUrl: `https://x/in/${name}`, name: `A ${name}` })
+      /** A host whose searches answer `answers[id]` in turn, then the last one again. */
+      const host = (answers: Record<string, Array<{ status: string; found: number; nextCursor: number | null; people: any[] }>>) => {
+        const polls: Array<[string, number]> = []
+        const starts: any[] = []
+        const cancel = vi.fn(async (_id: string) => {})
+        const calls = {
+          start: async (b: unknown) => {
+            starts.push(b)
+            return { id: `s${starts.length}` }
+          },
+          poll: async (id: string, cursor: number) => {
+            polls.push([id, cursor])
+            const queue = answers[id] ?? []
+            return queue.length > 1 ? queue.shift()! : queue[0] ?? { status: 'done', found: 0, nextCursor: null, people: [] }
+          },
+          cancel,
+        }
+        return { calls, polls, starts, cancel }
+      }
+      /** A funnel for a search with these filters that starts at `start`. */
+      const from = (start: string | null, next: string | null = 'places:6') => ({
+        ...funnel(),
+        at: { start, key: (c: string | null) => `filters|${c ?? ''}` },
+        finish: vi.fn((_items: PersonResult[], _ran: boolean, _cities?: boolean) => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: next })),
+      })
+
+      it("isn't cancelled but finishes, and the next page takes who it found before searching its own cities", async () => {
+        let t = 0
+        const sleep = async () => {
+          t += 8 * MIN
+        }
+        const h = host({
+          s1: [{ status: 'running', found: 1, nextCursor: 1, people: [who('one')] }, { status: 'done', found: 3, nextCursor: null, people: [who('two'), who('three')] }],
+          s2: [{ status: 'done', found: 1, nextCursor: null, people: [who('four')] }],
+        })
+        const held = createCutShortBatches(() => t)
+        const first = await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: h.calls, sleep, now: () => t, funnel: from(null), cutShort: held })
+        expect(first.items.map((p) => p.lastName)).toEqual(['one'])
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'time limit', counts: expect.objectContaining({ hits: 1, leftFinishing: 1 }) }))
+        // It goes on from where the page stopped reading, and the host is left to finish.
+        await vi.waitFor(() => expect(h.polls).toEqual([['s1', 0], ['s1', 1]]))
+        expect(h.cancel).not.toHaveBeenCalled()
+
+        const next = from('places:6', 'places:12')
+        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 5, cursor: 'places:6' }, {}, { calls: h.calls, sleep, now: () => t, funnel: next, cutShort: held })
+        expect(page.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
+        expect(h.starts).toHaveLength(2)
+        expect(h.polls.filter(([id]) => id === 's1')).toHaveLength(2)
+        expect(next.finish).toHaveBeenCalledWith(page.items, true, true)
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ counts: expect.objectContaining({ hits: 3, heldOver: 2, rounds: 1 }) }))
+        expect(held.size()).toBe(0)
+      })
+
+      it("is read on by the next page while it's still going, which keeps its own cities for later if that fills it", async () => {
+        let t = 0
+        let sleeps = 0
+        // The page's own wait passes the time limit; the batch's next one never ends.
+        const sleep = () => (++sleeps === 1 ? Promise.resolve(void (t += 8 * MIN)) : new Promise<void>(() => {}))
+        const h = host({
+          s1: [
+            { status: 'running', found: 1, nextCursor: 1, people: [who('one')] },
+            { status: 'running', found: 2, nextCursor: 2, people: [who('two')] },
+            { status: 'running', found: 4, nextCursor: 4, people: [who('three'), who('four')] },
+          ],
+        })
+        const held = createCutShortBatches(() => t)
+        await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: h.calls, sleep, now: () => t, funnel: from(null), cutShort: held })
+        await vi.waitFor(() => expect(h.polls).toHaveLength(2))
+
+        const next = from('places:6')
+        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 3, cursor: 'places:6' }, {}, { calls: h.calls, sleep, now: () => t, funnel: next, cutShort: held })
+        expect(page.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
+        expect(h.polls.at(-1)).toEqual(['s1', 2])
+        expect(h.starts).toHaveLength(1)
+        expect(h.cancel).toHaveBeenCalledWith('s1')
+        expect(next.finish).toHaveBeenCalledWith(page.items, true, false)
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full', counts: expect.objectContaining({ hits: 3, heldOver: 1, rounds: 0 }) }))
+      })
+
+      it('is cancelled at the host once it has had a few more minutes', async () => {
+        let t = 0
+        const sleep = async () => {
+          t += 8 * MIN
+        }
+        const h = host({ s1: [{ status: 'running', found: 1, nextCursor: 1, people: [who('one')] }, { status: 'running', found: 2, nextCursor: 2, people: [who('two')] }] })
+        const held = createCutShortBatches(() => t)
+        await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: h.calls, sleep, now: () => t, funnel: from(null), cutShort: held })
+        await vi.waitFor(() => expect(h.cancel).toHaveBeenCalledWith('s1'))
+        // Who it found by then still comes first on the next page, which then searches its own cities.
+        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 5, cursor: 'places:6' }, {}, { calls: h.calls, sleep, now: () => t, funnel: from('places:6'), cutShort: held })
+        expect(page.items.map((p) => p.lastName)).toEqual(['two'])
+        expect(h.starts).toHaveLength(2)
+        expect(h.polls.filter(([id]) => id === 's1')).toHaveLength(2)
+      })
+
+      it('is held for one point of one search, and only for an hour', async () => {
+        let t = 0
+        const held = createCutShortBatches(() => t)
+        const batch = (id: string) => ({ id, cursor: 0, rows: [], found: 0, stats: null, base: { found: 0, stats: null }, running: true, taken: false, at: t, cancel: vi.fn(async () => {}) })
+        const a = batch('a')
+        const b = batch('b')
+        held.put('k', a)
+        held.put('k', b)
+        // One held in another's place is stopped at the host.
+        expect(a.cancel).toHaveBeenCalled()
+        expect(held.take('elsewhere')).toBeNull()
+        expect(held.take('k')).toBe(b)
+        expect(b.taken).toBe(true)
+        expect(held.take('k')).toBeNull()
+        const c = batch('c')
+        held.put('j', c)
+        t += 60 * MIN
+        expect(held.take('j')).toBeNull()
+        expect(c.cancel).toHaveBeenCalled()
+      })
+
+      it("comes after a page's own batch is busy at the host, with a warning, and keeps that page's place", async () => {
+        let t = 0
+        const sleep = async () => {
+          t += 8 * MIN
+        }
+        const h = host({ s1: [{ status: 'running', found: 1, nextCursor: 1, people: [who('one')] }, { status: 'done', found: 2, nextCursor: null, people: [who('two')] }] })
+        const held = createCutShortBatches(() => t)
+        await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: h.calls, sleep, now: () => t, funnel: from(null), cutShort: held })
+        await vi.waitFor(() => expect(h.polls).toHaveLength(2))
+        const busy = { ...h.calls, start: async () => null }
+        const next = from('places:6')
+        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 5, cursor: 'places:6' }, {}, { calls: busy, sleep, now: () => t, funnel: next, cutShort: held })
+        expect(page.items.map((p) => p.lastName)).toEqual(['two'])
+        expect(page.warnings[0]).toMatch(/busy/i)
+        expect(next.finish).toHaveBeenCalledWith(page.items, true, false)
       })
     })
 

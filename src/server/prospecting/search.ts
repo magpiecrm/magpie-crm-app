@@ -1664,7 +1664,9 @@ async function verifiedFunnel(
   const hashOf = (p: PersonResult) => profileHash(p.profileUrl) ?? p.profileUrl
   const saved = !input.cursor && !fromStart ? db.getSearchPosition(positionKey) : null
   const titleCount = new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
-  let plan = placesFor(input.country, titleCount, input.cursor ?? saved)
+  // Where this search starts: a page's cursor, or where the last one stopped.
+  const start = input.cursor ?? saved ?? null
+  let plan = placesFor(input.country, titleCount, start)
   const resumed = plan.placesOnly
   // Where the cities of the batch under way start: a batch that failed hasn't been through them.
   let roundStart = input.cursor ?? null
@@ -1674,6 +1676,7 @@ async function verifiedFunnel(
     get plan() {
       return plan
     },
+    at: { start, key: (cursor) => `${positionKey}|${cursor ?? ''}` },
     nextRound() {
       if (!plan.next) return false
       roundStart = plan.next
@@ -1689,11 +1692,12 @@ async function verifiedFunnel(
       spared += batch.spared
       return batch.items
     },
-    finish(items, ran) {
+    finish(items, ran, citiesSearched = ran) {
       for (const p of items) shownHashes.add(hashOf(p))
       keepShown(positionKey, shownHashes)
-      // A search that failed hasn't been through its cities: the next one takes them.
-      const next = ran ? plan.next : roundStart
+      // A search that failed hasn't been through its cities: the next one takes them. Nor has
+      // one an earlier page's cut-short batch filled, which leaves the next where it started.
+      const next = !ran ? roundStart : citiesSearched ? plan.next : start
       if (ran || next !== (input.cursor ?? null)) db.setSearchPosition(positionKey, next)
       const hiddenPeople = items.filter(hidden)
       const shared = items.filter((p) => p.shared && !hidden(p)).length

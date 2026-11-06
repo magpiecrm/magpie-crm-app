@@ -1864,6 +1864,13 @@ describe('the verified people search, through the funnel', () => {
     expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['New York']), placesOnly: false })
   })
 
+  it('asks about cities around the world for a search with no country, still leaving anyone anywhere to pass', async () => {
+    hostFinds([])
+    const first = await searchPeople({ titles: ['Head of Customer Insights'], fromStart: true })
+    expect(asked[0].body).toMatchObject({ locations: [], places: expect.arrayContaining(['London', 'New York', 'Singapore']), placesOnly: false })
+    expect(first.nextCursor).toBe('places:6')
+  })
+
   it('works through more cities to fill its page while someone is watching, and remembers how far it got', async () => {
     hostFinds([person('ana', 'https://good.example')])
     const filters = { titles: ['Founder'], country: 'United States', count: 5 }
@@ -1876,6 +1883,47 @@ describe('the verified people search, through the funnel', () => {
     asked = []
     await searchPeople(filters, { listening: () => false })
     expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Portland']), placesOnly: true })
+  })
+
+  it('lets a batch the time limit cut short finish for the next search with these filters, which shows who it found first', async () => {
+    hostFinds([])
+    let finished = false
+    let starts = 0
+    const polled: string[] = []
+    vi.stubGlobal('fetch', async (target: URL | string, init?: RequestInit) => {
+      const url = String(target)
+      if (!url.includes('/v2/linkedin/people/searches')) return Response.json({})
+      asked.push({ method: init?.method ?? 'GET', body: init?.body ? JSON.parse(String(init.body)) : null })
+      if (init?.method === 'POST') return Response.json({ id: `s${++starts}` })
+      if (init?.method === 'DELETE') return Response.json({ deleted: true })
+      polled.push(new URL(url).pathname.split('/').at(-1)!)
+      if (!url.includes('/s1?')) return Response.json({ status: 'done', found: 0, next_cursor: null, people: [] })
+      if (url.includes('cursor=0')) return Response.json({ status: 'running', found: 1, next_cursor: 1, people: [person('ana', 'https://ana.example')] })
+      return Response.json(finished ? { status: 'done', found: 2, next_cursor: null, people: [person('ben', 'https://ben.example')] } : { status: 'running', found: 1, next_cursor: 1, people: [] })
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const filters = { titles: ['Founder'], country: 'United States', count: 5 }
+      const first = searchPeople({ ...filters, fromStart: true })
+      await vi.advanceTimersByTimeAsync(8 * 60_000)
+      expect((await first).items.map((p) => p.firstName)).toEqual(['ana'])
+      expect(searchLog.at(-1)).toMatchObject({ stop: 'time limit', counts: expect.objectContaining({ leftFinishing: 1 }) })
+      expect(asked.some((a) => a.method === 'DELETE')).toBe(false)
+      finished = true
+      await vi.advanceTimersByTimeAsync(10_000)
+      asked = []
+      polled.length = 0
+      const next = searchPeople(filters)
+      await vi.advanceTimersByTimeAsync(200_000)
+      const res = await next
+      expect(res.items.map((p) => p.firstName)).toEqual(['ben'])
+      // Nothing more was asked of the batch: the next cities were searched after who it found.
+      expect(polled).toEqual(['s2'])
+      expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Boston']), placesOnly: true })
+      expect(searchLog.at(-1).counts).toMatchObject({ heldOver: 1, hits: 1, shown: 1 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('takes up the cities of a batch that failed next time', async () => {

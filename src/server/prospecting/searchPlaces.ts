@@ -6,6 +6,10 @@
 // search, at about one person per search. It finds people where a filter has
 // plenty of them, not where few exist: that's still up to who passes.
 //
+// A search with no country works through the world's business cities the same
+// way: on its own it was a single query per job title, 3 to 6 searches against
+// a country's 30 to 60 (hq, 2026-11), and found nobody for a rare title.
+//
 // Largest business cities first. A country not listed searches as a whole.
 
 const CITIES: Record<string, string[]> = {
@@ -23,7 +27,28 @@ const CITIES: Record<string, string[]> = {
   Netherlands: ['Amsterdam', 'Rotterdam', 'Utrecht', 'The Hague'],
   Spain: ['Madrid', 'Barcelona', 'Valencia'],
   Italy: ['Milan', 'Rome', 'Turin'],
+  'New Zealand': ['Auckland', 'Wellington', 'Christchurch'],
+  Belgium: ['Brussels', 'Antwerp', 'Ghent'],
+  Sweden: ['Stockholm', 'Gothenburg', 'Malmö'],
+  Denmark: ['Copenhagen', 'Aarhus'],
+  Norway: ['Oslo', 'Bergen'],
+  Switzerland: ['Zurich', 'Geneva', 'Basel'],
+  Poland: ['Warsaw', 'Kraków', 'Wrocław'],
+  Israel: ['Tel Aviv', 'Jerusalem', 'Haifa'],
+  'United Arab Emirates': ['Dubai', 'Abu Dhabi'],
+  India: ['Bangalore', 'Mumbai', 'Delhi', 'Hyderabad', 'Pune', 'Chennai'],
+  'South Africa': ['Johannesburg', 'Cape Town', 'Durban'],
+  Brazil: ['São Paulo', 'Rio de Janeiro', 'Belo Horizonte'],
 }
+
+/** For a search with no country: each batch of six spans several countries. */
+const WORLD = [
+  'London', 'New York', 'Toronto', 'Sydney', 'Singapore', 'Dubai',
+  'San Francisco', 'Berlin', 'Amsterdam', 'Dublin', 'Bangalore', 'Melbourne',
+  'Los Angeles', 'Paris', 'Manchester', 'Stockholm', 'Tel Aviv', 'Vancouver',
+  'Chicago', 'Madrid', 'Zurich', 'Mumbai', 'Copenhagen', 'Auckland',
+  'Boston', 'Munich', 'Milan', 'Johannesburg', 'São Paulo', 'Brussels',
+]
 
 /** Cities one search takes, shared between its job titles: each title searches each city. */
 const CITIES_PER_SEARCH = 6
@@ -40,7 +65,7 @@ export interface PlacesPlan {
 
 /** The cities this search takes, from `cursor` (a page's own, or where the last search stopped). */
 export function placesFor(country: string | null | undefined, titles: number, cursor: string | null | undefined): PlacesPlan {
-  const cities = CITIES[country?.trim() ?? ''] ?? []
+  const cities = country?.trim() ? (CITIES[country.trim()] ?? []) : WORLD
   if (!cities.length) return { places: [], placesOnly: false, next: null }
   const from = Number(cursor?.match(CURSOR)?.[1] ?? 0)
   const start = from < cities.length ? from : 0

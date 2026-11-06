@@ -6,8 +6,13 @@
 // minutes, streamed — but every person is checked, so there's no off-title,
 // enrichment or wrong-company. Each batch still goes through search.ts's funnel
 // (verifiedFunnel) before it's shown, and more people are asked for than the
-// page wants, since that leaves out about half of them or more. A country
-// also searches its cities, a few at a time (searchPlaces.ts).
+// page wants, since that leaves out about half of them or more. A country, or
+// a search with none, also searches cities, a few at a time (searchPlaces.ts).
+//
+// A batch the time limit cuts short isn't cancelled: it finishes at the host
+// for a few minutes more, and the next page of the same search (Load more, or
+// the same search run again) takes who it found before searching anything
+// else, or reads on from where it is if it's still going (createCutShortBatches).
 //
 // It talks to the host over the SocialFetch channel (SOCIALFETCH_BASE_URL +
 // x-api-key), which the relay proxies to liscrape's async people API
@@ -45,6 +50,18 @@ const MAX_ASKED = 200
 const MAX_ROUNDS = 3
 /** No further batch is started after this long, so a search ends within about 15 minutes. */
 const NO_NEW_ROUND_AFTER_MS = 8 * 60_000
+/**
+ * How long a batch the time limit cut short goes on at the host after its page
+ * is shown. By then it has mostly run its searches and is reading the last
+ * profiles and websites (6 of hq's 21 verified searches, 2026-11), and the host
+ * runs two searches at a time for every workspace, so it isn't left longer.
+ */
+const FINISH_MS = 4 * 60_000
+/** How long who it found is held for the next page, as searchPool.ts holds a search's unused hits. */
+const HELD_MS = 60 * 60_000
+/** Most cut-short batches held at once; the oldest go first. */
+const MAX_HELD = 50
+const BUSY = 'Verified people search is busy right now — try again in a moment.'
 
 /** App size buckets (HEADCOUNT_BUCKETS) -> liscrape size bands (SIZE_BANDS). */
 const BUCKET_TO_BANDS: Record<string, string[]> = {
@@ -156,6 +173,20 @@ function addStats(a: HostStats | null, b: HostStats | null): HostStats | null {
   }
 }
 
+/** What the host did after `b`, from its running totals `a`. */
+function subStats(a: HostStats | null, b: HostStats | null): HostStats | null {
+  if (!a || !b) return a
+  const rejected: Record<string, number> = {}
+  for (const [why, n] of Object.entries(a.rejected ?? {})) if (n > (b.rejected?.[why] ?? 0)) rejected[why] = n - (b.rejected?.[why] ?? 0)
+  return {
+    searches: Math.max(0, a.searches - b.searches),
+    engineErrors: Math.max(0, a.engineErrors - b.engineErrors),
+    siteIgnored: Math.max(0, a.siteIgnored - b.siteIgnored),
+    candidates: Math.max(0, a.candidates - b.candidates),
+    rejected,
+  }
+}
+
 function statCounts(stats: HostStats | null): Record<string, number> {
   if (!stats) return {}
   return {
@@ -208,6 +239,88 @@ function hostCalls(fetchImpl: typeof fetch): HostCalls {
   }
 }
 
+/** A batch the time limit cut short: it finishes at the host, and the next page of the same search takes who it found. */
+interface CutShort {
+  id: string
+  /** Where reading it at the host carries on. */
+  cursor: number
+  /** Who it found after its page was shown, on no page yet: the host's minimised fields only. */
+  rows: HostPerson[]
+  /** The host's running totals: people found, and its counts. */
+  found: number
+  stats: HostStats | null
+  /** The same totals when its page was shown: the next page counts only what came after. */
+  base: { found: number; stats: HostStats | null }
+  /** Still searching at the host, so the next page reads on from `cursor`. */
+  running: boolean
+  /** A page has it, or it was dropped: finishing stops, without cancelling. */
+  taken: boolean
+  at: number
+  cancel: () => Promise<unknown>
+}
+
+/**
+ * Cut-short batches, by the point of a search they're for (VerifiedFunnel.at):
+ * in memory only, held for HELD_MS at most, capped, gone on restart.
+ */
+export function createCutShortBatches(now: () => number = Date.now) {
+  const held = new Map<string, CutShort>()
+  const drop = (key: string) => {
+    const batch = held.get(key)
+    held.delete(key)
+    if (!batch || batch.taken) return
+    batch.taken = true
+    if (batch.running) void batch.cancel().catch(() => {})
+  }
+  return {
+    /** Holds `batch` for whichever page starts at `key`, in place of any held there. */
+    put(key: string, batch: CutShort) {
+      for (const [k, b] of held) if (now() - b.at >= HELD_MS) drop(k)
+      drop(key)
+      held.set(key, batch)
+      while (held.size > MAX_HELD) drop(held.keys().next().value!)
+    },
+    /** The batch held for a page starting at `key`, which that page now has; null if none. */
+    take(key: string): CutShort | null {
+      const batch = held.get(key)
+      if (!batch) return null
+      if (now() - batch.at >= HELD_MS) {
+        drop(key)
+        return null
+      }
+      held.delete(key)
+      batch.taken = true
+      return batch
+    },
+    /** For tests. */
+    size: () => held.size,
+  }
+}
+
+export type CutShortBatches = ReturnType<typeof createCutShortBatches>
+
+const CUT_SHORT = createCutShortBatches()
+
+/** Reads a cut-short batch on until it finishes at the host or FINISH_MS has passed, then cancels it if it's still going. */
+async function finishBatch(batch: CutShort, calls: HostCalls, sleep: (ms: number) => Promise<void>, now: () => number) {
+  const until = now() + FINISH_MS
+  while (!batch.taken && batch.running && now() < until) {
+    const page = await calls.poll(batch.id, batch.cursor).catch(() => null)
+    // A page took it meanwhile, and reads on from where this had got to.
+    if (batch.taken) return
+    if (!page) break
+    batch.rows.push(...page.people.filter((row) => row?.profileUrl))
+    batch.found = page.found
+    batch.stats = page.stats ?? batch.stats
+    if (page.nextCursor != null) batch.cursor = page.nextCursor
+    if (page.status !== 'running' && (page.nextCursor == null || !page.people.length)) batch.running = false
+    else if (page.people.length < POLL_SIZE) await sleep(POLL_EVERY_MS)
+  }
+  if (batch.taken || !batch.running) return
+  batch.running = false
+  await batch.cancel().catch(() => {})
+}
+
 /** What's done to the host's people before they're shown (search.ts verifiedFunnel). */
 export interface VerifiedFunnel {
   /** One batch made ready to show: some left out, and those who can't be verified marked. */
@@ -220,8 +333,20 @@ export interface VerifiedFunnel {
   plan: Pick<PlacesPlan, 'places' | 'placesOnly'>
   /** Moves `plan` on to the next cities; false where there are none. */
   nextRound(): boolean
-  /** Everyone the search kept, and whether it ran: what the funnel did, for the log, usage and the page, and where the next search takes up. */
-  finish(items: PersonResult[], ran: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
+  /**
+   * Everyone the search kept, whether it ran, and whether it searched its own
+   * cities (not where an earlier page's cut-short batch filled it, or the host
+   * was busy after it): what the funnel did, for the log, usage and the page,
+   * and where the next search takes up.
+   */
+  finish(items: PersonResult[], ran: boolean, citiesSearched?: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
+  /**
+   * Where this search starts (a page's cursor, or where the last one stopped),
+   * and a key for any point of a search with these filters: a batch the time
+   * limit cut short finishes for the page that starts where its own left off.
+   * Without it, such a batch is cancelled.
+   */
+  at?: { start: string | null; key(cursor: string | null): string }
 }
 
 const NO_FUNNEL: VerifiedFunnel = {
@@ -240,12 +365,15 @@ export interface VerifiedDeps {
   /** Override the host transport (tests). */
   calls?: HostCalls
   funnel?: VerifiedFunnel
+  /** Where cut-short batches are held (tests). */
+  cutShort?: CutShortBatches
 }
 
 /**
  * Runs a verified people search to completion (or until `count` people worth
  * showing or the time cap), streaming each batch through `onPeople`, and
- * cancels it at the host if it's still going. Where the page isn't full and
+ * cancels it at the host if it's still going, unless the time cap cut it
+ * short: that batch finishes for the next page. Where the page isn't full and
  * `listening` says someone's still there, it goes on to the country's next
  * cities, up to MAX_ROUNDS, stopping early at cities that find nobody. Returns
  * the same Page shape search.ts returns, so the UI and callers are unchanged.
@@ -317,42 +445,69 @@ export async function verifiedPeopleSearch(
     if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
   }
 
-  /** One batch of cities, to the end of its host search; false if it couldn't start. */
-  const runRound = async (): Promise<boolean> => {
-    const started = await calls.start(body()).catch(() => null)
+  /** This page's last batch, where the time limit cut it short while the host was still searching. */
+  // Set inside runRound, which control flow here can't see.
+  let cutShort = null as Pick<CutShort, 'id' | 'cursor' | 'found' | 'stats'> | null
+  /** People this page took from a batch an earlier page cut short. */
+  let heldOver = 0
+
+  /** One batch of cities, to the end of its host search, or the rest of one an earlier page cut short; false if it couldn't start. */
+  const runRound = async (earlier?: CutShort): Promise<boolean> => {
+    const started = earlier ? { id: earlier.id } : await calls.start(body()).catch(() => null)
     if (!started) return false
-    rounds++
-    places += funnel.plan.places.length
+    if (!earlier) {
+      rounds++
+      places += funnel.plan.places.length
+    }
     const roundStartedAt = now()
     const earlierFound = found
     const earlierStats = stats
-    let cursor = 0
-    let status = 'running'
+    // An earlier page's batch: only what the host did after that page counts here.
+    const base = earlier?.base ?? { found: 0, stats: null }
+    let host = { found: earlier?.found ?? 0, stats: earlier?.stats ?? null }
+    let cursor = earlier?.cursor ?? 0
+    let status = !earlier || earlier.running ? 'running' : 'done'
+    let outOfTime = false
     roundFound = 0
     // Wait for the end of the batch: they only take the room those with a live profile leave.
     const fromWebsite: PersonResult[] = []
     stop = 'time limit'
+    /** Counts what the host has done so far, and sorts out who's new. */
+    const read = (page: Pick<HostPage, 'found' | 'stats' | 'people'>): PersonResult[] => {
+      host = { found: page.found, stats: page.stats ?? host.stats }
+      roundFound = Math.max(0, host.found - base.found)
+      found = earlierFound + roundFound
+      stats = addStats(earlierStats, subStats(host.stats, base.stats))
+      const fresh: PersonResult[] = []
+      for (const row of page.people) {
+        if (!row?.profileUrl || seen.has(row.profileUrl)) continue
+        seen.add(row.profileUrl)
+        const person = mapPerson(row, searchId)
+        ;(person.fromWebsite ? fromWebsite : fresh).push(person)
+        if (person.fromWebsite) websiteFound++
+      }
+      return fresh
+    }
     try {
-      while (now() - roundStartedAt < MAX_WAIT_MS && usable() < count) {
+      if (earlier) {
+        heldOver += earlier.rows.length
+        await take(read({ found: earlier.found, stats: earlier.stats, people: earlier.rows }))
+        if (usable() >= count) stop = 'full'
+        else if (!earlier.running) stop = 'done'
+      }
+      while (stop === 'time limit' && usable() < count) {
+        if (now() - roundStartedAt >= MAX_WAIT_MS) {
+          outOfTime = true
+          break
+        }
         const page = await calls.poll(started.id, cursor).catch(() => null)
         if (!page) {
           stop = 'source failed'
           break
         }
-        roundFound = page.found
-        found = earlierFound + page.found
-        stats = addStats(earlierStats, page.stats ?? null)
         status = page.status
         if (page.nextCursor != null) cursor = page.nextCursor
-        const fresh: PersonResult[] = []
-        for (const row of page.people) {
-          if (!row?.profileUrl || seen.has(row.profileUrl)) continue
-          seen.add(row.profileUrl)
-          const person = mapPerson(row, searchId)
-          ;(person.fromWebsite ? fromWebsite : fresh).push(person)
-          if (person.fromWebsite) websiteFound++
-        }
-        await take(fresh)
+        await take(read(page))
         if (usable() >= count) {
           stop = 'full'
           break
@@ -365,8 +520,12 @@ export async function verifiedPeopleSearch(
         if (page.people.length < POLL_SIZE) await sleep(POLL_EVERY_MS)
       }
     } finally {
-      // Still spending the host's proxy data for people nobody will read.
-      if (status === 'running') await calls.cancel?.(started.id).catch(() => {})
+      // Still spending the host's proxy data for people nobody will read, unless
+      // the time limit cut it short: then it finishes for the next page.
+      if (status === 'running') {
+        if (outOfTime) cutShort = { id: started.id, cursor, ...host }
+        else await calls.cancel?.(started.id).catch(() => {})
+      }
     }
     if (fromWebsite.length && usable() < count) {
       await take(fromWebsite)
@@ -375,9 +534,21 @@ export async function verifiedPeopleSearch(
     return true
   }
 
-  if (!(await runRound())) return empty(['Verified people search is busy right now — try again in a moment.'])
+  // What an earlier page of this search left finishing comes first, then this page's own cities.
+  const held = deps.cutShort ?? CUT_SHORT
+  const earlier = funnel.at ? held.take(funnel.at.key(funnel.at.start)) : null
+  const warnings: string[] = []
+  if (earlier) await runRound(earlier)
+  if (!earlier || (stop === 'done' && usable() < count)) {
+    if (!(await runRound())) {
+      if (!earlier) return empty([BUSY])
+      warnings.push(BUSY)
+    }
+  }
   while (
     stop === 'done' &&
+    rounds > 0 &&
+    !warnings.length &&
     usable() < count &&
     roundFound > 0 &&
     rounds < MAX_ROUNDS &&
@@ -388,11 +559,21 @@ export async function verifiedPeopleSearch(
     if (!(await runRound())) stop = 'source failed'
   }
 
-  const kept = funnel.finish(items, stop !== 'source failed')
+  const kept = funnel.finish(items, stop !== 'source failed', rounds > 0)
+  if (cutShort) {
+    const { id } = cutShort
+    const cancel = async () => calls.cancel?.(id)
+    if (funnel.at) {
+      const batch: CutShort = { ...cutShort, rows: [], base: { found: cutShort.found, stats: cutShort.stats }, running: true, taken: false, at: now(), cancel }
+      held.put(funnel.at.key(kept.nextCursor), batch)
+      void finishBatch(batch, calls, sleep, now).catch(() => {})
+    } else await cancel().catch(() => {})
+  }
   const shown = usable()
   const onWebsites = items.filter((p) => p.fromWebsite)
   const websiteCounts: Record<string, number> = websiteFound ? { websiteFound, websiteShown: onWebsites.filter((p) => !funnel.hidden(p)).length, websiteHidden: onWebsites.filter(funnel.hidden).length } : {}
-  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...websiteCounts, ...statCounts(stats) }
+  const carried: Record<string, number> = { ...(heldOver ? { heldOver } : {}), ...(cutShort && funnel.at ? { leftFinishing: 1 } : {}) }
+  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...websiteCounts, ...carried, ...statCounts(stats) }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,
@@ -420,7 +601,7 @@ export async function verifiedPeopleSearch(
     items,
     nextCursor: kept.nextCursor,
     reportedTotal: found,
-    warnings: [],
+    warnings,
     details: kept.details,
     requests: 1,
     refined: [],

@@ -26,7 +26,16 @@ describe('placesFor', () => {
   it('leaves a country or region it has no cities for to search as a whole', () => {
     expect(placesFor('Portugal', 1, null)).toEqual({ places: [], placesOnly: false, next: null })
     expect(placesFor('California, United States', 1, null).places).toEqual([])
-    expect(placesFor(null, 1, null).places).toEqual([])
+    expect(placesFor('Singapore', 1, null).places).toEqual([])
+  })
+
+  it('works through cities across countries for a search with no country', () => {
+    for (const none of [null, undefined, '', '  ']) {
+      expect(placesFor(none, 1, null)).toMatchObject({ places: ['London', 'New York', 'Toronto', 'Sydney', 'Singapore', 'Dubai'], placesOnly: false, next: 'places:6' })
+    }
+    expect(placesFor(null, 1, 'places:6')).toMatchObject({ placesOnly: true, next: 'places:12' })
+    expect(placesFor(null, 1, 'places:6').places).toContain('Berlin')
+    expect(placesFor(null, 1, 'places:24').next).toBeNull()
   })
 
   it('takes a cursor from another kind of search as the start', () => {
