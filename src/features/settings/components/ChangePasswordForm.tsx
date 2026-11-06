@@ -55,7 +55,7 @@ export function ChangePasswordForm() {
         </FieldGrid>
         {message && <Notice level={message.ok ? 'success' : 'error'}>{message.text}</Notice>}
         <SettingsActions>
-          <Button type="submit" isLoading={busy} leftIcon={<KeyRound className="w-4 h-4" />}>
+          <Button type="submit" variant="outline" isLoading={busy} leftIcon={<KeyRound className="w-4 h-4" />}>
             Change password
           </Button>
         </SettingsActions>

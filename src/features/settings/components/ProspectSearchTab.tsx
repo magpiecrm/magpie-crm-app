@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { prospectingStatusFn, saveSearchPreferencesFn } from '../../../server/functions'
-import { SettingsBlock, SettingsCheck, SettingsMore, SettingsPanel } from './SettingsBlock'
+import { SettingsBlock, SettingsMore, SettingsPanel, SettingsToggle } from './SettingsBlock'
 import { SharedDatabaseBlock } from './SharedDatabaseBlock'
 
 /** Settings → Prospect search: what search results show. Hosted copies can change it too. */
@@ -37,12 +37,12 @@ export function ProspectSearchTab() {
             </>
           }
         >
-          <SettingsCheck
+          <SettingsToggle
             checked={hideUnverifiable}
             disabled={!status || !verifiedOnly || save.isPending}
             onChange={(checked) => save.mutate(checked)}
-            label="Hide people whose email can't be verified (recommended)"
-            hint="On: they're left out of results, and search keeps looking to fill the page. Off: they're listed, marked Unverifiable where the email would be."
+            label="Hide unverifiable people (recommended)"
+            hint="They're left out, and search keeps looking to fill the page. Off, they're listed and marked Unverifiable."
           />
           <SettingsMore>
             <p>
@@ -59,20 +59,20 @@ export function ProspectSearchTab() {
         </SettingsBlock>
 
         <SettingsBlock
-          title="Companies that accept every address"
+          title="Catch-all companies"
           description={
             <>
-              <p>Their mail server can't confirm any address, but the address format is often still clear.</p>
+              <p>Companies whose mail server accepts every address, so none can be confirmed, though the format is often clear.</p>
               {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these are always handed over.</p>}
             </>
           }
         >
-          <SettingsCheck
+          <SettingsToggle
             checked={allowFormatConfirmed}
             disabled={!status || !verifiedOnly || saveFormat.isPending}
             onChange={(checked) => saveFormat.mutate(checked)}
-            label="Hand over addresses whose format is confirmed"
-            hint="On: Reveal and saving give these addresses, and search shows people at those companies. Off: only verified addresses are handed over."
+            label="Use confirmed address formats"
+            hint="Reveal and saving give these addresses, and search shows people at those companies. Off, only verified addresses are handed over."
           />
           <SettingsMore>
             <p>

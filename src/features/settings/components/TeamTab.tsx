@@ -129,7 +129,7 @@ export function TeamTab() {
                     }
                     title={user.email}
                     detail={isSelf ? "That's you, so you can't remove yourself here." : undefined}
-                    badge={isSelf ? <Badge variant="info">You</Badge> : undefined}
+                    badge={isSelf ? <Badge>You</Badge> : undefined}
                     // Removing isn't offered at all where it can't be done, rather than shown greyed out.
                     actions={
                       !locked && (

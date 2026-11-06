@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, AlertTriangle } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
@@ -21,18 +20,13 @@ import { BillingTab } from './BillingTab'
 import { Select } from '../../../components/ui/Select'
 import { INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
+import { Badge } from '../../../components/ui/Badge'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
   warning: 'bg-amber-500',
   ok: 'bg-emerald-500',
   info: '',
-}
-
-/** A shape as well as a colour for the header's status, so it doesn't rest on colour alone. */
-function StatusIcon({ level }: { level: StatusLevel }) {
-  const cls = 'mt-px h-3.5 w-3.5 shrink-0'
-  return level === 'error' ? <AlertCircle className={`${cls} text-destructive`} aria-hidden /> : <AlertTriangle className={`${cls} text-amber-600 dark:text-amber-400`} aria-hidden />
 }
 
 type Section = (typeof SETTINGS_SECTIONS)[number]
@@ -121,7 +115,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
               {group.name && (
-                <span className="px-3 pb-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{group.name}</span>
+                <span className="px-3 pb-1 text-xs font-semibold text-muted-foreground">{group.name}</span>
               )}
               {group.sections.map((s) => {
                 const level = statuses[s.id]?.level
@@ -158,10 +152,9 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
               {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
               {/* Only when something needs doing, like the menu's dot: facts, prices and "all fine" are left to the page itself. */}
               {active !== 'overview' && currentStatus && (currentStatus.level === 'warning' || currentStatus.level === 'error') && (
-                <span className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-[14px] border border-border bg-card px-2.5 py-1 text-xs leading-[18px] text-foreground">
-                  <StatusIcon level={currentStatus.level} />
-                  <span className="min-w-0">{currentStatus.short ?? currentStatus.text.replace(/\.$/, '')}</span>
-                </span>
+                <Badge variant={currentStatus.level} status>
+                  {currentStatus.short ?? currentStatus.text.replace(/\.$/, '')}
+                </Badge>
               )}
             </div>
             <p className="text-sm text-muted-foreground max-w-2xl">{copilotManaged && current.id === 'copilot' ? COPILOT_MANAGED_INTRO : current.intro}</p>

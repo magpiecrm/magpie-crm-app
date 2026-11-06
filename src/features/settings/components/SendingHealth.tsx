@@ -125,7 +125,7 @@ export function SendingHealth() {
                 key={d.domain}
                 icon={<Globe className="h-4 w-4" />}
                 title={d.domain}
-                badge={<Badge variant={STATUS[d.status].variant}>{STATUS[d.status].label}</Badge>}
+                badge={<Badge variant={STATUS[d.status].variant} status>{STATUS[d.status].label}</Badge>}
                 actions={
                   d.score !== null && (
                     <span className={`text-2xl font-semibold tabular-nums leading-none ${SCORE_CLASS[d.status]}`} aria-label={`Reputation score ${d.score} out of 100`}>

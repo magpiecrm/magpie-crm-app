@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ChevronRight } from 'lucide-react'
+import { Switch } from '../../../components/ui/Switch'
 
 // What every Settings page is built from, so they all line up: one bordered
 // panel per page, divided into blocks. A block names itself in a narrow left
@@ -193,4 +194,29 @@ export function SettingsMore({ summary = 'How it works', children }: { summary?:
 /** A one-field form: the field and its button on one line where the panel has room, stacked on a phone. */
 export function SettingsInline({ children }: { children: ReactNode }) {
   return <div className="flex flex-col gap-2 @[36rem]:max-w-[34rem] @[36rem]:flex-row @[36rem]:items-end [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">{children}</div>
+}
+
+/** A setting that takes effect as soon as it's flipped: what it does on the left, its switch on the right. */
+export function SettingsToggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
+  hint?: ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-4 ${disabled ? 'opacity-60' : ''}`}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
+      </div>
+      <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} />
+    </div>
+  )
 }

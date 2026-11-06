@@ -120,9 +120,9 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
         !box ? (
           <Badge>Not connected</Badge>
         ) : box.status === 'ok' ? (
-          <Badge variant="success">Connected</Badge>
+          <Badge variant="success" status>Connected</Badge>
         ) : (
-          <Badge variant="error">{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>
+          <Badge variant="error" status>{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>
         )
       }
       actions={

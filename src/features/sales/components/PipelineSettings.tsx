@@ -98,7 +98,7 @@ export function PipelineSettings() {
               {pipelines.map((p, i) =>
                 // A different component while editing, so a row's delete prompt doesn't outlive an edit.
                 editingId === p.id ? (
-                  <SettingsRow key={p.id} title={p.name} badge={i === 0 ? <Badge variant="info">Default</Badge> : undefined}>
+                  <SettingsRow key={p.id} title={p.name} badge={i === 0 ? <Badge>Default</Badge> : undefined}>
                     <PipelineEditor pipeline={p} onDone={() => setEditingId(null)} />
                   </SettingsRow>
                 ) : (
@@ -167,7 +167,7 @@ function PipelineRow({
   return (
     <SettingsRow
       title={pipeline.name}
-      badge={isDefault ? <Badge variant="info">Default</Badge> : undefined}
+      badge={isDefault ? <Badge>Default</Badge> : undefined}
       actions={
         <>
           <Button variant="ghost" size="icon" onClick={onUp} disabled={!onUp} aria-label={`Move ${pipeline.name} up`} leftIcon={<ArrowUp className="h-4 w-4" />} />

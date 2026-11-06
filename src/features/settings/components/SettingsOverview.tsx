@@ -39,9 +39,9 @@ function UsageThisMonth({ data }: { data: Awaited<ReturnType<typeof getUsageFn>>
   const monthName = new Date(`${data.month}-01T00:00:00Z`).toLocaleString(undefined, { month: 'long', timeZone: 'UTC' })
   return (
     <SettingsBlock title="Usage this month" description={`${monthName} so far.`}>
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md-s border border-border bg-border">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {USAGE_TILES.map((tile) => (
-          <div key={tile.key} className="bg-background px-3 py-2.5">
+          <div key={tile.key} className="flex flex-col gap-0.5">
             <p className="text-[13px] text-muted-foreground">{tile.label}</p>
             <p className="text-2xl font-semibold tabular-nums text-foreground">{data[tile.key].toLocaleString()}</p>
           </div>
@@ -93,6 +93,7 @@ export function SettingsOverview({
   }
 
   const problems = rows.filter((r) => r.status.level === 'error' || r.status.level === 'warning').length
+  const unfinished = rows.filter((r) => kindOf(r.status) === 'unfinished').length
   const hasPlan = Boolean(usage?.allowance?.items.length)
 
   return (
@@ -107,7 +108,16 @@ export function SettingsOverview({
 
         <SettingsBlock
           title="Setup"
-          description={problems === 0 ? 'Everything is set up.' : `${problems} ${problems === 1 ? 'thing needs' : 'things need'} your attention.`}
+          description={
+            problems === 0 && unfinished === 0
+              ? 'Everything is set up.'
+              : [
+                  problems > 0 && `${problems} ${problems === 1 ? 'thing needs' : 'things need'} your attention`,
+                  unfinished > 0 && `${unfinished} ${unfinished === 1 ? 'is' : 'are'} still to set up`,
+                ]
+                  .filter(Boolean)
+                  .join(', ') + '.'
+          }
         >
           <SettingsList>
             {rows.map(({ section, status }) => (

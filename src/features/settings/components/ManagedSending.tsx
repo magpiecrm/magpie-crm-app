@@ -61,42 +61,28 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
     <SettingsRow
       icon={<Globe className="h-4 w-4" />}
       title={d.domain}
-      badge={d.ready ? <Badge variant="success">Ready to send</Badge> : <Badge variant="warning">Waiting for DNS records</Badge>}
+      badge={d.ready ? <Badge variant="success" status>Ready to send</Badge> : <Badge variant="warning" status>Waiting for DNS</Badge>}
+      // One line per domain: Check now only while it's waiting, and the records behind the chevron.
       actions={
         <>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-expanded={open}
-            aria-label={open ? 'Hide DNS records' : 'Show DNS records'}
-            leftIcon={open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            onClick={() => setOpen((o) => !o)}
-          >
-            {open ? 'Hide records' : 'Show records'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Check now"
-            isLoading={check.isPending}
-            leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
-            onClick={() => check.mutate()}
-          >
-            Check now
-          </Button>
+          {!d.ready && (
+            <Button variant="outline" size="sm" isLoading={check.isPending} leftIcon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => check.mutate()}>
+              Check now
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => confirm(`Stop sending from ${d.domain}?`) && remove.mutate()}
-            aria-label={`Remove ${d.domain}`}
-            title="Remove"
-            className="hover:!bg-destructive/10 hover:!text-destructive"
-            leftIcon={<Trash2 className="h-4 w-4" />}
+            aria-expanded={open}
+            aria-label={open ? `Hide ${d.domain}'s DNS records` : `Show ${d.domain}'s DNS records`}
+            title={open ? 'Hide DNS records' : 'Show DNS records'}
+            leftIcon={open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            onClick={() => setOpen((o) => !o)}
           />
         </>
       }
     >
-      {(!d.ready || open) && (
+      {open && (
         <div className="flex flex-col gap-3">
           {!d.ready && (
             <p className="text-[13px] leading-relaxed text-muted-foreground">
@@ -104,38 +90,51 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
             </p>
           )}
           {!d.ready && check.data && !check.data.success && <Notice level="error">{check.data.error}</Notice>}
-          {open && (
-            <>
-              {/* One flat list of records: type and what it's for, then each part on one line with its copy button. */}
-              <div className="divide-y divide-border/70">
-                {d.records.map((r) => (
-                  <div key={r.name} className="flex flex-col gap-1.5 py-2.5">
-                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                      <span className="font-mono font-semibold text-foreground">{r.type}</span>
-                      {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
-                      {r.optional && <Badge>Recommended</Badge>}
-                    </p>
-                    {/* Label beside the value where the panel is wide; above it on a phone, so a hostname has the whole width. */}
-                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 @[36rem]:grid-cols-[3rem_minmax(0,1fr)_auto]">
-                      {(['name', 'value'] as const).map((part) => (
-                        <div key={part} className="contents">
-                          <dt className="col-span-2 pt-1 text-[13px] text-muted-foreground @[36rem]:col-span-1 @[36rem]:pt-0">{part === 'name' ? 'Name' : 'Value'}</dt>
-                          <dd className="min-w-0 rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
-                            <Breakable value={r[part]} />
-                          </dd>
-                          <CopyButton value={r[part]} />
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-                ))}
+          {/* One flat list of records: type and what it's for, then each part on one line with its copy button. */}
+          <div className="divide-y divide-border/70">
+            {d.records.map((r) => (
+              <div key={r.name} className="flex flex-col gap-1.5 py-2.5">
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                  <span className="font-mono font-semibold text-foreground">{r.type}</span>
+                  {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
+                  {r.optional && <Badge>Recommended</Badge>}
+                </p>
+                {/* Label beside the value where the panel is wide; above it on a phone, so a hostname has the whole width. */}
+                <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 @[36rem]:grid-cols-[3rem_minmax(0,1fr)_auto]">
+                  {(['name', 'value'] as const).map((part) => (
+                    <div key={part} className="contents">
+                      <dt className="col-span-2 pt-1 text-[13px] text-muted-foreground @[36rem]:col-span-1 @[36rem]:pt-0">{part === 'name' ? 'Name' : 'Value'}</dt>
+                      <dd className="min-w-0 rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
+                        <Breakable value={r[part]} />
+                      </dd>
+                      <CopyButton value={r[part]} />
+                    </div>
+                  ))}
+                </dl>
               </div>
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Some DNS providers add your domain to the name for you: if yours does, enter only the part before{' '}
-                <code className="font-mono">.{d.domain}</code>. Already have a DMARC record? Keep yours.
-              </p>
-            </>
-          )}
+            ))}
+          </div>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
+            Some DNS providers add your domain to the name for you: if yours does, enter only the part before{' '}
+            <code className="font-mono">.{d.domain}</code>. Already have a DMARC record? Keep yours.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {d.ready && (
+              <Button variant="outline" size="sm" isLoading={check.isPending} leftIcon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => check.mutate()}>
+                Check now
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => confirm(`Stop sending from ${d.domain}?`) && remove.mutate()}
+              isLoading={remove.isPending}
+              leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+              className="!text-destructive hover:!bg-destructive/10"
+            >
+              Remove domain
+            </Button>
+          </div>
         </div>
       )}
     </SettingsRow>
@@ -246,7 +245,7 @@ export function ManagedSending() {
                 <Field label="Send a test email to">
                   <input type="email" required value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@example.com" className={INPUT_CLASS} />
                 </Field>
-                <Button type="submit" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />}>
+                <Button type="submit" variant="outline" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />}>
                   Send a test
                 </Button>
               </SettingsInline>
