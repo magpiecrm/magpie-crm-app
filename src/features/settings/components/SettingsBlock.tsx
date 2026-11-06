@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
 
 // What every Settings page is built from, so they all line up: one bordered
 // panel per page, divided into blocks. A block names itself in a narrow left
@@ -83,16 +84,17 @@ export function SettingsRow({
 }) {
   return (
     <div className="rounded-md-s border border-border bg-background">
-      <div className="flex min-h-[46px] items-center gap-3 px-3 py-1.5">
+      {/* Where the row is too narrow for both, the actions move under what it is rather than squeezing it. */}
+      <div className="flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5">
         {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[9rem] flex-1 basis-[9rem]">
           <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
-            <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
+            <span className="min-w-0 break-words">{title}</span>
             {badge}
           </p>
-          {detail && <p className="truncate text-xs text-muted-foreground">{detail}</p>}
+          {detail && <p className="truncate text-[13px] text-muted-foreground">{detail}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+        {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
       {children && <div className="border-t border-border/70 px-3 py-3">{children}</div>}
     </div>
@@ -134,7 +136,7 @@ export function SettingsOption({
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm font-medium text-foreground">{title}</span>
-        {detail && <span className="text-xs leading-relaxed text-muted-foreground">{detail}</span>}
+        {detail && <span className="text-[13px] leading-relaxed text-muted-foreground">{detail}</span>}
       </span>
     </button>
   )
@@ -165,8 +167,21 @@ export function SettingsCheck({
       />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm text-foreground">{label}</span>
-        {hint && <span className="text-xs leading-relaxed text-muted-foreground">{hint}</span>}
+        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
       </span>
     </label>
+  )
+}
+
+/** The longer explanation of a block, folded away under its controls so the block leads with what to do. */
+export function SettingsMore({ summary = 'How it works', children }: { summary?: ReactNode; children: ReactNode }) {
+  return (
+    <details className="group text-[13px] text-muted-foreground">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md-xs font-medium text-foreground/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+        {summary}
+      </summary>
+      <div className="mt-2 flex max-w-[65ch] flex-col gap-2 leading-relaxed">{children}</div>
+    </details>
   )
 }

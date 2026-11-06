@@ -27,12 +27,12 @@ export function Field({
 }) {
   return (
     <Wrapper className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
-      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <span className="text-[13px] font-medium text-foreground">{label}</span>
       {children}
       {error ? (
-        <span className="text-xs text-destructive">{error}</span>
+        <span className="text-[13px] text-destructive">{error}</span>
       ) : (
-        hint && <span className="text-xs text-muted-foreground leading-relaxed">{hint}</span>
+        hint && <span className="text-[13px] text-muted-foreground leading-relaxed">{hint}</span>
       )}
     </Wrapper>
   )

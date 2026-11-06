@@ -164,7 +164,7 @@ export function ApiKeysTab() {
               </Notice>
             )}
             <SettingsActions>
-              <Button type="submit" isLoading={isGeneratingKey} disabled={!newKeyName.trim()} leftIcon={<Plus className="h-4 w-4" />}>
+              <Button type="submit" isLoading={isGeneratingKey} leftIcon={<Plus className="h-4 w-4" />}>
                 Create key
               </Button>
             </SettingsActions>

@@ -87,7 +87,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
       {(!d.ready || open) && (
         <div className="flex flex-col gap-3">
           {!d.ready && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
               {d.waitingFor ?? 'Add the records below at your domain provider. It usually takes a few minutes, sometimes up to a day.'}
             </p>
           )}
@@ -117,7 +117,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
                   </div>
                 ))}
               </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 Some DNS providers add your domain to the name for you: if yours does, enter only the part before{' '}
                 <code className="font-mono">.{d.domain}</code>. Already have a DMARC record? Keep yours.
               </p>
@@ -199,6 +199,7 @@ export function ManagedSending() {
             <FieldGrid>
               <Field label="Domain to send from" error={add.data && !add.data.success ? add.data.error : undefined}>
                 <input
+                  required
                   value={newDomain}
                   onChange={(e) => setNewDomain(e.target.value)}
                   placeholder="acme.com"
@@ -209,7 +210,7 @@ export function ManagedSending() {
               </Field>
             </FieldGrid>
             <SettingsActions>
-              <Button type="submit" isLoading={add.isPending} leftIcon={<Plus className="h-4 w-4" />} disabled={!newDomain.trim()}>
+              <Button type="submit" isLoading={add.isPending} leftIcon={<Plus className="h-4 w-4" />}>
                 Add domain
               </Button>
             </SettingsActions>
@@ -229,7 +230,7 @@ export function ManagedSending() {
             >
               <FieldGrid>
                 <Field label="Send a test email to">
-                  <input type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@example.com" className={INPUT_CLASS} />
+                  <input type="email" required value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@example.com" className={INPUT_CLASS} />
                 </Field>
               </FieldGrid>
               {test.data && (
@@ -238,7 +239,7 @@ export function ManagedSending() {
                 </Notice>
               )}
               <SettingsActions>
-                <Button type="submit" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />} disabled={!testTo.trim()}>
+                <Button type="submit" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />}>
                   Send a test
                 </Button>
               </SettingsActions>

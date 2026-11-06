@@ -168,6 +168,7 @@ export function TeamTab() {
                     <input
                       type="password"
                       required
+                      minLength={6}
                       value={newUserPassword}
                       onChange={(e) => setNewUserPassword(e.target.value)}
                       placeholder="At least 6 characters"
@@ -180,7 +181,6 @@ export function TeamTab() {
                   <Button
                     type="submit"
                     isLoading={isAddingUser}
-                    disabled={!newUserEmail.trim() || !newUserPassword.trim() || newUserPassword.trim().length < 6}
                     leftIcon={<Plus className="h-4 w-4" />}
                   >
                     Add person

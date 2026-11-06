@@ -50,23 +50,6 @@ export function RepliesTab() {
   return (
     <div className="flex flex-col gap-4">
       <SettingsPanel>
-        <SettingsBlock title="How it works">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
-            people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
-            "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
-            is kept, and the app can't send or delete mail.
-            {warmup?.offered &&
-              " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.
-          </p>
-        </SettingsBlock>
-
         <SettingsBlock title="Inboxes" description="One for each sender address. Until a sender's inbox is connected, replies to it have to be marked by hand.">
           {isLoading ? (
             <SettingsEmpty>Loading…</SettingsEmpty>
@@ -89,6 +72,23 @@ export function RepliesTab() {
               </SettingsActions>
             </>
           )}
+        </SettingsBlock>
+
+        <SettingsBlock title="How it works">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
+            people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
+            "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
+            is kept, and the app can't send or delete mail.
+            {warmup?.offered &&
+              " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.
+          </p>
         </SettingsBlock>
       </SettingsPanel>
     </div>

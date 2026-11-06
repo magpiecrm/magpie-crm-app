@@ -34,7 +34,7 @@ function landed(t: Tally, need = 0) {
   return `${pct(t.inbox, total)} inbox · ${pct(t.tabs, total)} tabs · ${pct(t.spam, total)} spam (${total} delivered)`
 }
 
-/** What warmup is, for a workspace that has it and one that could add it. */
+/** What warmup is, for a workspace that has it and one that could add it: last, after what there is to do. */
 function HowItWorks() {
   return (
     <SettingsBlock title="How it works">
@@ -60,7 +60,6 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
   if (!data.offered && data.purchasable) {
     return (
       <SettingsPanel>
-        <HowItWorks />
         <SettingsBlock title="Add it to your plan">
           <p className="text-sm leading-relaxed text-foreground">
             Inbox warmup isn't on your plan. Add it for {data.purchasable.price} a month: one sender warmed with up to {data.purchasable.perDay} emails a day.
@@ -71,6 +70,7 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
             </Button>
           </SettingsActions>
         </SettingsBlock>
+        <HowItWorks />
       </SettingsPanel>
     )
   }
@@ -83,8 +83,6 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
       {data.stopped && <Notice level="error" title="MagpieCRM has stopped warmup for this workspace">{data.stopped}</Notice>}
       {data.error && <Notice level="error" title="The warmup service couldn't be reached">{data.error}</Notice>}
       <SettingsPanel>
-        <HowItWorks />
-
         <SettingsBlock
           title="Senders"
           description={
@@ -119,6 +117,7 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
             stopped={Boolean(data.stopped)}
           />
         )}
+        <HowItWorks />
       </SettingsPanel>
 
       {consentFor && <Consent row={consentFor} consent={data.consent} onClose={() => setConsentFor(null)} />}

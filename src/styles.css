@@ -224,3 +224,51 @@
     }
   }
 }
+
+/* Plan sliders: a track you can see in both themes and a thumb big enough to grab. */
+.range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  --fill: var(--accent);
+}
+.range-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  /* --pct (set by the page) is how far along the thumb is, so the chosen part is filled. */
+  background: linear-gradient(to right, var(--fill) var(--pct, 0%), color-mix(in srgb, var(--foreground) 12%, transparent) var(--pct, 0%));
+}
+.range-input::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+}
+.range-input::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--fill);
+}
+.range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--fill);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.range-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--fill);
+}
+.range-input:focus-visible {
+  outline: none;
+}
+.range-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fill) 30%, transparent);
+}

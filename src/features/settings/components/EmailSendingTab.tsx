@@ -250,7 +250,7 @@ export function EmailSendingTab() {
               </Field>
             </FieldGrid>
             {descriptor && (
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 {descriptor.summary}{' '}
                 <a href={descriptor.docsUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                   Docs

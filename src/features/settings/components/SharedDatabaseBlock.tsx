@@ -69,7 +69,7 @@ export function SharedDatabaseBlock({ shared }: { shared: { contributing: boolea
               Stop contributing
             </Button>
           </SettingsActions>
-          <p className="text-xs leading-relaxed text-muted-foreground">Stopping sends nothing new. What's already there stays.</p>
+          <p className="text-[13px] leading-relaxed text-muted-foreground">Stopping sends nothing new. What's already there stays.</p>
         </>
       ) : (
         <>
@@ -80,7 +80,7 @@ export function SharedDatabaseBlock({ shared }: { shared: { contributing: boolea
             label={<>I agree to the {terms}</>}
             hint="They say you found these people lawfully, through prospect search here, and not by collecting their consent for something else."
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-[13px] leading-relaxed text-muted-foreground">
             Contributing is off: nothing is sent. Switching it on also sends the verified contacts you've already saved from
             prospect search.
           </p>

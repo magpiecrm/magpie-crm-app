@@ -14,11 +14,14 @@ export function AllowanceMeter({
   compact = false,
   showUpgrade = true,
   heading = true,
+  showResets = true,
 }: {
   compact?: boolean
   showUpgrade?: boolean
   /** Off where the block around it already says "Your plan" (Settings): only the reset date shows. */
   heading?: boolean
+  /** Off where the renewal date is already beside it (Plan and billing). */
+  showResets?: boolean
 }) {
   const { data } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60_000 })
   const allowance = data?.allowance
@@ -37,7 +40,7 @@ export function AllowanceMeter({
           {resets && <span className="text-xs text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
         </div>
       )}
-      {!compact && !heading && resets && <p className="text-xs text-muted-foreground">Resets {resets}</p>}
+      {!compact && !heading && showResets && resets && <p className="text-xs text-muted-foreground">Resets {resets}</p>}
       {allowance.sendingPaused && (
         <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold text-destructive`}>
           Sending is paused by your hosting provider.

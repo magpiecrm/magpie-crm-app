@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { prospectingStatusFn, saveSearchPreferencesFn } from '../../../server/functions'
-import { SettingsBlock, SettingsCheck, SettingsPanel } from './SettingsBlock'
+import { SettingsBlock, SettingsCheck, SettingsMore, SettingsPanel } from './SettingsBlock'
 import { SharedDatabaseBlock } from './SharedDatabaseBlock'
 
 /** Settings → Prospect search: what search results show. Hosted copies can change it too. */
@@ -32,14 +32,7 @@ export function ProspectSearchTab() {
           title="Unverifiable emails"
           description={
             <>
-              <p>
-                Some people can't get a verified email: their company's mail server accepts every address, real or not,
-                or doesn't take email, or a lookup already found nothing that works.
-              </p>
-              <p>
-                People whose lookup failed for a reason a retry won't change are remembered for 90 days, as a scrambled
-                code of their profile address, so later searches leave them out before paying to look them up again.
-              </p>
+              <p>Some people can't get a verified email, so you choose whether search shows them.</p>
               {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these people are always shown.</p>}
             </>
           }
@@ -51,6 +44,16 @@ export function ProspectSearchTab() {
             label="Hide people whose email can't be verified (recommended)"
             hint="On: they're left out of results, and search keeps looking to fill the page. Off: they're listed, marked Unverifiable where the email would be."
           />
+          <SettingsMore>
+            <p>
+              Their company's mail server accepts every address, real or not, or doesn't take email, or a lookup already found
+              nothing that works.
+            </p>
+            <p>
+              People whose lookup failed for a reason a retry won't change are remembered for 90 days, as a scrambled code of
+              their profile address, so later searches leave them out before paying to look them up again.
+            </p>
+          </SettingsMore>
           {save.isError && <Notice level="error">{(save.error as Error).message}</Notice>}
           {save.isSuccess && !save.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
         </SettingsBlock>
@@ -59,16 +62,7 @@ export function ProspectSearchTab() {
           title="Companies that accept every address"
           description={
             <>
-              <p>
-                At these companies the mail server can't confirm any address, so emails there are normally withheld. Often
-                their address format is still clear: several addresses you already have there follow it, or the mail server
-                confirmed it before.
-              </p>
-              <p>
-                These addresses are marked Format confirmed. They're right most of the time but can still bounce, so a
-                campaign sends them in a first batch of {batch} and holds the rest for at least {wait}, until that batch's
-                bounces are in. If more than {stopAt} of it bounces, the rest aren't sent until you choose to.
-              </p>
+              <p>Their mail server can't confirm any address, but the address format is often still clear.</p>
               {!verifiedOnly && <p>Email verification is set to hand over unconfirmed guesses too, so these are always handed over.</p>}
             </>
           }
@@ -80,6 +74,17 @@ export function ProspectSearchTab() {
             label="Hand over addresses whose format is confirmed"
             hint="On: Reveal and saving give these addresses, and search shows people at those companies. Off: only verified addresses are handed over."
           />
+          <SettingsMore>
+            <p>
+              Emails at these companies are normally withheld. Their format counts as confirmed when several addresses you
+              already have there follow it, or the mail server confirmed it before.
+            </p>
+            <p>
+              These addresses are marked Format confirmed. They're right most of the time but can still bounce, so a campaign
+              sends them in a first batch of {batch} and holds the rest for at least {wait}, until that batch's bounces are in.
+              If more than {stopAt} of it bounces, the rest aren't sent until you choose to.
+            </p>
+          </SettingsMore>
           {saveFormat.isError && <Notice level="error">{(saveFormat.error as Error).message}</Notice>}
           {saveFormat.isSuccess && !saveFormat.isPending && <Notice level="success">Saved. Your next search uses it.</Notice>}
         </SettingsBlock>

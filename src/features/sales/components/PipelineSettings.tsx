@@ -127,12 +127,12 @@ export function PipelineSettings() {
           >
             <FieldGrid>
               <Field label="Name">
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Renewals" className={INPUT_CLASS} />
+                <input required value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Renewals" className={INPUT_CLASS} />
               </Field>
             </FieldGrid>
             {create.error && <Notice level="error">{create.error.message}</Notice>}
             <SettingsActions>
-              <Button type="submit" isLoading={create.isPending} disabled={!newName.trim()} leftIcon={<Plus className="h-4 w-4" />}>
+              <Button type="submit" isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
                 Add pipeline
               </Button>
             </SettingsActions>

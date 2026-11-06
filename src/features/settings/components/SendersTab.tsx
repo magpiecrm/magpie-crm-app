@@ -233,7 +233,6 @@ export function SendersTab() {
               <Button
                 type="submit"
                 isLoading={isAddingSender}
-                disabled={!newSenderName.trim() || !newSenderEmail.trim()}
                 leftIcon={<Plus className="h-4 w-4" />}
               >
                 Add sender

@@ -109,7 +109,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
 
         {/* Wide screens: the title and menu stay where they start while the page scrolls. */}
         <aside className="hidden lg:flex flex-col gap-3 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
-        <h1 className="px-3 pt-1.5 text-sm font-semibold text-muted-foreground">Settings</h1>
+        <h1 className="px-3 pt-1 text-base font-semibold text-foreground">Settings</h1>
         <nav aria-label="Settings" className="flex flex-col gap-4">
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
@@ -148,9 +148,9 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
               <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
               {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
               {active !== 'overview' && currentStatus && (
-                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level] || 'bg-muted-foreground/60'}`} />
-                  <span className="truncate">{currentStatus.text.replace(/\.$/, '')}</span>
+                <span className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-[14px] border border-border bg-card px-2.5 py-1 text-xs leading-[18px] text-foreground">
+                  <span className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level] || 'bg-muted-foreground/60'}`} />
+                  <span className="min-w-0">{currentStatus.text.replace(/\.$/, '')}</span>
                 </span>
               )}
             </div>

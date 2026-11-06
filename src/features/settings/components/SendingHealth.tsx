@@ -4,7 +4,7 @@ import { queryKeys } from '../../../queryKeys'
 import { getSendingHealthFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsBlock, SettingsEmpty, SettingsList, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsRow } from './SettingsBlock'
 
 type Health = Awaited<ReturnType<typeof getSendingHealthFn>>
 type Limit = NonNullable<Health['limits']>['cold']
@@ -57,11 +57,11 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
     >
       <div className="flex flex-col gap-2">
         {limit.limit !== null && (
-          <div className="h-1.5 rounded-full bg-muted overflow-hidden" role="presentation">
+          <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden" role="presentation">
             <div className={`h-full rounded-full ${used >= 1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${Math.round(used * 100)}%` }} />
           </div>
         )}
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
           {about}{' '}
           {limit.limit === null
             ? 'Your plan’s monthly allowance is the only limit.'
@@ -93,7 +93,7 @@ export function SendingHealth() {
     <>
       <SettingsBlock
         title="Daily limits"
-        description="A new sender that starts small and grows is trusted by Gmail and Outlook; one that sends everything at once is filed as spam. So limits start low and go up each week your email is received well."
+        description="Limits start low and go up each week your email is received well, because mail providers trust a sender that grows slowly."
       >
         <SettingsList>
           <LimitRow name="Cold email" about="To people found in Prospect Search who haven't signed up or replied." limit={data.limits.cold} />
@@ -103,7 +103,7 @@ export function SendingHealth() {
 
       <SettingsBlock
         title="Reputation"
-        description={`A score out of 100% for each domain you send from, from the last ${data.windowDays} days: 80% and over is good, 50% to 79% at risk, under 50% poor. It's set by the weakest of bounces, spam complaints, unsubscribes and opens. Opens leave out security scanners, and count only email sent with open tracking on.`}
+        description={`How each domain you send from has been received over the last ${data.windowDays} days: 80% and over is good, under 50% poor.`}
       >
         {data.domains.length === 0 ? (
           <SettingsEmpty>Nothing sent in the last {data.windowDays} days.</SettingsEmpty>
@@ -143,6 +143,12 @@ export function SendingHealth() {
             ))}
           </SettingsList>
         )}
+        <SettingsMore>
+          <p>
+            The score is set by the weakest of bounces, spam complaints, unsubscribes and opens; 50% to 79% is at risk. Opens
+            leave out security scanners, and count only email sent with open tracking on.
+          </p>
+        </SettingsMore>
       </SettingsBlock>
     </>
   )

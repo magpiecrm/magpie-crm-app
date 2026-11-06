@@ -35,7 +35,7 @@ function CopyBlock({ label, code, note }: { label: string; code: string; note?: 
         </Button>
       </div>
       <pre className={`${CODE_CLASS} whitespace-pre`}>{code}</pre>
-      {note && <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>}
+      {note && <p className="text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
     </div>
   )
 }
@@ -190,7 +190,7 @@ export function McpTab() {
           <form onSubmit={create} className="flex flex-col gap-3">
             <FieldGrid>
               <Field label="Name">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
+                <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
               </Field>
             </FieldGrid>
             {newKey && (
@@ -202,7 +202,7 @@ export function McpTab() {
               </Notice>
             )}
             <SettingsActions>
-              <Button type="submit" isLoading={busy} disabled={!name.trim()} leftIcon={<KeyRound className="h-4 w-4" />}>
+              <Button type="submit" isLoading={busy} leftIcon={<KeyRound className="h-4 w-4" />}>
                 Create key
               </Button>
             </SettingsActions>

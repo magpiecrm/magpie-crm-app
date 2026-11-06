@@ -57,7 +57,7 @@ export function ContactFieldForm({
     >
       <FieldGrid>
         <Field label="Label">
-          <input className={INPUT_CLASS} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Industry" />
+          <input required className={INPUT_CLASS} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Industry" />
         </Field>
         <Field label="Key" hint="Can't be changed later." error={keyError ?? undefined}>
           <input
@@ -87,7 +87,7 @@ export function ContactFieldForm({
       </FieldGrid>
       {!keyError && create.error && <Notice level="error">{create.error.message}</Notice>}
       <Actions>
-        <Button type="submit" disabled={!label.trim() || !!keyError} isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
+        <Button type="submit" disabled={!!keyError} isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
           {submitLabel}
         </Button>
         {extraActions}

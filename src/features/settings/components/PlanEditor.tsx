@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
@@ -147,7 +147,8 @@ export function PlanEditor({
                 value={at[k.id]}
                 onChange={(e) => move(k.id, Number(e.target.value))}
                 disabled={busy}
-                className="w-full accent-accent cursor-pointer"
+                style={{ '--pct': `${k.steps.length > 1 ? (at[k.id] / (k.steps.length - 1)) * 100 : 0}%` } as CSSProperties}
+                className="range-input w-full cursor-pointer"
               />
               <p className="text-xs text-muted-foreground">
                 {/* A budget is its own price: say what it's for, not a unit price. */}
