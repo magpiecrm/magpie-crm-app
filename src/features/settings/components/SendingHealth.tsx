@@ -31,8 +31,41 @@ const percent = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%
 
 /** Both daily limits as a table: what's gone out today against the limit, and the next step, so the numbers line up to compare. */
 function LimitsTable({ rows }: { rows: Array<{ name: string; about: string; limit: Limit }> }) {
+  const next = (limit: Limit) =>
+    limit.limit === null
+      ? 'Your plan’s monthly allowance is the only limit'
+      : limit.setByHost
+        ? 'Set for your workspace'
+        : limit.nextStepAt
+          ? limit.status === 'poor'
+            ? `Goes down ${short(limit.nextStepAt)} unless it improves`
+            : `${limit.nextLimit === null ? 'No limit' : `${count(limit.nextLimit)} a day`} from ${short(limit.nextStepAt)}, if received well`
+          : 'This is the most a workspace sends in a day'
   return (
-    <div className="overflow-x-auto rounded-md-s border border-border bg-card">
+    <>
+    {/* A phone has no room for three columns: each limit stacks as a row of its own. */}
+    <div className="divide-y divide-border/70 rounded-md-s border border-border bg-card @[36rem]:hidden">
+      {rows.map(({ name, about, limit }) => (
+        <div key={name} className="flex flex-col gap-1 px-3.5 py-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="font-medium text-foreground">{name}</p>
+            <p className="whitespace-nowrap text-sm tabular-nums">
+              {limit.limit === null ? (
+                <span className="text-muted-foreground">No limit</span>
+              ) : (
+                <>
+                  <span className="font-semibold text-foreground">{count(limit.sent)}</span>
+                  <span className="text-muted-foreground"> of {count(limit.limit)} today</span>
+                </>
+              )}
+            </p>
+          </div>
+          <p className="text-[13px] text-muted-foreground">{about}</p>
+          <p className="text-[13px] text-foreground/85">Next: {next(limit)}</p>
+        </div>
+      ))}
+    </div>
+    <div className="hidden overflow-x-auto rounded-md-s border border-border bg-card @[36rem]:block">
       <table className="w-full text-left text-sm">
         <thead className="text-[13px] text-muted-foreground">
           <tr className="border-b border-border/70">
@@ -80,6 +113,7 @@ function LimitsTable({ rows }: { rows: Array<{ name: string; about: string; limi
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 

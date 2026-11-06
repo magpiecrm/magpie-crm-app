@@ -1,5 +1,5 @@
 // Inbox warmup, where the host offers it (hostRules.ts hostInboxWarmup): a
-// sender whose inbox is connected (Settings → Reply detection) can warm in the
+// sender whose inbox is connected (Settings → Mailboxes) can warm in the
 // host's warmup pool. The pool sends its warmup through the host's mail server,
 // from the same IPs and with the same signatures as its campaigns, and files
 // the warmup it receives away in that inbox.
@@ -81,9 +81,9 @@ export async function eligibility(deps: WarmupDeps = {}): Promise<Array<Omit<War
     const blockers: string[] = []
     if (!canSendFrom(email)) blockers.push(`${domain} isn't ready to send from yet: finish it under Settings → Sending.`)
     const inbox = inboxOf(s.id)
-    if (!inbox) blockers.push("Connect this sender's inbox first, under Settings → Reply detection.")
+    if (!inbox) blockers.push("Connect this sender's inbox first, under Settings → Mailboxes.")
     else if (inbox.record.user.trim().toLowerCase() !== email) blockers.push(`Its connected inbox is ${inbox.record.user}: warmup needs ${email}'s own inbox.`)
-    else if (inbox.record.status !== 'ok' || !inbox.login) blockers.push("Its inbox login isn't working: reconnect it under Settings → Reply detection.")
+    else if (inbox.record.status !== 'ok' || !inbox.login) blockers.push("Its inbox login isn't working: reconnect it under Settings → Mailboxes.")
     const dns = await authRecords(domain, deps)
     if (!dns.spf) blockers.push(`${domain} has no SPF record. Add the one your mail provider gives you to its DNS.`)
     if (!dns.dmarc) blockers.push(`${domain} has no DMARC record. Add the one shown under Settings → Sending.`)
@@ -138,7 +138,7 @@ export async function startWarmup(senderId: number, agreedBy: string, deps: Warm
 async function sendInbox(senderId: number, name: string, consent: { address: string; by: string; version: string }, deps: WarmupDeps): Promise<WarmupSender> {
   const { inboxOf } = await import('./mailboxes')
   const login = inboxOf(senderId)?.login
-  if (!login) throw new Error("Connect this sender's inbox first, under Settings → Reply detection.")
+  if (!login) throw new Error("Connect this sender's inbox first, under Settings → Mailboxes.")
   return ask<WarmupSender>(deps, 'PUT', sender(consent.address), {
     name,
     imap: { host: login.host, port: login.port, secure: login.secure, user: login.user, password: login.password },
@@ -148,7 +148,7 @@ async function sendInbox(senderId: number, name: string, consent: { address: str
 }
 
 /**
- * A sender's inbox was connected again (Settings → Reply detection): if it's
+ * A sender's inbox was connected again (Settings → Mailboxes): if it's
  * warming, the pool gets the new login; if it was disconnected, warmup stops.
  */
 export async function inboxChanged(senderId: number, connected: boolean, deps: WarmupDeps = {}): Promise<void> {

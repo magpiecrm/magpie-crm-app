@@ -103,7 +103,7 @@ describe('inbox warmup', () => {
     // Another domain, not ready, with no inbox connected.
     expect(rows.find((r) => r.senderId === 2)!.blockers).toEqual([
       "other.test isn't ready to send from yet: finish it under Settings → Sending.",
-      "Connect this sender's inbox first, under Settings → Reply detection.",
+      "Connect this sender's inbox first, under Settings → Mailboxes.",
     ])
     hour++
     const noDns = await warmup.eligibility(deps(fakeHost(), { spf: false, dmarc: false }))

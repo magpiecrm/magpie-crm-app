@@ -65,7 +65,7 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
             Inbox warmup isn't on your plan. Add it for {data.purchasable.price} a month: one sender warmed with up to {data.purchasable.perDay} emails a day.
           </p>
           <SettingsActions>
-            <Button rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
+            <Button variant="outline" rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
               Go to Plan and billing
             </Button>
           </SettingsActions>
@@ -87,12 +87,12 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
           title="Senders"
           description={
             one
-              ? 'One sender can warm at a time. It needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.'
-              : `Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.`
+              ? 'One sender can warm at a time. It needs its own inbox connected under Mailboxes, and SPF and DMARC records on its domain.'
+              : `Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Mailboxes, and SPF and DMARC records on its domain.`
           }
         >
           {data.senders.length === 0 ? (
-            <SettingsEmpty>Add a sender address first (Settings → Sender addresses).</SettingsEmpty>
+            <SettingsEmpty>Add a sender address first (Settings → Mailboxes).</SettingsEmpty>
           ) : (
             <SettingsList>
               {data.senders.map((s) => (

@@ -280,7 +280,7 @@ export function EmailSendingTab() {
           {/* Sender identity */}
           <SettingsBlock
             title="Default sender"
-            description="Used when a message does not name its own sender. Additional from-addresses are managed on the Sender addresses page."
+            description="Used when a message does not name its own sender. Additional from-addresses are managed on the Mailboxes page."
           >
             <Field label="Name and address">
               <input

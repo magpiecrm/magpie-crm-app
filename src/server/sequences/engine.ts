@@ -190,7 +190,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
   if (box && box.status !== 'ok' && due.some((e) => e.next_step > 0)) {
     const broken = box.status === 'auth_failed' || (box.error_since && now.getTime() - Date.parse(box.error_since) > BROKEN_INBOX_MS)
     if (broken) {
-      pause(s, `Replies can't be read from ${box.user} (${box.last_error ?? 'error'}), so follow-ups would go to people who've replied. Fix it in Settings → Reply detection, or disconnect the inbox to send without it.`, 'reply_detection')
+      pause(s, `Replies can't be read from ${box.user} (${box.last_error ?? 'error'}), so follow-ups would go to people who've replied. Fix it in Settings → Mailboxes, or disconnect the inbox to send without it.`, 'reply_detection')
       return false
     }
   }

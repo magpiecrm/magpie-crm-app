@@ -8,7 +8,6 @@ import { ProspectingTab } from './ProspectingTab'
 import { ProspectSearchTab } from './ProspectSearchTab'
 import { EmailSendingTab } from './EmailSendingTab'
 import { SendersTab } from './SendersTab'
-import { RepliesTab } from './RepliesTab'
 import { WarmupTab } from './WarmupTab'
 import { CopilotTab } from './CopilotTab'
 import { McpTab } from './McpTab'
@@ -168,8 +167,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {active === 'source' && !hiddenPage && <ProspectingTab key="source" section="source" />}
           {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}
-          {active === 'senders' && <SendersTab onOpen={open} />}
-          {active === 'replies' && <RepliesTab />}
+          {active === 'senders' && <SendersTab />}
           {active === 'warmup' && <WarmupTab onOpen={open} />}
           {active === 'pipelines' && <PipelineSettings />}
           {active === 'copilot' && <CopilotTab />}

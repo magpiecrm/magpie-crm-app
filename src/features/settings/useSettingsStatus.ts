@@ -124,18 +124,19 @@ export function useSettingsStatus(): {
         : { level: 'ok', text: `${senderCount} ${senderCount === 1 ? 'address' : 'addresses'} to send from.` }
   }
 
-  // Reply detection: how many senders' inboxes are being read for replies.
+  // Mailboxes: the addresses, and how many of their inboxes are being read for replies.
   if (senderCount && mailboxes.data) {
     const ids = new Set((senders.data?.senders ?? []).map((s: { id: number }) => s.id))
     const mine = mailboxes.data.filter((b) => ids.has(b.sender_id))
     const broken = mine.filter((b) => b.status !== 'ok').length
     const working = mine.length - broken
-    statuses.replies =
+    const addresses = `${senderCount} ${senderCount === 1 ? 'address' : 'addresses'}`
+    statuses.senders =
       broken > 0
         ? { level: 'warning', text: `${broken} connected ${broken === 1 ? "inbox isn't" : "inboxes aren't"} working, so replies there aren't seen.`, short: `${broken} ${broken === 1 ? 'inbox' : 'inboxes'} not working`, action: 'Fix' }
         : working === senderCount
-          ? { level: 'ok', text: `All ${senderCount} inboxes connected: replies stop sequences.`, short: 'All inboxes connected' }
-          : { level: 'info', text: `${working} of ${senderCount} inboxes connected: replies to the rest have to be marked by hand.`, short: `${working} of ${senderCount} inboxes connected`, action: 'Connect' }
+          ? { level: 'ok', text: `${addresses}, every inbox connected: replies stop sequences.` }
+          : { level: 'info', text: `${addresses}, ${working} of ${senderCount} inboxes connected: replies to the rest have to be marked by hand.`, action: 'Connect' }
   }
 
   const c = copilot.data

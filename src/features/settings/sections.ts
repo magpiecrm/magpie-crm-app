@@ -8,8 +8,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'source', group: 'Prospecting', label: 'Data source', intro: 'The SocialFetch account that prospect search uses to find companies and people.' },
   { id: 'verification', group: 'Prospecting', label: 'Email verification', intro: 'How found email addresses are checked before they are shown or saved, and the health of the servers that check them.' },
   { id: 'sending', group: 'Email', label: 'Sending', intro: 'The service your campaigns are sent through, and the default address they come from.' },
-  { id: 'senders', group: 'Email', label: 'Sender addresses', intro: 'The names and addresses you can send campaigns from.' },
-  { id: 'replies', group: 'Email', label: 'Reply detection', intro: "Connect each sender's inbox so a reply stops that person's sequence." },
+  { id: 'senders', group: 'Email', label: 'Mailboxes', intro: "The addresses your campaigns come from, and their inboxes, connected so a reply stops that person's sequence." },
   { id: 'warmup', group: 'Email', label: 'Warmup', intro: 'Warm up each sender with everyday email to and from other inboxes, and see where it lands.' },
   { id: 'pipelines', group: 'Sales', label: 'Pipelines', intro: 'The stages your deals move through. Add a pipeline for each kind of deal, like new business or renewals.' },
   { id: 'copilot', group: 'AI', label: 'Copilot', intro: 'Your own Anthropic or OpenAI API key, which the in-app copilot runs on.' },
@@ -23,7 +22,7 @@ export const SETTINGS_SECTIONS = [
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
 
 /** Old `?tab=` values from before the regroup, so existing links keep working. */
-const LEGACY: Record<string, SettingsSection> = { prospecting: 'source', users: 'team' }
+const LEGACY: Record<string, SettingsSection> = { prospecting: 'source', users: 'team', replies: 'senders' }
 
 export function parseSettingsSection(value: unknown): SettingsSection | undefined {
   if (typeof value !== 'string') return undefined

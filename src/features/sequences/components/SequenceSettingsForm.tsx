@@ -184,8 +184,8 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
 /** Whether replies to this sender are noticed, with a way to set it up. */
 function ReplyDetection({ box }: { box: MailboxView | null }) {
   const link = (
-    <Link to="/settings" search={{ tab: 'replies' }} className="text-accent hover:underline">
-      Settings → Reply detection
+    <Link to="/settings" search={{ tab: 'senders' }} className="text-accent hover:underline">
+      Settings → Mailboxes
     </Link>
   )
   if (!box) return <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Replies aren't detected for this sender: mark them by hand, or connect its inbox in {link}.</p>

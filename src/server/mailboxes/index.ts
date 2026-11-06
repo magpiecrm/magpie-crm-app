@@ -246,7 +246,7 @@ export async function pollMailboxes(at = new Date(), connect: Connect = imapConn
       })
       console.error(`[Mailboxes] ${m.user}@${m.host}: ${message}`)
       if (auth || first) {
-        notify('sequence_paused', `Reply detection for ${m.user} ${auth ? 'stopped' : "isn't working"}: ${message}`, { url: '/settings?tab=replies' })
+        notify('sequence_paused', `Reply detection for ${m.user} ${auth ? 'stopped' : "isn't working"}: ${message}`, { url: '/settings?tab=senders' })
       }
     }
   }

@@ -228,7 +228,7 @@ export function ManagedSending() {
           title="Add a domain"
           description={
             <p>
-              Then add the addresses you send as (like <code className="font-mono">hello@acme.com</code>) in Sender addresses. Addresses on a
+              Then add the addresses you send as (like <code className="font-mono">hello@acme.com</code>) in Mailboxes. Addresses on a
               subdomain, like <code className="font-mono">news.acme.com</code>, work too.
             </p>
           }
