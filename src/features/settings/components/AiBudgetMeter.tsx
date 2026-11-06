@@ -18,17 +18,17 @@ export function AiBudgetMeter({ label = 'AI budget' }: { label?: string }) {
     <div className="flex flex-col gap-1">
       <div className="flex justify-between gap-2 text-xs">
         <span className={ai.out ? 'text-destructive font-semibold' : 'text-foreground'}>{label}</span>
-        <span className="tabular-nums text-muted-foreground">{ai.percent}% used</span>
+        <span className="tabular-nums text-muted-foreground">{100 - ai.percent}% left</span>
       </div>
       <div
         className={`h-1.5 rounded-full overflow-hidden ${ai.out ? 'bg-destructive/20' : 'bg-foreground/10'}`}
         role="progressbar"
-        aria-label="AI budget used"
+        aria-label="AI budget left"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={ai.percent}
+        aria-valuenow={100 - ai.percent}
       >
-        <div className={`h-full rounded-full ${ai.out ? 'bg-destructive' : high ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${ai.percent}%` }} />
+        <div className={`h-full rounded-full ${ai.out ? 'bg-destructive' : high ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${100 - ai.percent}%` }} />
       </div>
     </div>
   )

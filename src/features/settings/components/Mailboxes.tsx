@@ -119,9 +119,8 @@ export function SenderInbox({
       detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
       badge={
         <>
-          {!box ? (
-          <Badge>Inbox not connected</Badge>
-        ) : box.status === 'ok' ? (
+          {/* Not connected needs no badge: the row's Connect inbox button says it. */}
+          {!box ? null : box.status === 'ok' ? (
           <Badge variant="success" status>Inbox connected</Badge>
         ) : (
           <Badge variant="error" status>{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>

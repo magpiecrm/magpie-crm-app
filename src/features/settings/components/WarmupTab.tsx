@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Flame, Inbox } from 'lucide-react'
+import { ArrowRight, Check, Flame, Inbox } from 'lucide-react'
 import { inboxWarmupFn, pauseWarmupFn, placementTestFn, resumeWarmupFn, startSenderCheckFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -64,8 +64,14 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
           <p className="text-sm leading-relaxed text-foreground">
             Inbox warmup isn't on your plan. Add it for {data.purchasable.price} a month: one sender warmed with up to {data.purchasable.perDay} emails a day.
           </p>
+          {/* What it does, so the page says why before it asks. */}
+          <ul className="flex flex-col gap-1.5 text-[13px] text-muted-foreground">
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />A little everyday email to and from other inboxes, rising over a month</li>
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />Sent through the same mail server as your campaigns</li>
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />A sender check that shows where your email lands</li>
+          </ul>
           <SettingsActions>
-            <Button variant="outline" rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
+            <Button rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
               Go to Plan and billing
             </Button>
           </SettingsActions>

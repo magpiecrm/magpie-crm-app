@@ -19,7 +19,6 @@ import { BillingTab } from './BillingTab'
 import { Select } from '../../../components/ui/Select'
 import { INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { Badge } from '../../../components/ui/Badge'
 
 const DOT: Record<StatusLevel, string> = {
   error: 'bg-destructive',
@@ -77,7 +76,6 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   }
 
   const current = SETTINGS_SECTIONS.find((s) => s.id === active) ?? SETTINGS_SECTIONS[0]
-  const currentStatus = statuses[current.id]
 
   return (
     // Centred once the window is wider than the menu and a full-width page together.
@@ -131,7 +129,12 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     <span className="truncate">{s.label}</span>
                     {/* Only what needs attention: a dot on every page that's fine is noise. */}
                     {(level === 'warning' || level === 'error') && (
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[level]}`} title={statuses[s.id]?.text}>
+                      // A count where the status has one ("1 domain waiting for DNS"), otherwise "!", so the menu reads as a to-do list.
+                      <span
+                        className={`flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1 text-[11px] font-bold leading-none text-white ${DOT[level]}`}
+                        title={statuses[s.id]?.text}
+                      >
+                        {statuses[s.id]?.short?.match(/^\d+/)?.[0] ?? '!'}
                         <span className="sr-only">{level === 'error' ? ': needs setting up' : ': needs attention'}</span>
                       </span>
                     )}
@@ -146,16 +149,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         {/* Every page is the same width: at its widest the panel's label column, its controls column and their padding (SettingsBlock). */}
         <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
           <header className="flex flex-col gap-1.5">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
-              {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
-              {/* Only when something needs doing, like the menu's dot: facts, prices and "all fine" are left to the page itself. */}
-              {active !== 'overview' && currentStatus && (currentStatus.level === 'warning' || currentStatus.level === 'error') && (
-                <Badge variant={currentStatus.level} status>
-                  {currentStatus.short ?? currentStatus.text.replace(/\.$/, '')}
-                </Badge>
-              )}
-            </div>
+            <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
             <p className="text-sm text-muted-foreground max-w-2xl">{copilotManaged && current.id === 'copilot' ? COPILOT_MANAGED_INTRO : current.intro}</p>
           </header>
 
