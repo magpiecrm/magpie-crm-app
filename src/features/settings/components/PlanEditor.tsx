@@ -200,19 +200,15 @@ export function PlanEditor({
       )}
       {billing.live && (
         <p className="text-[13px] text-muted-foreground">
-          More of anything{addons.length > 0 ? ', or an add-on ticked,' : ''} applies straight away, and you pay the difference for the rest of this
-          month. Less of anything{addons.length > 0 ? ', or an add-on unticked,' : ''} applies from your next renewal
+          More applies now, and you pay the difference for the rest of this month; less applies from your renewal
           {billing.periodEnd ? ` on ${day(billing.periodEnd)}` : ''}.
         </p>
       )}
       <SettingsActions>
         {billing.live ? (
-          <>
-            <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
-              Review change
-            </Button>
-            {unchanged && <span className="text-[13px] text-muted-foreground">Move a slider or tick an add-on to change your plan.</span>}
-          </>
+          <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
+            Review change
+          </Button>
         ) : (
           <Button onClick={() => onSubmit(plan)} isLoading={busy} disabled={underMinimum}>
             Continue to payment

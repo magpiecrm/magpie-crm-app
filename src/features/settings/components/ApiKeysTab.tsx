@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { createApiKeyFn, deleteApiKeyFn, getApiKeysFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { CODE_CLASS, Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 /** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
 
@@ -125,7 +125,7 @@ export function ApiKeysTab() {
 
         <SettingsBlock title="Create a key" description="Name it after where it will be used.">
           <form onSubmit={handleCreateApiKey} className="flex flex-col gap-3">
-            <FieldGrid>
+            <SettingsInline>
               <Field label="Name">
                 <input
                   id="key-name-input"
@@ -138,7 +138,10 @@ export function ApiKeysTab() {
                   className={INPUT_CLASS}
                 />
               </Field>
-            </FieldGrid>
+              <Button type="submit" isLoading={isGeneratingKey} leftIcon={<Plus className="h-4 w-4" />}>
+                Create key
+              </Button>
+            </SettingsInline>
             {apiKeyError && <Notice level="error">{apiKeyError}</Notice>}
             {/* Shown once: only its hash is stored. */}
             {generatedKey && (
@@ -163,11 +166,6 @@ export function ApiKeysTab() {
                 </div>
               </Notice>
             )}
-            <SettingsActions>
-              <Button type="submit" isLoading={isGeneratingKey} leftIcon={<Plus className="h-4 w-4" />}>
-                Create key
-              </Button>
-            </SettingsActions>
           </form>
         </SettingsBlock>
 

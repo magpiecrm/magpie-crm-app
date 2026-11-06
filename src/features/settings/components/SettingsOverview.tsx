@@ -42,10 +42,10 @@ function UsageThisMonth({ data }: { data: Awaited<ReturnType<typeof getUsageFn>>
 }
 
 const TINT: Record<StatusLevel, string> = {
-  error: 'border-destructive/40 bg-destructive/5',
-  warning: 'border-amber-500/40 bg-amber-500/5',
-  ok: 'border-border bg-background hover:bg-muted',
-  info: 'border-border bg-background hover:bg-muted',
+  error: 'bg-destructive/[0.06] hover:bg-destructive/10',
+  warning: 'bg-amber-500/[0.08] hover:bg-amber-500/[0.12]',
+  ok: 'hover:bg-muted',
+  info: 'hover:bg-muted',
 }
 
 /**
@@ -105,7 +105,7 @@ export function SettingsOverview({
                 key={section.id}
                 type="button"
                 onClick={() => onOpen(section.id)}
-                className={`group flex w-full min-h-[46px] items-center gap-3 rounded-md-s border px-3 py-1.5 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
+                className={`group flex w-full min-h-[48px] items-center gap-3 px-3.5 py-2 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
               >
                 <StatusIcon level={status.level} />
                 <span className="min-w-0 flex-1">

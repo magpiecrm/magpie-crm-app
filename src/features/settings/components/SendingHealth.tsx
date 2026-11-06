@@ -27,6 +27,7 @@ const SCORE_CLASS: Record<Status, string> = {
 
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 const count = (n: number) => n.toLocaleString()
+const short = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 const percent = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '0%')
 
 /** One kind of mail's limit: how much of today's is used, and when it next goes up. */
@@ -39,11 +40,18 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
         limit.limit === null ? (
           'No daily limit'
         ) : (
+          // The numbers to scan for, in one line: today's count against the limit, and the next step.
           <span className="tabular-nums">
-            <span className="font-medium text-foreground">
-              {count(limit.sent)} of {count(limit.limit)}
+            <span className="font-semibold text-foreground">
+              {count(limit.sent)} / {count(limit.limit)}
             </span>{' '}
-            sent in the last 24 hours
+            in the last 24 hours
+            {!limit.setByHost && limit.nextStepAt && limit.nextLimit !== undefined && limit.status !== 'poor' && (
+              <>
+                {' · '}next step <span className="font-medium text-foreground">{limit.nextLimit === null ? 'no limit' : `${count(limit.nextLimit)} a day`}</span>,{' '}
+                {short(limit.nextStepAt)}
+              </>
+            )}
           </span>
         )
       }
@@ -61,9 +69,9 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
             <div className={`h-full rounded-full ${used >= 1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${Math.round(used * 100)}%` }} />
           </div>
         )}
-        <p className="text-[13px] leading-relaxed text-muted-foreground">{about}</p>
-        {/* What happens next on its own line, so the date and the new limit can be found at a glance. */}
-        <p className="text-[13px] leading-relaxed font-medium text-foreground/85">
+        {/* Who it's for, and the one condition on the next step the line above shows. */}
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          {about}{' '}
           {limit.limit === null
             ? 'Your plan’s monthly allowance is the only limit.'
             : limit.setByHost
@@ -72,8 +80,8 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
                 ? limit.status === 'poor'
                   ? `It was received badly this week, so the limit goes down on ${day(limit.nextStepAt)} unless that improves.`
                   : limit.status === 'good'
-                    ? `Goes up to ${limit.nextLimit === null ? 'no daily limit' : `${count(limit.nextLimit)} a day`} on ${day(limit.nextStepAt)}, if it keeps being received well.`
-                    : `Looked at again on ${day(limit.nextStepAt)}: it goes up to ${limit.nextLimit === null ? 'no daily limit' : `${count(limit.nextLimit)} a day`} once a week's email has been received well.`
+                    ? 'The next step comes if it keeps being received well.'
+                    : "The next step comes once a week's email has been received well."
                 : 'This is the most cold email a workspace sends in a day.'}
           {limit.limit !== null && limit.left === 0 && ' Today’s is used up: campaigns carry on tomorrow by themselves, and sequences wait.'}
         </p>

@@ -57,9 +57,9 @@ export function SettingsActions({ children, className = '' }: { children: ReactN
   return <div className={`flex flex-wrap items-center gap-2 ${className}`}>{children}</div>
 }
 
-/** Rows of things a block lists: people, senders, keys, domains, proxies. */
+/** Rows of things a block lists: people, senders, keys, domains, proxies. One box, rows divided by hairlines, so a long list scans like a table. */
 export function SettingsList({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`flex flex-col gap-2 ${className}`}>{children}</div>
+  return <div className={`flex flex-col divide-y divide-border/70 overflow-hidden rounded-md-s border border-border bg-card ${className}`}>{children}</div>
 }
 
 /**
@@ -83,9 +83,9 @@ export function SettingsRow({
   children?: ReactNode
 }) {
   return (
-    <div className="rounded-md-s border border-border bg-background">
+    <div>
       {/* Where the row is too narrow for both, the actions move under what it is rather than squeezing it. */}
-      <div className="flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-1.5">
+      <div className="flex min-h-[48px] flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2">
         {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
         <div className="min-w-[9rem] flex-1 basis-[9rem]">
           <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
@@ -96,7 +96,7 @@ export function SettingsRow({
         </div>
         {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
       </div>
-      {children && <div className="border-t border-border/70 px-3 py-3">{children}</div>}
+      {children && <div className="border-t border-border/70 bg-background/60 px-3.5 py-3">{children}</div>}
     </div>
   )
 }
@@ -177,11 +177,16 @@ export function SettingsCheck({
 export function SettingsMore({ summary = 'How it works', children }: { summary?: ReactNode; children: ReactNode }) {
   return (
     <details className="group text-[13px] text-muted-foreground">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-md-xs font-medium text-foreground/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-md-xs font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
         {summary}
       </summary>
       <div className="mt-2 flex max-w-[65ch] flex-col gap-2 leading-relaxed">{children}</div>
     </details>
   )
+}
+
+/** A one-field form: the field and its button on one line where the panel has room, stacked on a phone. */
+export function SettingsInline({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-2 @[36rem]:max-w-[34rem] @[36rem]:flex-row @[36rem]:items-end [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">{children}</div>
 }

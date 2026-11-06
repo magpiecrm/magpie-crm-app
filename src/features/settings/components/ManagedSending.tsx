@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, ChevronDown, ChevronUp, Copy, Globe, Plus, RefreshCw, Send, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
@@ -11,12 +11,26 @@ import {
 } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
-import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 import { SendingHealth } from './SendingHealth'
 
 type Domain = Awaited<ReturnType<typeof getSendingDomainsFn>>[number]
+
+/** A DNS name or value that wraps only after a dot or semicolon, never inside a label, so what's read matches what's pasted. */
+function Breakable({ value }: { value: string }) {
+  return (
+    <>
+      {value.split(/(?<=[.;])/).map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 && <wbr />}
+          {part}
+        </Fragment>
+      ))}
+    </>
+  )
+}
 
 function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
@@ -101,12 +115,13 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
                       {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
                       {r.optional && <Badge>Recommended</Badge>}
                     </p>
-                    <dl className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-2">
+                    {/* Label beside the value where the panel is wide; above it on a phone, so a hostname has the whole width. */}
+                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 @[36rem]:grid-cols-[3rem_minmax(0,1fr)_auto]">
                       {(['name', 'value'] as const).map((part) => (
                         <div key={part} className="contents">
-                          <dt className="text-[13px] text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</dt>
-                          <dd className="min-w-0 break-all rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
-                            {r[part]}
+                          <dt className="col-span-2 pt-1 text-[13px] text-muted-foreground @[36rem]:col-span-1 @[36rem]:pt-0">{part === 'name' ? 'Name' : 'Value'}</dt>
+                          <dd className="min-w-0 rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
+                            <Breakable value={r[part]} />
                           </dd>
                           <CopyButton value={r[part]} />
                         </div>
@@ -197,7 +212,7 @@ export function ManagedSending() {
               if (newDomain.trim()) add.mutate()
             }}
           >
-            <FieldGrid>
+            <SettingsInline>
               <Field label="Domain to send from" error={add.data && !add.data.success ? add.data.error : undefined}>
                 <input
                   required
@@ -209,12 +224,10 @@ export function ManagedSending() {
                   className={INPUT_CLASS}
                 />
               </Field>
-            </FieldGrid>
-            <SettingsActions>
               <Button type="submit" isLoading={add.isPending} leftIcon={<Plus className="h-4 w-4" />}>
                 Add domain
               </Button>
-            </SettingsActions>
+            </SettingsInline>
           </form>
         </SettingsBlock>
 
@@ -229,21 +242,19 @@ export function ManagedSending() {
                 if (testTo.trim()) test.mutate()
               }}
             >
-              <FieldGrid>
+              <SettingsInline>
                 <Field label="Send a test email to">
                   <input type="email" required value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@example.com" className={INPUT_CLASS} />
                 </Field>
-              </FieldGrid>
+                <Button type="submit" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />}>
+                  Send a test
+                </Button>
+              </SettingsInline>
               {test.data && (
                 <Notice level={test.data.success ? 'success' : 'error'}>
                   {test.data.success ? 'Sent. Check the inbox (and spam) for it.' : test.data.error}
                 </Notice>
               )}
-              <SettingsActions>
-                <Button type="submit" isLoading={test.isPending} leftIcon={<Send className="h-4 w-4" />}>
-                  Send a test
-                </Button>
-              </SettingsActions>
             </form>
           </SettingsBlock>
         )}

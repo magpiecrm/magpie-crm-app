@@ -3,9 +3,9 @@ import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { APP_NAME } from '../../../brand'
 import { createApiKeyFn, deleteApiKeyFn, getMcpKeysFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { CODE_CLASS, Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 type McpKey = Awaited<ReturnType<typeof getMcpKeysFn>>['keys'][number]
 
@@ -190,11 +190,14 @@ export function McpTab() {
 
         <SettingsBlock title="Create a key" description="Name it after the app that will use it.">
           <form onSubmit={create} className="flex flex-col gap-3">
-            <FieldGrid>
+            <SettingsInline>
               <Field label="Name">
                 <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
               </Field>
-            </FieldGrid>
+              <Button type="submit" isLoading={busy} leftIcon={<Plus className="h-4 w-4" />}>
+                Create key
+              </Button>
+            </SettingsInline>
             {newKey && (
               <Notice level="success" title="Copy this key now">
                 <div className="flex flex-col gap-2">
@@ -203,11 +206,6 @@ export function McpTab() {
                 </div>
               </Notice>
             )}
-            <SettingsActions>
-              <Button type="submit" isLoading={busy} leftIcon={<Plus className="h-4 w-4" />}>
-                Create key
-              </Button>
-            </SettingsActions>
           </form>
         </SettingsBlock>
 

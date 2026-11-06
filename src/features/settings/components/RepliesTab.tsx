@@ -118,7 +118,7 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
       detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
       badge={
         !box ? (
-          <Badge variant="warning">Not connected</Badge>
+          <Badge>Not connected</Badge>
         ) : box.status === 'ok' ? (
           <Badge variant="success">Connected</Badge>
         ) : (
@@ -127,7 +127,7 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
       }
       actions={
         !box && !editing ? (
-          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+          <Button size="sm" variant="ghost" className="!text-accent hover:!bg-accent/10" onClick={() => setEditing(true)}>
             Connect inbox
           </Button>
         ) : undefined
