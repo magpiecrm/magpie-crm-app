@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, PlusCircle, RefreshCw } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, ChevronRight, CircleDashed, PlusCircle, RefreshCw } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
@@ -92,6 +92,25 @@ export function SettingsOverview({
     )
   }
 
+  const todo = rows.filter((r) => kindOf(r.status) !== 'done' && kindOf(r.status) !== 'addon')
+  const fine = rows.filter((r) => kindOf(r.status) === 'done' || kindOf(r.status) === 'addon')
+  const row = ({ section, status }: (typeof rows)[number]) => (
+    <button
+      key={section.id}
+      type="button"
+      onClick={() => onOpen(section.id)}
+      className={`group flex w-full min-h-[48px] items-center gap-3 px-3.5 py-2 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
+    >
+      <StatusIcon kind={kindOf(status)} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-foreground">{section.label}</span>
+        <span className="block text-[13px] text-muted-foreground">{status.text}</span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-accent">
+        {status.action ?? 'Open'} <ArrowRight className="h-3.5 w-3.5" />
+      </span>
+    </button>
+  )
   const problems = rows.filter((r) => r.status.level === 'error' || r.status.level === 'warning').length
   const unfinished = rows.filter((r) => kindOf(r.status) === 'unfinished').length
   const hasPlan = Boolean(usage?.allowance?.items.length)
@@ -119,25 +138,17 @@ export function SettingsOverview({
                   .join(', ') + '.'
           }
         >
-          <SettingsList>
-            {rows.map(({ section, status }) => (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => onOpen(section.id)}
-                className={`group flex w-full min-h-[48px] items-center gap-3 px-3.5 py-2 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
-              >
-                <StatusIcon kind={kindOf(status)} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">{section.label}</span>
-                  <span className="block text-[13px] text-muted-foreground">{status.text}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-accent">
-                  {status.action ?? 'Open'} <ArrowRight className="h-3.5 w-3.5" />
-                </span>
-              </button>
-            ))}
-          </SettingsList>
+          {todo.length > 0 && <SettingsList>{todo.map(row)}</SettingsList>}
+          {/* What's set up folds away, so what needs doing is all there is to read. */}
+          {fine.length > 0 && (
+            <details className="group" open={todo.length === 0}>
+              <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-md-xs text-[13px] font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+                {fine.length} {fine.length === 1 ? 'area' : 'areas'} set up
+              </summary>
+              <SettingsList className="mt-2">{fine.map(row)}</SettingsList>
+            </details>
+          )}
         </SettingsBlock>
       </SettingsPanel>
     </div>

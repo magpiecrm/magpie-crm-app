@@ -1,13 +1,32 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Check, Mail, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import { createSenderFn, deleteSenderFn, getSendersFn, updateSenderFn } from '../../../server/functions'
+import { createSenderFn, deleteSenderFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, mailboxesFn, updateSenderFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
+import { Badge } from '../../../components/ui/Badge'
+import type { SettingsSection } from '../sections'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 /** Settings → Sender addresses: the names and addresses campaigns are sent from. */
-export function SendersTab() {
+/** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
+function domainReady(email: string, domains: Array<{ domain: string; ready: boolean }>) {
+  const domain = email.toLowerCase().split('@')[1] ?? ''
+  return domains.some((d) => d.ready && (domain === d.domain || domain.endsWith(`.${d.domain}`)))
+}
+
+/**
+ * Settings → Sender addresses: every address campaigns can come from, with
+ * what it needs before it can be used (its domain ready to send, its inbox
+ * connected for replies), so one list answers "which of these work?".
+ */
+export function SendersTab({ onOpen }: { onOpen: (section: SettingsSection) => void }) {
+  const sending = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
+  const managed = Boolean(sending.data?.success && sending.data.managed)
+  const { data: domains } = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: managed })
+  const { data: boxes } = useQuery({ queryKey: queryKeys.sequences.mailboxes(), queryFn: () => mailboxesFn() })
   // Senders State
   const [senders, setSenders] = useState<any[]>([])
   const [isLoadingSenders, setIsLoadingSenders] = useState(false)
@@ -129,7 +148,31 @@ export function SendersTab() {
                     key={sender.id}
                     icon={<Mail className="h-4 w-4" />}
                     title={sender.name}
-                    detail={sender.email}
+                    badge={
+                      managed && domains && !domainReady(sender.email, domains) ? (
+                        <Badge variant="warning" status>
+                          Domain not ready
+                        </Badge>
+                      ) : undefined
+                    }
+                    detail={
+                      <>
+                        {sender.email}
+                        {boxes && (() => {
+                          const box = boxes.find((b) => b.sender_id === sender.id)
+                          return box?.status === 'ok' ? (
+                            ' · Inbox connected'
+                          ) : (
+                            <>
+                              {' · '}
+                              <button type="button" onClick={() => onOpen('replies')} className="cursor-pointer font-medium text-accent hover:underline">
+                                {box ? 'Inbox not working: reconnect' : 'Connect inbox for replies'}
+                              </button>
+                            </>
+                          )
+                        })()}
+                      </>
+                    }
                     actions={
                       // While it's being edited, the form below is the row's only controls.
                       editing ? undefined : (

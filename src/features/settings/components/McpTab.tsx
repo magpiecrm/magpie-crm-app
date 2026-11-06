@@ -14,7 +14,7 @@ const KEY_PLACEHOLDER = '<your MCP key>'
 
 /** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
 
-function CopyButton({ value }: { value: string }) {
+export function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
     <Button

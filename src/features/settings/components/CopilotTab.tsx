@@ -188,7 +188,7 @@ function ManagedCopilot() {
           ) : ai.none ? (
             <p className="text-sm text-muted-foreground">No AI budget on your plan.</p>
           ) : (
-            <AiBudgetMeter />
+            <AiBudgetMeter label="Used this month" />
           )}
           {billingManaged && (
             <SettingsActions>

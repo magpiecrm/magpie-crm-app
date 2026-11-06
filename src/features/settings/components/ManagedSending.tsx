@@ -6,6 +6,7 @@ import {
   addSendingDomainFn,
   checkSendingDomainFn,
   getSendingDomainsFn,
+  getSendingHealthFn,
   removeSendingDomainFn,
   sendProviderTestEmailFn,
 } from '../../../server/functions'
@@ -17,6 +18,31 @@ import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPan
 import { SendingHealth } from './SendingHealth'
 
 type Domain = Awaited<ReturnType<typeof getSendingDomainsFn>>[number]
+type Health = Awaited<ReturnType<typeof getSendingHealthFn>>
+
+/** "just now", "12 min ago", "3 h ago", "2 days ago". */
+function ago(iso: string | null) {
+  if (!iso) return null
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000))
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min} min ago`
+  const h = Math.round(min / 60)
+  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`
+}
+
+/** A domain's line under its name: when it was last checked, and what's gone out from it and how it was received, from the Reputation figures. */
+function summary(d: Domain, health: Health | undefined) {
+  const own = health?.domains.filter((r) => r.domain === d.domain || r.domain.endsWith(`.${d.domain}`)) ?? []
+  const sent = own.reduce((n, r) => n + r.stats.sent, 0)
+  const score = own.find((r) => r.domain === d.domain)?.score ?? null
+  return [
+    ago(d.checkedAt) && `Checked ${ago(d.checkedAt)}`,
+    health && `${sent.toLocaleString()} sent in ${health.windowDays} days`,
+    score !== null && `reputation ${score}%`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 /** A DNS name or value that wraps only after a dot or semicolon, never inside a label, so what's read matches what's pasted. */
 function Breakable({ value }: { value: string }) {
@@ -52,7 +78,7 @@ function CopyButton({ value }: { value: string }) {
   )
 }
 
-function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
+function DomainRow({ d, health, onChanged }: { d: Domain; health: Health | undefined; onChanged: () => void }) {
   const [open, setOpen] = useState(!d.ready)
   const check = useMutation({ mutationFn: () => checkSendingDomainFn({ data: { domain: d.domain } }), onSettled: onChanged })
   const remove = useMutation({ mutationFn: () => removeSendingDomainFn({ data: { domain: d.domain } }), onSettled: onChanged })
@@ -61,6 +87,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
     <SettingsRow
       icon={<Globe className="h-4 w-4" />}
       title={d.domain}
+      detail={summary(d, health) || undefined}
       badge={d.ready ? <Badge variant="success" status>Ready to send</Badge> : <Badge variant="warning" status>Waiting for DNS</Badge>}
       // One line per domain: Check now only while it's waiting, and the records behind the chevron.
       actions={
@@ -149,6 +176,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
 export function ManagedSending() {
   const queryClient = useQueryClient()
   const { data: domains, isLoading } = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn() })
+  const { data: health } = useQuery({ queryKey: queryKeys.settings.sendingHealth(), queryFn: () => getSendingHealthFn() })
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.sendingDomains() })
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
@@ -186,8 +214,9 @@ export function ManagedSending() {
             </SettingsEmpty>
           ) : domains?.length ? (
             <SettingsList>
-              {domains.map((d) => (
-                <DomainRow key={d.domain} d={d} onChanged={refresh} />
+              {/* Ones still waiting first: they're what there is to do. */}
+              {[...domains].sort((a, b) => Number(a.ready) - Number(b.ready)).map((d) => (
+                <DomainRow key={d.domain} d={d} health={health} onChanged={refresh} />
               ))}
             </SettingsList>
           ) : (

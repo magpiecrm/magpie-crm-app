@@ -168,7 +168,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {active === 'source' && !hiddenPage && <ProspectingTab key="source" section="source" />}
           {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}
-          {active === 'senders' && <SendersTab />}
+          {active === 'senders' && <SendersTab onOpen={open} />}
           {active === 'replies' && <RepliesTab />}
           {active === 'warmup' && <WarmupTab onOpen={open} />}
           {active === 'pipelines' && <PipelineSettings />}

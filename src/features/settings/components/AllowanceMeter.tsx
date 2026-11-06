@@ -58,7 +58,7 @@ export function AllowanceMeter({
               </span>
             </div>
             <div
-              className={`h-1.5 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-muted'}`}
+              className={`h-1.5 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-foreground/10'}`}
               role="progressbar"
               aria-label={LABEL[kind]}
               aria-valuemin={0}
