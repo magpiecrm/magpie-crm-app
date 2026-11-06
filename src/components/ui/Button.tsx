@@ -33,7 +33,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // so a disabled one turns into a quiet outlined box instead.
     const variants = {
       primary:
-        'border-transparent bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground/80 disabled:border-border',
+        'border-transparent bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:border-border',
       secondary:
         'bg-card text-foreground border-input hover:bg-muted active:bg-muted-hover disabled:opacity-50',
       outline:
@@ -41,7 +41,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       ghost:
         'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted-hover disabled:opacity-50',
       danger:
-        'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95 disabled:bg-muted disabled:text-muted-foreground/80 disabled:border-border',
+        'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95 disabled:bg-muted disabled:text-muted-foreground disabled:border-border',
     }
 
     const sizes = {

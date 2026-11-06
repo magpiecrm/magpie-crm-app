@@ -37,10 +37,10 @@ export function AllowanceMeter({
       {!compact && heading && (
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Your plan this month</h3>
-          {resets && <span className="text-xs text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
+          {resets && <span className="text-[13px] text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
         </div>
       )}
-      {!compact && !heading && showResets && resets && <p className="text-xs text-muted-foreground">Resets {resets}</p>}
+      {!compact && !heading && showResets && resets && <p className="text-[13px] text-muted-foreground">Resets {resets}</p>}
       {allowance.sendingPaused && (
         <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold text-destructive`}>
           Sending is paused by your hosting provider.
@@ -74,7 +74,7 @@ export function AllowanceMeter({
         )
       })}
       {!compact && allowance.revealCredits && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Searching uses prospect credits for what it costs, about 2 for each prospect found. A verified email uses{' '}
           {allowance.revealCredits}.
         </p>

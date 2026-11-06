@@ -131,7 +131,9 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     <span className="truncate">{s.label}</span>
                     {/* Only what needs attention: a dot on every page that's fine is noise. */}
                     {(level === 'warning' || level === 'error') && (
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[level]}`} title={statuses[s.id]?.text} />
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[level]}`} title={statuses[s.id]?.text}>
+                        <span className="sr-only">{level === 'error' ? ': needs setting up' : ': needs attention'}</span>
+                      </span>
                     )}
                   </button>
                 )

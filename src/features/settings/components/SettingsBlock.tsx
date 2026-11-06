@@ -44,7 +44,7 @@ export function SettingsBlock({
   return (
     <section className="grid gap-x-10 gap-y-4 px-6 py-6 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
       <div className="flex min-w-0 flex-col gap-1.5">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
         {description && <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted-foreground">{description}</div>}
       </div>
       {children !== undefined && <div className="flex min-w-0 flex-col gap-3">{children}</div>}

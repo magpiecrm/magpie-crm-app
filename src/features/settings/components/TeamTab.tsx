@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mail, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { checkAuthFn, createUserFn, deleteUserFn, getUsersFn, signInOptionsFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
@@ -122,20 +122,27 @@ export function TeamTab() {
                 return (
                   <SettingsRow
                     key={user.email}
-                    icon={<Mail className="h-4 w-4" />}
+                    icon={
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/10 text-xs font-semibold uppercase text-accent" aria-hidden>
+                        {user.email[0]}
+                      </span>
+                    }
                     title={user.email}
+                    detail={isSelf ? "That's you, so you can't remove yourself here." : undefined}
                     badge={isSelf ? <Badge variant="info">You</Badge> : undefined}
+                    // Removing isn't offered at all where it can't be done, rather than shown greyed out.
                     actions={
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteUser(user.email)}
-                        disabled={locked}
-                        aria-label={`Remove ${user.email}`}
-                        title={isSelf ? "You can't remove yourself" : users.length <= 1 ? "The last person can't be removed" : 'Remove'}
-                        className={locked ? '' : 'hover:!bg-destructive/10 hover:!text-destructive'}
-                        leftIcon={<Trash2 className="h-4 w-4" />}
-                      />
+                      !locked && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteUser(user.email)}
+                          aria-label={`Remove ${user.email}`}
+                          title="Remove"
+                          className="hover:!bg-destructive/10 hover:!text-destructive"
+                          leftIcon={<Trash2 className="h-4 w-4" />}
+                        />
+                      )
                     }
                   />
                 )

@@ -49,8 +49,6 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
       title={d.domain}
       badge={d.ready ? <Badge variant="success">Ready to send</Badge> : <Badge variant="warning">Waiting for DNS records</Badge>}
       actions={
-        // Three actions leave no room for the domain on a phone, so the two
-        // with words keep only their icons there.
         <>
           <Button
             variant="ghost"
@@ -60,7 +58,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
             leftIcon={open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
             onClick={() => setOpen((o) => !o)}
           >
-            <span className="hidden sm:inline">{open ? 'Hide records' : 'DNS records'}</span>
+            {open ? 'Hide records' : 'DNS records'}
           </Button>
           <Button
             variant="outline"
@@ -70,7 +68,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
             leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
             onClick={() => check.mutate()}
           >
-            <span className="hidden sm:inline">Check now</span>
+            Check now
           </Button>
           <Button
             variant="ghost"
@@ -106,7 +104,7 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
                     <dl className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-2">
                       {(['name', 'value'] as const).map((part) => (
                         <div key={part} className="contents">
-                          <dt className="text-xs text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</dt>
+                          <dt className="text-[13px] text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</dt>
                           <dd className="min-w-0 overflow-x-auto whitespace-nowrap rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
                             {r[part]}
                           </dd>

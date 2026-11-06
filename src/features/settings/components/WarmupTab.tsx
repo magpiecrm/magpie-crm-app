@@ -179,17 +179,17 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
     >
       <div className="flex flex-col gap-2">
         {!on && row.blockers.length > 0 && (
-          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+          <ul className="flex flex-col gap-1 text-[13px] text-muted-foreground">
             {row.blockers.map((b) => (
               <li key={b}>• {b}</li>
             ))}
           </ul>
         )}
         {w?.state === 'failed' && w.reason && <Notice level="error">{w.reason}</Notice>}
-        {w?.state === 'starting' && <p className="text-xs text-muted-foreground">Starting: the first warmup goes out within a few minutes, during the working day.</p>}
+        {w?.state === 'starting' && <p className="text-[13px] text-muted-foreground">Starting: the first warmup goes out within a few minutes, during the working day.</p>}
         {w?.state === 'paused' && w.pausedBy === 'us' && w.reason && <Notice level="warning" title="Paused by MagpieCRM">{w.reason}</Notice>}
         {on && w.health && HEALTH[w.health.state] && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <Badge variant={HEALTH[w.health.state].variant}>{HEALTH[w.health.state].label}</Badge>
             <span>
               {HEALTH[w.health.state].about || 'Its warmup is landing well.'}
@@ -198,12 +198,12 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
           </div>
         )}
         {on && w.week && (
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <p className="text-[13px] text-muted-foreground tabular-nums">
             Last 7 days: {w.week.sent} sent · {w.week.replied} replied · {w.week.spam} found in spam
           </p>
         )}
         {on && w.partners !== null && (
-          <p className="text-xs text-muted-foreground">The pool has {w.partners} partners for it today, so it sends fewer than its target.</p>
+          <p className="text-[13px] text-muted-foreground">The pool has {w.partners} partners for it today, so it sends fewer than its target.</p>
         )}
         {on && w.problem && <Notice level="error" title="Its warmup isn't sending">{w.problem}</Notice>}
         {failed && <Notice level="error">{failed.message}</Notice>}
@@ -211,7 +211,7 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
           <SettingsActions>
             {confirming ? (
               <>
-                <span className="text-xs text-muted-foreground">Stop warmup and take this inbox's login out of the pool?</span>
+                <span className="text-[13px] text-muted-foreground">Stop warmup and take this inbox's login out of the pool?</span>
                 <Button size="sm" variant="danger" isLoading={stop.isPending} onClick={() => stop.mutate()}>
                   Stop warmup
                 </Button>
@@ -350,7 +350,7 @@ function SenderCheck({ senders, tests, stopped }: { senders: string[]; tests: { 
         >
           {senders.length === 1 ? `Check ${from}` : 'Run sender check'}
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {usedUp ? `This month's check is used. Another from ${longDate(nextMonth)}.` : `${tests.limit - tests.used} left this month.`}
         </span>
       </SettingsActions>
@@ -372,7 +372,7 @@ function CheckResult({ result }: { result: PlacementTestResult | null }) {
     )
   }
   // Nothing counted either way yet: no verdict to give.
-  if (!result || arrived + missing + waiting === 0) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
+  if (!result || arrived + missing + waiting === 0) return <p className="text-[13px] text-muted-foreground">Sent. Waiting for the first answers…</p>
   const where = (k: 'spam' | 'missing') => result.families.filter((f) => f[k] > 0).map((f) => PROVIDERS[f.family] ?? f.family).join(', ')
   const when = `Checked ${longDate(result.startedAt)}.`
   return (
@@ -448,7 +448,7 @@ function Placement() {
           <SettingsList>
             {data.senders.map((s) => (
               <SettingsRow key={s.address} title={s.address}>
-                <p className="text-xs text-muted-foreground tabular-nums">Google, Microsoft and Yahoo: {landed(s.major, 20)}</p>
+                <p className="text-[13px] text-muted-foreground tabular-nums">Google, Microsoft and Yahoo: {landed(s.major, 20)}</p>
               </SettingsRow>
             ))}
           </SettingsList>

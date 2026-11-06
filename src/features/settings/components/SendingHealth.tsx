@@ -124,14 +124,14 @@ export function SendingHealth() {
                 }
               >
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs text-muted-foreground tabular-nums">
+                  <p className="text-[13px] text-muted-foreground tabular-nums">
                     {count(d.stats.sent)} sent · {count(d.stats.hardBounces)} bounced · {count(d.stats.complaints)} marked as spam ·{' '}
                     {count(d.stats.unsubscribes)} unsubscribed
                     {d.stats.tracked > 0 && ` · ${percent(d.stats.opened, d.stats.tracked)} opened`}
                     {d.stats.replies > 0 && ` · ${count(d.stats.replies)} replied`}
                   </p>
                   {d.status === 'unknown' && (
-                    <p className="text-xs text-muted-foreground">A status needs at least {data.minSample} emails sent in the last {data.windowDays} days.</p>
+                    <p className="text-[13px] text-muted-foreground">A status needs at least {data.minSample} emails sent in the last {data.windowDays} days.</p>
                   )}
                   {d.reasons.map((r) => (
                     <Notice key={r.code} level={r.level === 'poor' ? 'error' : 'warning'} title={r.text}>

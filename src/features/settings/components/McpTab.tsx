@@ -266,7 +266,7 @@ function SetupTabs({ clients }: { clients: SetupClient[] }) {
             size="sm"
             aria-selected={c.id === client.id}
             onClick={() => setActive(c.id)}
-            className={c.id === client.id ? '!border-accent !bg-accent/5' : '!text-muted-foreground hover:!text-foreground'}
+            className={c.id === client.id ? '!border-accent !bg-accent/10 !text-accent font-semibold' : '!text-foreground/80 hover:!text-foreground'}
           >
             {c.label}
           </Button>

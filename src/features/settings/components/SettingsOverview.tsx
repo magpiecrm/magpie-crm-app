@@ -32,7 +32,7 @@ function UsageThisMonth({ data }: { data: Awaited<ReturnType<typeof getUsageFn>>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md-s border border-border bg-border">
         {USAGE_TILES.map((tile) => (
           <div key={tile.key} className="bg-background px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">{tile.label}</p>
+            <p className="text-[13px] text-muted-foreground">{tile.label}</p>
             <p className="text-2xl font-semibold tabular-nums text-foreground">{data[tile.key].toLocaleString()}</p>
           </div>
         ))}
@@ -110,7 +110,7 @@ export function SettingsOverview({
                 <StatusIcon level={status.level} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">{section.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{status.text}</span>
+                  <span className="block text-[13px] text-muted-foreground">{status.text}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-foreground group-hover:text-accent">
                   {status.action ?? 'Open'} <ArrowRight className="h-3.5 w-3.5" />
