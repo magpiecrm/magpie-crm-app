@@ -81,7 +81,7 @@ export function ApiKeysTab() {
   return (
     <div className="flex flex-col gap-4">
       <SettingsPanel>
-        <SettingsBlock title="Your keys">
+        <SettingsBlock title="Your keys" description="Revoke a key to stop whatever uses it straight away.">
           {isLoadingKeys ? (
             <SettingsEmpty>
               <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />

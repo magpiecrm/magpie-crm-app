@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, Info, RefreshCw } from 'lucide-react'
+import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, PlusCircle, RefreshCw } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
@@ -7,14 +7,24 @@ import type { SectionStatus, StatusLevel } from '../useSettingsStatus'
 import { AllowanceMeter } from './AllowanceMeter'
 import { SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
 
-const ORDER: Record<StatusLevel, number> = { error: 0, warning: 1, ok: 2, info: 3 }
 
-function StatusIcon({ level }: { level: StatusLevel }) {
+/** What a setup row is, so each icon means one thing: a problem, unfinished, done, or an add-on to buy. */
+type RowKind = 'error' | 'warning' | 'unfinished' | 'done' | 'addon'
+function kindOf(status: SectionStatus): RowKind {
+  if (status.level === 'error' || status.level === 'warning') return status.level
+  if (status.level === 'info' && status.action === 'Add') return 'addon'
+  if (status.level === 'info' && status.action) return 'unfinished'
+  return 'done'
+}
+const KIND_ORDER: Record<RowKind, number> = { error: 0, warning: 1, unfinished: 2, done: 3, addon: 4 }
+
+function StatusIcon({ kind }: { kind: RowKind }) {
   const className = 'h-4 w-4 shrink-0'
-  if (level === 'error') return <AlertCircle className={`${className} text-destructive`} />
-  if (level === 'warning') return <AlertTriangle className={`${className} text-amber-600 dark:text-amber-400`} />
-  if (level === 'ok') return <CheckCircle2 className={`${className} text-emerald-600 dark:text-emerald-400`} />
-  return <Info className={`${className} text-muted-foreground`} />
+  if (kind === 'error') return <AlertCircle className={`${className} text-destructive`} aria-label="Needs fixing" />
+  if (kind === 'warning') return <AlertTriangle className={`${className} text-amber-600 dark:text-amber-400`} aria-label="Needs attention" />
+  if (kind === 'unfinished') return <CircleDashed className={`${className} text-amber-600 dark:text-amber-400`} aria-label="Not set up yet" />
+  if (kind === 'addon') return <PlusCircle className={`${className} text-muted-foreground`} aria-label="Add-on" />
+  return <CheckCircle2 className={`${className} text-emerald-600 dark:text-emerald-400`} aria-label="Done" />
 }
 
 const USAGE_TILES = [
@@ -65,7 +75,7 @@ export function SettingsOverview({
   const rows = SETTINGS_SECTIONS.flatMap((section) => {
     const status = statuses[section.id]
     return status ? [{ section, status }] : []
-  }).sort((a, b) => ORDER[a.status.level] - ORDER[b.status.level])
+  }).sort((a, b) => KIND_ORDER[kindOf(a.status)] - KIND_ORDER[kindOf(b.status)])
 
   if (isLoading && rows.length === 0) {
     return (
@@ -107,7 +117,7 @@ export function SettingsOverview({
                 onClick={() => onOpen(section.id)}
                 className={`group flex w-full min-h-[48px] items-center gap-3 px-3.5 py-2 text-left transition-colors cursor-pointer ${TINT[status.level]}`}
               >
-                <StatusIcon level={status.level} />
+                <StatusIcon kind={kindOf(status)} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">{section.label}</span>
                   <span className="block text-[13px] text-muted-foreground">{status.text}</span>

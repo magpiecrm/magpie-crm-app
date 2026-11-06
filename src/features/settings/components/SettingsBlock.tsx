@@ -72,6 +72,7 @@ export function SettingsRow({
   detail,
   badge,
   actions,
+  flush = false,
   children,
 }: {
   icon?: ReactNode
@@ -80,6 +81,8 @@ export function SettingsRow({
   detail?: ReactNode
   badge?: ReactNode
   actions?: ReactNode
+  /** `children` continue the row itself (no divider or tint), rather than being its details. */
+  flush?: boolean
   children?: ReactNode
 }) {
   return (
@@ -94,9 +97,10 @@ export function SettingsRow({
           </p>
           {detail && <p className="break-words text-[13px] text-muted-foreground">{detail}</p>}
         </div>
-        {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
+        {/* Icon buttons in a row at the body colour, not the faint ghost grey, so edit and delete can be found. */}
+        {actions && <div className="ml-auto flex shrink-0 items-center gap-1 [&>button]:text-foreground/75">{actions}</div>}
       </div>
-      {children && <div className="border-t border-border/70 bg-background/60 px-3.5 py-3">{children}</div>}
+      {children && <div className={flush ? 'px-3.5 pb-3' : 'border-t border-border/70 bg-background/60 px-3.5 py-3'}>{children}</div>}
     </div>
   )
 }

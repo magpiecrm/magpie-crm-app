@@ -107,9 +107,9 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
           {open && (
             <>
               {/* One flat list of records: type and what it's for, then each part on one line with its copy button. */}
-              <div className="divide-y divide-border/70 rounded-md-s border border-border bg-card">
+              <div className="divide-y divide-border/70">
                 {d.records.map((r) => (
-                  <div key={r.name} className="flex flex-col gap-1.5 px-3 py-2.5">
+                  <div key={r.name} className="flex flex-col gap-1.5 py-2.5">
                     <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                       <span className="font-mono font-semibold text-foreground">{r.type}</span>
                       {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
@@ -234,7 +234,7 @@ export function ManagedSending() {
         <SendingHealth />
 
         {anyReady && (
-          <SettingsBlock title="Send a test">
+          <SettingsBlock title="Send a test" description="Sends one email, so you can check it arrives and how it looks.">
             <form
               className="flex flex-col gap-3"
               onSubmit={(e) => {

@@ -14,27 +14,35 @@ const KEY_PLACEHOLDER = '<your MCP key>'
 
 /** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
 
-function CopyBlock({ label, code, note }: { label: string; code: string; note?: string }) {
+function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className="absolute right-1.5 top-1.5"
+      onClick={() => {
+        navigator.clipboard?.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+      leftIcon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
+  )
+}
+
+/** A snippet with its Copy button inside the box's top-right corner, where the eye already is. */
+function CopyBlock({ label, code, note }: { label: string; code: string; note?: string }) {
+  return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            navigator.clipboard?.writeText(code)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          }}
-          leftIcon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
+      <span className="text-[13px] font-medium text-foreground">{label}</span>
+      <div className="relative">
+        <pre className={`${CODE_CLASS} whitespace-pre-wrap pr-24 [overflow-wrap:anywhere]`}>{code}</pre>
+        <CopyButton value={code} />
       </div>
-      <pre className={`${CODE_CLASS} whitespace-pre-wrap [overflow-wrap:anywhere]`}>{code}</pre>
       {note && <p className="text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
     </div>
   )
@@ -224,8 +232,11 @@ export function McpTab() {
             </>
           }
         >
-          <Field label="Server address">
-            <code className={`${CODE_CLASS} block whitespace-nowrap`}>{url}</code>
+          <Field label="Server address" as="div">
+            <div className="relative">
+              <code className={`${CODE_CLASS} block whitespace-nowrap pr-24`}>{url}</code>
+              <CopyButton value={url} />
+            </div>
           </Field>
           {isLocal && (
             <Notice level="warning">
@@ -255,21 +266,21 @@ function SetupTabs({ clients }: { clients: SetupClient[] }) {
   const client = clients.find((c) => c.id === active) ?? clients[0]
   return (
     <div className="flex flex-col gap-3">
-      {/* A row of small buttons, the chosen one outlined like a chosen SettingsOption. */}
-      <div role="tablist" aria-label="AI app" className="flex flex-wrap gap-1.5">
+      {/* A segmented control: one track, the chosen app raised out of it. */}
+      <div role="tablist" aria-label="AI app" className="inline-flex max-w-full flex-wrap gap-0.5 self-start rounded-md-s bg-muted p-0.5">
         {clients.map((c) => (
-          <Button
+          <button
             key={c.id}
             type="button"
             role="tab"
-            variant="outline"
-            size="sm"
             aria-selected={c.id === client.id}
             onClick={() => setActive(c.id)}
-            className={c.id === client.id ? '!border-accent !bg-accent/10 !text-accent font-semibold' : '!text-foreground/80 hover:!text-foreground'}
+            className={`cursor-pointer rounded-md-xs px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              c.id === client.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             {c.label}
-          </Button>
+          </button>
         ))}
       </div>
       <div role="tabpanel">

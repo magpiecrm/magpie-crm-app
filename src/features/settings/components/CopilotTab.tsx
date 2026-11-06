@@ -201,7 +201,7 @@ function ManagedCopilot() {
             </SettingsActions>
           )}
         </SettingsBlock>
-        <SettingsBlock title="Your data">
+        <SettingsBlock title="Your data" description="Where your questions go.">
           <Notice>
             What you ask {name}, and the contact data it reads to answer, is processed by Anthropic for your hosting provider, under its
             data processing terms.

@@ -35,6 +35,7 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
   const used = limit.limit === null ? 0 : Math.min(1, limit.sent / Math.max(1, limit.limit))
   return (
     <SettingsRow
+      flush
       title={name}
       detail={
         limit.limit === null ? (
@@ -64,7 +65,8 @@ function LimitRow({ name, about, limit }: { name: string; about: string; limit: 
       }
     >
       <div className="flex flex-col gap-2">
-        {limit.limit !== null && (
+        {/* No bar until something's sent: an empty one reads as a divider. */}
+        {limit.limit !== null && limit.sent > 0 && (
           <div className="h-1.5 rounded-full bg-foreground/10 overflow-hidden" role="presentation">
             <div className={`h-full rounded-full ${used >= 1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${Math.round(used * 100)}%` }} />
           </div>

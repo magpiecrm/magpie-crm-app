@@ -45,6 +45,7 @@ export function PlanEditor({
   const pence = monthlyPence(plan, kinds, addons)
   const underMinimum = pence < minimumPence
   const { up, down } = planChanges(current, plan)
+  const [nudged, setNudged] = useState(false)
   const unchanged = billing.live && up.length === 0 && down.length === 0
   const nameOf = (id: string) => [...kinds, ...addons].find((k) => k.id === id)?.name ?? id
   const amountOf = (id: string, n: number) => {
@@ -206,9 +207,13 @@ export function PlanEditor({
       )}
       <SettingsActions>
         {billing.live ? (
-          <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
-            Review change
-          </Button>
+          // Live even before anything changes, so it doesn't look broken; pressed then, it says what to do.
+          <>
+            <Button onClick={() => (unchanged ? setNudged(true) : setReviewing(true))} disabled={busy || underMinimum}>
+              Review change
+            </Button>
+            {unchanged && nudged && <span className="text-[13px] text-muted-foreground">Move a slider or tick an add-on first.</span>}
+          </>
         ) : (
           <Button onClick={() => onSubmit(plan)} isLoading={busy} disabled={underMinimum}>
             Continue to payment

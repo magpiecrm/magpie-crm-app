@@ -203,7 +203,7 @@ export function SendersTab() {
           )}
         </SettingsBlock>
 
-        <SettingsBlock title="Add a sender">
+        <SettingsBlock title="Add a sender" description="The name and address people see your campaigns come from.">
           <form onSubmit={handleAddSender} className="flex flex-col gap-3">
             <FieldGrid>
               <Field label="Display name">
