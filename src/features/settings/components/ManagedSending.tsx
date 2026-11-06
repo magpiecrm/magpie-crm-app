@@ -124,7 +124,18 @@ function DomainRow({ d, health, onChanged }: { d: Domain; health: Health | undef
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                   <span className="font-mono font-semibold text-foreground">{r.type}</span>
                   {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
-                  {r.optional && <Badge>Recommended</Badge>}
+                  {/* The host only says whether the domain's required records are all in place, so a required record is found once the domain is ready. */}
+                  {r.optional ? (
+                    <Badge>Recommended</Badge>
+                  ) : d.ready ? (
+                    <Badge variant="success" status>
+                      Found
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning" status>
+                      Not found yet
+                    </Badge>
+                  )}
                 </p>
                 {/* Label beside the value where the panel is wide; above it on a phone, so a hostname has the whole width. */}
                 <dl className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 @[36rem]:grid-cols-[3rem_minmax(0,1fr)_auto]">

@@ -117,24 +117,27 @@ export function SenderInbox({
       title={sender.name || sender.email}
       // The address is the title when the sender has no name.
       detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
-      badge={
-        <>
-          {/* Not connected needs no badge: the row's Connect inbox button says it. */}
-          {!box ? null : box.status === 'ok' ? (
-          <Badge variant="success" status>Inbox connected</Badge>
-        ) : (
-          <Badge variant="error" status>{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>
-          )}
-          {extraBadge}
-        </>
-      }
+      badge={extraBadge}
+      // The inbox column: its state, or the button that connects it, at a fixed width so states line up down the list.
       actions={
         <>
-          {!box && !editing && !editor && (
-            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-              Connect inbox
-            </Button>
-          )}
+          <span className="flex w-32 justify-start">
+            {box ? (
+              box.status === 'ok' ? (
+                <Badge variant="success" status>
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="error" status>
+                  {box.status === 'auth_failed' ? 'Login refused' : 'Not working'}
+                </Badge>
+              )
+            ) : !editing && !editor ? (
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                Connect inbox
+              </Button>
+            ) : null}
+          </span>
           {extraActions}
         </>
       }

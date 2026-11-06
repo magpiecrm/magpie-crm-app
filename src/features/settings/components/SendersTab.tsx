@@ -7,10 +7,16 @@ import { Badge } from '../../../components/ui/Badge'
 import { InboxFooter, SenderInbox } from './Mailboxes'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Select } from '../../../components/ui/Select'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
 
 /** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
+type InboxFilter = 'none' | 'broken' | 'connected'
+
+/** The address in "Name <jo@acme.com>" or "jo@acme.com", lower-cased. */
+const addressOf = (from: string) => (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase()
+
 function domainReady(email: string, domains: Array<{ domain: string; ready: boolean }>) {
   const domain = email.toLowerCase().split('@')[1] ?? ''
   return domains.some((d) => d.ready && (domain === d.domain || domain.endsWith(`.${d.domain}`)))
@@ -38,6 +44,8 @@ export function SendersTab() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [isSavingSender, setIsSavingSender] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<'all' | InboxFilter>('all')
 
   const fetchSenders = async () => {
     setIsLoadingSenders(true)
@@ -125,6 +133,19 @@ export function SendersTab() {
   }
 
   const connected = senders.filter((sender) => boxes?.some((b) => b.sender_id === sender.id && b.status === 'ok')).length
+  const inboxOf = (id: number): InboxFilter => {
+    const box = boxes?.find((b) => b.sender_id === id)
+    return !box ? 'none' : box.status === 'ok' ? 'connected' : 'broken'
+  }
+  const defaultAddress = addressOf(sending.data?.success ? (sending.data.settings?.defaultSender ?? '') : '')
+  // Search and a filter only once the list is long enough to need them.
+  const searchable = senders.length > 6
+  const needle = search.trim().toLowerCase()
+  const shown = senders.filter(
+    (sender) =>
+      (!searchable || !needle || `${sender.name} ${sender.email}`.toLowerCase().includes(needle)) &&
+      (!searchable || filter === 'all' || inboxOf(sender.id) === filter),
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -148,8 +169,35 @@ export function SendersTab() {
           ) : senders.length === 0 ? (
             <SettingsEmpty>No senders yet. Add one below.</SettingsEmpty>
           ) : (
+            <>
+            {searchable && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search names and addresses"
+                  aria-label="Search mailboxes"
+                  className={`${INPUT_CLASS} !w-auto min-w-0 flex-1`}
+                />
+                <Select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | InboxFilter)} aria-label="Filter by inbox" className={`${INPUT_CLASS} !w-auto`}>
+                  <option value="all">All inboxes ({senders.length})</option>
+                  <option value="none">Not connected ({senders.filter((x) => inboxOf(x.id) === 'none').length})</option>
+                  <option value="broken">Not working ({senders.filter((x) => inboxOf(x.id) === 'broken').length})</option>
+                  <option value="connected">Connected ({connected})</option>
+                </Select>
+              </div>
+            )}
             <SettingsList>
-              {senders.map((sender) => {
+              {/* Column heads, lined up with each row's inbox column, where the panel is wide enough for columns. */}
+              <div className="hidden items-center gap-3 bg-muted/40 px-3.5 py-2 text-xs font-medium text-muted-foreground @[36rem]:flex">
+                <span className="w-4 shrink-0" />
+                <span className="flex-1">Address</span>
+                <span className="w-32">Inbox</span>
+                <span className="w-[4.75rem]" />
+              </div>
+              {shown.length === 0 && <p className="px-3.5 py-3 text-sm text-muted-foreground">No mailboxes match.</p>}
+              {shown.map((sender) => {
                 const editing = editingSenderId === sender.id
                 return (
                   <SenderInbox
@@ -157,11 +205,14 @@ export function SendersTab() {
                     sender={sender}
                     box={boxes?.find((b) => b.sender_id === sender.id) ?? null}
                     extraBadge={
-                      managed && domains && !domainReady(sender.email, domains) ? (
-                        <Badge variant="warning" status>
-                          Domain not ready
-                        </Badge>
-                      ) : undefined
+                      <>
+                        {addressOf(sender.email) === defaultAddress && <Badge>Default</Badge>}
+                        {managed && domains && !domainReady(sender.email, domains) && (
+                          <Badge variant="warning" status>
+                            Domain not ready
+                          </Badge>
+                        )}
+                      </>
                     }
                     extraActions={
                       // While it's being edited, the form below is the row's only controls.
@@ -234,6 +285,7 @@ export function SendersTab() {
                 )
               })}
             </SettingsList>
+            </>
           )}
           {senders.length > 0 && <InboxFooter />}
         </SettingsBlock>
