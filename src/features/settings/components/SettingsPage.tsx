@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { SETTINGS_SECTIONS, type SettingsSection } from '../sections'
@@ -26,6 +27,15 @@ const DOT: Record<StatusLevel, string> = {
   warning: 'bg-amber-500',
   ok: 'bg-emerald-500',
   info: '',
+}
+
+/** A shape as well as a colour for each status, so it doesn't rest on colour alone. */
+function StatusIcon({ level }: { level: StatusLevel }) {
+  const cls = 'mt-px h-3.5 w-3.5 shrink-0'
+  if (level === 'ok') return <CheckCircle2 className={`${cls} text-emerald-600 dark:text-emerald-400`} aria-hidden />
+  if (level === 'warning') return <AlertTriangle className={`${cls} text-amber-600 dark:text-amber-400`} aria-hidden />
+  if (level === 'error') return <AlertCircle className={`${cls} text-destructive`} aria-hidden />
+  return <Info className={`${cls} text-muted-foreground`} aria-hidden />
 }
 
 type Section = (typeof SETTINGS_SECTIONS)[number]
@@ -151,7 +161,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
               {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
               {active !== 'overview' && currentStatus && (
                 <span className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-[14px] border border-border bg-card px-2.5 py-1 text-xs leading-[18px] text-foreground">
-                  <span className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level] || 'bg-muted-foreground/60'}`} />
+                  <StatusIcon level={currentStatus.level} />
                   <span className="min-w-0">{currentStatus.text.replace(/\.$/, '')}</span>
                 </span>
               )}

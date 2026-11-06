@@ -199,9 +199,12 @@ export function PlanEditor({
       )}
       <SettingsActions>
         {billing.live ? (
-          <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
-            Review change
-          </Button>
+          <>
+            <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
+              Review change
+            </Button>
+            {unchanged && <span className="text-[13px] text-muted-foreground">Move a slider or tick an add-on to change your plan.</span>}
+          </>
         ) : (
           <Button onClick={() => onSubmit(plan)} isLoading={busy} disabled={underMinimum}>
             Continue to payment

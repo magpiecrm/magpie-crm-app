@@ -92,7 +92,7 @@ export function SettingsRow({
             <span className="min-w-0 break-words">{title}</span>
             {badge}
           </p>
-          {detail && <p className="truncate text-[13px] text-muted-foreground">{detail}</p>}
+          {detail && <p className="break-words text-[13px] text-muted-foreground">{detail}</p>}
         </div>
         {actions && <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div>}
       </div>

@@ -48,4 +48,4 @@ export function FieldGrid({ cols = 2, children, className = '' }: { cols?: 2 | 3
 }
 
 /** A command, key or snippet to copy: it scrolls sideways inside its column rather than widening it. */
-export const CODE_CLASS = 'rounded-md-s border border-border bg-background px-3 py-2 text-xs overflow-x-auto font-mono leading-relaxed text-foreground'
+export const CODE_CLASS = 'rounded-md-s border border-border bg-background px-3 py-2.5 text-[13px] overflow-x-auto font-mono leading-relaxed text-foreground'
