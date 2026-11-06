@@ -253,7 +253,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
               <SettingsActions>
                 <Button
                   variant="outline"
-                  className="!border-destructive/40 !text-destructive hover:!bg-destructive/10"
+                  className="!border-destructive/70 !text-destructive hover:!bg-destructive/10"
                   onClick={() => setCancelling(true)}
                   disabled={busy}
                 >

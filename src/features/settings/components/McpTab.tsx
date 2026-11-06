@@ -34,7 +34,7 @@ function CopyBlock({ label, code, note }: { label: string; code: string; note?: 
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre className={`${CODE_CLASS} whitespace-pre`}>{code}</pre>
+      <pre className={`${CODE_CLASS} whitespace-pre-wrap [overflow-wrap:anywhere]`}>{code}</pre>
       {note && <p className="text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
     </div>
   )

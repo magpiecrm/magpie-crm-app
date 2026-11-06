@@ -135,7 +135,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     onClick={() => open(s.id)}
                     aria-current={active === s.id ? 'page' : undefined}
                     className={`flex items-center justify-between gap-2 px-3 py-1.5 text-sm text-left rounded-md-s cursor-pointer transition-colors ${
-                      active === s.id ? 'bg-accent/10 text-accent font-semibold' : 'text-foreground hover:bg-muted'
+                      active === s.id ? 'relative bg-accent/10 text-accent font-semibold before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-accent' : 'text-foreground hover:bg-muted'
                     }`}
                   >
                     <span className="truncate">{s.label}</span>

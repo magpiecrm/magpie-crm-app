@@ -153,9 +153,12 @@ export function ManagedSending() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Notice>
-        Sending is set up for you. There's nothing to connect: add the domain you send from, put its DNS records in place, and you're ready.
-      </Notice>
+      {/* Only until there's a domain: after that the list says where things stand. */}
+      {domains && domains.length === 0 && (
+        <Notice>
+          Sending is set up for you. There's nothing to connect: add the domain you send from, put its DNS records in place, and you're ready.
+        </Notice>
+      )}
 
       <SettingsPanel>
         <SettingsBlock
