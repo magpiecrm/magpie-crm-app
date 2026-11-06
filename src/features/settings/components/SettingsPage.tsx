@@ -153,7 +153,9 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                 </span>
               )}
             </div>
-            <p className="text-sm text-muted-foreground max-w-2xl">{copilotManaged && current.id === 'copilot' ? COPILOT_MANAGED_INTRO : current.intro}</p>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              {current.id !== 'copilot' ? current.intro : copilotManaged === null ? '\u00a0' : copilotManaged ? COPILOT_MANAGED_INTRO : current.intro}
+            </p>
           </header>
 
           {active === 'overview' && <SettingsOverview statuses={statuses} isLoading={isLoading} onOpen={open} />}

@@ -768,12 +768,12 @@ export function AIChat({
                   <Sparkles className="w-3.5 h-3.5 shrink-0 text-accent" />
                   <span className="min-w-0 truncate">{managedLabel}</span>
                 </span>
-              ) : (
+              ) : providerInfo ? (
                 <>
                   <ComposerDropdown options={MODEL_OPTIONS} selectedId={selectedModel} onSelect={setPickedModel} />
                   <ComposerDropdown options={EFFORT_OPTIONS} selectedId={effort} onSelect={setEffort} align="right" />
                 </>
-              )}
+              ) : null}
             </div>
 
             <button
