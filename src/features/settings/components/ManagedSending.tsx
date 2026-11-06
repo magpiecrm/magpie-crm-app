@@ -94,30 +94,29 @@ function DomainRow({ d, onChanged }: { d: Domain; onChanged: () => void }) {
           {!d.ready && check.data && !check.data.success && <Notice level="error">{check.data.error}</Notice>}
           {open && (
             <>
-              <SettingsList>
+              {/* One flat list of records: type and what it's for, then each part on one line with its copy button. */}
+              <div className="divide-y divide-border/70 rounded-md-s border border-border bg-card">
                 {d.records.map((r) => (
-                  <SettingsRow
-                    key={r.name}
-                    title={<span className="font-mono">{r.type}</span>}
-                    badge={r.optional ? <Badge>Recommended</Badge> : undefined}
-                  >
-                    <div className="flex flex-col gap-2">
-                      {r.purpose && <p className="text-xs leading-relaxed text-muted-foreground">{r.purpose}</p>}
+                  <div key={r.name} className="flex flex-col gap-1.5 px-3 py-2.5">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                      <span className="font-mono font-semibold text-foreground">{r.type}</span>
+                      {r.purpose && <span className="text-muted-foreground">{r.purpose}</span>}
+                      {r.optional && <Badge>Recommended</Badge>}
+                    </p>
+                    <dl className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-2">
                       {(['name', 'value'] as const).map((part) => (
-                        <div key={part} className="flex flex-col gap-1.5">
-                          <span className="text-xs font-semibold text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</span>
-                          <div className="flex items-start gap-2">
-                            <code className="min-w-0 flex-1 rounded-md-s border border-border bg-background px-3 py-2 text-xs text-foreground break-all">
-                              {r[part]}
-                            </code>
-                            <CopyButton value={r[part]} />
-                          </div>
+                        <div key={part} className="contents">
+                          <dt className="text-xs text-muted-foreground">{part === 'name' ? 'Name' : 'Value'}</dt>
+                          <dd className="min-w-0 overflow-x-auto whitespace-nowrap rounded-md-xs bg-muted/60 px-2 py-1 font-mono text-xs text-foreground">
+                            {r[part]}
+                          </dd>
+                          <CopyButton value={r[part]} />
                         </div>
                       ))}
-                    </div>
-                  </SettingsRow>
+                    </dl>
+                  </div>
                 ))}
-              </SettingsList>
+              </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Some DNS providers add your domain to the name for you: if yours does, enter only the part before{' '}
                 <code className="font-mono">.{d.domain}</code>. Already have a DMARC record? Keep yours.
@@ -161,7 +160,10 @@ export function ManagedSending() {
       </Notice>
 
       <SettingsPanel>
-        <SettingsBlock title="Sending domains">
+        <SettingsBlock
+          title="Sending domains"
+          description={<p>The domains your campaigns come from. Each one sends once its DNS records are in place; Check now looks again straight away.</p>}
+        >
           {isLoading ? (
             <SettingsEmpty>
               <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />

@@ -128,7 +128,7 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
       }
       actions={
         !box && !editing ? (
-          <Button size="sm" onClick={() => setEditing(true)}>
+          <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
             Connect inbox
           </Button>
         ) : undefined

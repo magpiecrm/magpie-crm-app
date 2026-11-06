@@ -82,7 +82,7 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   return (
     // Centred once the window is wider than the menu and a full-width page together.
     <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[84rem] mx-auto">
-      <h1 className="lg:hidden text-2xl font-display text-foreground">Settings</h1>
+      <h1 className="lg:hidden text-sm font-semibold text-muted-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
         {/* Narrow screens: one dropdown instead of a menu column. */}
@@ -108,8 +108,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         </label>
 
         {/* Wide screens: the title and menu stay where they start while the page scrolls. */}
-        <aside className="hidden lg:flex flex-col gap-6 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
-        <h1 className="text-2xl font-display text-foreground">Settings</h1>
+        <aside className="hidden lg:flex flex-col gap-3 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
+        <h1 className="px-3 pt-1.5 text-sm font-semibold text-muted-foreground">Settings</h1>
         <nav aria-label="Settings" className="flex flex-col gap-4">
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
@@ -129,7 +129,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     }`}
                   >
                     <span className="truncate">{s.label}</span>
-                    {level && DOT[level] && (
+                    {/* Only what needs attention: a dot on every page that's fine is noise. */}
+                    {(level === 'warning' || level === 'error') && (
                       <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[level]}`} title={statuses[s.id]?.text} />
                     )}
                   </button>
@@ -142,14 +143,14 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
 
         {/* Every page is the same width: at its widest the panel's label column, its controls column and their padding (SettingsBlock). */}
         <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
-          <header className="flex flex-col gap-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>
-              {/* The same status the menu's dot stands for, in words. */}
+          <header className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
+              {/* The same status the menu's dot stands for, in words, beside the page it's about. */}
               {active !== 'overview' && currentStatus && (
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                  {DOT[currentStatus.level] && <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level]}`} />}
-                  <span className="truncate">{currentStatus.text}</span>
+                <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-foreground">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level] || 'bg-muted-foreground/60'}`} />
+                  <span className="truncate">{currentStatus.text.replace(/\.$/, '')}</span>
                 </span>
               )}
             </div>

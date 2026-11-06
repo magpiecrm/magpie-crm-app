@@ -97,14 +97,14 @@
     --secondary-foreground: #eef0f2;
     --muted: #1c1f23;
     --muted-hover: #24282d;
-    --muted-foreground: #8f96a1;
+    --muted-foreground: #9aa1ac;
     --accent: #4fc3d2;
     --accent-secondary: #7fd3de;
     --accent-foreground: #06262b;
     --accent-rgb: 79, 195, 210;
     --destructive: #f07167;
     --destructive-foreground: #1f0806;
-    --border: #25282d;
+    --border: #2c3036;
     --input: #353940;
     --ring: #4fc3d2;
   }

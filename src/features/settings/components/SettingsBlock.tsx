@@ -41,10 +41,10 @@ export function SettingsBlock({
   children?: ReactNode
 }) {
   return (
-    <section className="grid gap-x-8 gap-y-3 px-5 py-5 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
+    <section className="grid gap-x-10 gap-y-4 px-6 py-6 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
       <div className="flex min-w-0 flex-col gap-1.5">
-        <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-foreground">{title}</h3>
-        {description && <div className="flex flex-col gap-2 text-xs leading-relaxed text-muted-foreground">{description}</div>}
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        {description && <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted-foreground">{description}</div>}
       </div>
       {children !== undefined && <div className="flex min-w-0 flex-col gap-3">{children}</div>}
     </section>
@@ -87,7 +87,7 @@ export function SettingsRow({
         {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
         <div className="min-w-0 flex-1">
           <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
-            <span className="truncate">{title}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{title}</span>
             {badge}
           </p>
           {detail && <p className="truncate text-xs text-muted-foreground">{detail}</p>}

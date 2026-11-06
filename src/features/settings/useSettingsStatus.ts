@@ -78,7 +78,14 @@ export function useSettingsStatus(): {
         ? { level: 'error', text: 'Add the domain you send from to start sending.', action: 'Add' }
         : ready.length === 0
           ? { level: 'warning', text: `Waiting for the DNS records on ${domains.data.map((d) => d.domain).join(', ')}.`, action: 'Check' }
-          : { level: 'ok', text: `Ready to send from ${ready.join(', ')}.` }
+          : ready.length < domains.data.length
+            ? {
+                // It can send, but a domain added to send from isn't finished.
+                level: 'warning',
+                text: `Ready to send from ${ready.join(', ')}. Still waiting for the DNS records on ${domains.data.filter((d) => !d.ready).map((d) => d.domain).join(', ')}.`,
+                action: 'Check',
+              }
+            : { level: 'ok', text: `Ready to send from ${ready.join(', ')}.` }
   } else if (s?.success && !sendingManaged) {
     const label = s.providers.find((d: { id: string; label: string }) => d.id === s.settings.provider)?.label ?? s.settings.provider
     statuses.sending = s.settings.credsUnreadable
