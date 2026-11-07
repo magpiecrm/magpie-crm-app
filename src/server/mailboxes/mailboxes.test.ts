@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'fs'
+import { createServer, type AddressInfo } from 'net'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -26,7 +27,7 @@ const { sequences } = await import('../sequences')
 const { runSequences } = await import('../sequences/engine')
 const { mailboxes, pollMailboxes } = await import('.')
 const { classifyInbound, isStopRequest, leadingText, parseBounce, buildIndex, matchReply } = await import('./classify')
-const { parseHeaderBlock, idsIn, zohoHosts } = await import('./imap')
+const { parseHeaderBlock, idsIn, zohoHosts, imapConnect, describeError } = await import('./imap')
 const { encryptToken } = await import('../crypto')
 const { env } = await import('../env')
 type Msg = import('./imap').InboundMessage
@@ -235,6 +236,34 @@ describe('reading an inbox', () => {
     expect(sent).toHaveLength(2)
   })
 
+  it('says an inbox is failing only once it has been for a while, and once each time', async () => {
+    contact('ava@larkspur.test')
+    sequenceFor(['ava@larkspur.test'])
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    connectInbox({ host: 'imappro.zoho.eu' })
+    notices.length = 0
+    const hungUp = fakeInbox([], { fail: Object.assign(new Error('Unexpected close'), { code: 'ClosedAfterConnectTLS', reason: 'IMAP4rev1 Server logging out' }) })
+    const poll = (min: number, inbox = hungUp) => pollMailboxes(new Date(t0 + min * 60_000), inbox.connect)
+
+    // Zoho hangs up on one login and the next one works: nobody's told.
+    await poll(1)
+    expect(db.data.mailboxes![0]).toMatchObject({ status: 'error', last_error: 'imappro.zoho.eu closed the connection while logging in (IMAP4rev1 Server logging out).' })
+    await poll(4, fakeInbox([]))
+    expect(db.data.mailboxes![0].status).toBe('ok')
+    expect(notices).toEqual([])
+
+    // Failing for a quarter of an hour: told, once.
+    for (const min of [7, 10, 13, 16, 22, 25]) await poll(min)
+    expect(notices).toEqual(["sequence_paused: Reply detection for jo@acme.test isn't working: imappro.zoho.eu closed the connection while logging in (IMAP4rev1 Server logging out)."])
+    expect(mailboxes.list()[0]).not.toHaveProperty('error_notified')
+
+    // Working again, then failing again for as long: told again.
+    await poll(28, fakeInbox([]))
+    for (const min of [31, 47]) await poll(min)
+    expect(notices).toHaveLength(2)
+  })
+
   it("connects a Zoho inbox at the server for its region and kind of account, whichever the form named", async () => {
     // Zoho's servers: only the EU business one knows this login.
     const tried: string[] = []
@@ -282,5 +311,36 @@ describe('reading an inbox', () => {
     await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test' }, good.connect)
     expect(good.calls.connects).toBe(2)
     await expect(mailboxes.save({ senderId: 1, host: 'outlook.office365.com', port: 993, secure: true, user: 'jo@acme.test', password: 'x' }, good.connect)).rejects.toThrow(/Microsoft 365/)
+  })
+})
+
+describe('connecting over IMAP', () => {
+  it('survives a server that hangs up during the login, as Zoho sometimes does', async () => {
+    // A server that greets, answers CAPABILITY, then says goodbye to the login and closes.
+    const server = createServer((socket) => {
+      socket.write('* OK [CAPABILITY IMAP4rev1 AUTH=PLAIN] ready\r\n')
+      socket.on('data', (chunk) => {
+        for (const line of chunk.toString().split('\r\n').filter(Boolean)) {
+          const [tag, command] = line.split(' ')
+          if (/^capability$/i.test(command)) socket.write(`* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n${tag} OK done\r\n`)
+          else if (/^(authenticate|login)$/i.test(command)) socket.end('* BYE IMAP4rev1 Server logging out\r\n')
+          else socket.write(`${tag} OK done\r\n`)
+        }
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    try {
+      const err = await imapConnect({ host: '127.0.0.1', port, secure: false, user: 'jo@acme.test', password: 'app-pass' }).then(
+        () => null,
+        (e: unknown) => e,
+      )
+      expect(err).toBeTruthy()
+      // The login's own failure comes after connect's; it mustn't escape (it used to crash the app).
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(describeError(err, '127.0.0.1')).toBe('127.0.0.1 closed the connection while logging in (IMAP4rev1 Server logging out).')
+    } finally {
+      server.close()
+    }
   })
 })

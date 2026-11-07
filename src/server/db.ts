@@ -574,6 +574,8 @@ export interface MailboxRecord {
   last_error: string | null
   /** When it started failing (null while working). */
   error_since: string | null
+  /** Whether the user has been told this failure is going on (mailboxes/ NOTICE_AFTER_MS). */
+  error_notified?: boolean
   last_polled_at: string | null
   /** The folder read: Gmail's All Mail, else INBOX. */
   folder: string | null
