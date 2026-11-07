@@ -8,7 +8,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'source', group: 'Prospecting', label: 'Data source', intro: 'The SocialFetch account that prospect search uses to find companies and people.' },
   { id: 'verification', group: 'Prospecting', label: 'Email verification', intro: 'How found email addresses are checked before they are shown or saved, and the health of the servers that check them.' },
   { id: 'sending', group: 'Email', label: 'Sending', intro: 'The service your campaigns are sent through, and the default address they come from.' },
-  { id: 'senders', group: 'Email', label: 'Mailboxes', intro: "The addresses your campaigns come from, and their inboxes, connected so a reply stops that person's sequence." },
+  { id: 'senders', group: 'Email', label: 'Mailboxes', intro: "The addresses your campaigns come from, and their inboxes, connected so a reply stops that person's sequence and you can read and answer it in the app." },
   { id: 'warmup', group: 'Email', label: 'Warmup', intro: 'Warm up each sender with everyday email to and from other inboxes, and see where it lands.' },
   { id: 'pipelines', group: 'Sales', label: 'Pipelines', intro: 'The stages your deals move through. Add a pipeline for each kind of deal, like new business or renewals.' },
   { id: 'copilot', group: 'AI', label: 'Copilot', intro: 'Your own Anthropic or OpenAI API key, which the in-app copilot runs on.' },

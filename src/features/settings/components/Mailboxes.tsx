@@ -65,8 +65,13 @@ export function InboxFooter() {
         "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
       </p>
       <p>
-        Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
-        is kept, and the app can't send or delete mail.
+        You can read each reply and answer it on the sequence's Replies tab. For that, the text of replies to sequence emails is kept here (not their
+        attachments), along with answers to them sent from your inbox. An answer sent from here goes out from the sender address, and a copy is put
+        in the inbox's Sent folder.
+      </p>
+      <p>
+        Of anything else in your inbox, only who a message is from and which email it answers are read, and none of it is kept. Apart from adding
+        those copies to Sent, the app never changes or deletes anything in your inbox.
         {warmup?.offered &&
           " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
       </p>

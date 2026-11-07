@@ -1,11 +1,13 @@
 // Reading a connected inbox over IMAP (imapflow): which folder to read, and
 // the headers of messages since the last one read. Only what's needed to
 // tell a reply to a sequence email: ids, sender, subject, date and the
-// auto-reply headers. A message's text is read (its first few kilobytes)
-// only for one already matched to a sequence email (a "stop" reply) or a
-// bounce report, and is never kept.
+// auto-reply headers. A message's text is read only for one already matched
+// to a sequence's conversation (kept with it, for the Replies tab) or a
+// bounce report (never kept). The one thing written: a copy of an answer
+// sent from the app, into the Sent folder.
 
-import { ImapFlow } from 'imapflow'
+import { ImapFlow, type MessageStructureObject } from 'imapflow'
+import { htmlToText } from '../providers/plainText'
 
 export interface MailboxLogin {
   host: string
@@ -27,6 +29,14 @@ export interface InboundMessage {
   headers: Record<string, string>
 }
 
+/** A message's words as plain text, and how many attachments it has (never read). */
+export interface MessageText {
+  text: string
+  /** It went on past the most read, and was cut. */
+  truncated: boolean
+  attachments: number
+}
+
 export interface OpenedFolder {
   path: string
   uidValidity: string
@@ -40,6 +50,10 @@ export interface MailClient {
   fetch(from: { afterUid: number } | { since: Date }, limit: number): Promise<InboundMessage[]>
   /** The start of a message's raw source (headers and body), as text. */
   source(uid: number, maxBytes: number): Promise<string>
+  /** A message's words: its plain-text part, else its HTML as text, at most `maxChars`. */
+  text(uid: number, maxChars: number): Promise<MessageText>
+  /** Puts a copy of a message sent from the app in the Sent folder, as read; false when there's no Sent folder. */
+  appendSent(raw: Buffer): Promise<boolean>
   close(): Promise<void>
 }
 
@@ -70,6 +84,35 @@ export function parseHeaderBlock(raw: string): Record<string, string> {
 /** Message ids in a header (`<a@b> <c@d>`), with their angle brackets. */
 export function idsIn(value: string | null | undefined): string[] {
   return value ? [...value.matchAll(/<[^<>\s]+>/g)].map((m) => m[0]) : []
+}
+
+/**
+ * Where a message's words are, from its structure: its first plain-text
+ * part and its first HTML part that aren't attachments, and how many
+ * attachments it has. Images with a Content-ID are part of the HTML (a
+ * logo in a signature), not attachments; a forwarded email is one.
+ */
+export function readStructure(root: MessageStructureObject): { plain: string | null; html: string | null; attachments: number } {
+  const found = { plain: null as string | null, html: null as string | null, attachments: 0 }
+  const walk = (node: MessageStructureObject) => {
+    const type = (node.type ?? '').toLowerCase()
+    const attached = (node.disposition ?? '').toLowerCase() === 'attachment'
+    if (type === 'message/rfc822') {
+      found.attachments++
+      return
+    }
+    if (node.childNodes?.length) {
+      for (const child of node.childNodes) walk(child)
+      return
+    }
+    // A message that's one part has no part number: it's "1".
+    const part = node.part ?? '1'
+    if (!attached && type === 'text/plain') found.plain ??= part
+    else if (!attached && type === 'text/html') found.html ??= part
+    else if (attached || (!type.startsWith('text/') && !type.startsWith('multipart/') && !node.id)) found.attachments++
+  }
+  walk(root)
+  return found
 }
 
 /** Logins over 15 seconds, and replies to commands over a minute, count as failed. */
@@ -133,6 +176,26 @@ export const imapConnect: Connect = async (login) => {
     async source(uid, maxBytes) {
       const msg = await imap.fetchOne(String(uid), { source: { start: 0, maxLength: maxBytes } }, { uid: true })
       return msg && msg.source ? msg.source.toString('utf8') : ''
+    },
+    async text(uid, maxChars) {
+      const msg = await imap.fetchOne(String(uid), { bodyStructure: true }, { uid: true })
+      const found = msg && msg.bodyStructure ? readStructure(msg.bodyStructure) : { plain: null, html: null, attachments: 0 }
+      const part = found.plain ?? found.html
+      if (!part) return { text: '', truncated: false, attachments: found.attachments }
+      // Up to four bytes a character, and HTML's markup besides. Only that part is downloaded, decoded to UTF-8.
+      const maxBytes = maxChars * (found.plain ? 4 : 12)
+      const { meta, content } = await imap.download(String(uid), part, { uid: true, maxBytes })
+      const chunks: Buffer[] = []
+      for await (const chunk of content) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+      const raw = Buffer.concat(chunks).toString('utf8')
+      const words = (found.plain ? raw : htmlToText(raw)).replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+      return { text: words.slice(0, maxChars), truncated: words.length > maxChars || meta.expectedSize > maxBytes, attachments: found.attachments }
+    },
+    async appendSent(raw) {
+      const sent = (await imap.list()).find((f) => f.specialUse === '\\Sent')
+      if (!sent) return false
+      await imap.append(sent.path, raw, ['\\Seen'], new Date())
+      return true
     },
     async close() {
       await imap.logout().catch(() => imap.close())

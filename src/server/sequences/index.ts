@@ -18,7 +18,9 @@ import {
   type SequenceSettings,
   type SequenceStep,
   type SequenceSummary,
+  type ThreadMessage,
 } from '../../features/sequences/types'
+import { snippet } from '../../features/sequences/quote'
 import { unfilledMergeTags } from '../mergeTags'
 import { aiAvailable } from '../copilot/availability'
 import { isUnconfirmedGuess } from '../prospecting/types'
@@ -353,7 +355,7 @@ export const sequences = {
       const s = seqOf(data, id)
       return enrollmentsOf(data, id)
         .filter((e) => !status || e.status === status)
-        .map(({ claim: _claim, ...e }) => {
+        .map(({ claim: _claim, messages, ...e }) => {
           const c = data.contacts.find((x) => x.email === e.contact_email)
           return {
             ...e,
@@ -361,6 +363,8 @@ export const sequences = {
             company: c?.company || null,
             guessed: c ? isUnconfirmedGuess(c as any) : false,
             next_send_at: sendableAt(e.next_send_at, s),
+            unread: unreadIn(messages),
+            last_message: lastMessage(messages),
           }
         })
         .sort((a, b) => b.enrolled_at.localeCompare(a.enrolled_at))
@@ -465,6 +469,18 @@ export const sequences = {
     }),
 }
 
+/** Their messages in a conversation not looked at yet. */
+export const unreadIn = (messages: ThreadMessage[] | undefined) => (messages ?? []).filter((m) => m.direction === 'in' && !m.seen).length
+
+/** A conversation's latest message, for a list. */
+function lastMessage(messages: ThreadMessage[] | undefined): EnrollmentView['last_message'] {
+  const m = (messages ?? []).reduce<ThreadMessage | null>((a, b) => (!a || b.at >= a.at ? b : a), null)
+  return m ? { at: m.at, direction: m.direction, snippet: snippet(m.text) } : null
+}
+
+/** Where a reply from someone in a sequence is read and answered. */
+export const conversationUrl = (sequenceId: string, enrollmentId: string) => `/sales/sequences/${sequenceId}?tab=replies&person=${encodeURIComponent(enrollmentId)}`
+
 /** When an email due at `due` can go: inside the sequence's sending days and hours. */
 function sendableAt(due: string | null, s: Sequence): string | null {
   if (!due) return null
@@ -512,17 +528,39 @@ export function replyReceived(enrollmentId: string, reply: { at: string; matched
     return { e, who, sequence: s, lastCampaign: e.sends.at(-1)?.campaign_id }
   })
   if (!done) return
-  if (reply.stop) {
-    db.mutate((data) => {
-      const c = data.contacts.find((x) => x.email === done.e.contact_email)
-      if (c) c.status = 'unsubscribed'
-    })
-    db.stopEmail(done.e.contact_email, 'unsubscribed')
-    db.markRecipientUnsubscribed(done.e.contact_email, done.lastCampaign)
-  }
+  if (reply.stop) unsubscribeOnRequest(done.e.contact_email, done.lastCampaign)
   notify(
     'sequence_reply',
     `${done.who} replied to "${done.sequence?.name ?? 'a sequence'}"${reply.stop ? ' asking not to be emailed again, so they\'re unsubscribed' : ''}`,
-    { url: done.sequence ? `/sales/sequences/${done.sequence.id}?tab=people` : '/sales/sequences', contactEmail: done.e.contact_email },
+    { url: done.sequence ? conversationUrl(done.sequence.id, done.e.id) : '/sales/sequences', contactEmail: done.e.contact_email },
   )
+}
+
+/** A reply asking not to be emailed again: unsubscribes them, as the link in the email would. */
+function unsubscribeOnRequest(email: string, lastCampaign: number | undefined) {
+  db.mutate((data) => {
+    const c = data.contacts.find((x) => x.email === email)
+    if (c) c.status = 'unsubscribed'
+  })
+  db.stopEmail(email, 'unsubscribed')
+  db.markRecipientUnsubscribed(email, lastCampaign)
+}
+
+/**
+ * Another message from someone who'd already replied (kept in their
+ * conversation by mailboxes/): tells the user, and a "stop" unsubscribes
+ * them as a first reply's would.
+ */
+export function laterReply(enrollmentId: string, reply: { stop: boolean }) {
+  const e = db.data.sequence_enrollments?.find((x) => x.id === enrollmentId)
+  if (!e) return
+  const s = db.data.sequences?.find((x) => x.id === e.sequence_id)
+  const c = db.data.contacts.find((x) => x.email === e.contact_email)
+  const who = [c?.first_name, c?.last_name].filter(Boolean).join(' ').trim() || e.contact_email
+  const stop = reply.stop && c?.status !== 'unsubscribed'
+  if (stop) unsubscribeOnRequest(e.contact_email, e.sends.at(-1)?.campaign_id)
+  notify('sequence_reply', `${who} wrote again about "${s?.name ?? 'a sequence'}"${stop ? ' asking not to be emailed again, so they\'re unsubscribed' : ''}`, {
+    url: s ? conversationUrl(s.id, e.id) : '/sales/sequences',
+    contactEmail: e.contact_email,
+  })
 }

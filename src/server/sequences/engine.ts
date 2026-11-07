@@ -31,7 +31,7 @@ import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { dailyRoom } from '../sendingLimits'
-import { renderStep } from './render'
+import { composeText, renderStep, textHash } from './render'
 import { aiCleared } from './personalise'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
 
@@ -294,7 +294,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       return false
     }
 
-    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString() })
+    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString(), textHash: textHash(composeText(own?.body ?? step.body, s.settings)) })
     const left = Math.max(1, s.settings.daily_cap - today - 1)
     db.mutate(() => (s.next_slot_at = new Date(now.getTime() + nextGapMs(minutesLeft(now, s.settings), left, random)).toISOString()))
     return true
@@ -303,10 +303,18 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
 }
 
 /** Records a send and moves the enrollment on to its next email (unless a reply stopped it meanwhile). */
-function commit(e: Enrollment, s: Sequence, sent: { cid: number; messageId: string; subject: string; at: string; uncertain?: true }) {
+function commit(e: Enrollment, s: Sequence, sent: { cid: number; messageId: string; subject: string; at: string; uncertain?: true; textHash?: string }) {
   db.mutate((data) => {
     const stepId = e.claim?.step_id ?? s.steps[e.next_step]?.id ?? ''
-    e.sends.push({ step_id: stepId, campaign_id: sent.cid, message_id: sent.messageId, subject: sent.subject, at: sent.at, ...(sent.uncertain ? { uncertain: true as const } : {}) })
+    e.sends.push({
+      step_id: stepId,
+      campaign_id: sent.cid,
+      message_id: sent.messageId,
+      subject: sent.subject,
+      at: sent.at,
+      ...(sent.uncertain ? { uncertain: true as const } : {}),
+      ...(sent.textHash ? { text_hash: sent.textHash } : {}),
+    })
     e.claim = null
     e.attempts = 0
     if (!data.campaign_recipients.some((r) => r.campaign_id === sent.cid && r.contact_email === e.contact_email)) {

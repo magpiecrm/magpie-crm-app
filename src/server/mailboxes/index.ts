@@ -1,5 +1,6 @@
 // Connected inboxes: each sender can connect theirs over IMAP so replies to
-// sequence emails stop the sequence (and bounces and "stop" replies count).
+// sequence emails stop the sequence (and bounces and "stop" replies count),
+// and the conversation that follows is kept for the sequence's Replies tab.
 // The email scheduler polls them every few minutes (pollMailboxes). The
 // password is stored encrypted (CREDENTIALS_SECRET) and never shown again.
 
@@ -9,16 +10,16 @@ import { db, type DbSchema, type MailboxRecord } from '../db'
 import { decryptToken, encryptToken } from '../crypto'
 import { env } from '../env'
 import { notify } from '../notify'
-import type { Enrollment, MailboxView } from '../../features/sequences/types'
-import { describeError, imapConnect, isAuthFailure, isZohoHost, zohoHosts, type Connect, type MailboxLogin } from './imap'
-import { buildIndex, classifyInbound, isStopRequest, leadingText, matchReply, parseBounce } from './classify'
+import { REPLY_TEXT_MAX, type Enrollment, type MailboxView, type ThreadMessage } from '../../features/sequences/types'
+import { describeError, imapConnect, isAuthFailure, isZohoHost, zohoHosts, type Connect, type InboundMessage, type MailboxLogin, type MailClient } from './imap'
+import { buildIndex, bareId, classifyInbound, isStopRequest, leadingText, matchReply, parseBounce } from './classify'
 
 /** How far back the first read of an inbox looks, and the most messages read in one go. */
 const FIRST_LOOK_MS = 7 * 86_400_000
 const BATCH = 300
 /** A message's start read for a stop request or a bounce report. */
 const SOURCE_BYTES = 24_000
-/** Replies to a sequence finished this long ago still count (a late reply is still a reply). */
+/** Replies to a sequence finished this long ago still count (a late reply is still a reply), and a conversation quiet this long is still read. */
 const LATE_REPLY_MS = 30 * 86_400_000
 /**
  * How long an inbox has to keep failing (five reads) before anyone's told. Zoho, for one,
@@ -157,14 +158,47 @@ function warmupFollows(senderId: number, connected: boolean) {
     .catch((err) => console.warn(`[inbox-warmup] couldn't pass on sender ${senderId}'s inbox: ${err?.message ?? err}`))
 }
 
-/** Sequence emails a mailbox's sender sent that a reply could answer, for matching. */
+/** When anything last happened in someone's conversation: their last sequence email, or the last message either way. */
+export function lastActivity(e: Pick<Enrollment, 'sends' | 'messages'>): string {
+  return [e.sends.at(-1)?.at ?? '', ...(e.messages ?? []).map((m) => m.at)].reduce((a, b) => (b > a ? b : a), '')
+}
+
+/** Sequence emails a mailbox's sender sent that a reply could answer, and conversations still going, for matching. */
 function enrollmentsFor(data: DbSchema, senderId: number, at: number): Enrollment[] {
   const sequences = new Set((data.sequences ?? []).filter((s) => s.sender_id === senderId).map((s) => s.id))
   return (data.sequence_enrollments ?? []).filter((e) => {
     if (!sequences.has(e.sequence_id) || !e.sends.length) return false
     if (e.status === 'active' || e.status === 'paused') return true
-    return e.status === 'finished' && at - Date.parse(e.sends.at(-1)!.at) < LATE_REPLY_MS
+    // Finished without a reply (a late one still counts), or replied and talking.
+    if (e.status === 'finished' || e.reply) return at - Date.parse(lastActivity(e)) < LATE_REPLY_MS
+    return false
   })
+}
+
+/** Whether a message is already in someone's conversation (an answer from the app, found again in Sent, say). */
+const kept = (e: Enrollment, messageId: string | null) => !!messageId && (e.messages ?? []).some((m) => m.message_id && bareId(m.message_id) === bareId(messageId))
+
+/** A message read from the inbox, as kept in the conversation. */
+async function toThreadMessage(client: MailClient, msg: InboundMessage, direction: 'in' | 'out', at: Date): Promise<ThreadMessage> {
+  // A message whose words can't be read is still kept (with none), so it shows; the inbox has the rest.
+  const body = await client.text(msg.uid, REPLY_TEXT_MAX).catch((err) => {
+    console.warn(`[Mailboxes] couldn't read a message's text: ${err?.message ?? err}`)
+    return { text: '', truncated: false, attachments: 0 }
+  })
+  return {
+    id: randomUUID(),
+    direction,
+    ...(direction === 'out' ? { via: 'inbox' as const } : { seen: false }),
+    message_id: msg.messageId,
+    in_reply_to: msg.inReplyTo,
+    references: msg.references,
+    from: msg.from ?? '',
+    subject: msg.subject,
+    at: msg.date ?? at.toISOString(),
+    text: body.text,
+    ...(body.truncated ? { truncated: true as const } : {}),
+    ...(body.attachments ? { attachments: body.attachments } : {}),
+  }
 }
 
 /**
@@ -193,13 +227,32 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
     const since = new Date(Math.max(at.getTime() - FIRST_LOOK_MS, m.last_polled_at ? Date.parse(m.last_polled_at) - 86_400_000 : 0))
     const messages = await client.fetch(fresh ? { since } : { afterUid: m.last_uid! }, BATCH)
     const index = buildIndex(
-      enrollments.map((e) => ({ item: e, email: e.contact_email, messageIds: e.sends.map((s) => s.message_id), firstSentAt: e.sends[0].at })),
+      enrollments.map((e) => ({
+        item: e,
+        email: e.contact_email,
+        // Replies to the answers count too, so the conversation carries on in its thread.
+        messageIds: [...e.sends.map((s) => s.message_id), ...(e.messages ?? []).flatMap((x) => (x.message_id ? [x.message_id] : []))],
+        firstSentAt: e.sends[0].at,
+      })),
     )
+    /** Keeps a message in its conversation; a reply to it later in this same read is then in the thread too. */
+    const keep = (e: Enrollment, message: ThreadMessage) => {
+      db.mutate(() => void (e.messages ??= []).push(message))
+      if (message.message_id) index.byMessageId.set(bareId(message.message_id), e)
+      return message
+    }
     const own = [sender.email, m.user]
-    const { replyReceived } = await import('../sequences')
+    const { replyReceived, laterReply } = await import('../sequences')
     for (const msg of messages) {
       const kind = classifyInbound(msg, own)
-      if (kind === 'own' || kind === 'warmup' || kind === 'auto_reply') continue
+      if (kind === 'warmup' || kind === 'auto_reply') continue
+      if (kind === 'own') {
+        // The sender answering from their mail app: kept only when it's in the thread (never by who it's to).
+        const match = matchReply(msg, index)
+        if (match?.by !== 'thread' || kept(match.item, msg.messageId)) continue
+        keep(match.item, await toThreadMessage(client, msg, 'out', at))
+        continue
+      }
       if (kind === 'bounce') {
         const bounce = parseBounce(await client.source(msg.uid, SOURCE_BYTES))
         const hit = bounce && index.byEmail.get(bounce.recipient)
@@ -210,9 +263,17 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
         continue
       }
       const match = matchReply(msg, index)
-      if (!match || match.item.status === 'replied') continue
-      const stop = isStopRequest(leadingText(await client.source(msg.uid, SOURCE_BYTES)))
-      replyReceived(match.item.id, { at: msg.date ?? at.toISOString(), matched_by: match.by, stop })
+      if (!match || kept(match.item, msg.messageId)) continue
+      // Once their reply is kept, only what's in its thread is: a new email from them is about something else.
+      if (match.by === 'from' && (match.item.messages ?? []).some((x) => x.direction === 'in')) continue
+      const message = keep(match.item, await toThreadMessage(client, msg, 'in', at))
+      const stop = isStopRequest(message.text || leadingText(await client.source(msg.uid, SOURCE_BYTES)))
+      // They'd replied before (or it was marked by hand): this one carries the conversation on.
+      if (match.item.reply) {
+        laterReply(match.item.id, { stop })
+        continue
+      }
+      replyReceived(match.item.id, { at: message.at, matched_by: match.by, stop })
       found++
     }
     const lastUid = messages.length ? Math.max(...messages.map((x) => x.uid)) : fresh ? folder.uidNext - 1 : m.last_uid

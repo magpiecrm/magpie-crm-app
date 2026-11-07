@@ -557,8 +557,10 @@ export interface GuessHold {
 
 /**
  * A sender's inbox, connected over IMAP so replies to sequence emails stop
- * the sequence (server/mailboxes/). Only message headers are read, and
- * nothing from a message is kept but whether it was a reply.
+ * the sequence (server/mailboxes/). Message headers are read to find them;
+ * a reply's text (and an answer to one) is kept with its enrollment for the
+ * sequence's Replies tab, and nothing else from the inbox is. The one thing
+ * written to it: a copy of each answer sent from the app, in its Sent folder.
  */
 export interface MailboxRecord {
   id: string

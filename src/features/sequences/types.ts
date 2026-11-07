@@ -89,6 +89,8 @@ export interface EnrollmentSend {
   at: string
   /** Committed after a restart mid-send: it may not have gone out. */
   uncertain?: true
+  /** A fingerprint of its words as written (render.ts textHash), so the Replies tab can tell when the step has changed since. */
+  text_hash?: string
 }
 
 export interface Enrollment {
@@ -111,7 +113,44 @@ export interface Enrollment {
   enrolled_by: string | null
   /** Their own version of each email, by step id, where the sequence is personalised: written as each comes due. */
   drafts?: Record<string, PersonalDraft>
+  /** The conversation after the sequence's emails: their replies, and the answers to them (ThreadMessage). */
+  messages?: ThreadMessage[]
 }
+
+/**
+ * One email in a conversation that isn't a sequence email: a reply read
+ * from the sender's connected inbox (mailboxes/), or an answer to one, sent
+ * from the app or from the inbox itself. Plain text only, capped; kept with
+ * the enrollment, so it goes when they do.
+ */
+export interface ThreadMessage {
+  id: string
+  /** The answer's id from the page that sent it, so sending again sends nothing twice. */
+  client_id?: string
+  /** `in`: from them; `out`: to them. */
+  direction: 'in' | 'out'
+  /** For an answer: sent from the app, or found in the inbox (sent from the mail app). */
+  via?: 'app' | 'inbox'
+  /** Its Message-ID (with <>), for threading and not keeping it twice. */
+  message_id: string | null
+  in_reply_to?: string | null
+  references?: string[]
+  from: string
+  subject: string
+  at: string
+  text: string
+  /** Its text was longer than REPLY_TEXT_MAX and was cut. */
+  truncated?: true
+  /** How many attachments it had (never kept). */
+  attachments?: number
+  /** An `in` message has been looked at. */
+  seen?: boolean
+  /** An answer from the app: whether its copy went into the inbox's Sent folder (absent: no inbox to put it in). */
+  sent_copy?: boolean
+}
+
+/** Longest text kept for one message in a conversation. */
+export const REPLY_TEXT_MAX = 20_000
 
 /** A short fact about a person's company, and where it was read. */
 export interface ResearchFact {
@@ -207,12 +246,56 @@ export interface SequenceSummary {
   updated_at: string
 }
 
-/** One enrollment as the People tab shows it. */
-export interface EnrollmentView extends Omit<Enrollment, 'claim'> {
+/** One enrollment as the People tab shows it (the conversation's text isn't in it: ConversationView is). */
+export interface EnrollmentView extends Omit<Enrollment, 'claim' | 'messages'> {
   name: string | null
   company: string | null
   /** The contact is an unconfirmed prospected address (guessedRecipients.ts). */
   guessed: boolean
+  /** Their messages not looked at yet. */
+  unread: number
+  /** The conversation's latest message after the sequence's emails, if there is one. */
+  last_message: { at: string; direction: 'in' | 'out'; snippet: string } | null
+}
+
+/** One email in a conversation as the page shows it: a sequence email (`step`), or a ThreadMessage. */
+export interface ConversationItem {
+  key: string
+  kind: 'step' | 'message'
+  direction: 'in' | 'out'
+  via?: 'app' | 'inbox'
+  from: string
+  subject: string
+  at: string
+  text: string
+  truncated?: boolean
+  attachments?: number
+  /** A sequence email: its number in the sequence (1-based). */
+  step?: number
+  /** A sequence email rebuilt from a step edited since it went out: the words may differ. */
+  edited_since?: boolean
+  /** It may not have gone out (a restart mid-send). */
+  uncertain?: boolean
+  seen?: boolean
+  sent_copy?: boolean
+}
+
+/** One person's whole conversation with a sequence, and whether it can be answered. */
+export interface ConversationView {
+  enrollment_id: string
+  sequence_id: string
+  contact_email: string
+  name: string | null
+  company: string | null
+  status: EnrollmentStatus
+  sender: { name: string; email: string } | null
+  /** The sender's inbox is connected (else replies aren't read). */
+  inbox_connected: boolean
+  items: ConversationItem[]
+  /** Why it can't be answered from here, in words; null when it can. */
+  cannot_reply: string | null
+  /** What goes under an answer (the sequence's sign-off). */
+  signature: string
 }
 
 /** A sender's connected inbox, as Settings shows it (never the password). */

@@ -27,7 +27,7 @@ const { sequences } = await import('../sequences')
 const { runSequences } = await import('../sequences/engine')
 const { mailboxes, pollMailboxes } = await import('.')
 const { classifyInbound, isStopRequest, leadingText, parseBounce, buildIndex, matchReply } = await import('./classify')
-const { parseHeaderBlock, idsIn, zohoHosts, imapConnect, describeError } = await import('./imap')
+const { parseHeaderBlock, idsIn, zohoHosts, imapConnect, describeError, readStructure } = await import('./imap')
 const { encryptToken } = await import('../crypto')
 const { env } = await import('../env')
 type Msg = import('./imap').InboundMessage
@@ -90,9 +90,9 @@ describe('classifying a message', () => {
   })
 })
 
-/** A fake inbox: its messages, and how many times it's been read. */
-function fakeInbox(messages: Msg[], opts: { fail?: Error; sources?: Record<number, string> } = {}) {
-  const calls = { connects: 0, fetches: [] as unknown[] }
+/** A fake inbox: its messages, how many times it's been read, and what was put in its Sent folder. */
+function fakeInbox(messages: Msg[], opts: { fail?: Error; sources?: Record<number, string>; texts?: Record<number, string>; attachments?: Record<number, number>; noSent?: boolean } = {}) {
+  const calls = { connects: 0, fetches: [] as unknown[], appended: [] as string[] }
   const connect = async () => {
     calls.connects++
     if (opts.fail) throw opts.fail
@@ -103,6 +103,15 @@ function fakeInbox(messages: Msg[], opts: { fail?: Error; sources?: Record<numbe
         return messages.filter((m) => ('afterUid' in from ? m.uid > from.afterUid : true))
       },
       source: async (uid: number) => opts.sources?.[uid] ?? 'Content-Type: text/plain\r\n\r\nThanks, tell me more.',
+      text: async (uid: number, maxChars: number) => {
+        const text = opts.texts?.[uid] ?? leadingText(opts.sources?.[uid] ?? 'Content-Type: text/plain\r\n\r\nThanks, tell me more.')
+        return { text: text.slice(0, maxChars), truncated: text.length > maxChars, attachments: opts.attachments?.[uid] ?? 0 }
+      },
+      appendSent: async (raw: Buffer) => {
+        if (opts.noSent) return false
+        calls.appended.push(raw.toString('utf8'))
+        return true
+      },
       close: async () => {},
     }
   }
@@ -270,7 +279,7 @@ describe('reading an inbox', () => {
     const zoho = (async (login: { host: string }) => {
       tried.push(login.host)
       if (login.host !== 'imappro.zoho.eu') throw Object.assign(new Error('Invalid credentials'), { authenticationFailed: true })
-      return { open: async () => ({ path: 'INBOX', uidValidity: '1', uidNext: 1 }), fetch: async () => [], source: async () => '', close: async () => {} }
+      return { open: async () => ({ path: 'INBOX', uidValidity: '1', uidNext: 1 }), fetch: async () => [], source: async () => '', text: async () => ({ text: '', truncated: false, attachments: 0 }), appendSent: async () => false, close: async () => {} }
     }) as any
     const eu = async () => ['mx.zoho.eu', 'mx2.zoho.eu']
     const saved = await mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, zoho, eu)
@@ -342,5 +351,100 @@ describe('connecting over IMAP', () => {
     } finally {
       server.close()
     }
+  })
+})
+
+describe('keeping the conversation', () => {
+  it("keeps what they wrote, and carries on after they've replied", async () => {
+    contact('ava@larkspur.test')
+    contact('ben@larkspur.test')
+    sequenceFor(['ava@larkspur.test', 'ben@larkspur.test'])
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    await runSequences(new Date(t0 + 21 * 60_000), () => 0)
+    connectInbox()
+    const avaFirst = enrollment('ava@larkspur.test').sends[0].message_id
+    const at = (min: number) => new Date(t0 + min * 60_000).toISOString()
+    const first = fakeInbox(
+      [
+        msg({ uid: 1, messageId: '<r1@larkspur.test>', inReplyTo: avaFirst, references: [avaFirst], date: at(30) }),
+        msg({ uid: 2, from: 'ben@larkspur.test', subject: 'Automatic reply: Quick question', headers: { 'auto-submitted': 'auto-replied' } }),
+      ],
+      { texts: { 1: 'Sounds good, Thursday?\n\nOn Tue, Jo wrote:\n> Hi Ava' }, attachments: { 1: 2 } },
+    )
+    await pollMailboxes(new Date(t0 + 40 * 60_000), first.connect)
+    expect(enrollment('ava@larkspur.test')).toMatchObject({ status: 'replied' })
+    expect(enrollment('ava@larkspur.test').messages).toEqual([
+      expect.objectContaining({ direction: 'in', message_id: '<r1@larkspur.test>', from: 'ava@larkspur.test', text: 'Sounds good, Thursday?\n\nOn Tue, Jo wrote:\n> Hi Ava', attachments: 2, seen: false, at: at(30) }),
+    ])
+    // An out-of-office isn't kept.
+    expect(enrollment('ben@larkspur.test').messages).toBeUndefined()
+
+    // Jo answers from Gmail (in the thread); later Ava writes again, and asks to stop. A message to Ava outside the thread isn't kept.
+    const next = fakeInbox(
+      [
+        msg({ uid: 3, from: 'jo@acme.test', messageId: '<a1@acme.test>', inReplyTo: '<r1@larkspur.test>', references: [avaFirst, '<r1@larkspur.test>'], date: at(50) }),
+        msg({ uid: 4, from: 'jo@acme.test', messageId: '<other@acme.test>', subject: 'Lunch?', date: at(55) }),
+        msg({ uid: 5, messageId: '<r2@larkspur.test>', inReplyTo: '<a1@acme.test>', references: ['<a1@acme.test>'], date: at(70) }),
+        // A new email from her, not in the thread: not the sequence's business.
+        msg({ uid: 6, messageId: '<news@larkspur.test>', subject: 'Our newsletter', date: at(75) }),
+      ],
+      { texts: { 3: 'Thursday it is.', 4: 'Lunch?', 5: 'Please remove me.\n\nOn Tue, Jo wrote:\n> Thursday it is.', 6: 'News' } },
+    )
+    db.mutate((d) => void (d.mailboxes![0].last_uid = 2))
+    await pollMailboxes(new Date(t0 + 80 * 60_000), next.connect)
+    const messages = enrollment('ava@larkspur.test').messages!
+    expect(messages.map((m) => [m.direction, m.via ?? null, m.message_id])).toEqual([
+      ['in', null, '<r1@larkspur.test>'],
+      ['out', 'inbox', '<a1@acme.test>'],
+      ['in', null, '<r2@larkspur.test>'],
+    ])
+    // Not stopped again or counted as a new reply, but you're told, and "remove me" unsubscribes them.
+    expect(db.data.mailboxes![0].replies_found).toBe(1)
+    expect(notices.at(-1)).toBe('sequence_reply: ava Stone wrote again about "Intro" asking not to be emailed again, so they\'re unsubscribed')
+    expect(db.getContact('ava@larkspur.test')?.status).toBe('unsubscribed')
+
+    // Reading the same messages again (the folder was rebuilt) keeps nothing twice.
+    db.mutate((d) => void (d.mailboxes![0].uid_validity = 'rebuilt'))
+    await pollMailboxes(new Date(t0 + 90 * 60_000), next.connect)
+    expect(enrollment('ava@larkspur.test').messages).toHaveLength(3)
+  })
+
+  it('cuts a long message, and keeps one whose text couldn\'t be read', async () => {
+    contact('ava@larkspur.test')
+    sequenceFor(['ava@larkspur.test'])
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    connectInbox()
+    const inbox = fakeInbox([msg({ uid: 1, date: new Date(t0 + 60_000).toISOString() })], { texts: { 1: 'y'.repeat(25_000) } })
+    await pollMailboxes(new Date(t0 + 5 * 60_000), inbox.connect)
+    expect(enrollment('ava@larkspur.test').messages![0]).toMatchObject({ truncated: true })
+    expect(enrollment('ava@larkspur.test').messages![0].text).toHaveLength(20_000)
+
+    // A reader that fails on the text still keeps the message, with none.
+    const broken = async () => ({ ...(await inbox.connect()), text: async () => Promise.reject(new Error('BODYSTRUCTURE failed')) })
+    db.mutate((d) => void (d.mailboxes![0].last_uid = 1))
+    const later = fakeInbox([msg({ uid: 2, messageId: '<later@x>', references: [enrollment('ava@larkspur.test').messages![0].message_id!], date: new Date(t0 + 10 * 60_000).toISOString() })])
+    await pollMailboxes(new Date(t0 + 15 * 60_000), async () => ({ ...(await later.connect()), text: (await broken()).text }))
+    expect(enrollment('ava@larkspur.test').messages!.at(-1)).toMatchObject({ message_id: '<later@x>', text: '' })
+    expect(db.data.mailboxes![0].status).toBe('ok')
+  })
+})
+
+describe("reading a message's structure", () => {
+  it('finds the text and HTML parts and counts real attachments', () => {
+    expect(readStructure({ type: 'text/plain' })).toEqual({ plain: '1', html: null, attachments: 0 })
+    expect(
+      readStructure({
+        type: 'multipart/mixed',
+        childNodes: [
+          { type: 'multipart/related', childNodes: [{ type: 'multipart/alternative', childNodes: [{ part: '1.1.1', type: 'text/plain' }, { part: '1.1.2', type: 'text/html' }] }, { part: '1.2', type: 'image/png', id: '<logo>' }] },
+          { part: '2', type: 'application/pdf', disposition: 'attachment' },
+          { part: '3', type: 'text/plain', disposition: 'attachment' },
+          { part: '4', type: 'message/rfc822', childNodes: [{ part: '4.1', type: 'text/plain' }] },
+        ],
+      }),
+    ).toEqual({ plain: '1.1.1', html: '1.1.2', attachments: 3 })
+    expect(readStructure({ type: 'multipart/alternative', childNodes: [{ part: '1', type: 'text/html' }] })).toEqual({ plain: null, html: '1', attachments: 0 })
   })
 })
