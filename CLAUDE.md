@@ -39,9 +39,9 @@ key), with the app's actions as tools.
     only (size-capped, never on disk): `profileCache.ts` holds profile
     lookups for 24h so a person isn't paid for twice, `searchPool.ts`
     holds the search hits a page didn't use for 1h, so the next page or
-    top-up doesn't pay for another request (a verified search's batch the
-    time limit cut short is held the same way, once it has finished at the
-    host: `verifiedPeopleSource.ts` `createCutShortBatches`), and `searchRuns.ts` holds a
+    top-up doesn't pay for another request (who a verified search's batch
+    finds in the few minutes it goes on after the time limit cut it short
+    is held the same way: `verifiedPeopleSource.ts` `createCutShortBatches`), and `searchRuns.ts` holds a
     search while it runs, and for 1h if it finished with nobody there, so
     asking again joins it rather than running and charging a second one.
     A batch of tiny companies is searched once with no job title, keeping

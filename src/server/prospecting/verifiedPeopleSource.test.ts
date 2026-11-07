@@ -337,10 +337,13 @@ describe('verifiedPeopleSearch', () => {
       const host = (answers: Record<string, Array<{ status: string; found: number; nextCursor: number | null; people: any[] }>>) => {
         const polls: Array<[string, number]> = []
         const starts: any[] = []
-        const cancel = vi.fn(async (_id: string) => {})
+        /** Starts and cancels, in the order they came. */
+        const order: string[] = []
+        const cancel = vi.fn(async (id: string) => void order.push(`cancel ${id}`))
         const calls = {
           start: async (b: unknown) => {
             starts.push(b)
+            order.push('start')
             return { id: `s${starts.length}` }
           },
           poll: async (id: string, cursor: number) => {
@@ -350,7 +353,7 @@ describe('verifiedPeopleSearch', () => {
           },
           cancel,
         }
-        return { calls, polls, starts, cancel }
+        return { calls, polls, starts, cancel, order }
       }
       /** A funnel for a search with these filters that starts at `start`. */
       const from = (start: string | null, next: string | null = 'places:6') => ({
@@ -386,7 +389,8 @@ describe('verifiedPeopleSearch', () => {
         expect(held.size()).toBe(0)
       })
 
-      it("is read on by the next page while it's still going, which keeps its own cities for later if that fills it", async () => {
+      /** A first page the time limit cuts short, whose batch is still going at the host when the next page comes. */
+      const stillGoing = async () => {
         let t = 0
         let sleeps = 0
         // The page's own wait passes the time limit; the batch's next one never ends.
@@ -397,19 +401,35 @@ describe('verifiedPeopleSearch', () => {
             { status: 'running', found: 2, nextCursor: 2, people: [who('two')] },
             { status: 'running', found: 4, nextCursor: 4, people: [who('three'), who('four')] },
           ],
+          s2: [{ status: 'done', found: 1, nextCursor: null, people: [who('five')] }],
         })
         const held = createCutShortBatches(() => t)
         await verifiedPeopleSearch({ titles: ['Founder'], count: 5 }, {}, { calls: h.calls, sleep, now: () => t, funnel: from(null), cutShort: held })
         await vi.waitFor(() => expect(h.polls).toHaveLength(2))
-
         const next = from('places:6')
-        const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 3, cursor: 'places:6' }, {}, { calls: h.calls, sleep, now: () => t, funnel: next, cutShort: held })
-        expect(page.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
-        expect(h.polls.at(-1)).toEqual(['s1', 2])
-        expect(h.starts).toHaveLength(1)
+        const page = (count: number) => verifiedPeopleSearch({ titles: ['Founder'], count, cursor: 'places:6' }, {}, { calls: h.calls, sleep, now: () => t, funnel: next, cutShort: held })
+        return { h, next, page }
+      }
+
+      it("is stopped by the next page while it's still going, which takes who it has found and then searches its own cities", async () => {
+        const { h, next, page } = await stillGoing()
+        const res = await page(5)
+        expect(res.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four', 'five'])
+        // The batch is read once more, from where it had got to, and stopped before the page's own cities are searched.
+        expect(h.polls.filter(([id]) => id === 's1')).toEqual([['s1', 0], ['s1', 1], ['s1', 2]])
+        expect(h.order).toEqual(['start', 'cancel s1', 'start'])
+        expect(next.finish).toHaveBeenCalledWith(res.items, true, true)
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'done', counts: expect.objectContaining({ hits: 4, heldOver: 3, rounds: 1 }) }))
+      })
+
+      it('keeps the next page\'s own cities for later where who the batch found fills it', async () => {
+        const { h, next, page } = await stillGoing()
+        const res = await page(3)
+        expect(res.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
         expect(h.cancel).toHaveBeenCalledWith('s1')
-        expect(next.finish).toHaveBeenCalledWith(page.items, true, false)
-        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full', counts: expect.objectContaining({ hits: 3, heldOver: 1, rounds: 0 }) }))
+        expect(h.starts).toHaveLength(1)
+        expect(next.finish).toHaveBeenCalledWith(res.items, true, false)
+        expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full', counts: expect.objectContaining({ hits: 3, heldOver: 3, rounds: 0 }) }))
       })
 
       it('is cancelled at the host once it has had a few more minutes', async () => {
