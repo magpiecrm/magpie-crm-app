@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Inbox, RefreshCw } from 'lucide-react'
-import { checkMailboxesNowFn, deleteMailboxFn, getSendersFn, mailboxesFn, saveMailboxFn, warmupStandingFn } from '../../../server/functions'
+import { checkMailboxesNowFn, deleteMailboxFn, mailboxesFn, saveMailboxFn, warmupStandingFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
@@ -10,7 +10,7 @@ import { Select } from '../../../components/ui/Select'
 import { SecretInput } from '../../../components/ui/SecretInput'
 import { Switch } from '../../../components/ui/Switch'
 import { queryKeys } from '../../../queryKeys'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsActions, SettingsMore, SettingsRow } from './SettingsBlock'
 import type { MailboxView } from '../../sequences/types'
 
 /** Mail services people use, with their IMAP server. */
@@ -36,10 +36,9 @@ function ago(iso: string | null): string {
   return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-/** Settings → Reply detection: each sender's inbox, connected over IMAP so replies stop sequences. */
-export function RepliesTab() {
+/** Under the Mailboxes list: check every connected inbox now, and how reply detection works. */
+export function InboxFooter() {
   const queryClient = useQueryClient()
-  const { data: senders = [], isLoading } = useQuery({ queryKey: queryKeys.email.senders(), queryFn: () => getSendersFn(), select: (r) => r.senders as Array<{ id: number; name: string; email: string }> })
   const { data: boxes = [] } = useQuery({ queryKey: queryKeys.sequences.mailboxes(), queryFn: () => mailboxesFn(), refetchInterval: 60_000 })
   const check = useMutation({
     mutationFn: () => checkMailboxesNowFn(),
@@ -48,55 +47,56 @@ export function RepliesTab() {
   const { data: warmup } = useQuery({ queryKey: queryKeys.settings.warmupStanding(), queryFn: () => warmupStandingFn(), staleTime: 60_000 })
 
   return (
-    <div className="flex flex-col gap-4">
-      <SettingsPanel>
-        <SettingsBlock title="How it works">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
-            people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
-            "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
-            is kept, and the app can't send or delete mail.
-            {warmup?.offered &&
-              " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.
-          </p>
-        </SettingsBlock>
-
-        <SettingsBlock title="Inboxes" description="One for each sender address. Until a sender's inbox is connected, replies to it have to be marked by hand.">
-          {isLoading ? (
-            <SettingsEmpty>Loading…</SettingsEmpty>
-          ) : senders.length === 0 ? (
-            <SettingsEmpty>Add a sender address first (Settings → Sender addresses).</SettingsEmpty>
-          ) : (
-            <SettingsList>
-              {senders.map((s) => (
-                <SenderInbox key={s.id} sender={s} box={boxes.find((b) => b.sender_id === s.id) ?? null} />
-              ))}
-            </SettingsList>
-          )}
-          {boxes.length > 0 && (
-            <>
-              {check.error && <Notice level="error">{(check.error as Error).message}</Notice>}
-              <SettingsActions>
-                <Button variant="outline" leftIcon={<RefreshCw className="h-4 w-4" />} isLoading={check.isPending} onClick={() => check.mutate()}>
-                  Check now
-                </Button>
-              </SettingsActions>
-            </>
-          )}
-        </SettingsBlock>
-      </SettingsPanel>
-    </div>
+    <>
+      {boxes.length > 0 && (
+        <>
+          {check.error && <Notice level="error">{(check.error as Error).message}</Notice>}
+          <SettingsActions>
+            <Button variant="outline" size="sm" leftIcon={<RefreshCw className="h-3.5 w-3.5" />} isLoading={check.isPending} onClick={() => check.mutate()}>
+              Check inboxes now
+            </Button>
+          </SettingsActions>
+        </>
+      )}
+    <SettingsMore summary="How reply detection works">
+      <p>
+        Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
+        people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
+        "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
+      </p>
+      <p>
+        Only who a message is from and which email it answers are read (and, for a reply, its first line, to spot "stop"). Nothing from your inbox
+        is kept, and the app can't send or delete mail.
+        {warmup?.offered &&
+          " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
+      </p>
+      <p>
+        While an inbox is connected, follow-ups wait until it's been checked in the last 15 minutes, so nobody gets one after replying.
+      </p>
+    </SettingsMore>
+    </>
   )
 }
 
-/** One sender's row in the list: its inbox's state, and under it the inbox's details or the form that connects it. */
-function SenderInbox({ sender, box }: { sender: { id: number; name: string; email: string }; box: MailboxView | null }) {
+/**
+ * One mailbox in Settings → Mailboxes: the address, its inbox's state, and
+ * under it the inbox's details or the form that connects it. The page adds
+ * its own actions (edit, delete), a badge about the address's domain, and
+ * an editor for the address that takes the row's place while it's open.
+ */
+export function SenderInbox({
+  sender,
+  box,
+  extraActions,
+  extraBadge,
+  editor,
+}: {
+  sender: { id: number; name: string; email: string }
+  box: MailboxView | null
+  extraActions?: ReactNode
+  extraBadge?: ReactNode
+  editor?: ReactNode
+}) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.mailboxes() })
@@ -117,24 +117,34 @@ function SenderInbox({ sender, box }: { sender: { id: number; name: string; emai
       title={sender.name || sender.email}
       // The address is the title when the sender has no name.
       detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
-      badge={
-        !box ? (
-          <Badge>Not connected</Badge>
-        ) : box.status === 'ok' ? (
-          <Badge variant="success">Connected</Badge>
-        ) : (
-          <Badge variant="error">{box.status === 'auth_failed' ? 'Login refused' : 'Not working'}</Badge>
-        )
-      }
+      badge={extraBadge}
+      // The inbox column: its state, or the button that connects it, at a fixed width so states line up down the list.
       actions={
-        !box && !editing ? (
-          <Button size="sm" onClick={() => setEditing(true)}>
-            Connect inbox
-          </Button>
-        ) : undefined
+        <>
+          <span className="flex w-32 justify-start">
+            {box ? (
+              box.status === 'ok' ? (
+                <Badge variant="success" status>
+                  Connected
+                </Badge>
+              ) : (
+                <Badge variant="error" status>
+                  {box.status === 'auth_failed' ? 'Login refused' : 'Not working'}
+                </Badge>
+              )
+            ) : !editing && !editor ? (
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                Connect inbox
+              </Button>
+            ) : null}
+          </span>
+          {extraActions}
+        </>
       }
     >
-      {box && !editing ? (
+      {editor ? (
+        editor
+      ) : box && !editing ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5 text-sm">
             <p className="text-foreground">

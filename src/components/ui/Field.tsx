@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
  * ring. Fields fill the width they're given; a grid decides how wide that is.
  */
 export const INPUT_CLASS =
-  'w-full min-h-[38px] bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 transition-colors focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent disabled:opacity-60 disabled:cursor-not-allowed'
+  'w-full min-h-[38px] bg-card border border-input rounded-md-s px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/75 transition-colors focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent disabled:opacity-60 disabled:cursor-not-allowed'
 
 /** A control under its label, with an optional hint or error beneath. */
 export function Field({
@@ -27,12 +27,12 @@ export function Field({
 }) {
   return (
     <Wrapper className={`flex min-w-0 flex-col gap-1.5 ${className}`}>
-      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      <span className="text-[13px] font-medium text-foreground">{label}</span>
       {children}
       {error ? (
-        <span className="text-xs text-destructive">{error}</span>
+        <span className="text-[13px] text-destructive">{error}</span>
       ) : (
-        hint && <span className="text-xs text-muted-foreground leading-relaxed">{hint}</span>
+        hint && <span className="text-[13px] text-muted-foreground leading-relaxed">{hint}</span>
       )}
     </Wrapper>
   )
@@ -48,4 +48,4 @@ export function FieldGrid({ cols = 2, children, className = '' }: { cols?: 2 | 3
 }
 
 /** A command, key or snippet to copy: it scrolls sideways inside its column rather than widening it. */
-export const CODE_CLASS = 'rounded-md-s border border-border bg-background px-3 py-2 text-xs overflow-x-auto font-mono leading-relaxed text-foreground'
+export const CODE_CLASS = 'rounded-md-s border border-border bg-background px-3 py-2.5 text-[13px] overflow-x-auto font-mono leading-relaxed text-foreground'

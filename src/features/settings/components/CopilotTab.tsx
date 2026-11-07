@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
+import { ArrowRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Field } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -188,7 +188,7 @@ function ManagedCopilot() {
           ) : ai.none ? (
             <p className="text-sm text-muted-foreground">No AI budget on your plan.</p>
           ) : (
-            <AiBudgetMeter />
+            <AiBudgetMeter label="Left this month" />
           )}
           {billingManaged && (
             <SettingsActions>
@@ -196,12 +196,12 @@ function ManagedCopilot() {
                 href="/settings?tab=billing"
                 className="inline-flex items-center gap-1 rounded-md-s border border-border px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted"
               >
-                Change budget <ArrowUpRight className="h-3.5 w-3.5" />
+                Change budget <ArrowRight className="h-3.5 w-3.5" />
               </a>
             </SettingsActions>
           )}
         </SettingsBlock>
-        <SettingsBlock title="Your data">
+        <SettingsBlock title="Your data" description="Where your questions go.">
           <Notice>
             What you ask {name}, and the contact data it reads to answer, is processed by Anthropic for your hosting provider, under its
             data processing terms.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
@@ -45,6 +45,7 @@ export function PlanEditor({
   const pence = monthlyPence(plan, kinds, addons)
   const underMinimum = pence < minimumPence
   const { up, down } = planChanges(current, plan)
+  const [nudged, setNudged] = useState(false)
   const unchanged = billing.live && up.length === 0 && down.length === 0
   const nameOf = (id: string) => [...kinds, ...addons].find((k) => k.id === id)?.name ?? id
   const amountOf = (id: string, n: number) => {
@@ -89,7 +90,7 @@ export function PlanEditor({
         <p className="text-sm font-medium text-foreground">Check the change</p>
         {up.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               <span className="font-semibold text-foreground">Straight away:</span> you pay the difference for the rest of this month now.
             </p>
             <SettingsList>{up.map((c) => line(c, true))}</SettingsList>
@@ -97,7 +98,7 @@ export function PlanEditor({
         )}
         {down.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               <span className="font-semibold text-foreground">From {billing.periodEnd ? day(billing.periodEnd) : 'your next renewal'}:</span> you keep this
               month's plan until then, with no refund.
             </p>
@@ -147,9 +148,10 @@ export function PlanEditor({
                 value={at[k.id]}
                 onChange={(e) => move(k.id, Number(e.target.value))}
                 disabled={busy}
-                className="w-full accent-accent cursor-pointer"
+                style={{ '--pct': `${k.steps.length > 1 ? (at[k.id] / (k.steps.length - 1)) * 100 : 0}%` } as CSSProperties}
+                className="range-input w-full cursor-pointer"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[13px] text-muted-foreground">
                 {/* A budget is its own price: say what it's for, not a unit price. */}
                 {isBudget(k.id)
                   ? 'For the copilot, which uses it as it works. Settings → Copilot shows how much of it is used'
@@ -181,8 +183,16 @@ export function PlanEditor({
       </div>
 
       <div className="flex flex-col">
-        <span className="text-xs text-muted-foreground">Per month</span>
-        <span className="text-2xl font-semibold tabular-nums text-foreground">{formatPence(pence, billing.currency)}</span>
+        <span className="text-[13px] text-muted-foreground">{unchanged ? 'Per month, as now' : 'Per month with these changes'}</span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold tabular-nums text-foreground">{formatPence(pence, billing.currency)}</span>
+          {!unchanged && billing.monthlyPence !== null && pence !== billing.monthlyPence && (
+            <span className="text-[13px] tabular-nums text-muted-foreground">
+              {pence > billing.monthlyPence ? '+' : '−'}
+              {formatPence(Math.abs(pence - billing.monthlyPence), billing.currency)} from {formatPence(billing.monthlyPence, billing.currency)}
+            </span>
+          )}
+        </span>
       </div>
       {underMinimum && (
         <Notice level="error">
@@ -190,17 +200,20 @@ export function PlanEditor({
         </Notice>
       )}
       {billing.live && (
-        <p className="text-xs text-muted-foreground">
-          More of anything{addons.length > 0 ? ', or an add-on ticked,' : ''} applies straight away, and you pay the difference for the rest of this
-          month. Less of anything{addons.length > 0 ? ', or an add-on unticked,' : ''} applies from your next renewal
+        <p className="text-[13px] text-muted-foreground">
+          More applies now, and you pay the difference for the rest of this month; less applies from your renewal
           {billing.periodEnd ? ` on ${day(billing.periodEnd)}` : ''}.
         </p>
       )}
       <SettingsActions>
         {billing.live ? (
-          <Button onClick={() => setReviewing(true)} disabled={busy || underMinimum || unchanged}>
-            Review change
-          </Button>
+          // Live even before anything changes, so it doesn't look broken; pressed then, it says what to do.
+          <>
+            <Button onClick={() => (unchanged ? setNudged(true) : setReviewing(true))} disabled={busy || underMinimum}>
+              Review change
+            </Button>
+            {unchanged && nudged && <span className="text-[13px] text-muted-foreground">Move a slider or tick an add-on first.</span>}
+          </>
         ) : (
           <Button onClick={() => onSubmit(plan)} isLoading={busy} disabled={underMinimum}>
             Continue to payment

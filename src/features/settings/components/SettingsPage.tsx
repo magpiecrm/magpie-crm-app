@@ -8,7 +8,6 @@ import { ProspectingTab } from './ProspectingTab'
 import { ProspectSearchTab } from './ProspectSearchTab'
 import { EmailSendingTab } from './EmailSendingTab'
 import { SendersTab } from './SendersTab'
-import { RepliesTab } from './RepliesTab'
 import { WarmupTab } from './WarmupTab'
 import { CopilotTab } from './CopilotTab'
 import { McpTab } from './McpTab'
@@ -77,12 +76,11 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   }
 
   const current = SETTINGS_SECTIONS.find((s) => s.id === active) ?? SETTINGS_SECTIONS[0]
-  const currentStatus = statuses[current.id]
 
   return (
     // Centred once the window is wider than the menu and a full-width page together.
     <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[84rem] mx-auto">
-      <h1 className="lg:hidden text-2xl font-display text-foreground">Settings</h1>
+      <h1 className="lg:hidden text-base font-semibold text-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
         {/* Narrow screens: one dropdown instead of a menu column. */}
@@ -108,13 +106,13 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         </label>
 
         {/* Wide screens: the title and menu stay where they start while the page scrolls. */}
-        <aside className="hidden lg:flex flex-col gap-6 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
-        <h1 className="text-2xl font-display text-foreground">Settings</h1>
+        <aside className="hidden lg:flex flex-col gap-3 w-52 shrink-0 sticky top-24 self-start max-h-[calc(100dvh-7rem)] overflow-y-auto">
+        <h1 className="px-3 pt-1 text-base font-semibold text-foreground">Settings</h1>
         <nav aria-label="Settings" className="flex flex-col gap-4">
           {GROUPS.map((group) => (
             <div key={group.name ?? 'top'} className="flex flex-col gap-0.5">
               {group.name && (
-                <span className="px-3 pb-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">{group.name}</span>
+                <span className="px-3 pb-1 text-xs font-semibold text-muted-foreground">{group.name}</span>
               )}
               {group.sections.map((s) => {
                 const level = statuses[s.id]?.level
@@ -125,12 +123,20 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
                     onClick={() => open(s.id)}
                     aria-current={active === s.id ? 'page' : undefined}
                     className={`flex items-center justify-between gap-2 px-3 py-1.5 text-sm text-left rounded-md-s cursor-pointer transition-colors ${
-                      active === s.id ? 'bg-accent/10 text-accent font-semibold' : 'text-foreground hover:bg-muted'
+                      active === s.id ? 'relative bg-accent/10 dark:bg-accent/15 text-accent font-semibold before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-accent' : 'text-foreground hover:bg-muted'
                     }`}
                   >
                     <span className="truncate">{s.label}</span>
-                    {level && DOT[level] && (
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${DOT[level]}`} title={statuses[s.id]?.text} />
+                    {/* Only what needs attention: a dot on every page that's fine is noise. */}
+                    {(level === 'warning' || level === 'error') && (
+                      // A count where the status has one ("1 domain waiting for DNS"), otherwise "!", so the menu reads as a to-do list.
+                      <span
+                        className={`flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1 text-[11px] font-bold leading-none text-white ${DOT[level]}`}
+                        title={statuses[s.id]?.text}
+                      >
+                        {statuses[s.id]?.short?.match(/^\d+/)?.[0] ?? '!'}
+                        <span className="sr-only">{level === 'error' ? ': needs setting up' : ': needs attention'}</span>
+                      </span>
                     )}
                   </button>
                 )
@@ -142,17 +148,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
 
         {/* Every page is the same width: at its widest the panel's label column, its controls column and their padding (SettingsBlock). */}
         <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
-          <header className="flex flex-col gap-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h2 className="text-lg font-semibold text-foreground">{current.label}</h2>
-              {/* The same status the menu's dot stands for, in words. */}
-              {active !== 'overview' && currentStatus && (
-                <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                  {DOT[currentStatus.level] && <span className={`h-2 w-2 shrink-0 rounded-full ${DOT[currentStatus.level]}`} />}
-                  <span className="truncate">{currentStatus.text}</span>
-                </span>
-              )}
-            </div>
+          <header className="flex flex-col gap-1.5">
+            <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
             <p className="text-sm text-muted-foreground max-w-2xl">
               {current.id !== 'copilot' ? current.intro : copilotManaged === null ? '\u00a0' : copilotManaged ? COPILOT_MANAGED_INTRO : current.intro}
             </p>
@@ -167,7 +164,6 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
           {active === 'verification' && !hiddenPage && <ProspectingTab key="verification" section="verification" />}
           {active === 'sending' && <EmailSendingTab />}
           {active === 'senders' && <SendersTab />}
-          {active === 'replies' && <RepliesTab />}
           {active === 'warmup' && <WarmupTab onOpen={open} />}
           {active === 'pipelines' && <PipelineSettings />}
           {active === 'copilot' && <CopilotTab />}

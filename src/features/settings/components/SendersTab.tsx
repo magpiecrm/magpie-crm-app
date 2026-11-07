@@ -1,13 +1,37 @@
 import { useEffect, useState } from 'react'
-import { Check, Mail, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import { createSenderFn, deleteSenderFn, getSendersFn, updateSenderFn } from '../../../server/functions'
+import { useQuery } from '@tanstack/react-query'
+import { Check, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { createSenderFn, deleteSenderFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, mailboxesFn, updateSenderFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
+import { Badge } from '../../../components/ui/Badge'
+import { InboxFooter, SenderInbox } from './Mailboxes'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Select } from '../../../components/ui/Select'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
 
-/** Settings → Sender addresses: the names and addresses campaigns are sent from. */
+/** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
+type InboxFilter = 'none' | 'broken' | 'connected'
+
+/** The address in "Name <jo@acme.com>" or "jo@acme.com", lower-cased. */
+const addressOf = (from: string) => (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase()
+
+function domainReady(email: string, domains: Array<{ domain: string; ready: boolean }>) {
+  const domain = email.toLowerCase().split('@')[1] ?? ''
+  return domains.some((d) => d.ready && (domain === d.domain || domain.endsWith(`.${d.domain}`)))
+}
+
+/**
+ * Settings → Mailboxes: every address campaigns can come from, with what it
+ * needs before it can be used (its domain ready to send, its inbox connected
+ * so replies stop sequences), so one list answers "which of these work?".
+ */
 export function SendersTab() {
+  const sending = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
+  const managed = Boolean(sending.data?.success && sending.data.managed)
+  const { data: domains } = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: managed })
+  const { data: boxes } = useQuery({ queryKey: queryKeys.sequences.mailboxes(), queryFn: () => mailboxesFn(), refetchInterval: 60_000 })
   // Senders State
   const [senders, setSenders] = useState<any[]>([])
   const [isLoadingSenders, setIsLoadingSenders] = useState(false)
@@ -20,6 +44,8 @@ export function SendersTab() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [isSavingSender, setIsSavingSender] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<'all' | InboxFilter>('all')
 
   const fetchSenders = async () => {
     setIsLoadingSenders(true)
@@ -106,13 +132,35 @@ export function SendersTab() {
     }
   }
 
+  const connected = senders.filter((sender) => boxes?.some((b) => b.sender_id === sender.id && b.status === 'ok')).length
+  const inboxOf = (id: number): InboxFilter => {
+    const box = boxes?.find((b) => b.sender_id === id)
+    return !box ? 'none' : box.status === 'ok' ? 'connected' : 'broken'
+  }
+  const defaultAddress = addressOf(sending.data?.success ? (sending.data.settings?.defaultSender ?? '') : '')
+  // Search and a filter only once the list is long enough to need them.
+  const searchable = senders.length > 6
+  const needle = search.trim().toLowerCase()
+  const shown = senders.filter(
+    (sender) =>
+      (!searchable || !needle || `${sender.name} ${sender.email}`.toLowerCase().includes(needle)) &&
+      (!searchable || filter === 'all' || inboxOf(sender.id) === filter),
+  )
+
   return (
     <div className="flex flex-col gap-4">
       {senderSuccess && <Notice level="success">{senderSuccess}</Notice>}
       {senderError && <Notice level="error">{senderError}</Notice>}
 
       <SettingsPanel>
-        <SettingsBlock title="Senders" description="The names and addresses campaigns are sent from.">
+        <SettingsBlock
+          title="Addresses"
+          description={
+            senders.length > 0 && boxes
+              ? `${senders.length} ${senders.length === 1 ? 'address' : 'addresses'}, ${connected} with ${connected === 1 ? 'its' : 'their'} inbox connected. Until an inbox is connected, replies to it have to be marked by hand.`
+              : 'The names and addresses campaigns are sent from.'
+          }
+        >
           {isLoadingSenders ? (
             <SettingsEmpty>
               <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
@@ -121,16 +169,52 @@ export function SendersTab() {
           ) : senders.length === 0 ? (
             <SettingsEmpty>No senders yet. Add one below.</SettingsEmpty>
           ) : (
+            <>
+            {searchable && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search names and addresses"
+                  aria-label="Search mailboxes"
+                  className={`${INPUT_CLASS} !w-auto min-w-0 flex-1`}
+                />
+                <Select value={filter} onChange={(e) => setFilter(e.target.value as 'all' | InboxFilter)} aria-label="Filter by inbox" className={`${INPUT_CLASS} !w-auto`}>
+                  <option value="all">All inboxes ({senders.length})</option>
+                  <option value="none">Not connected ({senders.filter((x) => inboxOf(x.id) === 'none').length})</option>
+                  <option value="broken">Not working ({senders.filter((x) => inboxOf(x.id) === 'broken').length})</option>
+                  <option value="connected">Connected ({connected})</option>
+                </Select>
+              </div>
+            )}
             <SettingsList>
-              {senders.map((sender) => {
+              {/* Column heads, lined up with each row's inbox column, where the panel is wide enough for columns. */}
+              <div className="hidden items-center gap-3 bg-muted/40 px-3.5 py-2 text-xs font-medium text-muted-foreground @[36rem]:flex">
+                <span className="w-4 shrink-0" />
+                <span className="flex-1">Address</span>
+                <span className="w-32">Inbox</span>
+                <span className="w-[4.75rem]" />
+              </div>
+              {shown.length === 0 && <p className="px-3.5 py-3 text-sm text-muted-foreground">No mailboxes match.</p>}
+              {shown.map((sender) => {
                 const editing = editingSenderId === sender.id
                 return (
-                  <SettingsRow
+                  <SenderInbox
                     key={sender.id}
-                    icon={<Mail className="h-4 w-4" />}
-                    title={sender.name}
-                    detail={sender.email}
-                    actions={
+                    sender={sender}
+                    box={boxes?.find((b) => b.sender_id === sender.id) ?? null}
+                    extraBadge={
+                      <>
+                        {addressOf(sender.email) === defaultAddress && <Badge>Default</Badge>}
+                        {managed && domains && !domainReady(sender.email, domains) && (
+                          <Badge variant="warning" status>
+                            Domain not ready
+                          </Badge>
+                        )}
+                      </>
+                    }
+                    extraActions={
                       // While it's being edited, the form below is the row's only controls.
                       editing ? undefined : (
                         <>
@@ -156,9 +240,9 @@ export function SendersTab() {
                         </>
                       )
                     }
-                  >
-                    {editing && (
-                      <div className="flex flex-col gap-3">
+                    editor={
+                      editing ? (
+                        <div className="flex flex-col gap-3">
                         <FieldGrid>
                           <Field label="Display name">
                             <input
@@ -195,15 +279,18 @@ export function SendersTab() {
                           </Button>
                         </SettingsActions>
                       </div>
-                    )}
-                  </SettingsRow>
+                      ) : undefined
+                    }
+                  />
                 )
               })}
             </SettingsList>
+            </>
           )}
+          {senders.length > 0 && <InboxFooter />}
         </SettingsBlock>
 
-        <SettingsBlock title="Add a sender">
+        <SettingsBlock title="Add a sender" description="The name and address people see your campaigns come from.">
           <form onSubmit={handleAddSender} className="flex flex-col gap-3">
             <FieldGrid>
               <Field label="Display name">
@@ -233,7 +320,6 @@ export function SendersTab() {
               <Button
                 type="submit"
                 isLoading={isAddingSender}
-                disabled={!newSenderName.trim() || !newSenderEmail.trim()}
                 leftIcon={<Plus className="h-4 w-4" />}
               >
                 Add sender

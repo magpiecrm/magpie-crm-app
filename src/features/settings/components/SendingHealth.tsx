@@ -4,7 +4,7 @@ import { queryKeys } from '../../../queryKeys'
 import { getSendingHealthFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsBlock, SettingsEmpty, SettingsList, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsRow } from './SettingsBlock'
 
 type Health = Awaited<ReturnType<typeof getSendingHealthFn>>
 type Limit = NonNullable<Health['limits']>['cold']
@@ -25,59 +25,95 @@ const SCORE_CLASS: Record<Status, string> = {
   unknown: 'text-muted-foreground',
 }
 
-const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
 const count = (n: number) => n.toLocaleString()
+const short = (iso: string) => new Date(iso).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 const percent = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '0%')
 
-/** One kind of mail's limit: how much of today's is used, and when it next goes up. */
-function LimitRow({ name, about, limit }: { name: string; about: string; limit: Limit }) {
-  const used = limit.limit === null ? 0 : Math.min(1, limit.sent / Math.max(1, limit.limit))
+/** Both daily limits as a table: what's gone out today against the limit, and the next step, so the numbers line up to compare. */
+function LimitsTable({ rows }: { rows: Array<{ name: string; about: string; limit: Limit }> }) {
+  const next = (limit: Limit) =>
+    limit.limit === null
+      ? 'Your plan’s monthly allowance is the only limit'
+      : limit.setByHost
+        ? 'Set for your workspace'
+        : limit.nextStepAt
+          ? limit.status === 'poor'
+            ? `Goes down ${short(limit.nextStepAt)} unless it improves`
+            : `${limit.nextLimit === null ? 'No limit' : `${count(limit.nextLimit)} a day`} from ${short(limit.nextStepAt)}, if received well`
+          : 'This is the most a workspace sends in a day'
   return (
-    <SettingsRow
-      title={name}
-      detail={
-        limit.limit === null ? (
-          'No daily limit'
-        ) : (
-          <span className="tabular-nums">
-            <span className="font-medium text-foreground">
-              {count(limit.sent)} of {count(limit.limit)}
-            </span>{' '}
-            sent in the last 24 hours
-          </span>
-        )
-      }
-      actions={
-        limit.score !== null && (
-          <span className={`text-xs font-semibold tabular-nums ${SCORE_CLASS[limit.status]}`} title="Reputation score for this kind of email, last 7 days">
-            Reputation {limit.score}%
-          </span>
-        )
-      }
-    >
-      <div className="flex flex-col gap-2">
-        {limit.limit !== null && (
-          <div className="h-1.5 rounded-full bg-muted overflow-hidden" role="presentation">
-            <div className={`h-full rounded-full ${used >= 1 ? 'bg-amber-500' : 'bg-accent'}`} style={{ width: `${Math.round(used * 100)}%` }} />
+    <>
+    {/* A phone has no room for three columns: each limit stacks as a row of its own. */}
+    <div className="divide-y divide-border/70 rounded-md-s border border-border bg-card @[36rem]:hidden">
+      {rows.map(({ name, about, limit }) => (
+        <div key={name} className="flex flex-col gap-1 px-3.5 py-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="font-medium text-foreground">{name}</p>
+            <p className="whitespace-nowrap text-sm tabular-nums">
+              {limit.limit === null ? (
+                <span className="text-muted-foreground">No limit</span>
+              ) : (
+                <>
+                  <span className="font-semibold text-foreground">{count(limit.sent)}</span>
+                  <span className="text-muted-foreground"> of {count(limit.limit)} today</span>
+                </>
+              )}
+            </p>
           </div>
-        )}
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {about}{' '}
-          {limit.limit === null
-            ? 'Your plan’s monthly allowance is the only limit.'
-            : limit.setByHost
-              ? 'This limit was set for your workspace.'
-              : limit.nextStepAt
-                ? limit.status === 'poor'
-                  ? `It was received badly this week, so the limit goes down on ${day(limit.nextStepAt)} unless that improves.`
-                  : limit.status === 'good'
-                    ? `Goes up to ${limit.nextLimit === null ? 'no daily limit' : `${count(limit.nextLimit)} a day`} on ${day(limit.nextStepAt)}, if it keeps being received well.`
-                    : `Looked at again on ${day(limit.nextStepAt)}: it goes up to ${limit.nextLimit === null ? 'no daily limit' : `${count(limit.nextLimit)} a day`} once a week's email has been received well.`
-                : 'This is the most cold email a workspace sends in a day.'}
-          {limit.limit !== null && limit.left === 0 && ' Today’s is used up: campaigns carry on tomorrow by themselves, and sequences wait.'}
-        </p>
-      </div>
-    </SettingsRow>
+          <p className="text-[13px] text-muted-foreground">{about}</p>
+          <p className="text-[13px] text-foreground/85">Next: {next(limit)}</p>
+        </div>
+      ))}
+    </div>
+    <div className="hidden overflow-x-auto rounded-md-s border border-border bg-card @[36rem]:block">
+      <table className="w-full text-left text-sm">
+        <thead className="text-[13px] text-muted-foreground">
+          <tr className="border-b border-border/70">
+            <th className="px-3.5 py-2 font-medium">Email</th>
+            <th className="whitespace-nowrap px-3.5 py-2 text-right font-medium">Sent, 24 h</th>
+            <th className="px-3.5 py-2 font-medium">Next step</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/70">
+          {rows.map(({ name, about, limit }) => (
+            <tr key={name} className="align-top">
+              <td className="px-3.5 py-2.5">
+                <p className="font-medium text-foreground">{name}</p>
+                <p className="text-[13px] text-muted-foreground">{about}</p>
+              </td>
+              <td className="whitespace-nowrap px-3.5 py-2.5 text-right tabular-nums">
+                {limit.limit === null ? (
+                  <span className="text-muted-foreground">No limit</span>
+                ) : (
+                  <>
+                    <span className="font-semibold text-foreground">{count(limit.sent)}</span>
+                    <span className="text-muted-foreground"> of {count(limit.limit)}</span>
+                  </>
+                )}
+              </td>
+              <td className="px-3.5 py-2.5 text-[13px] text-muted-foreground">
+                {limit.limit === null
+                  ? 'Your plan’s monthly allowance is the only limit'
+                  : limit.setByHost
+                    ? 'Set for your workspace'
+                    : limit.nextStepAt
+                      ? limit.status === 'poor'
+                        ? `Goes down ${short(limit.nextStepAt)} unless it improves`
+                        : (
+                            <>
+                              <span className="font-medium text-foreground">{limit.nextLimit === null ? 'No limit' : `${count(limit.nextLimit)} a day`}</span>{' '}
+                              from {short(limit.nextStepAt)}, if received well
+                            </>
+                          )
+                      : 'This is the most a workspace sends in a day'}
+                {limit.score !== null && <span className={`ml-2 font-semibold tabular-nums ${SCORE_CLASS[limit.status]}`}>Reputation {limit.score}%</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    </>
   )
 }
 
@@ -93,17 +129,28 @@ export function SendingHealth() {
     <>
       <SettingsBlock
         title="Daily limits"
-        description="A new sender that starts small and grows is trusted by Gmail and Outlook; one that sends everything at once is filed as spam. So limits start low and go up each week your email is received well."
+        description="Limits start low and go up each week your email is received well, because mail providers trust a sender that grows slowly."
       >
-        <SettingsList>
-          <LimitRow name="Cold email" about="To people found in Prospect Search who haven't signed up or replied." limit={data.limits.cold} />
-          <LimitRow name="Opt-in email" about="To people who signed up, and contacts you imported." limit={data.limits.optIn} />
-        </SettingsList>
+        <LimitsTable
+          rows={[
+            { name: 'Cold email', about: "People found in Prospect Search who haven't signed up or replied", limit: data.limits.cold },
+            { name: 'Opt-in email', about: 'People who signed up, and contacts you imported', limit: data.limits.optIn },
+          ]}
+        />
+        {[data.limits.cold, data.limits.optIn].some((l) => l.limit !== null && l.left === 0) && (
+          <Notice level="warning">Today’s limit is used up: campaigns carry on tomorrow by themselves, and sequences wait.</Notice>
+        )}
+        <SettingsMore summary="How limits grow">
+          <p>
+            Each limit is looked at again once a week. If that week's email was received well, it steps up to the next one shown; if
+            it was received badly, it steps down. A limit set for your workspace stays as it is.
+          </p>
+        </SettingsMore>
       </SettingsBlock>
 
       <SettingsBlock
         title="Reputation"
-        description={`A score out of 100% for each domain you send from, from the last ${data.windowDays} days: 80% and over is good, 50% to 79% at risk, under 50% poor. It's set by the weakest of bounces, spam complaints, unsubscribes and opens. Opens leave out security scanners, and count only email sent with open tracking on.`}
+        description={`How each domain you send from has been received over the last ${data.windowDays} days: 80% and over is good, under 50% poor.`}
       >
         {data.domains.length === 0 ? (
           <SettingsEmpty>Nothing sent in the last {data.windowDays} days.</SettingsEmpty>
@@ -114,7 +161,7 @@ export function SendingHealth() {
                 key={d.domain}
                 icon={<Globe className="h-4 w-4" />}
                 title={d.domain}
-                badge={<Badge variant={STATUS[d.status].variant}>{STATUS[d.status].label}</Badge>}
+                badge={<Badge variant={STATUS[d.status].variant} status>{STATUS[d.status].label}</Badge>}
                 actions={
                   d.score !== null && (
                     <span className={`text-2xl font-semibold tabular-nums leading-none ${SCORE_CLASS[d.status]}`} aria-label={`Reputation score ${d.score} out of 100`}>
@@ -124,14 +171,14 @@ export function SendingHealth() {
                 }
               >
                 <div className="flex flex-col gap-2">
-                  <p className="text-xs text-muted-foreground tabular-nums">
+                  <p className="text-[13px] text-muted-foreground tabular-nums">
                     {count(d.stats.sent)} sent · {count(d.stats.hardBounces)} bounced · {count(d.stats.complaints)} marked as spam ·{' '}
                     {count(d.stats.unsubscribes)} unsubscribed
                     {d.stats.tracked > 0 && ` · ${percent(d.stats.opened, d.stats.tracked)} opened`}
                     {d.stats.replies > 0 && ` · ${count(d.stats.replies)} replied`}
                   </p>
                   {d.status === 'unknown' && (
-                    <p className="text-xs text-muted-foreground">A status needs at least {data.minSample} emails sent in the last {data.windowDays} days.</p>
+                    <p className="text-[13px] text-muted-foreground">A status needs at least {data.minSample} emails sent in the last {data.windowDays} days.</p>
                   )}
                   {d.reasons.map((r) => (
                     <Notice key={r.code} level={r.level === 'poor' ? 'error' : 'warning'} title={r.text}>
@@ -143,6 +190,12 @@ export function SendingHealth() {
             ))}
           </SettingsList>
         )}
+        <SettingsMore>
+          <p>
+            The score is set by the weakest of bounces, spam complaints, unsubscribes and opens; 50% to 79% is at risk. Opens
+            leave out security scanners, and count only email sent with open tracking on.
+          </p>
+        </SettingsMore>
       </SettingsBlock>
     </>
   )

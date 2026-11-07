@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getUsageFn } from '../../../server/functions'
 
@@ -14,11 +14,14 @@ export function AllowanceMeter({
   compact = false,
   showUpgrade = true,
   heading = true,
+  showResets = true,
 }: {
   compact?: boolean
   showUpgrade?: boolean
   /** Off where the block around it already says "Your plan" (Settings): only the reset date shows. */
   heading?: boolean
+  /** Off where the renewal date is already beside it (Plan and billing). */
+  showResets?: boolean
 }) {
   const { data } = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn(), refetchInterval: 60_000 })
   const allowance = data?.allowance
@@ -34,10 +37,10 @@ export function AllowanceMeter({
       {!compact && heading && (
         <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Your plan this month</h3>
-          {resets && <span className="text-xs text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
+          {resets && <span className="text-[13px] text-muted-foreground whitespace-nowrap">Resets {resets}</span>}
         </div>
       )}
-      {!compact && !heading && resets && <p className="text-xs text-muted-foreground">Resets {resets}</p>}
+      {!compact && !heading && showResets && resets && <p className="text-[13px] text-muted-foreground">Resets {resets}</p>}
       {allowance.sendingPaused && (
         <p className={`${compact ? 'text-[10px]' : 'text-xs'} font-semibold text-destructive`}>
           Sending is paused by your hosting provider.
@@ -55,7 +58,7 @@ export function AllowanceMeter({
               </span>
             </div>
             <div
-              className={`h-1.5 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-muted'}`}
+              className={`h-1.5 rounded-full overflow-hidden ${out ? 'bg-destructive/20' : 'bg-foreground/10'}`}
               role="progressbar"
               aria-label={LABEL[kind]}
               aria-valuemin={0}
@@ -71,7 +74,7 @@ export function AllowanceMeter({
         )
       })}
       {!compact && allowance.revealCredits && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           Searching uses prospect credits for what it costs, about 2 for each prospect found. A verified email uses{' '}
           {allowance.revealCredits}.
         </p>
@@ -83,7 +86,8 @@ export function AllowanceMeter({
             nearlyOut ? 'bg-primary text-primary-foreground hover:bg-primary/85' : 'border border-border text-foreground hover:bg-muted'
           } ${compact ? 'text-[11px] px-2 py-1.5 mt-1' : 'text-sm px-3 py-2 self-start'}`}
         >
-          Upgrade <ArrowUpRight className="w-3.5 h-3.5" />
+          {/* ↗ only where it leaves the app (a host's own page); in-app it's →. */}
+          Upgrade {allowance.upgradeUrl.startsWith('/') ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowUpRight className="w-3.5 h-3.5" />}
         </a>
       )}
     </div>

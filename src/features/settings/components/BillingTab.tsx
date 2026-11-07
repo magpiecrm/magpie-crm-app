@@ -201,8 +201,10 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
                 )}
               </dl>
             )}
-            <AllowanceMeter showUpgrade={false} heading={false} />
-            <AiBudgetMeter />
+            <div className="mt-2 flex flex-col gap-3 border-t border-border/70 pt-4">
+              <AllowanceMeter showUpgrade={false} heading={false} showResets={false} />
+              <AiBudgetMeter />
+            </div>
           </SettingsBlock>
         )}
 
@@ -253,7 +255,7 @@ export function BillingTab({ checkoutSession }: { checkoutSession?: string }) {
               <SettingsActions>
                 <Button
                   variant="outline"
-                  className="!border-destructive/40 !text-destructive hover:!bg-destructive/10"
+                  className="!border-destructive/70 !text-destructive hover:!bg-destructive/10"
                   onClick={() => setCancelling(true)}
                   disabled={busy}
                 >

@@ -44,18 +44,18 @@ export function ChangePasswordForm() {
       <form onSubmit={submit} className="flex flex-col gap-3">
         <FieldGrid cols={3}>
           <Field label="Current">
-            <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} disabled={busy} className={INPUT_CLASS} />
+            <input type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} disabled={busy} className={INPUT_CLASS} />
           </Field>
-          <Field label="New">
-            <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="At least 6 characters" disabled={busy} className={INPUT_CLASS} />
+          <Field label="New" hint="At least 6 characters.">
+            <input type="password" autoComplete="new-password" required minLength={6} value={next} onChange={(e) => setNext(e.target.value)} disabled={busy} className={INPUT_CLASS} />
           </Field>
           <Field label="Confirm new" error={mismatch ? "Doesn't match the new password." : undefined}>
-            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} className={INPUT_CLASS} />
+            <input type="password" autoComplete="new-password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} disabled={busy} className={INPUT_CLASS} />
           </Field>
         </FieldGrid>
         {message && <Notice level={message.ok ? 'success' : 'error'}>{message.text}</Notice>}
         <SettingsActions>
-          <Button type="submit" disabled={!canSubmit} isLoading={busy} leftIcon={<KeyRound className="w-4 h-4" />}>
+          <Button type="submit" variant="outline" isLoading={busy} leftIcon={<KeyRound className="w-4 h-4" />}>
             Change password
           </Button>
         </SettingsActions>

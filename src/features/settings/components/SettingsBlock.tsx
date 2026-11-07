@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { Switch } from '../../../components/ui/Switch'
 
 // What every Settings page is built from, so they all line up: one bordered
 // panel per page, divided into blocks. A block names itself in a narrow left
@@ -41,10 +43,10 @@ export function SettingsBlock({
   children?: ReactNode
 }) {
   return (
-    <section className="grid gap-x-8 gap-y-3 px-5 py-5 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
+    <section className="grid gap-x-10 gap-y-4 px-6 py-6 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
       <div className="flex min-w-0 flex-col gap-1.5">
-        <h3 className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-foreground">{title}</h3>
-        {description && <div className="flex flex-col gap-2 text-xs leading-relaxed text-muted-foreground">{description}</div>}
+        <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
+        {description && <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted-foreground">{description}</div>}
       </div>
       {children !== undefined && <div className="flex min-w-0 flex-col gap-3">{children}</div>}
     </section>
@@ -56,9 +58,9 @@ export function SettingsActions({ children, className = '' }: { children: ReactN
   return <div className={`flex flex-wrap items-center gap-2 ${className}`}>{children}</div>
 }
 
-/** Rows of things a block lists: people, senders, keys, domains, proxies. */
+/** Rows of things a block lists: people, senders, keys, domains, proxies. One box, rows divided by hairlines, so a long list scans like a table. */
 export function SettingsList({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`flex flex-col gap-2 ${className}`}>{children}</div>
+  return <div className={`flex flex-col divide-y divide-border/70 overflow-hidden rounded-md-s border border-border bg-card ${className}`}>{children}</div>
 }
 
 /**
@@ -71,6 +73,7 @@ export function SettingsRow({
   detail,
   badge,
   actions,
+  flush = false,
   children,
 }: {
   icon?: ReactNode
@@ -79,29 +82,33 @@ export function SettingsRow({
   detail?: ReactNode
   badge?: ReactNode
   actions?: ReactNode
+  /** `children` continue the row itself (no divider or tint), rather than being its details. */
+  flush?: boolean
   children?: ReactNode
 }) {
   return (
-    <div className="rounded-md-s border border-border bg-background">
-      <div className="flex min-h-[46px] items-center gap-3 px-3 py-1.5">
+    <div>
+      {/* Where the row is too narrow for both, the actions move under what it is rather than squeezing it. */}
+      <div className="flex min-h-[48px] flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2">
         {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[9rem] flex-1 basis-[9rem]">
           <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-foreground">
-            <span className="truncate">{title}</span>
+            <span className="min-w-0 break-words">{title}</span>
             {badge}
           </p>
-          {detail && <p className="truncate text-xs text-muted-foreground">{detail}</p>}
+          {detail && <p className="break-words text-[13px] text-muted-foreground">{detail}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+        {/* Icon buttons in a row at the body colour, not the faint ghost grey, so edit and delete can be found. */}
+        {actions && <div className="ml-auto flex shrink-0 items-center gap-1 [&>button]:text-foreground/75">{actions}</div>}
       </div>
-      {children && <div className="border-t border-border/70 px-3 py-3">{children}</div>}
+      {children && <div className={flush ? 'px-3.5 pb-3' : 'border-t border-border/70 bg-background/60 px-3.5 py-3'}>{children}</div>}
     </div>
   )
 }
 
 /** While a block's contents load, or when it has nothing to list. */
 export function SettingsEmpty({ children }: { children: ReactNode }) {
-  return <p className="rounded-md-s border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">{children}</p>
+  return <p className="rounded-md-s bg-muted/60 px-3 py-3 text-sm text-muted-foreground">{children}</p>
 }
 
 /** One of a few choices, as a card: side by side in a FieldGrid, the chosen one outlined. */
@@ -134,7 +141,7 @@ export function SettingsOption({
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm font-medium text-foreground">{title}</span>
-        {detail && <span className="text-xs leading-relaxed text-muted-foreground">{detail}</span>}
+        {detail && <span className="text-[13px] leading-relaxed text-muted-foreground">{detail}</span>}
       </span>
     </button>
   )
@@ -161,12 +168,55 @@ export function SettingsCheck({
         checked={checked}
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-accent focus:ring-accent"
+        className="mt-0.5 h-4 w-4 shrink-0 rounded border-input text-accent focus:ring-accent"
       />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span className="text-sm text-foreground">{label}</span>
-        {hint && <span className="text-xs leading-relaxed text-muted-foreground">{hint}</span>}
+        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
       </span>
     </label>
+  )
+}
+
+/** The longer explanation of a block, folded away under its controls so the block leads with what to do. */
+export function SettingsMore({ summary = 'How it works', children }: { summary?: ReactNode; children: ReactNode }) {
+  return (
+    <details className="group text-[13px] text-muted-foreground">
+      <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-md-xs font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+        {summary}
+      </summary>
+      <div className="mt-2 flex max-w-[65ch] flex-col gap-2 leading-relaxed">{children}</div>
+    </details>
+  )
+}
+
+/** A one-field form: the field and its button on one line where the panel has room, stacked on a phone. */
+export function SettingsInline({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-2 @[36rem]:max-w-[34rem] @[36rem]:flex-row @[36rem]:items-end [&>*:first-child]:min-w-0 [&>*:first-child]:flex-1">{children}</div>
+}
+
+/** A setting that takes effect as soon as it's flipped: what it does on the left, its switch on the right. */
+export function SettingsToggle({
+  checked,
+  onChange,
+  label,
+  hint,
+  disabled,
+}: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  label: string
+  hint?: ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <div className={`flex items-start justify-between gap-4 ${disabled ? 'opacity-60' : ''}`}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
+      </div>
+      <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} />
+    </div>
   )
 }

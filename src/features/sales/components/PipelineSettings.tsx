@@ -5,9 +5,9 @@ import { queryKeys } from '../../../queryKeys'
 import { createPipelineFn, deletePipelineFn, reorderPipelinesFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
-import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from '../../settings/components/SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPanel, SettingsRow } from '../../settings/components/SettingsBlock'
 import { usePipelines } from '../usePipelines'
 import type { Pipeline } from '../types'
 import { PipelineEditor } from './PipelineEditor'
@@ -98,7 +98,7 @@ export function PipelineSettings() {
               {pipelines.map((p, i) =>
                 // A different component while editing, so a row's delete prompt doesn't outlive an edit.
                 editingId === p.id ? (
-                  <SettingsRow key={p.id} title={p.name} badge={i === 0 ? <Badge variant="info">Default</Badge> : undefined}>
+                  <SettingsRow key={p.id} title={p.name} badge={i === 0 ? <Badge>Default</Badge> : undefined}>
                     <PipelineEditor pipeline={p} onDone={() => setEditingId(null)} />
                   </SettingsRow>
                 ) : (
@@ -125,17 +125,15 @@ export function PipelineSettings() {
               if (newName.trim()) create.mutate()
             }}
           >
-            <FieldGrid>
+            <SettingsInline>
               <Field label="Name">
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Renewals" className={INPUT_CLASS} />
+                <input required value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Renewals" className={INPUT_CLASS} />
               </Field>
-            </FieldGrid>
-            {create.error && <Notice level="error">{create.error.message}</Notice>}
-            <SettingsActions>
-              <Button type="submit" isLoading={create.isPending} disabled={!newName.trim()} leftIcon={<Plus className="h-4 w-4" />}>
+              <Button type="submit" isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
                 Add pipeline
               </Button>
-            </SettingsActions>
+            </SettingsInline>
+            {create.error && <Notice level="error">{create.error.message}</Notice>}
           </form>
         </SettingsBlock>
       </SettingsPanel>
@@ -169,7 +167,7 @@ function PipelineRow({
   return (
     <SettingsRow
       title={pipeline.name}
-      badge={isDefault ? <Badge variant="info">Default</Badge> : undefined}
+      badge={isDefault ? <Badge>Default</Badge> : undefined}
       actions={
         <>
           <Button variant="ghost" size="icon" onClick={onUp} disabled={!onUp} aria-label={`Move ${pipeline.name} up`} leftIcon={<ArrowUp className="h-4 w-4" />} />

@@ -16,6 +16,7 @@ export function ContactFieldForm({
   onCreated,
   Actions = Row,
   extraActions,
+  cols = 2,
 }: {
   initial?: { label: string; type: ContactFieldType; options?: string[] }
   /** Show it on this table straight away. */
@@ -25,6 +26,8 @@ export function ContactFieldForm({
   /** What holds the buttons. */
   Actions?: ComponentType<{ children: ReactNode }>
   extraActions?: ReactNode
+  /** Fields across: 3 where there's room (Settings), 2 in a narrow panel. */
+  cols?: 2 | 3
 }) {
   const [label, setLabel] = useState(initial?.label ?? '')
   const [key, setKey] = useState('')
@@ -55,9 +58,9 @@ export function ContactFieldForm({
         if (!keyError && label.trim()) create.mutate()
       }}
     >
-      <FieldGrid>
+      <FieldGrid cols={cols}>
         <Field label="Label">
-          <input className={INPUT_CLASS} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Industry" />
+          <input required className={INPUT_CLASS} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Industry" />
         </Field>
         <Field label="Key" hint="Can't be changed later." error={keyError ?? undefined}>
           <input
@@ -87,7 +90,7 @@ export function ContactFieldForm({
       </FieldGrid>
       {!keyError && create.error && <Notice level="error">{create.error.message}</Notice>}
       <Actions>
-        <Button type="submit" disabled={!label.trim() || !!keyError} isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
+        <Button type="submit" disabled={!!keyError} isLoading={create.isPending} leftIcon={<Plus className="h-4 w-4" />}>
           {submitLabel}
         </Button>
         {extraActions}

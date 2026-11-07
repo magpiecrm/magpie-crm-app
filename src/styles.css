@@ -71,7 +71,7 @@
     --secondary-foreground: #111316;
     --muted: #efefea;
     --muted-hover: #e6e6e0;
-    --muted-foreground: #636a75;
+    --muted-foreground: #575e69;
     --accent: #0d7285;
     --accent-secondary: #0a5f6f;
     --accent-foreground: #ffffff;
@@ -79,7 +79,7 @@
     --destructive: #c2352b;
     --destructive-foreground: #ffffff;
     --border: #e2e2dc;
-    --input: #cdcec6;
+    --input: #b4b6ad;
     --ring: #0d7285;
     --radius: 0.75rem;
   }
@@ -97,15 +97,15 @@
     --secondary-foreground: #eef0f2;
     --muted: #1c1f23;
     --muted-hover: #24282d;
-    --muted-foreground: #8f96a1;
+    --muted-foreground: #a7aeb8;
     --accent: #4fc3d2;
     --accent-secondary: #7fd3de;
     --accent-foreground: #06262b;
     --accent-rgb: 79, 195, 210;
     --destructive: #f07167;
     --destructive-foreground: #1f0806;
-    --border: #25282d;
-    --input: #353940;
+    --border: #32363d;
+    --input: #454a52;
     --ring: #4fc3d2;
   }
 
@@ -223,4 +223,52 @@
       min-height: 44px;
     }
   }
+}
+
+/* Plan sliders: a track you can see in both themes and a thumb big enough to grab. */
+.range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  --fill: var(--accent);
+}
+.range-input::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  /* --pct (set by the page) is how far along the thumb is, so the chosen part is filled. */
+  background: linear-gradient(to right, var(--fill) var(--pct, 0%), color-mix(in srgb, var(--foreground) 18%, transparent) var(--pct, 0%));
+}
+.range-input::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--foreground) 18%, transparent);
+}
+.range-input::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--fill);
+}
+.range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--fill);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.range-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: var(--card);
+  border: 2px solid var(--fill);
+}
+.range-input:focus-visible {
+  outline: none;
+}
+.range-input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--fill) 30%, transparent);
 }

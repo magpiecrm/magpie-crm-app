@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, inboxWarmupFn, prospectingStatusFn } from '../../server/functions'
+import { getBillingFn, getCopilotSettingsFn, getEmailSettingsFn, getSendersFn, getSendingDomainsFn, getUsageFn, getUsersFn, inboxWarmupFn, mailboxesFn, prospectingStatusFn } from '../../server/functions'
 import { addonsOn, formatPence } from './planMath'
 import type { SettingsSection } from './sections'
 
@@ -12,6 +12,8 @@ export interface SectionStatus {
   text: string
   /** Button label when there's something to do. */
   action?: string
+  /** A few words for the page header, where `text` is a sentence. */
+  short?: string
 }
 
 /**
@@ -39,6 +41,7 @@ export function useSettingsStatus(): {
   const domains = useQuery({ queryKey: queryKeys.settings.sendingDomains(), queryFn: () => getSendingDomainsFn(), enabled: sendingManaged })
   const warmup = useQuery({ queryKey: queryKeys.settings.warmup(), queryFn: () => inboxWarmupFn(), enabled: sendingManaged })
   const team = useQuery({ queryKey: queryKeys.settings.team(), queryFn: () => getUsersFn() })
+  const mailboxes = useQuery({ queryKey: queryKeys.sequences.mailboxes(), queryFn: () => mailboxesFn() })
   const usage = useQuery({ queryKey: queryKeys.settings.usage(), queryFn: () => getUsageFn() })
   const billingManaged = Boolean(usage.data?.billingManaged)
   const billing = useQuery({ queryKey: queryKeys.settings.billing(), queryFn: () => getBillingFn(), enabled: billingManaged })
@@ -78,7 +81,15 @@ export function useSettingsStatus(): {
         ? { level: 'error', text: 'Add the domain you send from to start sending.', action: 'Add' }
         : ready.length === 0
           ? { level: 'warning', text: `Waiting for the DNS records on ${domains.data.map((d) => d.domain).join(', ')}.`, action: 'Check' }
-          : { level: 'ok', text: `Ready to send from ${ready.join(', ')}.` }
+          : ready.length < domains.data.length
+            ? {
+                // It can send, but a domain added to send from isn't finished.
+                level: 'warning',
+                text: `Ready to send from ${ready.join(', ')}. Still waiting for the DNS records on ${domains.data.filter((d) => !d.ready).map((d) => d.domain).join(', ')}.`,
+                short: `${domains.data.length - ready.length} ${domains.data.length - ready.length === 1 ? 'domain' : 'domains'} waiting for DNS`,
+                action: 'Check',
+              }
+            : { level: 'ok', text: `Ready to send from ${ready.join(', ')}.` }
   } else if (s?.success && !sendingManaged) {
     const label = s.providers.find((d: { id: string; label: string }) => d.id === s.settings.provider)?.label ?? s.settings.provider
     statuses.sending = s.settings.credsUnreadable
@@ -111,6 +122,21 @@ export function useSettingsStatus(): {
       senderCount === 0
         ? { level: 'warning', text: 'Add an address to send campaigns from.', action: 'Add' }
         : { level: 'ok', text: `${senderCount} ${senderCount === 1 ? 'address' : 'addresses'} to send from.` }
+  }
+
+  // Mailboxes: the addresses, and how many of their inboxes are being read for replies.
+  if (senderCount && mailboxes.data) {
+    const ids = new Set((senders.data?.senders ?? []).map((s: { id: number }) => s.id))
+    const mine = mailboxes.data.filter((b) => ids.has(b.sender_id))
+    const broken = mine.filter((b) => b.status !== 'ok').length
+    const working = mine.length - broken
+    const addresses = `${senderCount} ${senderCount === 1 ? 'address' : 'addresses'}`
+    statuses.senders =
+      broken > 0
+        ? { level: 'warning', text: `${broken} connected ${broken === 1 ? "inbox isn't" : "inboxes aren't"} working, so replies there aren't seen.`, short: `${broken} ${broken === 1 ? 'inbox' : 'inboxes'} not working`, action: 'Fix' }
+        : working === senderCount
+          ? { level: 'ok', text: `${addresses}, every inbox connected: replies stop sequences.` }
+          : { level: 'info', text: `${addresses}, ${working} of ${senderCount} inboxes connected: replies to the rest have to be marked by hand.`, action: 'Connect' }
   }
 
   const c = copilot.data

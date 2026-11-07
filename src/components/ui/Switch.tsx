@@ -19,7 +19,7 @@ export function Switch({ checked, onChange, label, disabled = false, id }: Switc
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-70 ${
-        checked ? 'bg-accent' : 'bg-muted'
+        checked ? 'bg-accent' : 'bg-foreground/20'
       }`}
     >
       <span

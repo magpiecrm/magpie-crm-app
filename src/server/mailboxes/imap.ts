@@ -74,7 +74,7 @@ export function idsIn(value: string | null | undefined): string[] {
 
 /** Logins over 15 seconds, and replies to commands over a minute, count as failed. */
 function client(login: MailboxLogin) {
-  return new ImapFlow({
+  const imap = new ImapFlow({
     host: login.host,
     port: login.port,
     secure: login.secure,
@@ -84,6 +84,10 @@ function client(login: MailboxLogin) {
     greetingTimeout: 15_000,
     socketTimeout: 60_000,
   })
+  // A failure already reported to whoever was waiting (a login the server hung up on, say) can
+  // come again as an 'error' event, and an 'error' event nobody listens for crashes the app.
+  imap.on('error', (err: Error) => console.warn(`[Mailboxes] ${login.host}: ${err?.message ?? err}`))
+  return imap
 }
 
 export const imapConnect: Connect = async (login) => {
@@ -164,7 +168,7 @@ export function isAuthFailure(err: unknown): boolean {
 
 /** A connection error, in words a person can act on. */
 export function describeError(err: unknown, host: string): string {
-  const e = err as { code?: string; responseText?: string; message?: string }
+  const e = err as { code?: string; responseText?: string; message?: string; reason?: string }
   if (isAuthFailure(err)) {
     if (/gmail|googlemail/i.test(host)) return 'Gmail refused the login. Use an app password (Google Account → Security → App passwords), not your normal password.'
     if (isZohoHost(host)) {
@@ -174,5 +178,9 @@ export function describeError(err: unknown, host: string): string {
   }
   if (e?.code === 'ENOTFOUND') return `There's no mail server at ${host}.`
   if (e?.code === 'ECONNREFUSED' || e?.code === 'ETIMEDOUT' || /timeout/i.test(e?.message ?? '')) return `Couldn't reach ${host}: check the server and port.`
+  // The server hung up, before the login was through (imapflow's "Unexpected close") or later, with its own reason when it gave one.
+  if (/^ClosedAfterConnect/.test(e?.code ?? '') || e?.code === 'NoConnection') {
+    return `${host} closed the connection${e.code === 'NoConnection' ? '' : ' while logging in'}${e.reason ? ` (${e.reason})` : ''}.`
+  }
   return e?.responseText || e?.message || 'Unknown error'
 }

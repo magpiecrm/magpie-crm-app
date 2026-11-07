@@ -60,8 +60,8 @@ export function ContactFieldsTab() {
           )}
         </SettingsBlock>
 
-        <SettingsBlock title="Add a field">
-          <ContactFieldForm submitLabel="Add field" onCreated={invalidate} Actions={SettingsActions} />
+        <SettingsBlock title="Add a field" description="The label is what people see. The key stays the same if you rename it later.">
+          <ContactFieldForm submitLabel="Add field" onCreated={invalidate} Actions={SettingsActions} cols={3} />
         </SettingsBlock>
       </SettingsPanel>
     </div>

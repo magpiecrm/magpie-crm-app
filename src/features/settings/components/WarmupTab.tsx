@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Flame, Inbox } from 'lucide-react'
+import { ArrowRight, Check, Flame, Inbox } from 'lucide-react'
 import { inboxWarmupFn, pauseWarmupFn, placementTestFn, resumeWarmupFn, startSenderCheckFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
 import type { SettingsSection } from '../sections'
 import type { PlacementTestResult, Tally, WarmupSender, WarmupSenderRow } from '../warmupTypes'
 
@@ -34,20 +34,20 @@ function landed(t: Tally, need = 0) {
   return `${pct(t.inbox, total)} inbox · ${pct(t.tabs, total)} tabs · ${pct(t.spam, total)} spam (${total} delivered)`
 }
 
-/** What warmup is, for a workspace that has it and one that could add it. */
+/** What warmup is, for a workspace that has it and one that could add it, folded under the block's controls. */
 function HowItWorks() {
   return (
-    <SettingsBlock title="How it works">
-      <p className="text-sm leading-relaxed text-muted-foreground">
+    <SettingsMore>
+      <p>
         A new sender that suddenly emails hundreds of strangers looks like a spammer to Gmail and Outlook. Warmup gives a sender a steady, growing
         stream of ordinary email with a pool of other real inboxes, which open it and reply to some of it. It's sent through our mail server,
         the same way as your campaigns, starting with a few a day and rising to about 20 over a month.
       </p>
-      <p className="text-sm leading-relaxed text-muted-foreground">
+      <p>
         The warmup that arrives in your inbox is filed in a folder called Mailivery, after the service that runs the pool. Keep warmup running alongside your
         campaigns. It helps, but it can't promise your email reaches the inbox: what you send, and who to, matters most.
       </p>
-    </SettingsBlock>
+    </SettingsMore>
   )
 }
 
@@ -60,16 +60,22 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
   if (!data.offered && data.purchasable) {
     return (
       <SettingsPanel>
-        <HowItWorks />
         <SettingsBlock title="Add it to your plan">
           <p className="text-sm leading-relaxed text-foreground">
             Inbox warmup isn't on your plan. Add it for {data.purchasable.price} a month: one sender warmed with up to {data.purchasable.perDay} emails a day.
           </p>
+          {/* What it does, so the page says why before it asks. */}
+          <ul className="flex flex-col gap-1.5 text-[13px] text-muted-foreground">
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />A little everyday email to and from other inboxes, rising over a month</li>
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />Sent through the same mail server as your campaigns</li>
+            <li className="flex gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />A sender check that shows where your email lands</li>
+          </ul>
           <SettingsActions>
             <Button rightIcon={<ArrowRight className="h-3.5 w-3.5" />} onClick={() => onOpen('billing')}>
               Go to Plan and billing
             </Button>
           </SettingsActions>
+          <HowItWorks />
         </SettingsBlock>
       </SettingsPanel>
     )
@@ -83,18 +89,16 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
       {data.stopped && <Notice level="error" title="MagpieCRM has stopped warmup for this workspace">{data.stopped}</Notice>}
       {data.error && <Notice level="error" title="The warmup service couldn't be reached">{data.error}</Notice>}
       <SettingsPanel>
-        <HowItWorks />
-
         <SettingsBlock
           title="Senders"
           description={
             one
-              ? 'One sender can warm at a time. It needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.'
-              : `Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Reply detection, and SPF and DMARC records on its domain.`
+              ? 'One sender can warm at a time. It needs its own inbox connected under Mailboxes, and SPF and DMARC records on its domain.'
+              : `Up to ${data.maxSenders} senders can warm at once. Each needs its own inbox connected under Mailboxes, and SPF and DMARC records on its domain.`
           }
         >
           {data.senders.length === 0 ? (
-            <SettingsEmpty>Add a sender address first (Settings → Sender addresses).</SettingsEmpty>
+            <SettingsEmpty>Add a sender address first (Settings → Mailboxes).</SettingsEmpty>
           ) : (
             <SettingsList>
               {data.senders.map((s) => (
@@ -108,6 +112,7 @@ export function WarmupTab({ onOpen }: { onOpen: (section: SettingsSection) => vo
               ))}
             </SettingsList>
           )}
+          <HowItWorks />
         </SettingsBlock>
 
         {warming > 0 && <Placement />}
@@ -180,17 +185,17 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
     >
       <div className="flex flex-col gap-2">
         {!on && row.blockers.length > 0 && (
-          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+          <ul className="flex flex-col gap-1 text-[13px] text-muted-foreground">
             {row.blockers.map((b) => (
               <li key={b}>• {b}</li>
             ))}
           </ul>
         )}
         {w?.state === 'failed' && w.reason && <Notice level="error">{w.reason}</Notice>}
-        {w?.state === 'starting' && <p className="text-xs text-muted-foreground">Starting: the first warmup goes out within a few minutes, during the working day.</p>}
+        {w?.state === 'starting' && <p className="text-[13px] text-muted-foreground">Starting: the first warmup goes out within a few minutes, during the working day.</p>}
         {w?.state === 'paused' && w.pausedBy === 'us' && w.reason && <Notice level="warning" title="Paused by MagpieCRM">{w.reason}</Notice>}
         {on && w.health && HEALTH[w.health.state] && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
             <Badge variant={HEALTH[w.health.state].variant}>{HEALTH[w.health.state].label}</Badge>
             <span>
               {HEALTH[w.health.state].about || 'Its warmup is landing well.'}
@@ -199,12 +204,12 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
           </div>
         )}
         {on && w.week && (
-          <p className="text-xs text-muted-foreground tabular-nums">
+          <p className="text-[13px] text-muted-foreground tabular-nums">
             Last 7 days: {w.week.sent} sent · {w.week.replied} replied · {w.week.spam} found in spam
           </p>
         )}
         {on && w.partners !== null && (
-          <p className="text-xs text-muted-foreground">The pool has {w.partners} partners for it today, so it sends fewer than its target.</p>
+          <p className="text-[13px] text-muted-foreground">The pool has {w.partners} partners for it today, so it sends fewer than its target.</p>
         )}
         {on && w.problem && <Notice level="error" title="Its warmup isn't sending">{w.problem}</Notice>}
         {failed && <Notice level="error">{failed.message}</Notice>}
@@ -212,7 +217,7 @@ function SenderWarmup({ row, full, stopped, onStart }: { row: WarmupSenderRow; f
           <SettingsActions>
             {confirming ? (
               <>
-                <span className="text-xs text-muted-foreground">Stop warmup and take this inbox's login out of the pool?</span>
+                <span className="text-[13px] text-muted-foreground">Stop warmup and take this inbox's login out of the pool?</span>
                 <Button size="sm" variant="danger" isLoading={stop.isPending} onClick={() => stop.mutate()}>
                   Stop warmup
                 </Button>
@@ -351,7 +356,7 @@ function SenderCheck({ senders, tests, stopped }: { senders: string[]; tests: { 
         >
           {senders.length === 1 ? `Check ${from}` : 'Run sender check'}
         </Button>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-[13px] text-muted-foreground">
           {usedUp ? `This month's check is used. Another from ${longDate(nextMonth)}.` : `${tests.limit - tests.used} left this month.`}
         </span>
       </SettingsActions>
@@ -373,7 +378,7 @@ function CheckResult({ result }: { result: PlacementTestResult | null }) {
     )
   }
   // Nothing counted either way yet: no verdict to give.
-  if (!result || arrived + missing + waiting === 0) return <p className="text-xs text-muted-foreground">Sent. Waiting for the first answers…</p>
+  if (!result || arrived + missing + waiting === 0) return <p className="text-[13px] text-muted-foreground">Sent. Waiting for the first answers…</p>
   const where = (k: 'spam' | 'missing') => result.families.filter((f) => f[k] > 0).map((f) => PROVIDERS[f.family] ?? f.family).join(', ')
   const when = `Checked ${longDate(result.startedAt)}.`
   return (
@@ -449,7 +454,7 @@ function Placement() {
           <SettingsList>
             {data.senders.map((s) => (
               <SettingsRow key={s.address} title={s.address}>
-                <p className="text-xs text-muted-foreground tabular-nums">Google, Microsoft and Yahoo: {landed(s.major, 20)}</p>
+                <p className="text-[13px] text-muted-foreground tabular-nums">Google, Microsoft and Yahoo: {landed(s.major, 20)}</p>
               </SettingsRow>
             ))}
           </SettingsList>

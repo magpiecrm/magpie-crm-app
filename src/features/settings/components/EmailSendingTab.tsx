@@ -250,7 +250,7 @@ export function EmailSendingTab() {
               </Field>
             </FieldGrid>
             {descriptor && (
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
                 {descriptor.summary}{' '}
                 <a href={descriptor.docsUrl} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                   Docs
@@ -280,7 +280,7 @@ export function EmailSendingTab() {
           {/* Sender identity */}
           <SettingsBlock
             title="Default sender"
-            description="Used when a message does not name its own sender. Additional from-addresses are managed on the Sender addresses page."
+            description="Used when a message does not name its own sender. Additional from-addresses are managed on the Mailboxes page."
           >
             <Field label="Name and address">
               <input

@@ -47,7 +47,7 @@ function Issues({ issues }: { issues: Issue[] }) {
 function Lists({ listedOn, unchecked, total }: { listedOn: string[]; unchecked: string[]; total: number }) {
   const clean = total - listedOn.length - unchecked.length
   return (
-    <p className="text-xs text-muted-foreground">
+    <p className="text-[13px] text-muted-foreground">
       {listedOn.length > 0 ? (
         <span className="font-semibold text-destructive">Listed on {listedOn.join(', ')}. </span>
       ) : null}
@@ -125,7 +125,7 @@ export function SenderHealthPanel({
                 <div className="flex flex-col gap-1.5">
                   {ip.ip && (
                     <>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-[13px] text-muted-foreground">
                         Reverse DNS: <span className="font-mono">{ip.ptr ?? 'none'}</span>
                       </p>
                       <Lists listedOn={ip.listedOn} unchecked={ip.unchecked} total={5} />
@@ -174,7 +174,7 @@ export function SenderHealthPanel({
         <Button type="button" onClick={checkNow} isLoading={isChecking} leftIcon={<Activity className="h-4 w-4" />}>
           Check now
         </Button>
-        {report && <span className="text-xs text-muted-foreground">Last checked {new Date(report.checked_at).toLocaleString()}</span>}
+        {report && <span className="text-[13px] text-muted-foreground">Last checked {new Date(report.checked_at).toLocaleString()}</span>}
       </SettingsActions>
     </SettingsBlock>
   )

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, KeyRound, Trash2 } from 'lucide-react'
+import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { APP_NAME } from '../../../brand'
 import { createApiKeyFn, deleteApiKeyFn, getMcpKeysFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { CODE_CLASS, Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
+import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
 
 type McpKey = Awaited<ReturnType<typeof getMcpKeysFn>>['keys'][number]
 
@@ -14,28 +14,36 @@ const KEY_PLACEHOLDER = '<your MCP key>'
 
 /** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
 
-function CopyBlock({ label, code, note }: { label: string; code: string; note?: string }) {
+export function CopyButton({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className="absolute right-1.5 top-1.5"
+      onClick={() => {
+        navigator.clipboard?.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      }}
+      leftIcon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
+  )
+}
+
+/** A snippet with its Copy button inside the box's top-right corner, where the eye already is. */
+function CopyBlock({ label, code, note }: { label: string; code: string; note?: string }) {
+  return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-muted-foreground">{label}</span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            navigator.clipboard?.writeText(code)
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
-          }}
-          leftIcon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
+      <span className="text-[13px] font-medium text-foreground">{label}</span>
+      <div className="relative">
+        <pre className={`${CODE_CLASS} whitespace-pre-wrap pr-24 [overflow-wrap:anywhere]`}>{code}</pre>
+        <CopyButton value={code} />
       </div>
-      <pre className={`${CODE_CLASS} whitespace-pre`}>{code}</pre>
-      {note && <p className="text-xs leading-relaxed text-muted-foreground">{note}</p>}
+      {note && <p className="text-[13px] leading-relaxed text-muted-foreground">{note}</p>}
     </div>
   )
 }
@@ -140,18 +148,20 @@ export function McpTab() {
 
       <SettingsPanel>
         <SettingsBlock
-          title="How it works"
+          title="Before you connect"
           description="Each app gets its own key, which you can revoke at any time. Apps ask you before running anything that changes data."
         >
-          <p className="text-sm leading-relaxed text-foreground">
-            Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP. They can search prospects, manage lists,
-            contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
-            same builder tools as the copilot.
-          </p>
           <Notice>
             A key gives full access to your contacts and can run prospect searches. Data the AI reads is sent to that
             app's provider (Anthropic, OpenAI, …), so list them as sub-processors in your privacy notice.
           </Notice>
+          <SettingsMore summary="What apps can do">
+            <p>
+              Claude, ChatGPT, Cursor and other AI apps use {APP_NAME} through MCP. They can search prospects, manage lists,
+              contacts, campaigns, templates, surveys and personas, and design emails and surveys block by block with the
+              same builder tools as the copilot.
+            </p>
+          </SettingsMore>
         </SettingsBlock>
 
         <SettingsBlock title="Your keys" description="One key per app, so you can revoke one without touching the others.">
@@ -188,11 +198,14 @@ export function McpTab() {
 
         <SettingsBlock title="Create a key" description="Name it after the app that will use it.">
           <form onSubmit={create} className="flex flex-col gap-3">
-            <FieldGrid>
+            <SettingsInline>
               <Field label="Name">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
+                <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude Desktop (laptop)" className={INPUT_CLASS} />
               </Field>
-            </FieldGrid>
+              <Button type="submit" isLoading={busy} leftIcon={<Plus className="h-4 w-4" />}>
+                Create key
+              </Button>
+            </SettingsInline>
             {newKey && (
               <Notice level="success" title="Copy this key now">
                 <div className="flex flex-col gap-2">
@@ -201,11 +214,6 @@ export function McpTab() {
                 </div>
               </Notice>
             )}
-            <SettingsActions>
-              <Button type="submit" isLoading={busy} disabled={!name.trim()} leftIcon={<KeyRound className="h-4 w-4" />}>
-                Create key
-              </Button>
-            </SettingsActions>
           </form>
         </SettingsBlock>
 
@@ -224,8 +232,11 @@ export function McpTab() {
             </>
           }
         >
-          <Field label="Server address">
-            <code className={`${CODE_CLASS} block whitespace-nowrap`}>{url}</code>
+          <Field label="Server address" as="div">
+            <div className="relative">
+              <code className={`${CODE_CLASS} block whitespace-nowrap pr-24`}>{url}</code>
+              <CopyButton value={url} />
+            </div>
           </Field>
           {isLocal && (
             <Notice level="warning">
@@ -255,21 +266,21 @@ function SetupTabs({ clients }: { clients: SetupClient[] }) {
   const client = clients.find((c) => c.id === active) ?? clients[0]
   return (
     <div className="flex flex-col gap-3">
-      {/* A row of small buttons, the chosen one outlined like a chosen SettingsOption. */}
-      <div role="tablist" aria-label="AI app" className="flex flex-wrap gap-1.5">
+      {/* A segmented control: one track, the chosen app raised out of it. */}
+      <div role="tablist" aria-label="AI app" className="inline-flex max-w-full flex-wrap gap-0.5 self-start rounded-md-s bg-muted p-0.5">
         {clients.map((c) => (
-          <Button
+          <button
             key={c.id}
             type="button"
             role="tab"
-            variant="outline"
-            size="sm"
             aria-selected={c.id === client.id}
             onClick={() => setActive(c.id)}
-            className={c.id === client.id ? '!border-accent !bg-accent/5' : '!text-muted-foreground hover:!text-foreground'}
+            className={`cursor-pointer rounded-md-xs px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+              c.id === client.id ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
             {c.label}
-          </Button>
+          </button>
         ))}
       </div>
       <div role="tabpanel">

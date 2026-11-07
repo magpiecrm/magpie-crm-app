@@ -609,7 +609,7 @@ export function ProspectingTab({ section }: { section: 'source' | 'verification'
                         title={`${r.via} → ${r.provider}`}
                         detail={`${(r.ms / 1000).toFixed(1)}s`}
                       >
-                        {r.detail && <p className="break-words text-xs text-muted-foreground">{r.detail}</p>}
+                        {r.detail && <p className="break-words text-[13px] text-muted-foreground">{r.detail}</p>}
                       </SettingsRow>
                     ))}
                   </SettingsList>
