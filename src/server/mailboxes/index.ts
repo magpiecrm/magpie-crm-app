@@ -20,12 +20,17 @@ const BATCH = 300
 const SOURCE_BYTES = 24_000
 /** Replies to a sequence finished this long ago still count (a late reply is still a reply). */
 const LATE_REPLY_MS = 30 * 86_400_000
+/**
+ * How long an inbox has to keep failing (five reads) before anyone's told. Zoho, for one,
+ * hangs up on a login now and then and the next read works; follow-ups wait meanwhile.
+ */
+const NOTICE_AFTER_MS = 15 * 60_000
 
 const now = () => new Date().toISOString()
 
 function view(data: DbSchema, m: MailboxRecord): MailboxView {
   const sender = data.senders.find((s) => s.id === m.sender_id)
-  const { secret: _secret, uid_validity: _v, last_uid: _u, created_at: _c, updated_at: _up, ...rest } = m
+  const { secret: _secret, uid_validity: _v, last_uid: _u, created_at: _c, updated_at: _up, error_notified: _n, ...rest } = m
   return { ...rest, sender: sender ? (sender.name ? `${sender.name} <${sender.email}>` : sender.email) : `Sender ${m.sender_id}` }
 }
 
@@ -233,19 +238,23 @@ export async function pollMailboxes(at = new Date(), connect: Connect = imapConn
         m.status = 'ok'
         m.last_error = null
         m.error_since = null
+        m.error_notified = false
         m.last_polled_at = at.toISOString()
       })
     } catch (err) {
       const auth = isAuthFailure(err)
       const message = describeError(err, m.host)
-      const first = m.status === 'ok'
-      db.mutate(() => {
+      const tell = db.mutate(() => {
         m.status = auth ? 'auth_failed' : 'error'
         m.last_error = message
         m.error_since ??= at.toISOString()
+        // A refused login is told at once (it won't be read again until reconnected); anything else once it has lasted, once.
+        const due = auth || (!m.error_notified && at.getTime() - Date.parse(m.error_since) >= NOTICE_AFTER_MS)
+        if (due) m.error_notified = true
+        return due
       })
-      console.error(`[Mailboxes] ${m.user}@${m.host}: ${message}`)
-      if (auth || first) {
+      console.error(`[Mailboxes] sender ${m.sender_id} at ${m.host}: ${message}`)
+      if (tell) {
         notify('sequence_paused', `Reply detection for ${m.user} ${auth ? 'stopped' : "isn't working"}: ${message}`, { url: '/settings?tab=senders' })
       }
     }
