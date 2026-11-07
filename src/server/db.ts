@@ -5,7 +5,7 @@ import { env } from './env'
 import { normalizePersonaCriteria } from '../features/prospects/types'
 import type { Persona, PersonaCriteria } from '../features/prospects/types'
 import type { Activity, Company, Deal, Pipeline, Proposal } from '../features/sales/types'
-import type { Enrollment, Sequence } from '../features/sequences/types'
+import { DEFAULT_FOOTER, FIRST_DEFAULT_FOOTER, moveFirstEmailDrafts, type Enrollment, type Sequence } from '../features/sequences/types'
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef, ContactTableView } from '../features/contacts/contactFields'
@@ -407,6 +407,13 @@ export interface DbSchema {
    */
   company_signals?: Record<string, Partial<Record<'hiring' | 'funding', { signal: import('./prospecting/types').Signal | null; at: string }>>>
   /**
+   * What the AI found about a company on the web for personalised sequence
+   * emails (prospecting/companyResearch.ts), by company key (signals.ts
+   * signalKey): short facts about the company with their sources, and when.
+   * Company data only; the research is never given a person.
+   */
+  company_research?: Record<string, { facts: import('../features/sequences/types').ResearchFact[]; web: boolean; at: string }>
+  /**
    * What each people search was for and what came of it (searchLog.ts):
    * filters, counts and how its people's email lookups ended. Never the
    * people. The newest 1,000, for 90 days.
@@ -665,6 +672,12 @@ class JsonDb {
     if (!loaded.survey_responses) loaded.survey_responses = []
     if (!loaded.email_templates) loaded.email_templates = []
     if (!loaded.contact_fields) loaded.contact_fields = []
+    // Sequences still on the first default last line: it would now read "…email you again: unsubscribe here".
+    for (const s of loaded.sequences ?? []) {
+      if (s.settings?.footer === FIRST_DEFAULT_FOOTER) s.settings.footer = DEFAULT_FOOTER
+    }
+    // A draft for every email, not just the first (sequences/personalise.ts).
+    moveFirstEmailDrafts(loaded.sequences ?? [], loaded.sequence_enrollments ?? [])
 
     return loaded
   }
@@ -863,6 +876,19 @@ class JsonDb {
     const entries = Object.entries(all)
     const newest = (e: (typeof entries)[number]) => [e[1].hiring?.at ?? '', e[1].funding?.at ?? ''].sort().at(-1)!
     this.data.company_signals = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => newest(b).localeCompare(newest(a))).slice(0, 4_000)) : all
+    this.save()
+  }
+
+  /** What the AI found about a company for personalised emails (companyResearch.ts). */
+  getCompanyResearch(key: string) {
+    return this.data.company_research?.[key] ?? null
+  }
+
+  /** Remembers a company's research; the oldest go once there are 5,000. */
+  setCompanyResearch(key: string, entry: { facts: import('../features/sequences/types').ResearchFact[]; web: boolean }, now = new Date()) {
+    const all = { ...(this.data.company_research ?? {}), [key]: { ...entry, at: now.toISOString() } }
+    const entries = Object.entries(all)
+    this.data.company_research = entries.length > 5_000 ? Object.fromEntries(entries.sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, 4_000)) : all
     this.save()
   }
 

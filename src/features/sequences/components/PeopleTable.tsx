@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { UserPlus } from 'lucide-react'
+import { ChevronDown, ChevronRight, UserPlus } from 'lucide-react'
 import { enrollmentActionFn, sequenceEnrollmentsFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Select } from '../../../components/ui/Select'
 import { queryKeys } from '../../../queryKeys'
 import { EnrollDialog } from './EnrollDialog'
+import { PersonalBadge, PersonalDraftsPanel } from './Personalise'
 import { ENROLLMENT_STATUS, when } from './labels'
-import type { EnrollmentStatus, Sequence } from '../types'
+import { isPersonalised, type EnrollmentStatus, type Sequence } from '../types'
 
 type Action = 'pause' | 'resume' | 'mark_replied' | 'stop' | 'remove'
 const ACTIONS: Array<{ id: Action; label: string }> = [
@@ -26,6 +27,9 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
   const [adding, setAdding] = useState(false)
   const [filter, setFilter] = useState<EnrollmentStatus | ''>('')
   const [picked, setPicked] = useState<string[]>([])
+  // Whose own first email is open.
+  const [open, setOpen] = useState<string | null>(null)
+  const personal = isPersonalised(sequence)
   const { data = [], isLoading } = useQuery({
     queryKey: queryKeys.sequences.enrollments(sequence.id),
     queryFn: () => sequenceEnrollmentsFn({ data: { id: sequence.id } }),
@@ -93,11 +97,13 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Emails sent</th>
                 <th className="px-4 py-3">Next email</th>
+                {personal && <th className="px-4 py-3">Written by AI</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map((e) => (
-                <tr key={e.id} className="border-b border-border last:border-0">
+                <Fragment key={e.id}>
+                <tr className="border-b border-border last:border-0">
                   <td className="px-4 py-3">
                     <input
                       type="checkbox"
@@ -136,7 +142,34 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                       '—'
                     )}
                   </td>
+                  {personal && (
+                    <td className="px-4 py-3">
+                      {e.drafts && Object.keys(e.drafts).length ? (
+                        <button
+                          type="button"
+                          onClick={() => setOpen(open === e.id ? null : e.id)}
+                          aria-expanded={open === e.id}
+                          aria-label={`${open === e.id ? 'Hide' : 'Show'} ${e.name ?? e.contact_email}'s emails`}
+                          className="inline-flex items-center gap-1"
+                        >
+                          {open === e.id ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                          <PersonalBadge sequence={sequence} e={e} />
+                        </button>
+                      ) : (
+                        <PersonalBadge sequence={sequence} e={e} />
+                      )}
+                    </td>
+                  )}
                 </tr>
+                {personal && open === e.id && (
+                  <tr className="border-b border-border last:border-0 bg-muted/20">
+                    <td />
+                    <td colSpan={5} className="px-4 py-4">
+                      <PersonalDraftsPanel sequence={sequence} e={e} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

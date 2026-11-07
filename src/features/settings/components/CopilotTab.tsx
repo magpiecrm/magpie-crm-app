@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink, Save, Trash2, Zap } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Field } from '../../../components/ui/Field'
@@ -188,7 +188,7 @@ function ManagedCopilot() {
           ) : ai.none ? (
             <p className="text-sm text-muted-foreground">No AI budget on your plan.</p>
           ) : (
-            <AiBudgetMeter label="Used this month" />
+            <AiBudgetMeter label="Left this month" />
           )}
           {billingManaged && (
             <SettingsActions>
@@ -219,20 +219,20 @@ function ManagedCopilot() {
  * the copilot, its AI budget instead (ManagedCopilot).
  */
 export function CopilotTab() {
-  const [settings, setSettings] = useState<Masked | null>(null)
-  const [loadError, setLoadError] = useState('')
+  const queryClient = useQueryClient()
+  // The same query as the menu's status, so it's usually loaded already.
+  const { data: settings, error } = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
+  const setSettings = (next: Masked) => queryClient.setQueryData(queryKeys.settings.copilot(), next)
 
-  useEffect(() => {
-    getCopilotSettingsFn().then(setSettings).catch((e) => setLoadError(e?.message || 'Failed to load settings'))
-  }, [])
-
-  if (settings?.managed) return <ManagedCopilot />
-  const noKey = settings && !settings.anthropic.isSet && !settings.openai.isSet
+  if (error) return <Notice level="error">{error.message || 'Failed to load settings'}</Notice>
+  // Nothing until it's known whether the host runs the copilot, so the key form never shows first where it does.
+  if (!settings) return null
+  if (settings.managed) return <ManagedCopilot />
+  const noKey = !settings.anthropic.isSet && !settings.openai.isSet
 
   return (
     <div className="flex flex-col gap-4">
-      {loadError && <Notice level="error">{loadError}</Notice>}
-      {settings?.credsUnreadable && (
+      {settings.credsUnreadable && (
         <Notice level="error">The saved keys can't be read (the encryption secret changed). Enter them again and save.</Notice>
       )}
       <Notice level={noKey ? 'warning' : 'info'}>

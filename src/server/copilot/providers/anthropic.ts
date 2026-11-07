@@ -29,6 +29,8 @@ function toolContent(outcome: ToolOutcome): unknown[] {
 function withCachePoint(items: any[]): any[] {
   if (items.length === 0) return items
   const last = items[items.length - 1]
+  // A paused turn being continued ends with Claude's own reply, which may end in a block that takes no marker.
+  if (last.role !== 'user') return items
   const content = typeof last.content === 'string' ? [{ type: 'text', text: last.content }] : [...last.content]
   content[content.length - 1] = { ...content[content.length - 1], cache_control: { type: 'ephemeral' } }
   return [...items.slice(0, -1), { ...last, content }]
@@ -41,9 +43,10 @@ export const anthropicAdapter: ModelAdapter = {
   requireKey: requireAnthropicKey,
   textItem: (role, text) => ({ role, content: text }),
 
-  async call({ apiKey, model, effort, system, items, tools, signal, fetchImpl }) {
+  async call({ apiKey, model, effort, system, items, tools, serverTools, maxTokens, signal, fetchImpl }) {
     const toolDefs: any[] = tools.map((t) => ({ name: t.name, description: t.description, input_schema: toolSchema(t) }))
-    toolDefs[toolDefs.length - 1] = { ...toolDefs[toolDefs.length - 1], cache_control: { type: 'ephemeral' } }
+    if (toolDefs.length) toolDefs[toolDefs.length - 1] = { ...toolDefs[toolDefs.length - 1], cache_control: { type: 'ephemeral' } }
+    if (serverTools?.length) toolDefs.push(...serverTools)
     const useEffort = effort && EFFORTS.has(effort) && supportsEffort(model)
     const managed = copilotManaged()
     if (managed) {
@@ -59,7 +62,7 @@ export const anthropicAdapter: ModelAdapter = {
       },
       body: JSON.stringify({
         model,
-        max_tokens: effort === 'xhigh' || effort === 'max' ? 32_000 : 16_000,
+        max_tokens: maxTokens ?? (effort === 'xhigh' || effort === 'max' ? 32_000 : 16_000),
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
         messages: withCachePoint(items as any[]),
         tools: toolDefs,
@@ -96,6 +99,7 @@ export const anthropicAdapter: ModelAdapter = {
       texts,
       calls,
       incomplete: json.stop_reason === 'max_tokens' ? 'it hit the length limit' : undefined,
+      ...(json.stop_reason === 'pause_turn' ? { paused: true } : {}),
     }
   },
 

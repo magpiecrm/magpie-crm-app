@@ -1,12 +1,16 @@
 // One sequence email as a contact would get it, for the editor's Preview and
 // the copilot: merge tags filled in from a chosen contact (or someone
 // enrolled, or a sample), the sign-off and unsubscribe line added, and the
-// merge tags that would come out empty for them.
+// merge tags that would come out empty for them. Where the first email is
+// written for each person, it's their own (or one written now, for "Try it
+// on…", which isn't kept).
 
 import { db } from '../db'
 import { emptyMergeTags } from '../mergeTags'
 import { sequences } from '.'
 import { renderStep } from './render'
+import { writeDraft } from './personalise'
+import { draftFor, type PersonalDraft, type SequenceStep } from '../../features/sequences/types'
 
 const SAMPLE = { email: 'ava@example.com', first_name: 'Ava', last_name: 'Stone', company: 'Larkspur' }
 
@@ -18,6 +22,31 @@ export function previewStep(sequenceId: string, stepIndex: number, subject: stri
   const own = subject?.trim()
   const thread = sequence.steps.slice(0, stepIndex).reverse().find((s) => s.subject?.trim())?.subject ?? ''
   const shownSubject = own || (stepIndex > 0 ? `Re: ${thread}` : '')
-  const r = renderStep({ subject: shownSubject, body, contact: contact as any, settings: sequence.settings, unsubscribeUrl: 'https://…/unsubscribe' })
-  return { subject: r.subject, text: r.text, contact: contact.email, empty: emptyMergeTags(`${shownSubject}\n${body}`, contact as any) }
+  // Their own version of this email, once it's written (a follow-up in the thread keeps the thread's subject).
+  const mine = draftFor(db.data.sequence_enrollments?.find((e) => e.sequence_id === sequenceId && e.contact_email === contact.email) ?? {}, sequence.steps[stepIndex]?.id)
+  const theirs = mine?.status === 'ready' && mine.body ? { subject: mine.subject, body: mine.body } : null
+  const r = renderStep({ subject: theirs?.subject || shownSubject, body: theirs?.body ?? body, contact: contact as any, settings: sequence.settings, unsubscribeUrl: '' })
+  const personal: Pick<PersonalDraft, 'status' | 'reason' | 'facts'> | null = mine ? { status: mine.status, reason: mine.reason, facts: mine.facts } : null
+  return { subject: r.subject, text: r.text, contact: contact.email, empty: theirs ? [] : emptyMergeTags(`${shownSubject}\n${body}`, contact as any), personal }
+}
+
+/**
+ * A first email written now for one contact, from the step as it's being
+ * edited (saved or not), for "Try it on…": researched and written as it
+ * would be for real, but not kept (the company's research is).
+ */
+export async function previewPersonal(sequenceId: string, step: Pick<SequenceStep, 'subject' | 'body' | 'personalise'>, contactEmail: string) {
+  const { sequence } = sequences.get(sequenceId)
+  const contact = db.getContact(contactEmail)
+  if (!contact) throw new Error('There is no contact with that address.')
+  const first = { ...sequence.steps[0], ...step, personalise: { brief: step.personalise?.brief ?? '' } } as SequenceStep
+  const out = await writeDraft({ steps: [first], sender_id: sequence.sender_id }, contact)
+  const r = renderStep({
+    subject: (out.status === 'ready' && out.subject) || (first.subject ?? ''),
+    body: out.status === 'ready' ? out.body : first.body,
+    contact,
+    settings: sequence.settings,
+    unsubscribeUrl: '',
+  })
+  return { contact: contact.email, status: out.status, subject: r.subject, text: r.text, facts: out.status === 'ready' ? out.facts : [], reason: out.status === 'fallback' ? out.reason : null }
 }

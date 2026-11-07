@@ -7,7 +7,11 @@
 import { randomUUID } from 'node:crypto'
 import { db, type DbSchema } from '../db'
 import {
+  BRIEF_MAX,
   defaultSettings,
+  SUBJECT_MAX,
+  isPersonalised,
+  pendingDraft,
   type Enrollment,
   type EnrollmentView,
   type Sequence,
@@ -16,6 +20,7 @@ import {
   type SequenceSummary,
 } from '../../features/sequences/types'
 import { unfilledMergeTags } from '../mergeTags'
+import { aiAvailable } from '../copilot/availability'
 import { isUnconfirmedGuess } from '../prospecting/types'
 import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { dueAfter, firstSendable, isTimeZone, remapStep } from './schedule'
@@ -64,12 +69,15 @@ function cleanSteps(steps: Array<Partial<SequenceStep>>, old: SequenceStep[] = [
     const delay = Math.round(Number(st.delay_days ?? (i === 0 ? 0 : 3)))
     if (!Number.isFinite(delay) || delay < 0 || delay > 90) throw new Error('Wait between 0 and 90 days between emails.')
     const subject = st.subject?.trim() ? st.subject.trim().slice(0, 200) : null
+    // Only the first email can be written for each person; left out of an edit, it stays as it was.
+    const personalise = i > 0 ? null : st.personalise === undefined ? (kept?.personalise ?? null) : st.personalise
     return {
       id: kept?.id ?? st.id ?? randomUUID(),
       delay_days: delay,
       subject: i === 0 ? (subject ?? '') : subject,
       body: String(st.body ?? '').slice(0, 10_000),
       ...(kept?.campaign_id ? { campaign_id: kept.campaign_id } : {}),
+      ...(personalise ? { personalise: { brief: String(personalise.brief ?? '').trim().slice(0, BRIEF_MAX) } } : {}),
     }
   })
 }
@@ -112,7 +120,50 @@ export function notReady(data: DbSchema, s: Sequence): string | null {
   if (empty >= 0) return `Email ${empty + 1} has no text.`
   if (!/\{\{\s*unsubscribe\s*\}\}/i.test(s.settings.footer)) return 'The last line needs the {{ unsubscribe }} link, so people can opt out.'
   if (!s.settings.days.length) return 'Choose at least one day to send on.'
+  if (isPersonalised(s)) {
+    const ai = aiAvailable()
+    if (!ai.ok) return `Its first emails are written for each person by the AI: ${ai.reason}`
+  }
   return mergeTagProblem(data, s)
+}
+
+/** What a hand-edited first email may not hold: nothing at all, or merge tags that can't be filled. */
+export function checkEdit(draft: { subject: string; body: string }, fieldKeys: string[], needsSubject = true): string | null {
+  if (needsSubject && !draft.subject) return 'Give it a subject.'
+  if (/[\r\n]/.test(draft.subject)) return "The subject can't have a line break."
+  if (draft.subject.length > SUBJECT_MAX) return `Keep the subject under ${SUBJECT_MAX} characters.`
+  if (!draft.body) return 'Write the email.'
+  if (draft.body.length > 10_000) return 'The email is too long.'
+  const [tag] = unfilledMergeTags(`${draft.subject}\n${draft.body}`, fieldKeys)
+  return tag ? `It uses ${tag}, which isn't a contact field.` : null
+}
+
+/** What the AI writes a step's email from, besides the brief. */
+const draftInputs = (st: SequenceStep | undefined) => JSON.stringify([st?.subject ?? null, st?.body ?? null])
+
+/**
+ * After the steps change, each person's emails not yet sent: written again
+ * where what they're written from changed (a new brief changes them all),
+ * unless edited by hand; dropped once it's no longer personalised, or the
+ * step is gone; and their next email gets one to write when it's just been
+ * switched on.
+ */
+function redraft(data: DbSchema, s: Sequence, old: SequenceStep[]) {
+  const on = isPersonalised(s)
+  const briefChanged = JSON.stringify(old[0]?.personalise ?? null) !== JSON.stringify(s.steps[0]?.personalise ?? null)
+  const changed = new Set(s.steps.filter((st) => briefChanged || draftInputs(old.find((o) => o.id === st.id)) !== draftInputs(st)).map((st) => st.id))
+  const kept = new Set(s.steps.map((st) => st.id))
+  for (const e of enrollmentsOf(data, s.id)) {
+    if (e.claim || (e.status !== 'active' && e.status !== 'paused')) continue
+    const sent = new Set(e.sends.map((x) => x.step_id))
+    for (const [stepId, d] of Object.entries(e.drafts ?? {})) {
+      if (sent.has(stepId)) continue
+      if (!on || !kept.has(stepId)) delete e.drafts![stepId]
+      else if (changed.has(stepId) && !d.edited) e.drafts![stepId] = pendingDraft()
+    }
+    const next = s.steps[e.next_step]?.id
+    if (on && next && !e.drafts?.[next]) (e.drafts ??= {})[next] = pendingDraft()
+  }
 }
 
 /** Why someone can't be emailed at all, or null when they can. */
@@ -208,6 +259,7 @@ export const sequences = {
           }
         }
         s.steps = steps
+        redraft(data, s, old)
       }
       if (s.status === 'active' && notReady(data, s)) throw new Error(notReady(data, s)!)
       s.updated_at = now()
@@ -286,6 +338,7 @@ export const sequences = {
             reply: null,
             enrolled_at: at,
             enrolled_by: actor,
+            ...(isPersonalised(s) ? { drafts: { [s.steps[0].id]: pendingDraft() } } : {}),
           })
         }
         s.updated_at = at
@@ -342,6 +395,30 @@ export const sequences = {
         changed++
       }
       return { changed }
+    }),
+
+  /**
+   * One person's own version of one email, before it's gone: write it again,
+   * or keep it as edited by hand (sent as it is, even if the step changes).
+   * A follow-up that replies in the thread has no subject of its own.
+   */
+  draft: (enrollmentId: string, stepId: string, change: { rewrite: true } | { subject?: string; body: string }) =>
+    write((data) => {
+      const e = (data.sequence_enrollments ?? []).find((x) => x.id === enrollmentId)
+      if (!e) throw new Error('They\'re not in this sequence any more.')
+      const s = seqOf(data, e.sequence_id)
+      if (!isPersonalised(s)) throw new Error("This sequence's emails aren't written for each person.")
+      const index = s.steps.findIndex((st) => st.id === stepId)
+      if (index < 0) throw new Error('That email has been taken out of the sequence.')
+      if (index < e.next_step || e.sends.some((x) => x.step_id === stepId) || e.claim?.step_id === stepId) throw new Error('That email has already gone to them.')
+      const drafts = (e.drafts ??= {})
+      if ('rewrite' in change) return (drafts[stepId] = pendingDraft())
+      const threaded = index > 0 && !s.steps[index].subject?.trim()
+      const draft = { subject: threaded ? '' : (change.subject ?? '').trim(), body: change.body.trim() }
+      const why = checkEdit(draft, (data.contact_fields ?? []).map((f) => f.key), !threaded)
+      if (why) throw new Error(why)
+      drafts[stepId] = { status: 'ready', ...(draft.subject ? { subject: draft.subject } : {}), body: draft.body, facts: drafts[stepId]?.facts ?? [], edited: true, at: now(), attempts: 0 }
+      return drafts[stepId]
     }),
 
   /** A contact's sequences, for their page. */

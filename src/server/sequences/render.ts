@@ -13,6 +13,15 @@ const escapeHtml = (s: string) =>
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/gi
 const UNSUB = /\{\{\s*unsubscribe\s*\}\}/gi
 
+/**
+ * What `{{ unsubscribe }}` says: words that link, rather than its long
+ * address. Not "click here", which spam filters (and spamScore) mark down.
+ * Capitalised where it starts a sentence.
+ */
+export function unsubscribeWords(before: string): string {
+  return /(^|[.!?])\s*$/.test(before) ? 'Unsubscribe here' : 'unsubscribe here'
+}
+
 /** The whole email as text, with `{{ unsubscribe }}` still in it. */
 export function composeText(body: string, settings: Pick<SequenceSettings, 'signature' | 'footer'>): string {
   return [body.trim(), settings.signature.trim(), settings.footer.trim()].filter(Boolean).join('\n\n')
@@ -36,23 +45,26 @@ export function renderStep(
 ): RenderedStep {
   const subject = mergeContact(input.subject, input.contact, { html: false })
   const filled = mergeContact(composeText(input.body, input.settings), input.contact, { html: false })
-  const text = filled.replace(UNSUB, () => input.unsubscribeUrl)
+  // Plain text can't link words, so the address follows them there (none in a preview, which has no address).
+  const parts = filled.split(UNSUB)
+  const text = parts.reduce((out, part, i) => out + unsubscribeWords(parts[i - 1]) + (input.unsubscribeUrl ? ` (${input.unsubscribeUrl})` : '') + part)
 
   // HTML: the same text, escaped, line breaks kept and links made clickable.
-  const link = (url: string, isUnsubscribe: boolean) => {
-    const href = !isUnsubscribe && input.settings.track_clicks && tracking.clickUrl ? tracking.clickUrl(url) : url
+  const link = (url: string) => {
+    const href = input.settings.track_clicks && tracking.clickUrl ? tracking.clickUrl(url) : url
     return `<a href="${escapeHtml(href)}">${escapeHtml(url)}</a>`
   }
-  const lines = filled.split(UNSUB).map((part) => {
+  const lines = parts.map((part) => {
     let out = ''
     let last = 0
     for (const m of part.matchAll(URL_RE)) {
-      out += escapeHtml(part.slice(last, m.index)) + link(m[0], false)
+      out += escapeHtml(part.slice(last, m.index)) + link(m[0])
       last = m.index! + m[0].length
     }
     return out + escapeHtml(part.slice(last))
   })
-  let bodyHtml = lines.join(link(input.unsubscribeUrl, true)).replace(/\r?\n/g, '<br>\n')
+  const unsubscribeLink = (words: string) => `<a href="${escapeHtml(input.unsubscribeUrl)}">${escapeHtml(words)}</a>`
+  let bodyHtml = lines.reduce((out, line, i) => out + unsubscribeLink(unsubscribeWords(parts[i - 1])) + line).replace(/\r?\n/g, '<br>\n')
   if (input.settings.track_opens && tracking.openUrl) {
     bodyHtml += `<img src="${escapeHtml(tracking.openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
   }

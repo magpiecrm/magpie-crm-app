@@ -13,6 +13,14 @@ export interface SequenceStep {
   body: string
   /** The hidden campaign row its sends are recorded under, from its first send (tracking and results). */
   campaign_id?: number
+  /**
+   * On the first step, and for the whole sequence: the AI writes each person
+   * their own version of every email, the first and the follow-ups
+   * (server/sequences/personalise.ts), from this brief and what it finds
+   * about their company. Each step's own subject and body are the example it
+   * follows, and what's sent when it can't write one.
+   */
+  personalise?: { brief: string } | null
 }
 
 export interface SequenceSettings {
@@ -59,7 +67,7 @@ export interface Sequence {
   /** Why it paused itself (out of emails this month, sending domain not ready…); null when paused by hand. */
   paused_reason: string | null
   /** Paused itself for something that may clear (out of emails, sending domain not ready): resumes by itself once it has. */
-  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | null
+  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | 'ai' | null
   steps: SequenceStep[]
   settings: SequenceSettings
   guess_gate: SequenceGuessGate | null
@@ -101,9 +109,71 @@ export interface Enrollment {
   reply: { at: string; matched_by: 'manual' | 'thread' | 'from' } | null
   enrolled_at: string
   enrolled_by: string | null
+  /** Their own version of each email, by step id, where the sequence is personalised: written as each comes due. */
+  drafts?: Record<string, PersonalDraft>
 }
 
-const DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
+/** A short fact about a person's company, and where it was read. */
+export interface ResearchFact {
+  text: string
+  url: string | null
+}
+
+/**
+ * One person's own version of one email (server/sequences/personalise.ts).
+ * `pending` waits to be written, and the email waits with it; `ready` is
+ * sent as written; `fallback` sends the step's own email, for `reason`. Kept
+ * after it's sent, as the record of what went out.
+ */
+export interface PersonalDraft {
+  status: 'pending' | 'ready' | 'fallback'
+  /** None for a follow-up that replies in the thread ("Re: …"). */
+  subject?: string
+  body?: string
+  /** What it was written from: the company facts it used. */
+  facts?: ResearchFact[]
+  /** Why the step's own email goes instead, in words. */
+  reason?: string
+  /** Edited by hand since it was written. */
+  edited?: boolean
+  at: string
+  /** Tries that failed, so a draft that keeps failing falls back. */
+  attempts: number
+}
+
+/** Longest brief for a personalised first email, and longest subject for one. */
+export const BRIEF_MAX = 2_000
+export const SUBJECT_MAX = 90
+
+/** The sequence's emails are written for each person (server/sequences/personalise.ts). */
+export const isPersonalised = (s: Pick<Sequence, 'steps'>) => !!s.steps[0]?.personalise
+
+/** Their own version of a step's email, if there is one. */
+export const draftFor = (e: Pick<Enrollment, 'drafts'>, stepId: string | undefined): PersonalDraft | undefined => (stepId ? e.drafts?.[stepId] : undefined)
+
+/**
+ * Enrollments from before a draft was kept for each email, whose one draft
+ * (`personal`) was their first email's: moved to that step. Returns how many.
+ */
+export function moveFirstEmailDrafts(sequences: Array<Pick<Sequence, 'id' | 'steps'>>, enrollments: Array<Enrollment & { personal?: PersonalDraft }>): number {
+  let moved = 0
+  for (const e of enrollments) {
+    if (!e.personal) continue
+    const first = sequences.find((s) => s.id === e.sequence_id)?.steps[0]?.id
+    if (first) e.drafts = { [first]: e.personal, ...e.drafts }
+    delete e.personal
+    moved++
+  }
+  return moved
+}
+
+/** A first email waiting to be written. */
+export const pendingDraft = (now = new Date()): PersonalDraft => ({ status: 'pending', at: now.toISOString(), attempts: 0 })
+
+/** `{{ unsubscribe }}` becomes the words "Unsubscribe here", linked (server/sequences/render.ts). */
+export const DEFAULT_FOOTER = "Not interested? {{ unsubscribe }} and I won't email you again."
+/** The default before the link was words: its address showed after the colon. */
+export const FIRST_DEFAULT_FOOTER = "Not interested? Unsubscribe here and I won't email you again: {{ unsubscribe }}"
 
 export function defaultSettings(timeZone = 'Europe/London'): SequenceSettings {
   return {

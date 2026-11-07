@@ -150,7 +150,7 @@ function SequencePage() {
         </nav>
       </div>
 
-      {tab === 'emails' && <StepsEditor sequence={s} stats={data.stepStats} />}
+      {tab === 'emails' && <StepsEditor sequence={s} stats={data.stepStats} ai={data.ai} />}
       {tab === 'people' && <PeopleTable sequence={s} />}
       {tab === 'settings' && <SequenceSettingsForm sequence={s} />}
     </div>

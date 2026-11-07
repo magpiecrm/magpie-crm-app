@@ -47,16 +47,22 @@ type StepResult =
       calls: ToolCall[]
       /** Why the reply was cut short, if it was. */
       incomplete?: string
+      /** The provider paused a long turn of its own tools (Claude's web search): send the conversation again to continue it. */
+      paused?: boolean
     }
   | { ok: false; message: string; fatal?: boolean }
 
-interface CallOptions {
+export interface CallOptions {
   apiKey: string
   model: string
   effort?: string
   system: string
   items: unknown[]
   tools: CopilotTool<any>[]
+  /** The provider's own tools, as its API declares them (Claude's web search and fetch). The copilot sends none. */
+  serverTools?: unknown[]
+  /** The longest reply, where the call needs more room than the effort's usual (Claude only). */
+  maxTokens?: number
   signal: AbortSignal
   fetchImpl: typeof fetch
 }

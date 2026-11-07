@@ -29,8 +29,8 @@ export function useSettingsStatus(): {
   billingManaged: boolean
   /** The host offers inbox warmup here, or it can be added to the plan: Warmup is shown. */
   warmupShown: boolean
-  /** COPILOT_MANAGED: the host runs the copilot, so Copilot is about its AI budget, not keys. */
-  copilotManaged: boolean
+  /** COPILOT_MANAGED: the host runs the copilot, so Copilot is about its AI budget, not keys. Null until known. */
+  copilotManaged: boolean | null
 } {
   const prospecting = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   const copilot = useQuery({ queryKey: queryKeys.settings.copilot(), queryFn: () => getCopilotSettingsFn() })
@@ -188,6 +188,6 @@ export function useSettingsStatus(): {
     managed: Boolean(p?.managed),
     billingManaged,
     warmupShown: Boolean(w && (w.offered || w.purchasable)),
-    copilotManaged: Boolean(c?.managed),
+    copilotManaged: c ? Boolean(c.managed) : null,
   }
 }

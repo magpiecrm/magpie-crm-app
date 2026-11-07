@@ -150,7 +150,9 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
           <header className="flex flex-col gap-1.5">
             <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
-            <p className="text-sm text-muted-foreground max-w-2xl">{copilotManaged && current.id === 'copilot' ? COPILOT_MANAGED_INTRO : current.intro}</p>
+            <p className="text-sm text-muted-foreground max-w-2xl">
+              {current.id !== 'copilot' ? current.intro : copilotManaged === null ? '\u00a0' : copilotManaged ? COPILOT_MANAGED_INTRO : current.intro}
+            </p>
           </header>
 
           {active === 'overview' && <SettingsOverview statuses={statuses} isLoading={isLoading} onOpen={open} />}

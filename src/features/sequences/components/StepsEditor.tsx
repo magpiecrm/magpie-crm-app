@@ -14,8 +14,9 @@ import { SpamScoreCard, SpamStepChip } from '../../spam-score/SpamScoreCard'
 import { spamFixPrompt, useCopilotReady } from '../../spam-score/fixWithAI'
 import { copilotStore } from '../../copilot/copilotStore'
 import { useSequenceSpamScore } from '../../spam-score/useSpamScore'
+import { PersonaliseBox, type AiState } from './Personalise'
 
-type Draft = Pick<SequenceStep, 'delay_days' | 'subject' | 'body'> & { id?: string }
+type Draft = Pick<SequenceStep, 'delay_days' | 'subject' | 'body' | 'personalise'> & { id?: string }
 
 interface StepStats {
   id: string
@@ -28,13 +29,15 @@ interface StepStats {
 }
 
 /** The sequence's emails: what each says, and how long after the one before it goes. */
-export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: StepStats[] }) {
+export function StepsEditor({ sequence, stats, ai }: { sequence: Sequence; stats: StepStats[]; ai?: AiState }) {
   const queryClient = useQueryClient()
   const [steps, setSteps] = useState<Draft[]>(sequence.steps)
   const [saved, setSaved] = useState(false)
   useEffect(() => setSteps(sequence.steps), [sequence.id])
-  const asSaved = (all: Array<Draft & { campaign_id?: number }>) => JSON.stringify(all.map(({ campaign_id: _c, ...s }) => s))
-  const dirty = JSON.stringify(steps) !== asSaved(sequence.steps)
+  // Personalisation switched off is the same as never on.
+  const asSaved = (all: Array<Draft & { campaign_id?: number }>) =>
+    JSON.stringify(all.map(({ campaign_id: _c, personalise, ...s }) => ({ ...s, ...(personalise ? { personalise } : {}) })))
+  const dirty = asSaved(steps) !== asSaved(sequence.steps)
   // Saved elsewhere (the copilot's "Fix with AI"): take the new emails, unless there are edits here.
   const lastSaved = useRef(asSaved(sequence.steps))
   useEffect(() => {
@@ -44,12 +47,20 @@ export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: St
     lastSaved.current = now
   }, [sequence.steps])
   const save = useMutation({
-    mutationFn: () => updateSequenceFn({ data: { id: sequence.id, steps: steps.map((s) => ({ id: s.id, delay_days: s.delay_days, subject: s.subject, body: s.body })) } }),
+    mutationFn: () =>
+      updateSequenceFn({
+        data: {
+          id: sequence.id,
+          steps: steps.map((s, i) => ({ id: s.id, delay_days: s.delay_days, subject: s.subject, body: s.body, ...(i === 0 ? { personalise: s.personalise ?? null } : {}) })),
+        },
+      }),
     onSuccess: (s) => {
       setSteps(s.steps)
       setSaved(true)
       void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.sequence(sequence.id) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.list() })
+      // First emails not yet sent are written again from the new brief.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.enrollments(sequence.id) })
     },
   })
   useEffect(() => {
@@ -109,6 +120,8 @@ export function StepsEditor({ sequence, stats }: { sequence: Sequence; stats: St
             step={step}
             stats={stats.find((s) => s.id === step.id)}
             spam={spam.data?.steps?.[i]}
+            ai={ai}
+            personalised={!!steps[0]?.personalise}
             onChange={(patch) => change(i, patch)}
             onRemove={steps.length > 1 ? () => setSteps((all) => all.filter((_, j) => j !== i)) : undefined}
           />
@@ -137,6 +150,8 @@ function StepCard({
   step,
   stats,
   spam,
+  ai,
+  personalised,
   onChange,
   onRemove,
 }: {
@@ -145,6 +160,9 @@ function StepCard({
   step: Draft
   stats?: StepStats
   spam?: SpamStepScore
+  ai?: AiState
+  /** The sequence's emails are written for each person (the switch on the first). */
+  personalised?: boolean
   onChange: (patch: Partial<Draft>) => void
   onRemove?: () => void
 }) {
@@ -187,6 +205,13 @@ function StepCard({
         </div>
       </header>
 
+      {index === 0 && <PersonaliseBox sequence={sequence} step={step} ai={ai} onChange={onChange} />}
+      {index === 0 && step.personalise && <p className="text-xs font-semibold text-muted-foreground">Example email, and the standard one</p>}
+      {index > 0 && personalised && (
+        <p className="text-xs text-muted-foreground">
+          Written for each person by the AI, from your brief and what they've already been sent. This is the example it follows, and what's sent when it can't write one.
+        </p>
+      )}
       {index > 0 && (
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">

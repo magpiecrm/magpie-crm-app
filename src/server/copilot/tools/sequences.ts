@@ -39,7 +39,18 @@ const stepInput = z.object({
     .nullable()
     .describe('The subject. null for a follow-up that replies in the same thread ("Re: <first subject>"), which is usual. The first email needs one.'),
   body: z.string().min(1).max(10_000).describe('Plain text, short and personal. Merge tags: {{ contact.first_name | default: "there" }}, {{ contact.COMPANY }}, {{ contact.custom.<key> }}. No sign-off or unsubscribe line: the sequence adds them.'),
+  personaliseBrief: z
+    .string()
+    .max(2_000)
+    .nullable()
+    .optional()
+    .describe(
+      "First email only, for the whole sequence: the AI writes each person their own version of every email, the first and the follow-ups, from this brief (what's offered, what to ask, anything to avoid), what it finds on the web about their company, and what they've already been sent; each email's subject and body become the example it follows, and what's sent when it can't write one. Sent without review. null turns it off; left out, it stays as it is.",
+    ),
 })
+
+/** A step's personalisation as the sequence takes it: left out (unchanged), null (off), or the brief. */
+const toPersonalise = (brief: string | null | undefined) => (brief === undefined ? {} : { personalise: brief === null ? null : { brief } })
 
 const settingsInput = z
   .object({
@@ -84,6 +95,7 @@ async function describe(id: string) {
       waitDays: st.delay_days,
       subject: st.subject,
       body: st.body,
+      ...(st.personalise ? { personaliseBrief: st.personalise.brief } : {}),
       sent: stats[i]?.sent ?? 0,
       replied: stats[i]?.replied ?? 0,
       waiting: stats[i]?.waiting ?? 0,
@@ -132,7 +144,7 @@ export const sequenceTools = [
       const s = sequences.create({ name, senderId: sender !== undefined ? await resolveSender(sender) : undefined, timeZone: ctx.getClientState().timeZone }, null)
       if (emails || settings) {
         sequences.update(s.id, {
-          ...(emails ? { steps: emails.map((e) => ({ delay_days: e.waitDays, subject: e.subject, body: e.body })) } : {}),
+          ...(emails ? { steps: emails.map((e) => ({ delay_days: e.waitDays, subject: e.subject, body: e.body, ...toPersonalise(e.personaliseBrief) })) } : {}),
           ...(settings ? { settings: toSettings(settings) } : {}),
         })
       }
@@ -160,7 +172,7 @@ export const sequenceTools = [
         ...(name !== undefined ? { name } : {}),
         ...(sender !== undefined ? { senderId: await resolveSender(sender) } : {}),
         ...(settings ? { settings: toSettings(settings) } : {}),
-        ...(emails ? { steps: emails.map((e) => ({ id: e.step ? current[e.step - 1]?.id : undefined, delay_days: e.waitDays, subject: e.subject, body: e.body })) } : {}),
+        ...(emails ? { steps: emails.map((e) => ({ id: e.step ? current[e.step - 1]?.id : undefined, delay_days: e.waitDays, subject: e.subject, body: e.body, ...toPersonalise(e.personaliseBrief) })) } : {}),
       })
       return describe(seqId)
     },
@@ -260,7 +272,8 @@ export const sequenceTools = [
 
   defineTool({
     name: 'previewSequenceEmail',
-    description: 'One email of a sequence as a contact would get it: subject and full text, with their details filled in, the sign-off and unsubscribe line, and any merge tags that come out empty for them.',
+    description:
+      "One email of a sequence as a contact would get it: subject and full text, with their details filled in, the sign-off and unsubscribe line, and any merge tags that come out empty for them. Where the first email is written for each person, it's their own once written (`personal` says whether it's written, or why the standard one goes, and the facts it used).",
     input: {
       id: sequenceRef,
       step: z.number().int().min(1).max(10).describe('Which email, from 1.'),
