@@ -1,16 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlarmClock, Check, ChevronDown, Trash2 } from 'lucide-react'
+import { AlarmClock, Building2, CalendarClock, CalendarX2, Check, ChevronDown, Handshake, MoreHorizontal, Plus, Trash2, UserRound } from 'lucide-react'
 import { addTaskFn, deleteTaskFn, tasksFn, updateTaskFn } from '../../../server/functions'
+import { Avatar } from '../../../components/ui/Avatar'
 import { Button } from '../../../components/ui/Button'
 import { queryKeys } from '../../../queryKeys'
-import { daysFromNow, dueBucket, dueLabel, FOLLOW_UPS, fromLocalInput } from '../tasks'
+import { daysFromNow, dueBucket, dueLabel, dueShort, FOLLOW_UPS, fromLocalInput } from '../tasks'
 import type { Activity } from '../types'
 import { Select } from '../../../components/ui/Select'
 
 /** What a task is about: at most one of each. */
 export type TaskOn = { dealId?: string; companyId?: string; contactEmail?: string }
+
+/** A task as the Tasks page has it: with the names of what it's about, and the page to open. */
+export type TaskItem = Activity & { link?: string; deal_name?: string | null; company_name?: string | null; contact_name?: string | null }
 
 /** After any task change: the Tasks page, the sidebar count, and the record pages refetch. */
 function useTasksChanged(onChanged?: () => void) {
@@ -23,63 +28,231 @@ function useTasksChanged(onChanged?: () => void) {
   }
 }
 
-/** One task: tick it off, see when it's due (red once overdue), open what it's about, delete it. */
+/** The record a task is about, as the Tasks page links it: the deal first, else the company, else the person. */
+function aboutOf(task: TaskItem): { name: string; Icon: typeof Handshake; kind: string } | null {
+  if (task.deal_name) return { name: task.deal_name, Icon: Handshake, kind: 'Deal' }
+  if (task.company_name) return { name: task.company_name, Icon: Building2, kind: 'Company' }
+  if (task.contact_name) return { name: task.contact_name, Icon: UserRound, kind: 'Contact' }
+  return null
+}
+
+/** "alex.morgan@acme.com" → "Alex Morgan", for an avatar's initials. */
+const nameFromEmail = (email: string) =>
+  email
+    .split('@')[0]
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1))
+    .join(' ')
+
+/** Ticking a task off: a round control (a square would read as "select"), the check showing on hover. */
+function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={done}
+      aria-label={done ? 'Mark as not done' : 'Mark as done'}
+      onClick={onToggle}
+      disabled={pending}
+      className="group/check relative mt-px flex shrink-0 cursor-pointer items-center justify-center rounded-full after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait"
+    >
+      <span
+        className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border-[1.5px] transition-colors ${
+          done ? 'border-accent/70 bg-accent/15 text-accent' : 'border-input text-accent group-hover/check:border-accent'
+        }`}
+      >
+        <Check strokeWidth={3} className={`h-2.5 w-2.5 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
+      </span>
+    </button>
+  )
+}
+
+/** A task's other actions behind "…": move it to another day, or delete it. In a portal, so a list's edge doesn't cut it off. */
+function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const changed = useTasksChanged(onChanged)
+  const move = useMutation({ mutationFn: (dueAt: string | null) => updateTaskFn({ data: { id: task.id, dueAt } }), onSuccess: changed })
+  const remove = useMutation({ mutationFn: () => deleteTaskFn({ data: { id: task.id } }), onSuccess: changed })
+  const done = Boolean(task.done_at)
+
+  useLayoutEffect(() => {
+    if (!open) return setPlace(null)
+    const r = buttonRef.current!.getBoundingClientRect()
+    const h = menuRef.current?.offsetHeight ?? 260
+    const top = window.innerHeight - r.bottom < h + 12 && r.top > h + 12 ? r.top - h - 4 : r.bottom + 4
+    setPlace({ top, left: Math.max(8, r.right - 208) })
+  }, [open])
+  useEffect(() => {
+    if (!open) return
+    menuRef.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus()
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent) {
+        if (e.key === 'Escape') {
+          setOpen(false)
+          buttonRef.current?.focus()
+        }
+        return
+      }
+      if (e.type === 'scroll' || !(menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    document.addEventListener('scroll', close, true)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+      document.removeEventListener('scroll', close, true)
+    }
+  }, [open])
+
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+    e.preventDefault()
+    const items = [...(menuRef.current?.querySelectorAll<HTMLElement>('[role=menuitem]') ?? [])]
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[next]?.focus()
+  }
+  const pick = (fn: () => void) => () => {
+    setOpen(false)
+    fn()
+  }
+  const item = 'flex w-full cursor-pointer items-center gap-2.5 rounded-md-xs px-2.5 py-1.5 text-left text-sm text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Task actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        disabled={move.isPending || remove.isPending}
+        className="relative -my-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground"
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="Task actions"
+            onKeyDown={onMenuKey}
+            style={{ position: 'fixed', top: place?.top ?? -9999, left: place?.left ?? -9999 }}
+            className="z-[100] w-52 rounded-md-s border border-border bg-popover p-1 shadow-lg"
+          >
+            {!done && (
+              <>
+                <p className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">Move to</p>
+                {FOLLOW_UPS.map((f) => (
+                  <button key={f.days} type="button" role="menuitem" className={item} onClick={pick(() => move.mutate(daysFromNow(f.days)))}>
+                    <CalendarClock aria-hidden className="h-4 w-4 text-muted-foreground" /> {f.label}
+                  </button>
+                ))}
+                {task.due_at && (
+                  <button type="button" role="menuitem" className={item} onClick={pick(() => move.mutate(null))}>
+                    <CalendarX2 aria-hidden className="h-4 w-4 text-muted-foreground" /> No due date
+                  </button>
+                )}
+                <div role="separator" className="-mx-1 my-1 border-t border-border" />
+              </>
+            )}
+            <button type="button" role="menuitem" className={`${item} text-destructive`} onClick={pick(() => remove.mutate())}>
+              <Trash2 aria-hidden className="h-4 w-4" /> Delete
+            </button>
+          </div>,
+          document.body,
+        )}
+    </>
+  )
+}
+
+/**
+ * One task: tick it off, see when it's due (red once overdue), open what it's about, move or delete it.
+ * In a wide list (the Tasks page) what it's about and when sit in aligned columns on one line; in a
+ * narrow one (a record's page, a phone) they go under the task.
+ */
 export function TaskRow({
   task,
-  about,
+  showAbout = false,
+  grouped = false,
+  showOwner = false,
   onChanged,
 }: {
-  task: Activity & { link?: string }
-  /** Shown as a link to the record, e.g. "Acme renewal" (the Tasks page; not on the record itself). */
-  about?: string | null
+  task: TaskItem
+  /** Link to the record it's about (the Tasks page; not on the record itself). */
+  showAbout?: boolean
+  /** Under a heading that already says overdue, today or done, so the time doesn't repeat it. */
+  grouped?: boolean
+  /** Who added it, when the list holds more than one person's. */
+  showOwner?: boolean
   onChanged?: () => void
 }) {
   const changed = useTasksChanged(onChanged)
   const toggle = useMutation({ mutationFn: () => updateTaskFn({ data: { id: task.id, done: !task.done_at } }), onSuccess: changed })
-  const remove = useMutation({ mutationFn: () => deleteTaskFn({ data: { id: task.id } }), onSuccess: changed })
   const done = Boolean(task.done_at)
-  const overdue = !done && dueBucket(task.due_at) === 'overdue'
+  const bucket = dueBucket(task.due_at)
+  const overdue = !done && bucket === 'overdue'
+  const about = showAbout && task.link ? aboutOf(task) : null
+  const when = done
+    ? grouped
+      ? dueShort(task.done_at!)
+      : `Done ${dueShort(task.done_at!)}`
+    : !task.due_at
+      ? grouped
+        ? ''
+        : 'No due date'
+      : grouped
+        ? bucket === 'today'
+          ? dueShort(task.due_at).replace(/^Today /, '')
+          : dueShort(task.due_at)
+        : dueLabel(task.due_at)
+
   return (
-    <div className="group flex items-start gap-3">
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={done}
-        aria-label={done ? 'Mark as not done' : 'Mark as done'}
-        onClick={() => toggle.mutate()}
-        disabled={toggle.isPending}
-        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-          done ? 'border-accent bg-accent text-accent-foreground' : 'border-input hover:border-accent'
-        }`}
-      >
-        {done && <Check className="h-3 w-3" />}
-      </button>
-      <div className="min-w-0 flex-1">
-        <p className={`text-sm break-words ${done ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{task.body}</p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <span className={`inline-flex items-center gap-1 tabular-nums ${overdue ? 'font-medium text-destructive' : ''}`}>
-            <AlarmClock className="h-3 w-3" /> {done ? `Done ${dueLabel(task.done_at).replace(/^Overdue · /, '').replace(/^Today/, 'today')}` : dueLabel(task.due_at)}
-          </span>
-          {about && task.link && (
-            <Link to={task.link} className="hover:text-foreground hover:underline">
-              · {about}
-            </Link>
-          )}
-          <button
-            type="button"
-            onClick={() => remove.mutate()}
-            aria-label="Delete task"
-            className="ml-1 opacity-0 transition-opacity hover:text-destructive focus:opacity-100 group-hover:opacity-100"
+    <div className="@container flex items-start gap-3">
+      <TaskCheck done={done} pending={toggle.isPending} onToggle={() => toggle.mutate()} />
+      <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
+        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground line-through decoration-muted-foreground/60' : 'text-foreground'}`}>
+          {task.body}
+        </p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] leading-5 text-muted-foreground @2xl:mt-0 @2xl:flex-nowrap @2xl:shrink-0">
+          <span
+            className={`tabular-nums @2xl:order-2 @2xl:w-28 @2xl:text-right ${when ? '' : 'hidden @2xl:block'} ${overdue ? 'font-medium text-destructive' : ''}`}
+            title={task.due_at && !done ? dueLabel(task.due_at) : undefined}
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+            {!grouped && !done && <AlarmClock aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />}
+            {when}
+          </span>
+          {showAbout && (
+            <span className={`min-w-0 @2xl:order-1 @2xl:w-48 ${about ? '' : 'hidden @2xl:block'}`}>
+              {about && (
+                <Link to={task.link!} className="inline-flex max-w-full items-center gap-1.5 rounded-sm align-top hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                  <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{about.name}</span>
+                </Link>
+              )}
+            </span>
+          )}
         </div>
       </div>
+      {showOwner && task.created_by && (
+        <span title={`Added by ${task.created_by}`} className="-my-0.5 hidden @md:block">
+          <Avatar name={nameFromEmail(task.created_by)} size="sm" />
+          <span className="sr-only">Added by {task.created_by}</span>
+        </span>
+      )}
+      <TaskMenu task={task} onChanged={onChanged} />
     </div>
   )
 }
 
-/** Writing a task: what needs doing, and when (a quick choice or a date and time). */
+/** Writing a task: what needs doing, and when (a quick choice or a date and time), on one line where there's room. */
 export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: { on: TaskOn; onDone?: () => void; placeholder?: string }) {
   const [body, setBody] = useState('')
   const [when, setWhen] = useState<string>('3')
@@ -100,47 +273,55 @@ export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: 
         e.preventDefault()
         if (ready) add.mutate()
       }}
-      className="space-y-2"
+      className="@container"
     >
-      <input
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        placeholder={placeholder}
-        maxLength={2000}
-        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
-      />
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs text-muted-foreground" htmlFor="task-when">
-          Due
-        </label>
-        <Select
-          id="task-when"
-          value={when}
-          onChange={(e) => setWhen(e.target.value)}
-          className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-accent"
-        >
-          {FOLLOW_UPS.map((f) => (
-            <option key={f.days} value={String(f.days)}>
-              {f.label}
-            </option>
-          ))}
-          <option value="custom">Pick a date…</option>
-          <option value="none">No due date</option>
-        </Select>
-        {when === 'custom' && (
+      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-sm transition-colors focus-within:border-accent @xl:flex-row @xl:items-center">
+        <label className="flex min-w-0 flex-1 items-center gap-2.5 px-2">
+          <Plus aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="sr-only">New task</span>
           <input
-            type="datetime-local"
-            value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-            aria-label="Due date and time"
-            className="rounded-lg border border-border bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-accent"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder={placeholder}
+            maxLength={2000}
+            required
+            className="min-w-0 flex-1 bg-transparent py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/90"
           />
-        )}
-        <span className="flex-1 text-xs text-destructive">{(add.error as Error | null)?.message}</span>
-        <Button type="submit" size="sm" isLoading={add.isPending} disabled={!ready}>
-          Add task
-        </Button>
+        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 @xl:flex-none">
+            <CalendarClock aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Select
+              value={when}
+              onChange={(e) => setWhen(e.target.value)}
+              aria-label="Due"
+              className="h-[38px] w-full rounded-md-s bg-muted pl-8 pr-2.5 text-sm text-foreground hover:bg-muted-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 @xl:w-40"
+            >
+              {FOLLOW_UPS.map((f) => (
+                <option key={f.days} value={String(f.days)}>
+                  {f.label}
+                </option>
+              ))}
+              <option value="custom">Pick a date…</option>
+              <option value="none">No due date</option>
+            </Select>
+          </div>
+          {when === 'custom' && (
+            <input
+              type="datetime-local"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              required
+              aria-label="Due date and time"
+              className="h-[38px] rounded-md-s border border-input bg-card px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            />
+          )}
+          <Button type="submit" isLoading={add.isPending}>
+            Add task
+          </Button>
+        </div>
       </div>
+      {add.error && <p className="mt-1.5 px-1 text-xs text-destructive">{(add.error as Error).message}</p>}
     </form>
   )
 }
