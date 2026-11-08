@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, RefreshCw, Save, Send } from 'lucide-react'
 import {
   getEmailSettingsFn,
   saveEmailSettingsFn,
   sendProviderTestEmailFn,
 } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
 // Descriptors only — importing the provider registry here would pull nodemailer
 // and node:crypto into the client bundle.
 import type { ProviderDescriptor, ProviderField } from '../../../server/providers/types'
@@ -18,20 +20,26 @@ import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsPanel } from './
 type FieldState = { value: string; isSet: boolean }
 type FieldsByProvider = Record<string, Record<string, FieldState>>
 
+type EmailSettings = Extract<Awaited<ReturnType<typeof getEmailSettingsFn>>, { success: true }>
+
 export function EmailSendingTab() {
-  const [providers, setProviders] = useState<ProviderDescriptor[]>([])
-  const [fields, setFields] = useState<FieldsByProvider>({})
-  const [provider, setProvider] = useState<string>('')
-  const [defaultSender, setDefaultSender] = useState('')
-  const [source, setSource] = useState<'db' | 'env'>('env')
-  const [credsUnreadable, setCredsUnreadable] = useState(false)
-  const [usingDefaultSecret, setUsingDefaultSecret] = useState(false)
+  const queryClient = useQueryClient()
+  // The settings menu's status has usually loaded these already: start from them, so the page doesn't show "Loading…" and then jump.
+  const cached = queryClient.getQueryData<Awaited<ReturnType<typeof getEmailSettingsFn>>>(queryKeys.settings.sending())
+  const initial = cached?.success ? (cached as EmailSettings) : undefined
+  const [providers, setProviders] = useState<ProviderDescriptor[]>((initial?.providers as ProviderDescriptor[]) ?? [])
+  const [fields, setFields] = useState<FieldsByProvider>(initial?.settings.fields ?? {})
+  const [provider, setProvider] = useState<string>(initial?.settings.provider ?? '')
+  const [defaultSender, setDefaultSender] = useState(initial?.settings.defaultSender ?? '')
+  const [source, setSource] = useState<'db' | 'env'>(initial?.settings.source ?? 'env')
+  const [credsUnreadable, setCredsUnreadable] = useState(initial?.settings.credsUnreadable ?? false)
+  const [usingDefaultSecret, setUsingDefaultSecret] = useState(initial?.settings.usingDefaultEncryptionSecret ?? false)
   // The host runs sending through its own mail server: this page is just sending domains.
-  const [managed, setManaged] = useState(false)
+  const [managed, setManaged] = useState(initial?.managed ?? false)
 
   const [visibleFields, setVisibleFields] = useState<Record<string, boolean>>({})
-  const [isLoading, setIsLoading] = useState(true)
-  const [webhooksOn, setWebhooksOn] = useState(true)
+  const [isLoading, setIsLoading] = useState(!initial)
+  const [webhooksOn, setWebhooksOn] = useState(initial?.webhooksOn ?? true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -41,9 +49,10 @@ export function EmailSendingTab() {
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const fetchSettings = async () => {
-    setIsLoading(true)
+    if (!initial) setIsLoading(true)
     try {
-      const res = await getEmailSettingsFn()
+      // Through the shared cache, so the menu's status sees what was just saved too.
+      const res = await queryClient.fetchQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn(), staleTime: 0 })
       if (!res.success) {
         setError(res.error || 'Failed to load settings')
         return
@@ -64,8 +73,9 @@ export function EmailSendingTab() {
     }
   }
 
+  // Started from the cache, it's already on screen: no need to load it again before anyone types.
   useEffect(() => {
-    fetchSettings()
+    if (!initial) fetchSettings()
   }, [])
 
   const descriptor = providers.find((p) => p.id === provider)

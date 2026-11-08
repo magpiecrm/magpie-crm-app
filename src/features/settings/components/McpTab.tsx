@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useLayoutEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { APP_NAME } from '../../../brand'
 import { createApiKeyFn, deleteApiKeyFn, getMcpKeysFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
 import { Button } from '../../../components/ui/Button'
 import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -53,17 +55,21 @@ function CopyBlock({ label, code, note }: { label: string; code: string; note?: 
  * ChatGPT/OpenAI, Cursor and other MCP clients to this app's `/api/mcp`.
  */
 export function McpTab() {
-  const [keys, setKeys] = useState<McpKey[]>([])
+  const queryClient = useQueryClient()
+  // Cached, so the page shows at once when it's opened again instead of loading and then jumping.
+  const keysQuery = useQuery({ queryKey: queryKeys.settings.mcpKeys(), queryFn: () => getMcpKeysFn() })
+  const keys: McpKey[] = keysQuery.data?.keys ?? []
   const [name, setName] = useState('')
   const [newKey, setNewKey] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [origin, setOrigin] = useState('')
+  const loadError = keysQuery.error ? keysQuery.error.message || 'Failed to load keys' : ''
 
-  const load = () => getMcpKeysFn().then((r) => setKeys(r.keys)).catch((e) => setError(e?.message || 'Failed to load keys'))
-  useEffect(() => {
+  const load = () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.mcpKeys() })
+  // Before the first paint, so the address and setup snippets don't rewrap once it's known.
+  useLayoutEffect(() => {
     setOrigin(window.location.origin)
-    load()
   }, [])
 
   const create = async (e: React.FormEvent) => {
@@ -144,7 +150,7 @@ export function McpTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      {error && <Notice level="error">{error}</Notice>}
+      {(error || loadError) && <Notice level="error">{error || loadError}</Notice>}
 
       <SettingsPanel>
         <SettingsBlock

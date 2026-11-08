@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { createApiKeyFn, deleteApiKeyFn, getApiKeysFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
 import { Button } from '../../../components/ui/Button'
 import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { CopyButton } from './McpTab'
@@ -22,32 +24,18 @@ const EXAMPLE_REQUEST = `curl -X POST http://localhost:3000/api/subscribe \\
 
 /** Settings → Signup forms and API: keys for POST /api/subscribe. */
 export function ApiKeysTab() {
-  // API Keys State
-  const [apiKeys, setApiKeys] = useState<any[]>([])
-  const [isLoadingKeys, setIsLoadingKeys] = useState(false)
+  const queryClient = useQueryClient()
+  // Cached, so the page shows at once when it's opened again instead of loading and then jumping.
+  const keysQuery = useQuery({ queryKey: queryKeys.settings.apiKeys(), queryFn: () => getApiKeysFn() })
+  const apiKeys: any[] = (keysQuery.data?.success && keysQuery.data.keys) || []
+  const isLoadingKeys = keysQuery.isLoading
   const [newKeyName, setNewKeyName] = useState('')
   const [isGeneratingKey, setIsGeneratingKey] = useState(false)
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [apiKeyError, setApiKeyError] = useState<string | null>(null)
   const [copySuccess, setCopySuccess] = useState(false)
 
-  const fetchApiKeys = async () => {
-    setIsLoadingKeys(true)
-    try {
-      const res = await getApiKeysFn()
-      if (res.success && res.keys) {
-        setApiKeys(res.keys)
-      }
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setIsLoadingKeys(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchApiKeys()
-  }, [])
+  const fetchApiKeys = () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.apiKeys() })
 
   const handleCreateApiKey = async (e: React.FormEvent) => {
     e.preventDefault()

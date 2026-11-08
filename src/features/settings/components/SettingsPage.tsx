@@ -69,6 +69,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
 
   const open = (section: SettingsSection) => {
     setActive(section)
+    // A new page starts at its top, not wherever the last one was scrolled to.
+    document.querySelector('main')?.scrollTo({ top: 0 })
     // A page may have just fixed something, so the dots and Overview re-check.
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
     void queryClient.invalidateQueries({ queryKey: queryKeys.prospects.status() })
