@@ -19,7 +19,7 @@ import { isPlatformDomain } from './platformDomains'
 import { webSearcher } from './webSearch'
 import { knownPeople } from './sharedPeople'
 import { logSearch, newSearchId } from './searchLog'
-import { placesFor } from './searchPlaces'
+import { placesFor, type PlacesPlan } from './searchPlaces'
 import type { VerifiedFunnel } from './verifiedPeopleSource'
 import { companyKey, cursorIsNoTitle, fitsTitles, inHeadcountBuckets, meterCredits, onlySmallCompanies, sameCompanyName, searchesForTitles, slugFromCompanyUrl } from './socialfetch'
 import { classifySeniority } from './seniority'
@@ -1666,7 +1666,9 @@ async function verifiedFunnel(
   const titleCount = new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   // Where this search starts: a page's cursor, or where the last one stopped.
   const start = input.cursor ?? saved ?? null
-  let plan = placesFor(input.country, titleCount, start)
+  // Inside one company the host runs a single query and leaves cities out, so there are none to go through.
+  const placesOf = (cursor: string | null): PlacesPlan => (input.company ? { places: [], placesOnly: false, next: null } : placesFor(input.country, titleCount, cursor))
+  let plan = placesOf(start)
   const resumed = plan.placesOnly
   // Where the cities of the batch under way start: a batch that failed hasn't been through them.
   let roundStart = input.cursor ?? null
@@ -1680,7 +1682,7 @@ async function verifiedFunnel(
     nextRound() {
       if (!plan.next) return false
       roundStart = plan.next
-      plan = placesFor(input.country, titleCount, plan.next)
+      plan = placesOf(plan.next)
       return true
     },
     hidden,
@@ -1764,13 +1766,15 @@ export async function searchPeople(
   // people search by job title is answered there instead: each person is
   // confirmed against their live profile, so this orchestration's top-ups and
   // companies-first don't apply, but what's left of the funnel does
-  // (verifiedFunnel). Only title searches across companies — a search inside
-  // one company keeps the existing path.
+  // (verifiedFunnel). Any title search goes there, across companies or inside
+  // one (the company narrows the query, and each person's live employer is
+  // checked against it). A company search with no job title keeps the existing
+  // path: the verified search needs a title to query on.
   {
     const { hostVerifiedPeopleSearch } = await import('./hostRules')
-    if (hostVerifiedPeopleSearch() && !company && (filters.titles?.length ?? 0) > 0) {
+    if (hostVerifiedPeopleSearch() && (filters.titles?.length ?? 0) > 0) {
       const { verifiedPeopleSearch } = await import('./verifiedPeopleSource')
-      return verifiedPeopleSearch({ ...filters, company: null }, opts, { funnel: await verifiedFunnel(input, fromStart) })
+      return verifiedPeopleSearch({ ...filters, company: company ?? null }, opts, { funnel: await verifiedFunnel(input, fromStart) })
     }
   }
   // Whether a job title is one searched for, for choosing between someone's current jobs (refine.ts).

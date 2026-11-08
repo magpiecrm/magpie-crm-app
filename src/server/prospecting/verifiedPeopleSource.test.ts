@@ -140,6 +140,15 @@ describe('verifiedPeopleSearch', () => {
     expect(sent).toEqual({ titles: ['Sales Manager'], locations: ['GB'], industries: ['Financial Services'], sizes: ['1', '2-10', '51-200'], founderSites: true, limit: 40 })
   })
 
+  it('inside one company, names it and leaves out its industry, size, cities and websites', async () => {
+    let sent: any = null
+    const c = { start: async (b: unknown) => { sent = b; return { id: 's1' } }, poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
+    const funnel = { plan: { places: ['Leeds'], placesOnly: false } } as any
+    await verifiedPeopleSearch({ titles: ['Account Executive'], industries: ['Software Development'], companySizes: ['51-200'], country: 'GB', company: { ref: 'larkspur', name: 'Larkspur' }, count: 10 }, {}, { calls: c as any, sleep: async () => {}, now: () => 0, funnel: { ...funnel, prepare: async (p: PersonResult[]) => p, hidden: () => false, findableFirst: (p: PersonResult[]) => p, nextRound: () => false, finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }) } })
+    expect(sent).toEqual({ titles: ['Account Executive'], locations: ['GB'], industries: [], sizes: [], companies: ['Larkspur'], companySlugs: ['larkspur'], limit: 40 })
+    expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ company: 'larkspur' }) }))
+  })
+
   describe('with the funnel', () => {
     /** Leaves out `gone`, and marks people at `dead` as catch-all (hidden, as the page hides them). */
     const funnel = (over: { gone?: string; dead?: string } = {}): VerifiedFunnel => ({

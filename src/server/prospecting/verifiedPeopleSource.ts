@@ -412,15 +412,22 @@ export async function verifiedPeopleSearch(
 
   const searchId = newSearchId()
   const startedAt = now()
+  const company = input.company ?? null
   const sizes = [...new Set((input.companySizes ?? []).flatMap((b) => BUCKET_TO_BANDS[b] ?? []))]
   const body = () => ({
     titles,
     locations: input.country?.trim() ? [input.country.trim()] : [],
-    industries: input.industries ?? [],
-    sizes,
-    ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
-    // The host also reads company websites, where it runs that and the filter suits it.
-    founderSites: true,
+    // Inside one company: the host names it in the query and keeps only those whose live
+    // employer is it (by name or company page), so its industry, size and website don't apply.
+    ...(company
+      ? { industries: [], sizes: [], companies: [company.name], companySlugs: [company.ref] }
+      : {
+          industries: input.industries ?? [],
+          sizes,
+          ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
+          // The host also reads company websites, where it runs that and the filter suits it.
+          founderSites: true,
+        }),
     limit: Math.min(MAX_ASKED, (count - usable()) * ASKED_PER_SHOWN),
   })
 
@@ -591,7 +598,7 @@ export async function verifiedPeopleSearch(
       industries: input.industries ?? [],
       sizes: input.companySizes ?? [],
       country: input.country?.trim() || null,
-      company: null,
+      company: company?.ref ?? null,
       keyword: Boolean(input.keyword?.trim()),
       page: input.cursor ? 'more' : resumedSearch ? 'resumed' : 'first',
     },
