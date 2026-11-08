@@ -169,3 +169,42 @@ export const sequenceSpamScoreFn = createServerFn({ method: 'POST' })
     const { sequenceSpamScore } = await import('../spamScore')
     return sequenceSpamScore(data.id, { steps: data.steps, settings: data.settings })
   })
+
+/** Everyone in a sequence who has replied, the latest conversation first, for its Replies tab. */
+export const sequenceRepliesFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { id: string }) => z.object({ id }).parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { conversations } = await import('../sequences/conversation')
+    return conversations.replies(data.id)
+  })
+
+/** One person's whole conversation with a sequence: its emails, their replies and the answers. */
+export const sequenceConversationFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { enrollmentId: string }) => z.object({ enrollmentId: id }).parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { conversations } = await import('../sequences/conversation')
+    return conversations.get(data.enrollmentId)
+  })
+
+/** Marks their messages in a conversation as looked at. */
+export const markConversationSeenFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { enrollmentId: string }) => z.object({ enrollmentId: id }).parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { conversations } = await import('../sequences/conversation')
+    return conversations.markSeen(data.enrollmentId)
+  })
+
+/** Answers someone who replied, from the sequence's sender, in the thread; `clientId` keeps a retry from sending it twice. */
+export const sendSequenceReplyFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { enrollmentId: string; text: string; clientId: string }) =>
+    z.object({ enrollmentId: id, text: z.string().max(20_000), clientId: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { actor } = await signedIn()
+    const { sendReply } = await import('../sequences/conversation')
+    const { message } = await sendReply(data.enrollmentId, { text: data.text, clientId: data.clientId }, actor)
+    return { id: message.id, at: message.at }
+  })

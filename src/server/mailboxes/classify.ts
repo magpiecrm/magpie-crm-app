@@ -38,7 +38,8 @@ export function classifyInbound(m: InboundMessage, ownAddresses: string[]): Inbo
   return 'reply'
 }
 
-const bare = (id: string) => id.trim().replace(/^<|>$/g, '').toLowerCase()
+/** A Message-ID without its angle brackets, lower-cased, for comparing. */
+export const bareId = (id: string) => id.trim().replace(/^<|>$/g, '').toLowerCase()
 
 /** What a reply can be matched against: the sequence emails' Message-IDs, and the people they went to. */
 export interface ReplyIndex<E> {
@@ -51,7 +52,7 @@ export function buildIndex<E>(items: Array<{ item: E; email: string; messageIds:
   const byMessageId = new Map<string, E>()
   const byEmail = new Map<string, { item: E; firstSentAt: string }>()
   for (const { item, email, messageIds, firstSentAt } of items) {
-    for (const id of messageIds) byMessageId.set(bare(id), item)
+    for (const id of messageIds) byMessageId.set(bareId(id), item)
     const known = byEmail.get(email.toLowerCase())
     // The most recent enrollment for an address wins.
     if (!known || known.firstSentAt < firstSentAt) byEmail.set(email.toLowerCase(), { item, firstSentAt })
@@ -61,7 +62,7 @@ export function buildIndex<E>(items: Array<{ item: E; email: string; messageIds:
 
 export function matchReply<E>(m: InboundMessage, index: ReplyIndex<E>): { item: E; by: 'thread' | 'from' } | null {
   for (const id of [m.inReplyTo, ...m.references].filter((x): x is string => !!x)) {
-    const hit = index.byMessageId.get(bare(id))
+    const hit = index.byMessageId.get(bareId(id))
     if (hit) return { item: hit, by: 'thread' }
   }
   const from = lower(m.from)

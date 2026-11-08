@@ -49,6 +49,14 @@ export function ContactSequences({ email, items }: { email: string; items: Conta
                   {e.next_send_at ? ` · next from ${when(e.next_send_at)}` : ''}
                   {e.replied_at ? ` · replied ${when(e.replied_at)}` : ''}
                   {e.stop_reason ? ` · ${e.stop_reason}` : ''}
+                  {e.replied_at && (
+                    <>
+                      {' · '}
+                      <Link to="/sales/sequences/$id" params={{ id: e.sequence_id }} search={{ tab: 'replies', person: e.id }} className="text-accent hover:underline">
+                        Conversation
+                      </Link>
+                    </>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-2">

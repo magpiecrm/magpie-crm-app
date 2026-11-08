@@ -22,7 +22,7 @@ const ACTIONS: Array<{ id: Action; label: string }> = [
 ]
 
 /** Who's in the sequence, where each person is, and what's next for them. */
-export function PeopleTable({ sequence }: { sequence: Sequence }) {
+export function PeopleTable({ sequence, onOpenConversation }: { sequence: Sequence; onOpenConversation: (enrollmentId: string) => void }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const [filter, setFilter] = useState<EnrollmentStatus | ''>('')
@@ -136,8 +136,11 @@ export function PeopleTable({ sequence }: { sequence: Sequence }) {
                       <>
                         Email {e.next_step + 1}, from {when(e.next_send_at)}
                       </>
-                    ) : e.status === 'replied' ? (
-                      `Replied ${when(e.replied_at)}`
+                    ) : e.reply || e.last_message ? (
+                      <button type="button" onClick={() => onOpenConversation(e.id)} className="text-left text-accent hover:underline">
+                        {e.reply ? `Replied ${when(e.replied_at)}` : 'Conversation'}
+                        {e.unread ? <span className="ml-1 font-semibold">· {e.unread} new</span> : null}
+                      </button>
                     ) : (
                       '—'
                     )}

@@ -12,13 +12,17 @@ export interface SheetProps {
   className?: string
   /** Pinned below the scrolling body — use for a primary action. */
   footer?: React.ReactNode
+  /** A side sheet wide enough to read in (an email conversation), full width on a phone. */
+  wide?: boolean
 }
 
 const SIDE_CLASSES: Record<NonNullable<SheetProps['side']>, string> = {
   bottom: 'inset-x-0 bottom-0 w-full max-h-[85dvh] rounded-t-2xl border-t animate-in slide-in-from-bottom',
-  left: 'inset-y-0 left-0 h-full w-[min(22rem,90vw)] border-r animate-in slide-in-from-left',
-  right: 'inset-y-0 right-0 h-full w-[min(22rem,90vw)] border-l animate-in slide-in-from-right',
+  left: 'inset-y-0 left-0 h-full border-r animate-in slide-in-from-left',
+  right: 'inset-y-0 right-0 h-full border-l animate-in slide-in-from-right',
 }
+
+const sideWidth = (side: NonNullable<SheetProps['side']>, wide: boolean) => (side === 'bottom' ? '' : wide ? 'w-full sm:w-[min(42rem,92vw)]' : 'w-[min(22rem,90vw)]')
 
 /**
  * Mobile counterpart to `Dialog`: a slide-in panel for content that is an
@@ -33,6 +37,7 @@ export function Sheet({
   side = 'bottom',
   className = '',
   footer,
+  wide = false,
 }: SheetProps) {
   useEffect(() => {
     if (isOpen) {
@@ -62,7 +67,7 @@ export function Sheet({
       />
 
       <div
-        className={`absolute bg-background border-border flex flex-col shadow-2xl duration-200 ${SIDE_CLASSES[side]} ${className}`}
+        className={`absolute bg-background border-border flex flex-col shadow-2xl duration-200 ${SIDE_CLASSES[side]} ${sideWidth(side, wide)} ${className}`}
       >
         {side === 'bottom' && (
           <div className="pt-2 pb-1 flex justify-center shrink-0">

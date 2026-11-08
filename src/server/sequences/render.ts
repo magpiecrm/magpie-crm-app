@@ -4,6 +4,7 @@
 // that prefer HTML show it the same. Open and click tracking go in only when
 // the sequence has them on; the plain-text part never carries them.
 
+import { createHash } from 'node:crypto'
 import type { SequenceSettings } from '../../features/sequences/types'
 import { mergeContact, type MergeContact } from '../mergeTags'
 
@@ -26,6 +27,24 @@ export function unsubscribeWords(before: string): string {
 export function composeText(body: string, settings: Pick<SequenceSettings, 'signature' | 'footer'>): string {
   return [body.trim(), settings.signature.trim(), settings.footer.trim()].filter(Boolean).join('\n\n')
 }
+
+/** A short fingerprint of an email's words as written (composeText, before merge tags), to tell later whether the step changed since. */
+export const textHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12)
+
+/** Text as HTML: escaped, line breaks kept, addresses clickable. */
+export function textToHtml(text: string): string {
+  let out = ''
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    out += escapeHtml(text.slice(last, m.index)) + `<a href="${escapeHtml(m[0])}">${escapeHtml(m[0])}</a>`
+    last = m.index! + m[0].length
+  }
+  return (out + escapeHtml(text.slice(last))).replace(/\r?\n/g, '<br>\n')
+}
+
+/** A whole HTML email around a body, in the plain style sequence emails have. */
+export const htmlDocument = (body: string) =>
+  `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222">${body}</div></body></html>`
 
 export interface RenderedStep {
   subject: string
@@ -68,6 +87,5 @@ export function renderStep(
   if (input.settings.track_opens && tracking.openUrl) {
     bodyHtml += `<img src="${escapeHtml(tracking.openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
   }
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222">${bodyHtml}</div></body></html>`
-  return { subject, text, html }
+  return { subject, text, html: htmlDocument(bodyHtml) }
 }

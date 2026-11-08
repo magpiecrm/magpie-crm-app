@@ -3,21 +3,25 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, ArrowLeft, Pause, Play, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { deleteSequenceFn, sequenceFn, setSequenceStatusFn } from '../../../server/functions'
+import { deleteSequenceFn, sequenceFn, sequenceRepliesFn, setSequenceStatusFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { SEQUENCE_STATUS, percent } from '../../../features/sequences/components/labels'
 import { StepsEditor } from '../../../features/sequences/components/StepsEditor'
 import { PeopleTable } from '../../../features/sequences/components/PeopleTable'
 import { SequenceSettingsForm } from '../../../features/sequences/components/SequenceSettingsForm'
+import { RepliesList } from '../../../features/sequences/components/RepliesList'
+import { ConversationSheet } from '../../../features/sequences/components/ConversationSheet'
 import { confirmSpamRisk } from '../../../features/spam-score/SpamScoreCard'
 import { useSequenceSpamScore } from '../../../features/spam-score/useSpamScore'
 
-type Tab = 'emails' | 'people' | 'settings'
+type Tab = 'emails' | 'people' | 'replies' | 'settings'
 
 export const Route = createFileRoute('/sales/sequences/$id')({
-  validateSearch: (search: Record<string, unknown>): { tab?: Tab } => ({
-    tab: search.tab === 'people' || search.tab === 'settings' ? search.tab : undefined,
+  // `person`: whose conversation is open (an enrollment id), over whichever tab.
+  validateSearch: (search: Record<string, unknown>): { tab?: Tab; person?: string } => ({
+    tab: search.tab === 'people' || search.tab === 'replies' || search.tab === 'settings' ? search.tab : undefined,
+    person: typeof search.person === 'string' && /^[\w-]{1,100}$/.test(search.person) ? search.person : undefined,
   }),
   component: SequencePage,
 })
@@ -25,15 +29,20 @@ export const Route = createFileRoute('/sales/sequences/$id')({
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'emails', label: 'Emails' },
   { id: 'people', label: 'People' },
+  { id: 'replies', label: 'Replies' },
   { id: 'settings', label: 'Settings' },
 ]
 
 function SequencePage() {
   const { id } = Route.useParams()
-  const { tab = 'emails' } = Route.useSearch()
+  const { tab = 'emails', person } = Route.useSearch()
   const navigate = useNavigate({ from: '/sales/sequences/$id' })
   const queryClient = useQueryClient()
   const { data, isLoading, error } = useQuery({ queryKey: queryKeys.sequences.sequence(id), queryFn: () => sequenceFn({ data: { id } }) })
+  // For the Replies tab's count of what's new; the tab itself shares it.
+  const { data: replies = [] } = useQuery({ queryKey: queryKeys.sequences.replies(id), queryFn: () => sequenceRepliesFn({ data: { id } }), refetchInterval: 60_000 })
+  const unread = replies.reduce((n, e) => n + e.unread, 0)
+  const openConversation = (enrollmentId: string | null) => navigate({ search: (prev) => ({ ...prev, person: enrollmentId ?? undefined }), replace: !enrollmentId })
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.sequence(id) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.list() })
@@ -137,7 +146,7 @@ function SequencePage() {
             <button
               key={t.id}
               type="button"
-              onClick={() => navigate({ search: { tab: t.id === 'emails' ? undefined : t.id }, replace: true })}
+              onClick={() => navigate({ search: (prev) => ({ ...prev, tab: t.id === 'emails' ? undefined : t.id }), replace: true })}
               aria-current={tab === t.id ? 'page' : undefined}
               className={`pb-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                 tab === t.id ? 'font-semibold border-accent text-accent' : 'font-medium border-transparent text-muted-foreground hover:text-foreground'
@@ -145,14 +154,24 @@ function SequencePage() {
             >
               {t.label}
               {t.id === 'people' && summary.enrolled ? <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{summary.enrolled}</span> : null}
+              {t.id === 'replies' && unread ? (
+                <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold leading-none text-accent-foreground tabular-nums">
+                  {unread}
+                  <span className="sr-only"> new</span>
+                </span>
+              ) : t.id === 'replies' && replies.length ? (
+                <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{replies.length}</span>
+              ) : null}
             </button>
           ))}
         </nav>
       </div>
 
       {tab === 'emails' && <StepsEditor sequence={s} stats={data.stepStats} ai={data.ai} />}
-      {tab === 'people' && <PeopleTable sequence={s} />}
+      {tab === 'people' && <PeopleTable sequence={s} onOpenConversation={openConversation} />}
+      {tab === 'replies' && <RepliesList sequence={s} onOpen={openConversation} />}
       {tab === 'settings' && <SequenceSettingsForm sequence={s} />}
+      <ConversationSheet sequenceId={s.id} enrollmentId={person ?? null} onClose={() => openConversation(null)} />
     </div>
   )
 }

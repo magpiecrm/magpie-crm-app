@@ -84,7 +84,8 @@ export function dueAfter(from: string, delayDays: number): string {
   return new Date(Date.parse(from) + Math.max(0, delayDays) * DAY_MS).toISOString()
 }
 
-const stripRe = (subject: string) => subject.replace(/^(\s*re\s*:\s*)+/i, '').trim()
+/** A subject without its "Re:"s. */
+export const stripRe = (subject: string) => subject.replace(/^(\s*re\s*:\s*)+/i, '').trim()
 
 /**
  * A step's subject and threading. A step with its own subject starts a new
