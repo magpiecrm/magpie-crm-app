@@ -133,7 +133,7 @@ function LoginPage() {
                     placeholder="you@company.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
+                    className="w-full pl-10 pr-4 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/90 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
                     disabled={isLoading || success}
                   />
                 </div>
@@ -156,7 +156,7 @@ function LoginPage() {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-10 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
+                    className="w-full pl-10 pr-10 py-3 rounded-md-s border border-input bg-background text-foreground placeholder:text-muted-foreground/90 focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-ring transition-colors text-sm"
                     disabled={isLoading || success}
                   />
                   <button

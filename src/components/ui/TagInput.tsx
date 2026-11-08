@@ -9,9 +9,12 @@ interface TagInputProps {
   suggestions?: string[]
   /** At most this many; picking another replaces the last (1 makes it a single choice). */
   max?: number
+  /** `field` draws it like every other form field (Field.tsx): the field border and surface, body-size text. */
+  variant?: 'compact' | 'field'
 }
 
-export function TagInput({ tags, onChange, placeholder, suggestions = [], max }: TagInputProps) {
+export function TagInput({ label, tags, onChange, placeholder, suggestions = [], max, variant = 'compact' }: TagInputProps) {
+  const field = variant === 'field'
   const [inputVal, setInputVal] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0)
@@ -65,9 +68,15 @@ export function TagInput({ tags, onChange, placeholder, suggestions = [], max }:
     <div className="flex flex-col gap-1.5 w-full">
       <div className="relative">
         <div
-          className={`flex flex-wrap items-center gap-1.5 p-2 bg-background border rounded-md-s transition-all min-h-[38px] cursor-text ${
-            isFocused ? 'ring-2 ring-accent border-transparent' : 'border-border'
-          }`}
+          className={
+            field
+              ? `flex flex-wrap items-center gap-1 px-1 py-1 bg-card border rounded-md-s transition-colors min-h-[38px] cursor-text ${
+                  isFocused ? 'ring-1 ring-accent border-accent' : 'border-input'
+                }`
+              : `flex flex-wrap items-center gap-1.5 p-2 bg-background border rounded-md-s transition-all min-h-[38px] cursor-text ${
+                  isFocused ? 'ring-2 ring-accent border-transparent' : 'border-border'
+                }`
+          }
           onClick={(e) => {
             const inputEl = e.currentTarget.querySelector('input')
             if (inputEl) inputEl.focus()
@@ -76,16 +85,25 @@ export function TagInput({ tags, onChange, placeholder, suggestions = [], max }:
           {tags.map((tag, index) => (
             <span
               key={index}
-              className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-muted text-foreground rounded-full border border-border transition-all hover:bg-muted/80"
+              className={
+                field
+                  ? 'inline-flex max-w-full items-center gap-0.5 h-7 pl-2.5 pr-0.5 text-[13px] max-sm:text-sm bg-muted text-foreground rounded-md-xs border border-border'
+                  : 'inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium bg-muted text-foreground rounded-full border border-border transition-all hover:bg-muted/80'
+              }
             >
-              {tag}
+              {field ? <span className="truncate">{tag}</span> : tag}
               <button
                 type="button"
+                aria-label={`Remove ${tag}`}
                 onClick={(e) => {
                   e.stopPropagation()
                   removeTag(index)
                 }}
-                className="text-muted-foreground hover:text-foreground outline-none transition-colors"
+                className={
+                  field
+                    ? 'flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground hover:bg-muted-hover hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50 transition-colors'
+                    : 'text-muted-foreground hover:text-foreground outline-none transition-colors'
+                }
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -93,8 +111,13 @@ export function TagInput({ tags, onChange, placeholder, suggestions = [], max }:
           ))}
           <input
             type="text"
-            className="flex-1 min-w-[60px] text-xs bg-transparent border-0 outline-none p-0 focus:ring-0 text-foreground"
-            placeholder={tags.length === 0 ? placeholder : max && tags.length >= max ? 'Change…' : 'Add...'}
+            aria-label={label}
+            className={
+              field
+                ? `flex-1 min-w-[60px] h-7 px-2 text-sm bg-transparent border-0 outline-none focus:ring-0 text-foreground placeholder:text-muted-foreground/90`
+                : 'flex-1 min-w-[60px] text-xs bg-transparent border-0 outline-none p-0 focus:ring-0 text-foreground'
+            }
+            placeholder={tags.length === 0 ? placeholder : max && tags.length >= max ? 'Change…' : field ? 'Add…' : 'Add...'}
             value={inputVal}
             onChange={(e) => {
               setInputVal(e.target.value)

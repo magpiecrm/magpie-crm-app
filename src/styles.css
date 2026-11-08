@@ -79,7 +79,8 @@
     --destructive: #c2352b;
     --destructive-foreground: #ffffff;
     --border: #e2e2dc;
-    --input: #b4b6ad;
+    /* A field's edge: 3:1 against the card and the page, as a control's boundary needs (WCAG 1.4.11). */
+    --input: #8a8c85;
     --ring: #0d7285;
     --radius: 0.75rem;
   }
@@ -105,7 +106,7 @@
     --destructive: #f07167;
     --destructive-foreground: #1f0806;
     --border: #32363d;
-    --input: #454a52;
+    --input: #6a6f78;
     --ring: #4fc3d2;
   }
 
@@ -133,6 +134,11 @@
     input, textarea, select {
       font-size: 16px !important;
     }
+  }
+
+  /* Placeholder examples readable at about 5:1, where a field doesn't set its own. */
+  input::placeholder, textarea::placeholder {
+    color: color-mix(in oklab, var(--muted-foreground) 90%, transparent);
   }
 }
 
