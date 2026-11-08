@@ -88,7 +88,7 @@ function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolea
     >
       <span
         className={`flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-colors ${
-          done ? 'border-accent/50 bg-accent/15 text-accent' : 'border-input text-accent group-hover/check:border-accent'
+          done ? 'border-transparent bg-muted-hover text-muted-foreground' : 'border-input text-accent group-hover/check:border-accent'
         }`}
       >
         <Check strokeWidth={3} className={`h-3 w-3 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
@@ -232,9 +232,9 @@ function AboutLink({ task, about }: { task: TaskItem; about: NonNullable<ReturnT
     <Link
       to={task.link!}
       title={`${about.kind}: ${about.name}`}
-      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md-xs bg-muted px-1.5 align-top text-[13px] leading-5 text-foreground/75 transition-colors hover:bg-muted-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="-mx-1.5 inline-flex min-w-0 max-w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-md-xs px-1.5 align-top text-[13px] leading-5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
-      <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{about.name}</span>
     </Link>
   )
@@ -269,12 +269,12 @@ export function TaskRow({
   const about = showAbout && task.link ? aboutOf(task) : null
   const owner = showOwner && task.created_by ? task.created_by : null
 
-  // When. In a group, two slots that line up down the list: the day, then the time (or how late, or "Done").
+  // When. In a group: the day, then the time or how late, the times lined up down the list; or when it was done.
   let day = ''
   let second = ''
   if (done) {
-    day = dueParts(task.done_at!).day
-    second = 'Done'
+    const d = dueParts(task.done_at!)
+    day = `Done ${d.relative ? d.day.toLowerCase() : d.day}`
   } else if (task.due_at) {
     day = dueParts(task.due_at).day
     second = overdue ? lateBy(task.due_at) : dueParts(task.due_at).time
@@ -284,8 +284,8 @@ export function TaskRow({
   const title = task.due_at && !done ? `Due ${dueLabel(task.due_at).replace(/^Overdue · /, '')}` : undefined
   const whenNode = grouped ? (
     <span title={title} className="inline-flex shrink-0 items-baseline gap-2 whitespace-nowrap tabular-nums">
-      <span className={`@2xl:w-[4.75rem] @2xl:text-left ${day ? 'text-foreground/80' : 'text-muted-foreground'}`}>{day || '—'}</span>
-      {second && <span className={`@2xl:w-16 @2xl:text-right ${overdue ? 'font-medium text-destructive' : done ? 'text-muted-foreground' : 'text-foreground/80'}`}>{second}</span>}
+      <span className={done ? 'text-muted-foreground' : 'text-foreground/80'}>{day}</span>
+      {second && <span className={`@2xl:w-14 @2xl:text-right ${overdue ? 'text-destructive' : 'text-foreground/80'}`}>{second}</span>}
     </span>
   ) : (
     <span title={title} className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap tabular-nums ${overdue ? 'text-destructive' : ''}`}>
@@ -298,16 +298,16 @@ export function TaskRow({
     <div className="group/row @container flex items-start gap-3">
       <TaskCheck done={done} pending={toggle.isPending} onToggle={() => toggle.mutate()} />
       <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
-        <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-3">
+        <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
           <p className={`min-w-0 text-sm leading-5 break-words ${done ? 'text-muted-foreground' : 'text-foreground'}`}>{task.body}</p>
           {about && (
-            <span className="hidden min-w-0 max-w-56 shrink-0 @2xl:flex">
+            <span className="hidden min-w-0 max-w-56 shrink-0 pl-1.5 @2xl:flex">
               <AboutLink task={task} about={about} />
             </span>
           )}
         </div>
         {/* A phone or a record's page: one line under the task, the record shortened to fit. */}
-        {((grouped ? day : whenText) || about || owner) && (
+        {((grouped ? day : whenText) || about) && (
           <div className="mt-1 flex min-w-0 items-center gap-2 text-[13px] leading-5 text-muted-foreground @2xl:hidden">
             {(day || !grouped) && (movable ? <TaskMenu task={task} onChanged={onChanged} trigger={whenNode} triggerLabel={`Due ${whenText}. Move it`} /> : whenNode)}
             {about && (
@@ -315,26 +315,31 @@ export function TaskRow({
                 <AboutLink task={task} about={about} />
               </span>
             )}
-            {owner && (
-              <span className={`ml-auto shrink-0 ${done ? 'opacity-50' : ''}`}>
-                <Owner email={owner} small />
-              </span>
-            )}
           </div>
         )}
         {/* A wide list: the due time in a right-aligned column, the times lined up. */}
         {grouped && (
-          <div className="hidden w-40 shrink-0 text-[13px] leading-5 text-muted-foreground @2xl:flex">
+          <div className="hidden w-44 shrink-0 justify-end text-[13px] leading-5 text-muted-foreground @2xl:flex">
             {movable ? <TaskMenu task={task} onChanged={onChanged} trigger={whenNode} triggerLabel={`Due ${whenText}. Move it`} /> : whenNode}
           </div>
         )}
       </div>
-      {owner && (
-        <span className={`-my-0.5 hidden @2xl:block ${done ? 'opacity-50' : ''}`}>
-          <Owner email={owner} />
+      {/* Who added it, and "…". On a desktop they share one slot: "…" takes the owner's place while the row is pointed at. */}
+      <div className="relative flex shrink-0 items-start gap-2 @2xl:w-7 @2xl:justify-center">
+        {owner && (
+          <span className="mt-px transition-opacity @2xl:-my-0.5 @2xl:mt-0 [@media(hover:hover)]:group-hover/row:opacity-0 [@media(hover:hover)]:group-focus-within/row:opacity-0">
+            <span className="@2xl:hidden">
+              <Owner email={owner} small />
+            </span>
+            <span className="hidden @2xl:block">
+              <Owner email={owner} />
+            </span>
+          </span>
+        )}
+        <span className={owner ? '[@media(hover:hover)]:@2xl:absolute [@media(hover:hover)]:@2xl:inset-x-0 [@media(hover:hover)]:@2xl:top-0 [@media(hover:hover)]:@2xl:flex [@media(hover:hover)]:@2xl:justify-center' : ''}>
+          <TaskMenu task={task} onChanged={onChanged} />
         </span>
-      )}
-      <TaskMenu task={task} onChanged={onChanged} />
+      </div>
     </div>
   )
 }

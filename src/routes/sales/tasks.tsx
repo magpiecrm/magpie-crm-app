@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Calendar1, CalendarCheck, CalendarClock, CalendarDays, CalendarOff, CheckCircle2, ChevronDown, type LucideIcon } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, ChevronDown, CircleAlert, CircleArrowRight, CircleCheck, CircleDot, CircleMinus, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../queryKeys'
 import { tasksFn } from '../../server/functions'
 import { dueBucket, type DueBucket } from '../../features/sales/tasks'
@@ -14,13 +14,13 @@ export const Route = createFileRoute('/sales/tasks')({
 
 type SectionId = DueBucket | 'done'
 
-// One family of calendar glyphs; only Overdue is coloured, as it's the one that asks for something.
+// Status glyphs of one family (circles), each its own shape; only Overdue is coloured, as it's the one that asks for something.
 const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon }> = [
-  { id: 'overdue', label: 'Overdue', Icon: CalendarClock },
-  { id: 'today', label: 'Today', Icon: Calendar1 },
-  { id: 'upcoming', label: 'Upcoming', Icon: CalendarDays },
-  { id: 'none', label: 'No due date', Icon: CalendarOff },
-  { id: 'done', label: 'Done in the last 2 weeks', Icon: CalendarCheck },
+  { id: 'overdue', label: 'Overdue', Icon: CircleAlert },
+  { id: 'today', label: 'Today', Icon: CircleDot },
+  { id: 'upcoming', label: 'Upcoming', Icon: CircleArrowRight },
+  { id: 'none', label: 'No due date', Icon: CircleMinus },
+  { id: 'done', label: 'Done in the last 2 weeks', Icon: CircleCheck },
 ]
 
 /** Starting points on the empty page: picking one puts it in the box above. */
@@ -145,7 +145,7 @@ function TasksPage() {
                 <section key={s.id} aria-labelledby={`tasks-${s.id}`} className="border-t border-border first:border-t-0">
                   <h2
                     id={`tasks-${s.id}`}
-                    className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-[color-mix(in_srgb,var(--muted)_55%,var(--card))] dark:bg-muted"
+                    className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-[color-mix(in_srgb,var(--muted)_35%,var(--card))] dark:bg-muted"
                   >
                     <button
                       type="button"
