@@ -1,13 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, CircleDashed, ListChecks, Plus, type LucideIcon } from 'lucide-react'
+import { AlertCircle, CalendarClock, CalendarDays, CalendarOff, CheckCircle2, ChevronDown, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../queryKeys'
 import { tasksFn } from '../../server/functions'
 import { dueBucket, type DueBucket } from '../../features/sales/tasks'
 import { TaskComposer, TaskRow } from '../../features/sales/components/TaskParts'
 import { useCurrentUserEmail } from '../../features/sales/components/useSalesLookups'
-import { Button } from '../../components/ui/Button'
 
 export const Route = createFileRoute('/sales/tasks')({
   component: TasksPage,
@@ -19,7 +18,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon; tone: st
   { id: 'overdue', label: 'Overdue', Icon: AlertCircle, tone: 'text-destructive' },
   { id: 'today', label: 'Today', Icon: CalendarClock, tone: 'text-accent' },
   { id: 'upcoming', label: 'Upcoming', Icon: CalendarDays, tone: 'text-muted-foreground' },
-  { id: 'none', label: 'No due date', Icon: CircleDashed, tone: 'text-muted-foreground' },
+  { id: 'none', label: 'No due date', Icon: CalendarOff, tone: 'text-muted-foreground' },
   { id: 'done', label: 'Done in the last 2 weeks', Icon: CheckCircle2, tone: 'text-muted-foreground' },
 ]
 
@@ -63,9 +62,15 @@ function TasksPage() {
   const now = new Date()
   const inSection = (id: SectionId) => tasks.filter((t) => (id === 'done' ? t.done_at : !t.done_at && dueBucket(t.due_at, now) === id))
   const open = tasks.filter((t) => !t.done_at).length
+  const empty = !isLoading && !error && data.length === 0
+
+  // With nothing here yet, the box to write one is where to start (not on a phone, where it would open the keyboard).
+  useEffect(() => {
+    if (empty && window.matchMedia('(hover: hover)').matches) document.getElementById('new-task')?.focus()
+  }, [empty])
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-4 lg:p-8">
+    <div className="mx-auto w-full max-w-4xl p-4 lg:p-8">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-display text-foreground mb-1">Tasks</h1>
@@ -90,9 +95,14 @@ function TasksPage() {
           </div>
         ) : tasks.length === 0 ? (
           <div className="rounded-xl border border-border bg-card px-6 py-14 text-center shadow-sm">
-            <span className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent/10 text-accent">
-              <ListChecks aria-hidden className="h-5 w-5" />
-            </span>
+            <div aria-hidden className="mx-auto mb-6 w-60 space-y-2 rounded-lg border border-border bg-background p-3 text-left">
+              {[78, 58, 68].map((w, i) => (
+                <div key={w} className="flex items-center gap-2.5">
+                  <span className={`h-3.5 w-3.5 shrink-0 rounded-full border-[1.5px] ${i === 0 ? 'border-accent' : 'border-input'}`} />
+                  <span className={`h-2 rounded-full ${i === 0 ? 'bg-foreground/25' : 'bg-foreground/10'}`} style={{ width: `${w}%` }} />
+                </div>
+              ))}
+            </div>
             <h2 className="text-base font-semibold text-foreground">No tasks yet</h2>
             <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
               Add one above, or open a{' '}
@@ -105,9 +115,6 @@ function TasksPage() {
               </Link>{' '}
               and press Follow up. You'll get a notification when each one is due.
             </p>
-            <Button variant="secondary" className="mt-5" leftIcon={<Plus className="h-4 w-4" />} onClick={() => document.getElementById('new-task')?.focus()}>
-              Write your first task
-            </Button>
           </div>
         ) : (
           <div className="overflow-clip rounded-xl border border-border bg-card shadow-sm">
@@ -122,7 +129,7 @@ function TasksPage() {
               const shut = Boolean(closed[s.id])
               return (
                 <section key={s.id} aria-labelledby={`tasks-${s.id}`} className="border-t border-border first:border-t-0">
-                  <h2 id={`tasks-${s.id}`} className={`sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-background ${shut ? '' : 'border-b border-border'}`}>
+                  <h2 id={`tasks-${s.id}`} className={`sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-background dark:bg-muted ${shut ? '' : 'border-b border-border'}`}>
                     <button
                       type="button"
                       aria-expanded={!shut}
@@ -131,7 +138,7 @@ function TasksPage() {
                     >
                       <s.Icon aria-hidden className={`h-4 w-4 ${s.tone}`} />
                       <span className={s.id === 'overdue' ? 'text-destructive' : ''}>{s.label}</span>
-                      <span className="rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground">{rows.length}</span>
+                      <span className="rounded-full bg-muted px-1.5 text-xs font-semibold tabular-nums text-foreground/70 dark:bg-card">{rows.length}</span>
                       <ChevronDown aria-hidden className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${shut ? '-rotate-90' : ''}`} />
                     </button>
                   </h2>

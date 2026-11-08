@@ -2,9 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlarmClock, Building2, CalendarClock, CalendarX2, Check, ChevronDown, Handshake, MoreHorizontal, Plus, Trash2, UserRound } from 'lucide-react'
+import { AlarmClock, AlertCircle, Building2, CalendarClock, CalendarX2, Check, ChevronDown, Handshake, MoreHorizontal, Plus, Trash2, UserRound } from 'lucide-react'
 import { addTaskFn, deleteTaskFn, tasksFn, updateTaskFn } from '../../../server/functions'
-import { Avatar } from '../../../components/ui/Avatar'
 import { Button } from '../../../components/ui/Button'
 import { queryKeys } from '../../../queryKeys'
 import { daysFromNow, dueBucket, dueLabel, dueShort, FOLLOW_UPS, fromLocalInput } from '../tasks'
@@ -36,6 +35,36 @@ function aboutOf(task: TaskItem): { name: string; Icon: typeof Handshake; kind: 
   return null
 }
 
+/** Each person keeps one of these, so a team's tasks can be told apart at a glance. */
+const OWNER_TONES = [
+  'bg-sky-500/15 text-sky-800 dark:text-sky-300',
+  'bg-violet-500/15 text-violet-800 dark:text-violet-300',
+  'bg-amber-500/20 text-amber-900 dark:text-amber-300',
+  'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
+  'bg-rose-500/15 text-rose-800 dark:text-rose-300',
+  'bg-teal-500/15 text-teal-800 dark:text-teal-300',
+]
+
+/** Who added a task: their initials in their own colour, their address on hover. */
+function Owner({ email, small = false }: { email: string; small?: boolean }) {
+  const name = nameFromEmail(email)
+  const tone = OWNER_TONES[[...email].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % OWNER_TONES.length]
+  const initials = name
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+  return (
+    <span
+      title={`Added by ${email}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ${tone} ${small ? 'h-[18px] w-[18px] text-[10px]' : 'h-6 w-6 text-[11px]'}`}
+    >
+      <span aria-hidden>{initials}</span>
+      <span className="sr-only">Added by {email}</span>
+    </span>
+  )
+}
+
 /** "alex.morgan@acme.com" → "Alex Morgan", for an avatar's initials. */
 const nameFromEmail = (email: string) =>
   email
@@ -59,7 +88,7 @@ function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolea
     >
       <span
         className={`flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-colors ${
-          done ? 'border-accent/70 bg-accent/15 text-accent' : 'border-input text-accent group-hover/check:border-accent'
+          done ? 'border-transparent bg-muted-foreground/70 text-card' : 'border-input text-accent group-hover/check:border-accent'
         }`}
       >
         <Check strokeWidth={3} className={`h-3 w-3 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
@@ -218,15 +247,16 @@ export function TaskRow({
     <div className="@container flex items-start gap-3">
       <TaskCheck done={done} pending={toggle.isPending} onToggle={() => toggle.mutate()} />
       <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
-        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground'}`}>
+        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground' : 'text-foreground'}`}>
           {task.body}
         </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] leading-5 text-muted-foreground @2xl:mt-0 @2xl:flex-nowrap @2xl:shrink-0">
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[13px] leading-5 text-muted-foreground @2xl:mt-0 @2xl:flex-nowrap @2xl:shrink-0">
           <span
-            className={`tabular-nums @2xl:order-2 @2xl:w-28 @2xl:text-right ${when ? '' : 'hidden @2xl:block'} ${overdue ? 'font-medium text-destructive' : ''}`}
+            className={`whitespace-nowrap tabular-nums @2xl:order-2 @2xl:w-36 @2xl:text-right ${when ? '' : 'hidden @2xl:block'} ${overdue ? 'font-medium text-destructive' : ''}`}
             title={task.due_at && !done ? dueLabel(task.due_at) : undefined}
           >
             {!grouped && !done && <AlarmClock aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />}
+            {grouped && overdue && <AlertCircle aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />}
             {when}
           </span>
           {showAbout && (
@@ -246,10 +276,14 @@ export function TaskRow({
         </div>
       </div>
       {showOwner && task.created_by && (
-        <span title={`Added by ${task.created_by}`} className="-my-0.5 hidden @md:block">
-          <Avatar name={nameFromEmail(task.created_by)} size="sm" />
-          <span className="sr-only">Added by {task.created_by}</span>
-        </span>
+        <>
+          <span className="mt-px @2xl:hidden">
+            <Owner email={task.created_by} small />
+          </span>
+          <span className="-my-0.5 hidden @2xl:block">
+            <Owner email={task.created_by} />
+          </span>
+        </>
       )}
       <TaskMenu task={task} onChanged={onChanged} />
     </div>
@@ -301,7 +335,7 @@ export function TaskComposer({
             placeholder={placeholder}
             maxLength={2000}
             required
-            className="min-w-0 flex-1 bg-transparent py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/90"
+            className="min-w-0 flex-1 bg-transparent py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
         <div className="flex flex-wrap items-center gap-2">
