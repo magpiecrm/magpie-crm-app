@@ -104,7 +104,7 @@ function SearchByAIDialog({
           >
             {suggestion ? 'Suggest again' : 'Suggest a search'}
           </Button>
-          {suggest.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes two or three minutes; you can close this meanwhile.</span>}
+          {suggest.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes a few minutes; you can close this meanwhile.</span>}
         </div>
         {suggest.isError && <Notice level="error">{(suggest.error as Error).message}</Notice>}
 

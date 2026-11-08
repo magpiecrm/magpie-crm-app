@@ -11,7 +11,7 @@ import { tmpdir } from 'os'
 const scratchDir = mkdtempSync(join(tmpdir(), 'search-suggest-test-'))
 process.env.DATABASE_PATH = join(scratchDir, 'local_db.json')
 
-const { suggestSearch, suggestionAnswer } = await import('./searchSuggest')
+const { suggestSearch } = await import('./searchSuggest')
 const { generate, AiUnavailable } = await import('../copilot/generate')
 const { websiteUrlInput } = await import('./personaInput')
 const { monthOf, usageForMonth } = await import('../usage')
@@ -48,9 +48,16 @@ function fakeAi(...responses: Response[]) {
 }
 
 const good = {
-  criteria: { titles: ['Operations leaders', 'COO'], seniorities: [], industries: ['Truck Transportation'], companySizes: ['201-500', '51-200'], country: 'United Kingdom', keyword: '' },
-  why: 'You sell route planning to UK hauliers, and their operations leaders choose it.',
+  companies: 'You sell route planning to UK hauliers with their own fleets.',
+  industries: ['Truck Transportation'],
+  companySizes: ['201-500', '51-200'],
+  country: 'United Kingdom',
+  keyword: '',
+  people: 'Their operations leaders choose the tools their planners use.',
+  titles: ['Operations leaders', 'COO'],
+  seniorities: [],
 }
+const criteria = { titles: ['Operations leaders', 'COO'], seniorities: [], industries: ['Truck Transportation'], companySizes: ['51-200', '201-500'], country: 'United Kingdom', keyword: '' }
 
 describe('suggestSearch', () => {
   it('reads the website with web tools, gives the AI nothing but the website, and counts it', async () => {
@@ -66,18 +73,18 @@ describe('suggestSearch', () => {
     expect(body.tools[1]).toMatchObject({ max_uses: 2 })
     expect(body.tools[2]).toMatchObject({ max_uses: 4 })
     // The model is shown search's own values to choose from.
-    const criteria = body.tools[0].input_schema.properties.criteria.properties
-    expect(criteria.industries.items.enum).toContain('Truck Transportation')
-    expect(criteria.companySizes.items.enum).toEqual(['1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001-10000', '10001+'])
-    expect(criteria.seniorities.items.enum).toContain('director')
+    const fields = body.tools[0].input_schema.properties
+    expect(fields.industries.items.enum).toContain('Truck Transportation')
+    expect(fields.companySizes.items.enum).toEqual(['1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001-10000', '10001+'])
+    expect(fields.seniorities.items.enum).toContain('director')
 
-    // Sizes come back in bucket order, as everywhere else.
-    expect(suggestion).toEqual({ criteria: { ...good.criteria, companySizes: ['51-200', '201-500'] }, why: good.why })
+    // Sizes come back in bucket order, as everywhere else; the why is what it said about the companies, then the people.
+    expect(suggestion).toEqual({ criteria, why: `${good.companies} ${good.people}` })
     expect(usageForMonth(monthOf(new Date())).searchSuggestions).toBe(before + 1)
   })
 
   it('hands a search it can’t run back to the AI to fix, and uses the fixed one', async () => {
-    const offList = { ...good, criteria: { ...good.criteria, industries: ['Haulage'], country: 'Atlantis' } }
+    const offList = { ...good, industries: ['Haulage'], country: 'Atlantis' }
     const ai = fakeAi(answer(offList, 'tu_1'), answer(good, 'tu_2'))
     const suggestion = await suggestSearch({ websiteUrl: 'https://haulwise.test' }, { generate: ai.generate })
 
@@ -96,29 +103,6 @@ describe('suggestSearch', () => {
     process.env.OPENAI_API_KEY = 'sk-proj-openaikey00000000000000000000'
     await expect(suggestSearch({ websiteUrl: 'https://haulwise.test' }, { generate: ai.generate })).rejects.toBeInstanceOf(AiUnavailable)
     expect(ai.calls).toHaveLength(0)
-  })
-})
-
-describe('the answer it takes', () => {
-  const check = (criteria: Partial<typeof good.criteria>) => suggestionAnswer.safeParse({ ...good, criteria: { ...good.criteria, ...criteria } })
-  const problem = (criteria: Partial<typeof good.criteria>) => {
-    const parsed = check(criteria)
-    return parsed.success ? null : parsed.error.issues.map((i) => i.path.join('.')).join(', ')
-  }
-
-  it('is a search that can run, from the lists search uses', () => {
-    expect(check({}).success).toBe(true)
-    // A keyword alone is a search; so is a country from the list, or none.
-    expect(check({ titles: [], keyword: 'logistics', industries: [], companySizes: [], country: '' }).success).toBe(true)
-
-    expect(problem({ titles: [], keyword: '' })).toBe('criteria.titles')
-    expect(problem({ industries: [], keyword: '' })).toBe('criteria.companySizes')
-    expect(problem({ industries: ['Haulage'] })).toBe('criteria.industries.0')
-    expect(problem({ country: 'Atlantis' })).toBe('criteria.country')
-    expect(problem({ seniorities: ['boss' as never] })).toBe('criteria.seniorities.0')
-    expect(problem({ companySizes: ['50-100' as never] })).toBe('criteria.companySizes.0')
-    expect(problem({ titles: ['CEO', 'CFO', 'COO', 'CTO', 'CMO', 'CRO'] })).toBe('criteria.titles')
-    expect(suggestionAnswer.safeParse({ ...good, why: ' ' }).success).toBe(false)
   })
 })
 

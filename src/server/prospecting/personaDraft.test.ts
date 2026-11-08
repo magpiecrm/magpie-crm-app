@@ -22,11 +22,17 @@ const { AiUnavailable } = await import('../copilot/generate')
 const { monthOf, usageForMonth } = await import('../usage')
 
 const suggestion = {
+  companies: 'Hauliers in the UK with their own fleets.',
+  industries: ['Truck Transportation'],
+  companySizes: ['201-500', '51-200'],
+  country: 'United Kingdom',
+  keyword: '',
+  people: 'Their operations leaders run the warehouses.',
+  titles: ['Operations leaders', 'COO'],
+  seniorities: [],
   name: 'Operations leaders at logistics firms',
-  description: 'Run the warehouses.',
   painPoints: 'Late shipments.',
   valueProp: 'Fewer of them.',
-  criteria: { titles: ['Operations leaders', 'COO'], seniorities: [], industries: ['Truck Transportation'], companySizes: ['201-500', '51-200'], country: 'United Kingdom', keyword: '' },
 }
 
 beforeEach(() => {
@@ -43,8 +49,16 @@ describe('draftPersonas', () => {
     expect(opts.web).toEqual({ searches: 2, fetches: 4 })
     expect(opts.answer.name).toBe('suggestPersonas')
     expect(opts.prompt).toBe('Website: https://haulwise.test\n\nWhat they added about who they sell to:\nMostly UK hauliers')
-    // Sizes come back in bucket order, as everywhere else.
-    expect(drafts).toEqual([{ ...suggestion, criteria: { ...suggestion.criteria, companySizes: ['51-200', '201-500'] } }])
+    // The companies and the people make its description; sizes come back in bucket order, as everywhere else.
+    expect(drafts).toEqual([
+      {
+        name: 'Operations leaders at logistics firms',
+        description: 'Hauliers in the UK with their own fleets. Their operations leaders run the warehouses.',
+        criteria: { titles: ['Operations leaders', 'COO'], seniorities: [], industries: ['Truck Transportation'], companySizes: ['51-200', '201-500'], country: 'United Kingdom', keyword: '' },
+        painPoints: 'Late shipments.',
+        valueProp: 'Fewer of them.',
+      },
+    ])
     expect(usageForMonth(monthOf(new Date())).personaDrafts).toBe(before + 1)
   })
 
