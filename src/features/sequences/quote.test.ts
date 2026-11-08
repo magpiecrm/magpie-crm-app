@@ -13,6 +13,11 @@ describe('splitting off quoted text', () => {
     expect(splitQuoted('Danke.\n\nAm Di., 4. Nov. 2026 um 09:40 Uhr schrieb Jo <jo@acme.test>:\n> Hallo').body).toBe('Danke.')
   })
 
+  it('cuts at Zoho Mail\'s "---- On … wrote ----"', () => {
+    const zoho = 'Hi this sounds interesting\n\nJo Smith\n\n---- On Sun, 08 Nov 2026 12:52:34 +0000 Pele <pele@acme.test> wrote ----\n\nHi,\n\nFilling a beta waitlist…'
+    expect(splitQuoted(zoho)).toEqual({ body: 'Hi this sounds interesting\n\nJo Smith', quoted: '---- On Sun, 08 Nov 2026 12:52:34 +0000 Pele <pele@acme.test> wrote ----\n\nHi,\n\nFilling a beta waitlist…' })
+  })
+
   it("cuts at Outlook's header block and its rule, and at Original Message", () => {
     const outlook = 'Happy to talk.\n\n________________________________\nFrom: Jo Smith <jo@acme.test>\nSent: 04 November 2026 09:40\nTo: Ava Stone\nSubject: Quick question\n\nHi Ava'
     expect(splitQuoted(outlook).body).toBe('Happy to talk.')

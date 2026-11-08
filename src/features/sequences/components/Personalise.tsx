@@ -41,7 +41,8 @@ export function PersonaliseBox({ sequence, step, ai, onChange }: { sequence: Seq
           </span>
           <span className="block text-xs text-muted-foreground leading-relaxed">
             It looks up their company on the web, then writes them their own first email and follow-ups from your brief, each from what they've already been
-            sent. Each email below is the example it follows, and what's sent when it can't write one.
+            sent, signed off with "Thanks," and your sign-off. The first email below is the example it follows, and what's sent when it can't write one;
+            follow-ups need no example.
           </span>
         </label>
       </div>

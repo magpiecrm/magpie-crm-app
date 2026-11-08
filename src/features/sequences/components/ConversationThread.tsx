@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Paperclip, Send } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { ChevronDown, ChevronRight, Paperclip, Send, Sparkles } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
+import { draftSequenceReplyFn } from '../../../server/functions'
+import { useCopilotReady } from '../../spam-score/fixWithAI'
 import { splitQuoted } from '../quote'
 import type { ConversationItem, ConversationView } from '../types'
 import type { useConversation } from '../useConversation'
@@ -129,10 +132,24 @@ export function ConversationThread({ view }: { view: ConversationView }) {
   )
 }
 
-/** The answer box: what you write, the sign-off that goes under it, and Send. Ctrl or ⌘ + Enter sends it. */
+/**
+ * The answer box: what you write, the sign-off that goes under it, and Send.
+ * Ctrl or ⌘ + Enter sends it. "Draft reply with AI" fills it from the whole
+ * conversation, steered by anything typed in it first.
+ */
 export function Composer({ view, send }: { view: ConversationView; send: ReturnType<typeof useConversation>['send'] }) {
   const [text, setText] = useState('')
   const firstName = view.name?.split(' ')[0] ?? view.contact_email
+  const aiReady = useCopilotReady()
+  // The AI's last draft, so asking again rewrites it rather than taking it as notes.
+  const [lastDraft, setLastDraft] = useState<string | null>(null)
+  const draft = useMutation({
+    mutationFn: () => draftSequenceReplyFn({ data: { enrollmentId: view.enrollment_id, notes: text.trim() && text !== lastDraft ? text.trim() : undefined } }),
+    onSuccess: (out) => {
+      setText(out.text)
+      setLastDraft(out.text)
+    },
+  })
   const submit = () => {
     if (!text.trim() || send.isPending) return
     send.mutate(text, { onSuccess: () => setText('') })
@@ -158,16 +175,31 @@ export function Composer({ view, send }: { view: ConversationView; send: ReturnT
             }
           }}
           rows={4}
+          placeholder={aiReady ? 'Write your answer, or a few words for the AI to draft from ("say yes, offer Tuesday")' : undefined}
           className={`${INPUT_CLASS} resize-y leading-relaxed`}
         />
       </label>
       {send.error && <Notice level="error">{(send.error as Error).message}</Notice>}
+      {draft.error && <Notice level="error">{(draft.error as Error).message}</Notice>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {view.sender ? `From ${view.sender.email}, in the same thread` : null}
           {view.signature ? `, signed "${view.signature.split('\n')[0]}"` : null}
         </p>
-        <Button type="submit" size="sm" leftIcon={<Send className="h-4 w-4" />} isLoading={send.isPending} disabled={!text.trim()}>
+        {aiReady && (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            leftIcon={<Sparkles className="h-4 w-4" />}
+            isLoading={draft.isPending}
+            disabled={send.isPending}
+            onClick={() => draft.mutate()}
+          >
+            {lastDraft !== null && text === lastDraft ? 'Write it again' : 'Draft reply with AI'}
+          </Button>
+        )}
+        <Button type="submit" size="sm" leftIcon={<Send className="h-4 w-4" />} isLoading={send.isPending} disabled={!text.trim() || draft.isPending}>
           Send
         </Button>
       </div>

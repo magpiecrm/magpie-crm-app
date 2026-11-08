@@ -4,15 +4,18 @@
 // (companyResearch.ts) and their name, job and company. A follow-up is
 // written from what they've already been sent, with a new reason to reply.
 // Each step's own subject and body are the example it follows, and what's
-// sent when it can't write one.
+// sent when it can't write one. A follow-up can be left without one: the AI
+// writes it from the brief and what came before, and if it can't, that
+// follow-up isn't sent and they go on to the next (engine.ts).
 //
 // Each email is written a little ahead of its send (runDrafts, from the
 // email scheduler, a few a minute), once the one before it has gone, and the
 // engine holds it until it's there. They send without review, so each is
 // checked first (checkDraft): no merge tags or placeholders left in, no links
 // that weren't in the brief or the examples, not opening by describing their
-// own company, no "just checking in", a sensible length. The signature and
-// the unsubscribe line are added at sending, as for every sequence email.
+// own company, no "just checking in", a sensible length. The sign-off and
+// the unsubscribe line are added at sending, as for every sequence email, and
+// an email the AI wrote always signs off (render.ts aiSignOff).
 //
 // Where the AI can't be used at all (no key, no AI budget) the sequence
 // pauses rather than sending everyone the standard emails, and carries on by
@@ -29,6 +32,7 @@ import { workDomain } from '../sales/companies'
 import { mergeContact } from '../mergeTags'
 import { notify } from '../notify'
 import { recordUsage } from '../usage'
+import { stripSignOff } from './render'
 
 type Contact = DbSchema['contacts'][number]
 
@@ -130,7 +134,7 @@ const ANSWER = {
   },
 } satisfies GenerateOptions<any>['answer']
 
-const FOLLOW_UP_SYSTEM = `You write a follow-up cold email from a salesperson to one person who hasn't replied yet, in the salesperson's voice. You're given the brief (what's being offered), the emails they've already been sent, an example of what this follow-up is for, the recipient's name, job and company, and a few facts about their company with their sources.
+const FOLLOW_UP_SYSTEM = `You write a follow-up cold email from a salesperson to one person who hasn't replied yet, in the salesperson's voice. You're given the brief (what's being offered), the emails they've already been sent, an example of what this follow-up is for when there is one, the recipient's name, job and company, and a few facts about their company with their sources.
 
 The follow-up's job is to give them one new reason to reply: a different angle on how the offer helps a business like theirs, drawn from a fact or a part of their situation the earlier emails didn't use. They know what their own company does, so never describe it back to them, and don't repeat or sum up what the earlier emails said.
 
@@ -138,7 +142,7 @@ Write like one person to another:
 - Plain text, 30 to 90 words, one or two short paragraphs.
 - Never "just checking in", "following up", "bumping this" or "circling back", and no apology for writing again. Open with the new point.
 - Only claim what the brief says the offer does, and use only the facts given. Don't say you looked them up or came across their website.
-- Keep the example's purpose and tone; don't copy it word for word. End with one simple question, not one they've already been asked.
+- Where there's an example, keep its purpose and tone; don't copy it word for word. Without one, keep to the earlier emails' tone. End with one simple question, not one they've already been asked.
 - No greeting placeholder, merge tags ({{ … }}) or [brackets]: write their first name itself if you greet them. No sign-off or signature, and no unsubscribe line: both are added after your text.
 - Answer by calling the writeFollowUp tool.`
 
@@ -200,7 +204,9 @@ export function draftPrompt(input: {
       ? `## What you've sent them so far (no reply yet)\n${followUp.sent.map((m) => `### ${m.label}\nSubject: ${m.subject}\n\n${m.body}`).join('\n\n') || '(nothing)'}`
       : null,
     followUp
-      ? `## What this follow-up is for (example)\n${followUp.ownSubject ? `Subject: ${fill(step.subject ?? '')}\n\n` : ''}${fill(step.body)}`
+      ? step.body.trim()
+        ? `## What this follow-up is for (example)\n${followUp.ownSubject ? `Subject: ${fill(step.subject ?? '')}\n\n` : ''}${fill(step.body)}`
+        : `## What this follow-up is for\n${followUp.ownSubject ? `A subject to start from: ${fill(step.subject ?? '')}\n\n` : ''}(no example: give them one new reason to reply, from the brief and the facts)`
       : `## Example email\nSubject: ${fill(step.subject ?? '')}\n\n${fill(step.body)}`,
     followUp ? (followUp.ownSubject ? 'This follow-up starts a new conversation: give it a subject line under 60 characters.' : 'It replies in the same conversation: no subject line.') : null,
     `## To\n${[`First name: ${contact.first_name?.trim() || '(not known: start with a plain "Hi")'}`, contact.job_title ? `Job: ${contact.job_title}` : null, contact.company ? `Company: ${contact.company}` : null, contact.country ? `Country: ${contact.country}` : null].filter(Boolean).join('\n')}`,
@@ -244,7 +250,8 @@ export async function writeDraft(
       ? await (deps.generate ?? generate)({ system: FOLLOW_UP_SYSTEM, prompt, answer: FOLLOW_UP_ANSWER })
       : await (deps.generate ?? generate)({ system: SYSTEM, prompt, answer: ANSWER })
     const needsSubject = !followUp || followUp.ownSubject
-    const draft = { subject: needsSubject ? (answer.subject ?? '').trim() : '', body: answer.body.trim() }
+    // A closing it added anyway comes off: the sign-off goes on at sending.
+    const draft = { subject: needsSubject ? (answer.subject ?? '').trim() : '', body: stripSignOff(answer.body.trim(), sender?.name) }
     problem = checkDraft(draft, allowed, contact.company, { needsSubject, minBody: followUp ? 40 : 80 }) ?? undefined
     if (!problem && followUp && NUDGE.test(draft.body)) problem = 'It says it\'s following up or checking in; give the new reason to reply instead.'
     if (!problem) {

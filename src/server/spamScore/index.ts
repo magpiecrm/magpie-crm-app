@@ -183,7 +183,8 @@ export async function sequenceSpamScore(id: string, draft: SequenceDraft = {}, d
     ...recipientFindings(recipients),
   ]
   const scored: SpamStepScore[] = contents.map((c, i) => {
-    const own = contentFindings(c).map((f) => ({ ...f, step: i + 1 }))
+    // A follow-up left for the AI to write has no words of its own to score.
+    const own = steps[i].body.trim() ? contentFindings(c).map((f) => ({ ...f, step: i + 1 })) : []
     const { score, level } = combine([...own, ...shared])
     return { step: i + 1, score, level, findings: own.sort(byWeight) }
   })

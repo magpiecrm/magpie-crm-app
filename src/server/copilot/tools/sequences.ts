@@ -38,7 +38,12 @@ const stepInput = z.object({
     .max(200)
     .nullable()
     .describe('The subject. null for a follow-up that replies in the same thread ("Re: <first subject>"), which is usual. The first email needs one.'),
-  body: z.string().min(1).max(10_000).describe('Plain text, short and personal. Merge tags: {{ contact.first_name | default: "there" }}, {{ contact.COMPANY }}, {{ contact.custom.<key> }}. No sign-off or unsubscribe line: the sequence adds them.'),
+  body: z
+    .string()
+    .max(10_000)
+    .describe(
+      'Plain text, short and personal. Merge tags: {{ contact.first_name | default: "there" }}, {{ contact.COMPANY }}, {{ contact.custom.<key> }}. No sign-off or unsubscribe line: the sequence adds them. A follow-up in a sequence the AI writes (personaliseBrief on the first) may be "": the AI writes it from the brief and what came before.',
+    ),
   personaliseBrief: z
     .string()
     .max(2_000)

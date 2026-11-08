@@ -28,6 +28,7 @@ const { db } = await import('../db')
 const { sequences } = await import('.')
 const { runSequences } = await import('./engine')
 const { allowedLinks, checkDraft, draftPrompt, runDrafts, AI_RETRY_MS } = await import('./personalise')
+const { aiSignOff, stripSignOff, withSignature } = await import('./render')
 const { AiFailed, AiUnavailable } = await import('../copilot/generate')
 const { moveFirstEmailDrafts } = await import('../../features/sequences/types')
 
@@ -84,6 +85,24 @@ beforeEach(() => {
     d.sequence_enrollments = []
     d.email_stops = {}
     if (!d.senders.some((s) => s.id === 1)) d.senders.push({ id: 1, name: 'Jo', email: 'jo@acme.test' })
+  })
+})
+
+describe('signing off', () => {
+  it('puts "Thanks," over the sign-off, or over the first name, unless the sign-off has its own closing', () => {
+    expect(aiSignOff('Jo Smith\nFounder, Acme', 'Jo Smith')).toBe('Thanks,\nJo Smith\nFounder, Acme')
+    expect(aiSignOff('', 'Jo Smith')).toBe('Thanks,\nJo')
+    expect(aiSignOff('Best wishes,\nJo')).toBe('Best wishes,\nJo')
+    expect(aiSignOff('', null)).toBe('Thanks,')
+  })
+
+  it("takes off a closing the AI wrote, and puts an answer's sign-off under its own closing", () => {
+    expect(stripSignOff('See you then.\n\nBest,\nJo', 'Jo Smith')).toBe('See you then.')
+    expect(stripSignOff('See you then.\n\nCheers', 'Jo')).toBe('See you then.')
+    expect(stripSignOff('Thanks for the note. Tuesday works.', 'Jo')).toBe('Thanks for the note. Tuesday works.')
+    expect(withSignature('Tuesday works.\n\nThanks,', 'Jo')).toBe('Tuesday works.\n\nThanks,\nJo')
+    expect(withSignature('Tuesday works.', 'Jo')).toBe('Tuesday works.\n\nJo')
+    expect(withSignature('Tuesday works.', '')).toBe('Tuesday works.')
   })
 })
 
@@ -157,7 +176,8 @@ describe('the engine with personalised emails', () => {
 
     expect(await runSequences(t0, () => 0.5)).toBe(1)
     expect(sent[0].subject).toBe('Onboarding at Larkspur')
-    expect(sent[0].text).toMatch(/^Hi Ava,\n\nI saw Larkspur makes onboarding software[\s\S]*next week be useful\?\n\nJo, Acme\n\nNot interested\? Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
+    // The AI's own email signs off: "Thanks," over the sequence's sign-off.
+    expect(sent[0].text).toMatch(/^Hi Ava,\n\nI saw Larkspur makes onboarding software[\s\S]*next week be useful\?\n\nThanks,\nJo, Acme\n\nNot interested\? Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe\?t=/)
     // Kept as the record of what went out, and too late to change.
     expect(() => sequences.draft(enrollmentOf(id, 'ava@larkspur.test').id, steps[0].id, { rewrite: true })).toThrow(/already gone/)
 
@@ -213,6 +233,48 @@ describe('the engine with personalised emails', () => {
     expect(enrollmentOf(id, 'ava@larkspur.test').drafts?.[step.id]).toMatchObject({ status: 'fallback' })
     await runSequences(t3, () => 0.5)
     expect(sent[1].text).toMatch(/^Following up, Ava\./)
+  })
+
+  it("signs off with the sender's first name where the sequence has no sign-off, and drops a closing the AI added itself", async () => {
+    contact('ava@larkspur.test')
+    const id = makeSequence()
+    sequences.update(id, { settings: { ...sequences.get(id).sequence.settings, signature: '' } })
+    sequences.enroll(id, ['ava@larkspur.test'], {}, null)
+    const t0 = new Date()
+    await runDrafts(t0, { generate: writes({ subject: 'Onboarding at Larkspur', body: `${BODY}\n\nBest,\nJo` }), research })
+    await runSequences(t0, () => 0.5)
+    expect(sent[0].text).toMatch(/next week be useful\?\n\nThanks,\nJo\n\nNot interested\?/)
+    expect(sent[0].text).not.toContain('Best,')
+  })
+
+  it("writes a follow-up left without an example from the brief, and skips it for someone it can't write one for", async () => {
+    contact('ava@larkspur.test')
+    contact('bo@larkspur.test', { first_name: 'Bo' })
+    const id = makeSequence()
+    const steps = sequences.get(id).sequence.steps
+    sequences.update(id, { steps: steps.map((st, i) => ({ ...st, body: i === 1 ? '' : st.body })) })
+    // Still ready to send: the AI writes that one.
+    expect(sequences.get(id).sequence.status).toBe('active')
+    sequences.enroll(id, ['ava@larkspur.test', 'bo@larkspur.test'], {}, null)
+    const t0 = new Date()
+    await runDrafts(t0, { generate: writes({ subject: 'Onboarding at Larkspur', body: BODY }, { subject: 'Onboarding at Larkspur', body: BODY }), research })
+    await runSequences(t0, () => 0.5)
+    await runSequences(new Date(t0.getTime() + 60 * 60_000), () => 0.5)
+    expect(sent).toHaveLength(2)
+
+    const t3 = new Date(t0.getTime() + 3 * DAY + 2 * 60 * 60_000)
+    const followUp = writes({ body: 'Ava, new clients usually arrive in batches after a launch, which is when onboarding backs up most. Want me to show you how firms handle that?' }, new AiFailed('busy'))
+    await runDrafts(t3, { generate: followUp, research })
+    expect(followUp.mock.calls[0][0].prompt).toContain("## What this follow-up is for\n(no example: give them one new reason to reply")
+    // Bo's can't be written: after three tries, his follow-up isn't sent and he's done.
+    const failing = writes(new AiFailed('busy'), new AiFailed('busy'))
+    for (let i = 0; i < 2; i++) await runDrafts(t3, { generate: failing, research })
+    const followUpId = sequences.get(id).sequence.steps[1].id
+    expect(enrollmentOf(id, 'bo@larkspur.test').drafts?.[followUpId]).toMatchObject({ status: 'fallback', attempts: 3 })
+    for (let i = 0; i < 3; i++) await runSequences(new Date(t3.getTime() + i * 60 * 60_000), () => 0.5)
+    expect(sent.slice(2).map((m) => m.to)).toEqual(['ava@larkspur.test'])
+    expect(sent[2].text).toMatch(/^Ava, new clients usually arrive in batches[\s\S]*\n\nThanks,\nJo, Acme\n\n/)
+    expect(enrollmentOf(id, 'bo@larkspur.test')).toMatchObject({ status: 'finished', stop_reason: 'Sent every email the AI could write' })
   })
 
   it("pauses instead of sending everyone the standard email when the AI can't be used, and carries on later", async () => {

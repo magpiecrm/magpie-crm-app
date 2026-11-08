@@ -174,6 +174,10 @@ function StepCard({
     onSuccess: setPreview,
   })
   const threaded = index > 0 && step.subject === null
+  // A follow-up the AI writes needs no example: its text box shows once there is one, or when asked for.
+  const aiFollowUp = index > 0 && !!personalised
+  const [exampleAsked, setExampleAsked] = useState(!!step.body.trim())
+  const showText = !aiFollowUp || exampleAsked || !!step.body.trim()
   const insert = (tag: string) => {
     const el = bodyRef.current
     const at = el?.selectionStart ?? step.body.length
@@ -207,9 +211,12 @@ function StepCard({
 
       {index === 0 && <PersonaliseBox sequence={sequence} step={step} ai={ai} onChange={onChange} />}
       {index === 0 && step.personalise && <p className="text-xs font-semibold text-muted-foreground">Example email, and the standard one</p>}
-      {index > 0 && personalised && (
+      {aiFollowUp && (
         <p className="text-xs text-muted-foreground">
-          Written for each person by the AI, from your brief and what they've already been sent. This is the example it follows, and what's sent when it can't write one.
+          Written for each person by the AI, from your brief and what they've already been sent.{' '}
+          {showText
+            ? "This is the example it follows, and what's sent when it can't write one."
+            : "If it can't write one for someone, this follow-up is skipped for them."}
         </p>
       )}
       {index > 0 && (
@@ -231,45 +238,65 @@ function StepCard({
           aria-label="Subject"
           value={step.subject ?? ''}
           onChange={(e) => onChange({ subject: e.target.value })}
-          placeholder="Subject, e.g. Quick question, {{ contact.first_name }}"
+          placeholder={showText ? 'Subject, e.g. Quick question, {{ contact.first_name }}' : 'A subject for the AI to start from'}
           maxLength={200}
           className={FIELD_CLASS}
         />
       )}
-      <textarea
-        ref={bodyRef}
-        aria-label="Email text"
-        value={step.body}
-        onChange={(e) => onChange({ body: e.target.value })}
-        rows={index === 0 ? 9 : 5}
-        placeholder={
-          index === 0
-            ? 'Hi {{ contact.first_name }},\n\nOne or two sentences on why you’re writing to them, specifically.\n\nOne question they can answer in a line.'
-            : 'A short nudge: a new reason to reply, not "just checking in".'
-        }
-        maxLength={10_000}
-        className={`${FIELD_CLASS} resize-y font-[inherit]`}
-      />
-      {step.body.trim() && <SpamStepChip step={spam} />}
-      <div className="flex flex-wrap items-center gap-2">
-        <Select
-          aria-label="Insert a contact's detail"
-          value=""
-          onChange={(e) => e.target.value && insert(e.target.value)}
-          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
-        >
-          <option value="">Insert a detail…</option>
-          {mergeTagOptions(fields).map((o) => (
-            <option key={o.path} value={o.path === 'contact.FIRSTNAME' ? '{{ contact.first_name | default: "there" }}' : mergeTagText(o)}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
-        <Button size="sm" variant="ghost" leftIcon={<Eye className="w-3.5 h-3.5" />} isLoading={show.isPending} onClick={() => show.mutate()} disabled={!step.body.trim()}>
-          Preview
+      {!showText ? (
+        <Button size="sm" variant="ghost" leftIcon={<Plus className="w-3.5 h-3.5" />} onClick={() => setExampleAsked(true)}>
+          Add an example (optional)
         </Button>
-        <span className="text-xs text-muted-foreground">Your sign-off and the unsubscribe line are added below (Settings).</span>
-      </div>
+      ) : (
+        <>
+          <textarea
+            ref={bodyRef}
+            aria-label="Email text"
+            value={step.body}
+            onChange={(e) => onChange({ body: e.target.value })}
+            rows={index === 0 ? 9 : 5}
+            placeholder={
+              index === 0
+                ? 'Hi {{ contact.first_name }},\n\nOne or two sentences on why you’re writing to them, specifically.\n\nOne question they can answer in a line.'
+                : 'A short nudge: a new reason to reply, not "just checking in".'
+            }
+            maxLength={10_000}
+            className={`${FIELD_CLASS} resize-y font-[inherit]`}
+          />
+          {step.body.trim() && <SpamStepChip step={spam} />}
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              aria-label="Insert a contact's detail"
+              value=""
+              onChange={(e) => e.target.value && insert(e.target.value)}
+              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
+            >
+              <option value="">Insert a detail…</option>
+              {mergeTagOptions(fields).map((o) => (
+                <option key={o.path} value={o.path === 'contact.FIRSTNAME' ? '{{ contact.first_name | default: "there" }}' : mergeTagText(o)}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            <Button size="sm" variant="ghost" leftIcon={<Eye className="w-3.5 h-3.5" />} isLoading={show.isPending} onClick={() => show.mutate()} disabled={!step.body.trim()}>
+              Preview
+            </Button>
+            <span className="text-xs text-muted-foreground">Your sign-off and the unsubscribe line are added below (Settings).</span>
+            {aiFollowUp && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  onChange({ body: '' })
+                  setExampleAsked(false)
+                }}
+              >
+                Remove example
+              </Button>
+            )}
+          </div>
+        </>
+      )}
       {preview && (
         <div className="rounded-lg border border-border bg-background p-4 text-sm">
           <p className="text-xs text-muted-foreground mb-2">As {preview.contact} would get it:</p>

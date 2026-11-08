@@ -15,7 +15,7 @@ import { sendMail } from '../nodemailer'
 import { inboxOf, lastActivity } from '../mailboxes'
 import { imapConnect, type Connect } from '../mailboxes/imap'
 import { logActivity } from '../sales/deals'
-import { composeText, htmlDocument, renderStep, textHash, textToHtml } from './render'
+import { composeText, htmlDocument, renderStep, signedSettings, textHash, textToHtml, withSignature } from './render'
 import { stripRe } from './schedule'
 import { sequences, unreadIn } from '.'
 import { snippet } from '../../features/sequences/quote'
@@ -188,9 +188,13 @@ export const conversations = {
       const index = s.steps.findIndex((st) => st.id === send.step_id)
       const draft = draftFor(e, send.step_id)
       // As the engine sends it: their own version where it was written, else the step's.
-      const body = draft?.status === 'ready' && draft.body ? draft.body : s.steps[index]?.body
-      const text = body === undefined ? '' : renderStep({ subject: send.subject, body, contact: contact ?? { email: e.contact_email }, settings: s.settings, unsubscribeUrl: '' }).text
-      const edited = body === undefined || (!!send.text_hash && send.text_hash !== textHash(composeText(body, s.settings)))
+      const own = draft?.status === 'ready' && !!draft.body
+      const body = own ? draft!.body! : s.steps[index]?.body
+      // The AI's own emails sign off (render.ts aiSignOff); those sent before they did are shown as they went.
+      const signed = signedSettings(s.settings, own, sender?.name)
+      const settings = own && send.text_hash && body !== undefined && send.text_hash === textHash(composeText(body, s.settings)) ? s.settings : signed
+      const text = body === undefined ? '' : renderStep({ subject: send.subject, body, contact: contact ?? { email: e.contact_email }, settings, unsubscribeUrl: '' }).text
+      const edited = body === undefined || (!!send.text_hash && send.text_hash !== textHash(composeText(body, settings)))
       return {
         key: `send-${i}`,
         kind: 'step',
@@ -294,7 +298,7 @@ export async function sendReply(
   const subject = `Re: ${stripRe(target.subject || e.sends.at(-1)?.subject || '')}`.trim()
   const messageId = `<${randomUUID()}@${sender.email.split('@')[1] ?? 'localhost'}>`
   const references = [...new Set([...target.references, target.messageId])].slice(-10)
-  const mine = [words, s.settings.signature.trim()].filter(Boolean).join('\n\n')
+  const mine = withSignature(words, s.settings.signature)
 
   let text = mine
   let html = textToHtml(mine)

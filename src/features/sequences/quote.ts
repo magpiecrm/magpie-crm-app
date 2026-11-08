@@ -13,6 +13,8 @@ export interface SplitText {
 
 const WROTE = [
   /^On\b.{0,300}\bwrote:\s*$/i,
+  // Zoho Mail: "---- On Sun, 08 Nov 2026 12:52:34 +0000 Jo <jo@acme.com> wrote ----".
+  /^-{2,}\s*On\b.{0,300}\bwrote:?\s*-{2,}\s*$/i,
   /^Le\b.{0,300}\ba écrit\s?:\s*$/i,
   /^Am\b.{0,300}\bschrieb\b.{0,200}:\s*$/i,
   /^El\b.{0,300}\bescribió:\s*$/i,

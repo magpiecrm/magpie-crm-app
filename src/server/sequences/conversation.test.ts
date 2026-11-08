@@ -25,6 +25,7 @@ const { db } = await import('../db')
 const { sequences } = await import('.')
 const { runSequences } = await import('./engine')
 const { conversations, sendReply } = await import('./conversation')
+const { draftReply } = await import('./replyDraft')
 const { createDeal } = await import('../sales/deals')
 const { ensurePipelines } = await import('../sales/pipelines')
 const { encryptToken } = await import('../crypto')
@@ -213,6 +214,42 @@ describe('answering a reply', () => {
     db.stopEmail('ava@larkspur.test', 'bounced')
     expect(conversations.get(e.id).cannot_reply).toMatch(/bounced/)
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('drafting an answer with AI', () => {
+  /** A fake AI answering each call with the next text. */
+  const answers = (...bodies: string[]) => vi.fn(async () => ({ answer: { body: bodies.shift() ?? 'Thanks, Ava.' }, web: false, model: 'm' })) as any
+
+  it('reads the whole conversation without the quoted part, follows the notes, and ends with the closing above the sign-off', async () => {
+    const { e } = await started()
+    const generate = answers('Hi Ava, Thursday at 2pm works for me. Shall I send an invite?\n\nBest,\nJo')
+    const { text } = await draftReply(e.id, 'yes, offer Thursday at 2pm', { generate })
+    const prompt: string = generate.mock.calls[0][0].prompt
+    expect(prompt).toContain('## The first email that went out\nHi Ava, do you use a CRM?')
+    expect(prompt).toMatch(/### You, .*\nHi Ava, do you use a CRM\?/)
+    expect(prompt).toContain('Yes, a spreadsheet. Thursday?')
+    expect(prompt).not.toContain('Jo wrote:')
+    expect(prompt).toContain("## The salesperson's notes for this answer\nyes, offer Thursday at 2pm")
+    // The sequence's sign-off ("Jo") goes under every answer: the draft ends with the closing above it.
+    expect(text).toBe('Hi Ava, Thursday at 2pm works for me. Shall I send an invite?\n\nThanks,')
+    await sendReply(e.id, { text, clientId: 'c-ai' }, 'jo@acme.test', sentFolder().connect)
+    expect(sent[0].text).toMatch(/^Hi Ava, Thursday at 2pm works for me\. Shall I send an invite\?\n\nThanks,\nJo\n\nOn /)
+  })
+
+  it("asks again when a placeholder is left in, signs with the sender's name where there's no sign-off, and needs something to answer", async () => {
+    const { e, sequenceId } = await started()
+    sequences.update(sequenceId, { settings: { ...sequences.get(sequenceId).sequence.settings, signature: '' } })
+    const generate = answers('Thursday works. Does [time] suit you?', 'Thursday works. What time suits you?')
+    const { text } = await draftReply(e.id, '', { generate })
+    expect(generate).toHaveBeenCalledTimes(2)
+    expect(generate.mock.calls[1][0].prompt).toContain('Your last draft had [time] in it.')
+    expect(text).toBe('Thursday works. What time suits you?\n\nThanks,\nJo')
+
+    sent.length = 0
+    db.mutate((d) => void (d.sequence_enrollments = []))
+    const fresh = await started({ replied: false })
+    await expect(draftReply(fresh.e.id, '', { generate: answers('Hi') })).rejects.toThrow()
   })
 })
 

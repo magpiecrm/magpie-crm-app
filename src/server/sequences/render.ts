@@ -28,6 +28,46 @@ export function composeText(body: string, settings: Pick<SequenceSettings, 'sign
   return [body.trim(), settings.signature.trim(), settings.footer.trim()].filter(Boolean).join('\n\n')
 }
 
+/** A line that closes an email: "Thanks,", "Best wishes", "Cheers". */
+export const VALEDICTION = /^(many thanks|thanks( again| so much)?|thank you|best( wishes| regards)?|all the best|kind regards|warm regards|regards|cheers|speak soon|sincerely|yours( sincerely| truly)?)[,.!]?$/i
+
+const firstLine = (text: string) => text.trim().split('\n')[0].trim()
+
+/**
+ * How an email the AI wrote ends, so it never stops without one: "Thanks,"
+ * over the sequence's sign-off, or over the sender's first name where it has
+ * none. A sign-off that already opens with "Best," or the like is kept as it is.
+ */
+export function aiSignOff(signature: string, senderName?: string | null): string {
+  const sig = signature.trim()
+  if (VALEDICTION.test(firstLine(sig))) return sig
+  const name = sig || senderName?.trim().split(/\s+/)[0] || ''
+  return name ? `Thanks,\n${name}` : 'Thanks,'
+}
+
+/** A sequence's settings for one of its emails: one the AI wrote signs off as aiSignOff has it. */
+export function signedSettings<T extends Pick<SequenceSettings, 'signature'>>(settings: T, aiWritten: boolean, senderName?: string | null): T {
+  return aiWritten ? { ...settings, signature: aiSignOff(settings.signature, senderName) } : settings
+}
+
+/** An answer's words and the sign-off under it: on the next line after a closing like "Thanks,", else after a blank one. */
+export function withSignature(words: string, signature: string): string {
+  const sig = signature.trim()
+  if (!sig) return words
+  const last = words.trimEnd().split('\n').at(-1)?.trim() ?? ''
+  return `${words.trimEnd()}${VALEDICTION.test(last) ? '\n' : '\n\n'}${sig}`
+}
+
+/** An AI's text without a closing it added itself ("Thanks," or "Best,\nJo"), since the sign-off goes on after it. */
+export function stripSignOff(body: string, senderName?: string | null): string {
+  const names = new Set([senderName?.trim(), senderName?.trim().split(/\s+/)[0]].filter(Boolean).map((n) => n!.toLowerCase()))
+  const lines = body.trimEnd().split('\n')
+  // A name on its own last line, then the closing above it.
+  if (lines.length > 1 && names.has(lines.at(-1)!.trim().toLowerCase()) && VALEDICTION.test(lines.at(-2)!.trim())) lines.splice(-2)
+  else if (VALEDICTION.test(lines.at(-1)!.trim())) lines.pop()
+  return lines.join('\n').trimEnd()
+}
+
 /** A short fingerprint of an email's words as written (composeText, before merge tags), to tell later whether the step changed since. */
 export const textHash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12)
 

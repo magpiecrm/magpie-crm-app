@@ -209,6 +209,15 @@ export const sendSequenceReplyFn = createServerFn({ method: 'POST' })
     return { id: message.id, at: message.at }
   })
 
+/** A draft answer to someone who replied, written by the AI, for the answer box; `notes` (what's typed there) steer it. Sends nothing. */
+export const draftSequenceReplyFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { enrollmentId: string; notes?: string }) => z.object({ enrollmentId: id, notes: z.string().max(2_000).optional() }).parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { draftReply } = await import('../sequences/replyDraft')
+    return draftReply(data.enrollmentId, data.notes)
+  })
+
 /** Sell → Inbox: conversations across sequences, the latest first; those needing a reply, or all, from one sequence or every one. */
 export const inboxFn = createServerFn({ method: 'GET' })
   .inputValidator((d: { needsReply?: boolean; sequenceId?: string } | undefined) => z.object({ needsReply: z.boolean().optional(), sequenceId: id.optional() }).optional().parse(d))

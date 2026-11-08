@@ -31,7 +31,7 @@ import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { dailyRoom } from '../sendingLimits'
-import { composeText, renderStep, textHash } from './render'
+import { composeText, renderStep, signedSettings, textHash } from './render'
 import { aiCleared } from './personalise'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
 
@@ -226,6 +226,11 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       if (d.status === 'pending') continue
       // A follow-up in the thread has no subject of its own: it keeps "Re: …".
       if (d.status === 'ready' && d.body) own = { subject: d.subject?.trim() ? d.subject : step.subject, body: d.body }
+      // A follow-up left for the AI to write, which it couldn't: not sent, and they go on to the next.
+      else if (e.next_step > 0 && !step.body.trim()) {
+        skip(e, s, now)
+        continue
+      }
     }
     if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now))) continue
     // Today's sending limit for this kind of contact is used up (sendingLimits.ts): they wait, others may still go.
@@ -250,9 +255,11 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     })
 
     const thread = threadFor(own ?? step, e.sends, s.steps)
+    // The AI's own emails always sign off (render.ts aiSignOff).
+    const settings = signedSettings(s.settings, !!own, sender.name)
     const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`
     const rendered = renderStep(
-      { subject: thread.subject, body: own?.body ?? step.body, contact: contact!, settings: s.settings, unsubscribeUrl },
+      { subject: thread.subject, body: own?.body ?? step.body, contact: contact!, settings, unsubscribeUrl },
       {
         openUrl: `${appUrl}/api/track/open?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`,
         clickUrl: (url) => `${appUrl}/api/track/click?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid, url }))}`,
@@ -294,12 +301,22 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       return false
     }
 
-    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString(), textHash: textHash(composeText(own?.body ?? step.body, s.settings)) })
+    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString(), textHash: textHash(composeText(own?.body ?? step.body, settings)) })
     const left = Math.max(1, s.settings.daily_cap - today - 1)
     db.mutate(() => (s.next_slot_at = new Date(now.getTime() + nextGapMs(minutesLeft(now, s.settings), left, random)).toISOString()))
     return true
   }
   return false
+}
+
+/** Moves an enrollment past an email that isn't sent to them: to the next one, after its wait, or finished. */
+function skip(e: Enrollment, s: Sequence, now: Date) {
+  const next = e.next_step + 1
+  if (next >= s.steps.length) return end(e, 'finished', 'Sent every email the AI could write')
+  db.mutate(() => {
+    e.next_step = next
+    e.next_send_at = dueAfter(now.toISOString(), s.steps[next].delay_days)
+  })
 }
 
 /** Records a send and moves the enrollment on to its next email (unless a reply stopped it meanwhile). */
