@@ -635,7 +635,9 @@ export function ProspectSearch() {
           <div className="flex items-center gap-1.5">
             <Select
               id="apply-persona"
-              className={inputClass}
+              // Shrinks to leave the × room: a long name would hold it at full width and push it out.
+              className={`${inputClass} min-w-0 flex-1`}
+              title={appliedPersona?.name}
               value={appliedPersona?.id ?? ''}
               onChange={(e) => {
                 const persona = (personas as Persona[]).find((p) => p.id === e.target.value)
