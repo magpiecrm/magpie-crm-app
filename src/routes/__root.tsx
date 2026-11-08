@@ -240,12 +240,13 @@ function RootDocument() {
               />
             )}
 
+            {/* The scrollbar's space is kept on short pages too, so going between pages doesn't nudge them sideways. */}
             <main
               style={{
                 marginRight: contentOffset,
                 transition: isResizing ? 'none' : 'margin-right 300ms cubic-bezier(0.2, 0, 0, 1)',
               }}
-              className="flex-1 ml-0 lg:ml-64 h-[100dvh] overflow-y-auto flex flex-col min-w-0 custom-scrollbar"
+              className="flex-1 ml-0 lg:ml-64 h-[100dvh] overflow-y-auto [scrollbar-gutter:stable] flex flex-col min-w-0 custom-scrollbar"
             >
               {/* Header Navbar */}
               <header

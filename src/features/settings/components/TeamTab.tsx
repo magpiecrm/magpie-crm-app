@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { checkAuthFn, createUserFn, deleteUserFn, getUsersFn, signInOptionsFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
@@ -10,51 +12,22 @@ import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPa
 
 /** Settings → Team and login: who can sign in, and your own password. */
 export function TeamTab() {
-  // Users State
-  const [users, setUsers] = useState<any[]>([])
-  const [isLoadingUsers, setIsLoadingUsers] = useState(false)
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  // Cached with the settings menu's status, so a page opened before shows at once instead of loading again.
+  const team = useQuery({ queryKey: queryKeys.settings.team(), queryFn: () => getUsersFn() })
+  const { data: account } = useQuery({ queryKey: queryKeys.account(), queryFn: () => checkAuthFn(), staleTime: 5 * 60_000 })
+  // False when PASSWORD_LOGIN=off: the hosting provider runs sign-in. Unknown until loaded, so neither version shows and then swaps.
+  const { data: signIn } = useQuery({ queryKey: queryKeys.settings.signInOptions(), queryFn: () => signInOptionsFn(), staleTime: Infinity })
+  const users: any[] = (team.data?.success && team.data.users) || []
+  const currentUserEmail = account?.isAuthenticated ? account.email : null
+  const loadError = team.error ? team.error.message || 'Failed to load users' : team.data && !team.data.success ? team.data.error || 'Failed to load users' : null
   const [userError, setUserError] = useState<string | null>(null)
   const [userSuccess, setUserSuccess] = useState<string | null>(null)
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [isAddingUser, setIsAddingUser] = useState(false)
-  // False when PASSWORD_LOGIN=off: the hosting provider runs sign-in.
-  const [passwordLogin, setPasswordLogin] = useState(true)
 
-  const fetchUsers = async () => {
-    setIsLoadingUsers(true)
-    setUserError(null)
-    try {
-      const res = await getUsersFn()
-      if (res.success && res.users) {
-        setUsers(res.users)
-      }
-    } catch (e: any) {
-      setUserError(e.message || 'Failed to load users')
-    } finally {
-      setIsLoadingUsers(false)
-    }
-  }
-
-  const fetchCurrentUser = async () => {
-    try {
-      const res = await checkAuthFn()
-      if (res.isAuthenticated && res.email) {
-        setCurrentUserEmail(res.email)
-      }
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  useEffect(() => {
-    fetchUsers()
-    fetchCurrentUser()
-    signInOptionsFn()
-      .then((o) => setPasswordLogin(o.passwordLogin))
-      .catch(() => {})
-  }, [])
+  const fetchUsers = () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.team() })
 
   // --- User Handlers ---
   const showUserSuccess = (msg: string) => {
@@ -103,11 +76,11 @@ export function TeamTab() {
   return (
     <div className="flex flex-col gap-4">
       {userSuccess && <Notice level="success">{userSuccess}</Notice>}
-      {userError && <Notice level="error">{userError}</Notice>}
+      {(userError || loadError) && <Notice level="error">{userError || loadError}</Notice>}
 
       <SettingsPanel>
         <SettingsBlock title="People" description="Everyone here has full access to this workspace.">
-          {isLoadingUsers && users.length === 0 ? (
+          {team.isLoading ? (
             <SettingsEmpty>
               <RefreshCw className="mr-2 inline h-4 w-4 animate-spin text-accent" />
               Loading…
@@ -151,7 +124,7 @@ export function TeamTab() {
           )}
         </SettingsBlock>
 
-        {!passwordLogin ? (
+        {!signIn ? null : !signIn.passwordLogin ? (
           <SettingsBlock title="Sign-in">
             <Notice>Sign-in is run by your hosting provider, so passwords and new people are managed there, not here.</Notice>
           </SettingsBlock>
