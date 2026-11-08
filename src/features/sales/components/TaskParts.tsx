@@ -2,11 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlarmClock, AlertCircle, Building2, CalendarClock, CalendarX2, Check, ChevronDown, Handshake, MoreHorizontal, Plus, Trash2, UserRound } from 'lucide-react'
+import { AlarmClock, Building2, CalendarClock, CalendarX2, Check, ChevronDown, Handshake, MoreHorizontal, Trash2, UserRound } from 'lucide-react'
 import { addTaskFn, deleteTaskFn, tasksFn, updateTaskFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
 import { queryKeys } from '../../../queryKeys'
-import { daysFromNow, dueBucket, dueLabel, dueShort, FOLLOW_UPS, fromLocalInput } from '../tasks'
+import { daysFromNow, dueBucket, dueLabel, dueParts, FOLLOW_UPS, fromLocalInput, lateBy } from '../tasks'
 import type { Activity } from '../types'
 import { Select } from '../../../components/ui/Select'
 
@@ -88,7 +88,7 @@ function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolea
     >
       <span
         className={`flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-colors ${
-          done ? 'border-transparent bg-muted-foreground/70 text-card' : 'border-input text-accent group-hover/check:border-accent'
+          done ? 'border-accent bg-accent text-accent-foreground' : 'border-input text-accent group-hover/check:border-accent'
         }`}
       >
         <Check strokeWidth={3} className={`h-3 w-3 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
@@ -97,8 +97,22 @@ function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolea
   )
 }
 
-/** A task's other actions behind "…": move it to another day, or delete it. In a portal, so a list's edge doesn't cut it off. */
-function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void }) {
+/**
+ * A task's actions in a menu: move it to another day, or delete it. Opened from "…", or from the due
+ * time itself (`trigger`, moving only). In a portal, so a list's edge doesn't cut it off.
+ */
+function TaskMenu({
+  task,
+  onChanged,
+  trigger,
+  triggerLabel,
+}: {
+  task: TaskItem
+  onChanged?: () => void
+  /** What the button shows in place of "…"; the menu then only moves the task. */
+  trigger?: React.ReactNode
+  triggerLabel?: string
+}) {
   const [open, setOpen] = useState(false)
   const [place, setPlace] = useState<{ top: number; left: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -113,7 +127,7 @@ function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void 
     const r = buttonRef.current!.getBoundingClientRect()
     const h = menuRef.current?.offsetHeight ?? 260
     const top = window.innerHeight - r.bottom < h + 12 && r.top > h + 12 ? r.top - h - 4 : r.bottom + 4
-    setPlace({ top, left: Math.max(8, r.right - 208) })
+    setPlace({ top, left: Math.max(8, Math.min(r.right - 208, window.innerWidth - 216)) })
   }, [open])
   useEffect(() => {
     if (!open) return
@@ -151,27 +165,33 @@ function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void 
     fn()
   }
   const item = 'flex w-full cursor-pointer items-center gap-2.5 rounded-md-xs px-2.5 py-1.5 text-left text-sm text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:outline-none'
+  const label = trigger ? (triggerLabel ?? 'Move task') : 'Task actions'
 
   return (
     <>
       <button
         ref={buttonRef}
         type="button"
-        aria-label="Task actions"
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         disabled={move.isPending || remove.isPending}
-        className="relative -my-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground"
+        className={
+          trigger
+            ? 'relative -mx-1.5 inline-flex cursor-pointer items-center rounded-md-xs px-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted'
+            : // Quiet until the row is pointed at or focused, so eleven of them don't make a stripe; always there on touch.
+              "relative -my-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-[color,background-color,opacity] after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground aria-expanded:opacity-100 [@media(hover:hover)]:opacity-40 [@media(hover:hover)]:group-hover/row:opacity-100"
+        }
       >
-        <MoreHorizontal className="h-4 w-4" />
+        {trigger ?? <MoreHorizontal className="h-4 w-4" />}
       </button>
       {open &&
         createPortal(
           <div
             ref={menuRef}
             role="menu"
-            aria-label="Task actions"
+            aria-label={label}
             onKeyDown={onMenuKey}
             style={{ position: 'fixed', top: place?.top ?? -9999, left: place?.left ?? -9999 }}
             className="z-[100] w-52 rounded-md-s border border-border bg-popover p-1 shadow-lg"
@@ -189,12 +209,16 @@ function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void 
                     <CalendarX2 aria-hidden className="h-4 w-4 text-muted-foreground" /> No due date
                   </button>
                 )}
-                <div role="separator" className="-mx-1 my-1 border-t border-border" />
               </>
             )}
-            <button type="button" role="menuitem" className={`${item} text-destructive`} onClick={pick(() => remove.mutate())}>
-              <Trash2 aria-hidden className="h-4 w-4" /> Delete
-            </button>
+            {!trigger && (
+              <>
+                {!done && <div role="separator" className="-mx-1 my-1 border-t border-border" />}
+                <button type="button" role="menuitem" className={`${item} text-destructive`} onClick={pick(() => remove.mutate())}>
+                  <Trash2 aria-hidden className="h-4 w-4" /> Delete
+                </button>
+              </>
+            )}
           </div>,
           document.body,
         )}
@@ -202,10 +226,24 @@ function TaskMenu({ task, onChanged }: { task: TaskItem; onChanged?: () => void 
   )
 }
 
+/** The record a task is about, as a link with its kind's icon. */
+function AboutLink({ task, about }: { task: TaskItem; about: NonNullable<ReturnType<typeof aboutOf>> }) {
+  return (
+    <Link
+      to={task.link!}
+      title={`${about.kind}: ${about.name}`}
+      className="-mx-1.5 inline-flex min-w-0 max-w-[calc(100%+0.75rem)] items-center gap-1.5 rounded-md-xs px-1.5 align-top text-[13px] leading-5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{about.name}</span>
+    </Link>
+  )
+}
+
 /**
  * One task: tick it off, see when it's due (red once overdue), open what it's about, move or delete it.
- * In a wide list (the Tasks page) what it's about and when sit in aligned columns on one line; in a
- * narrow one (a record's page, a phone) they go under the task.
+ * In a wide list (the Tasks page) the record follows the title and the due time sits in a column that
+ * lines the times up; in a narrow one (a record's page, a phone) they go on one line under the task.
  */
 export function TaskRow({
   task,
@@ -229,61 +267,85 @@ export function TaskRow({
   const bucket = dueBucket(task.due_at)
   const overdue = !done && bucket === 'overdue'
   const about = showAbout && task.link ? aboutOf(task) : null
-  const when = done
-    ? grouped
-      ? dueShort(task.done_at!)
-      : `Done ${dueShort(task.done_at!)}`
-    : !task.due_at
-      ? grouped
-        ? ''
-        : 'No due date'
-      : grouped
-        ? bucket === 'today'
-          ? dueShort(task.due_at).replace(/^Today /, '')
-          : dueShort(task.due_at)
-        : dueLabel(task.due_at)
+  const owner = showOwner && task.created_by ? task.created_by : null
+
+  // When, as the list's column shows it: how late, the time today, the day and time, or when it was done.
+  let when: React.ReactNode = null
+  let whenText = ''
+  if (done) {
+    const { day, relative } = dueParts(task.done_at!)
+    whenText = `Done ${relative ? day.toLowerCase() : day}`
+    when = whenText
+  } else if (!task.due_at) {
+    whenText = grouped ? '' : 'No due date'
+    when = whenText
+  } else if (!grouped) {
+    whenText = dueLabel(task.due_at)
+    when = (
+      <>
+        <AlarmClock aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />
+        {whenText}
+      </>
+    )
+  } else if (overdue) {
+    whenText = lateBy(task.due_at)
+    when = whenText
+  } else {
+    const { day, time } = dueParts(task.due_at)
+    const showDay = bucket !== 'today'
+    whenText = showDay ? `${day} ${time}` : time
+    when = (
+      <>
+        {showDay && <span>{day}</span>}
+        <span className="tabular-nums @2xl:w-10 @2xl:text-right">{time}</span>
+      </>
+    )
+  }
+  const movable = grouped && !done && Boolean(task.due_at)
+  const whenNode = (
+    <span
+      title={task.due_at && !done ? `Due ${dueLabel(task.due_at).replace(/^Overdue · /, '')}` : undefined}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap tabular-nums ${overdue ? 'text-destructive' : done ? '' : 'text-foreground/80'}`}
+    >
+      {when}
+    </span>
+  )
 
   return (
-    <div className="@container flex items-start gap-3">
+    <div className={`group/row @container flex items-start gap-3 ${done ? 'opacity-[0.62]' : ''}`}>
       <TaskCheck done={done} pending={toggle.isPending} onToggle={() => toggle.mutate()} />
       <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
-        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground' : 'text-foreground'}`}>
-          {task.body}
-        </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[13px] leading-5 text-muted-foreground @2xl:mt-0 @2xl:flex-nowrap @2xl:shrink-0">
-          <span
-            className={`whitespace-nowrap tabular-nums @2xl:order-2 @2xl:w-36 @2xl:text-right ${when ? '' : 'hidden @2xl:block'} ${overdue ? 'font-medium text-destructive' : ''}`}
-            title={task.due_at && !done ? dueLabel(task.due_at) : undefined}
-          >
-            {!grouped && !done && <AlarmClock aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />}
-            {grouped && overdue && <AlertCircle aria-hidden className="-mt-0.5 mr-1 inline h-3.5 w-3.5" />}
-            {when}
-          </span>
-          {showAbout && (
-            <span className={`min-w-0 @2xl:order-1 @2xl:w-48 ${about ? '' : 'hidden @2xl:block'}`}>
-              {about && (
-                <Link
-                  to={task.link!}
-                  title={`${about.kind}: ${about.name}`}
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-md-xs px-1.5 align-top max-@2xl:-ml-1.5 @2xl:-mx-1.5 @2xl:max-w-[calc(100%+0.75rem)] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                >
-                  <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{about.name}</span>
-                </Link>
-              )}
+        <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-3">
+          <p className={`min-w-0 text-sm leading-5 break-words ${done ? 'text-muted-foreground' : 'text-foreground'}`}>{task.body}</p>
+          {about && (
+            <span className="hidden min-w-0 max-w-56 shrink-0 @2xl:flex">
+              <AboutLink task={task} about={about} />
             </span>
           )}
         </div>
+        {/* A phone or a record's page: one line under the task, the record shortened to fit. */}
+        {(whenText || about || owner) && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[13px] leading-5 text-muted-foreground @2xl:hidden">
+            {owner && <Owner email={owner} small />}
+            {whenText && (movable ? <TaskMenu task={task} onChanged={onChanged} trigger={whenNode} triggerLabel={`Due ${whenText}. Move it`} /> : whenNode)}
+            {about && (
+              <span className="flex min-w-0">
+                <AboutLink task={task} about={about} />
+              </span>
+            )}
+          </div>
+        )}
+        {/* A wide list: the due time in a right-aligned column, the times lined up. */}
+        {grouped && (
+          <div className="hidden w-40 shrink-0 justify-end text-[13px] leading-5 text-muted-foreground @2xl:flex">
+            {whenText && (movable ? <TaskMenu task={task} onChanged={onChanged} trigger={whenNode} triggerLabel={`Due ${whenText}. Move it`} /> : whenNode)}
+          </div>
+        )}
       </div>
-      {showOwner && task.created_by && (
-        <>
-          <span className="mt-px @2xl:hidden">
-            <Owner email={task.created_by} small />
-          </span>
-          <span className="-my-0.5 hidden @2xl:block">
-            <Owner email={task.created_by} />
-          </span>
-        </>
+      {owner && (
+        <span className="-my-0.5 hidden @2xl:block">
+          <Owner email={owner} />
+        </span>
       )}
       <TaskMenu task={task} onChanged={onChanged} />
     </div>
@@ -325,8 +387,7 @@ export function TaskComposer({
       className="@container"
     >
       <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-sm transition-colors focus-within:border-accent @xl:flex-row @xl:items-center">
-        <label className="flex min-w-0 flex-1 items-center gap-2.5 px-2">
-          <Plus aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <label className="flex min-w-0 flex-1 items-center px-2">
           <span className="sr-only">New task</span>
           <input
             id={inputId}
@@ -345,7 +406,7 @@ export function TaskComposer({
               value={when}
               onChange={(e) => setWhen(e.target.value)}
               aria-label="Due"
-              className="h-[38px] w-full rounded-md-s border border-input bg-card pl-8 pr-2.5 text-sm text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 @xl:w-44"
+              className="h-[38px] w-full rounded-md-s border border-border bg-card pl-8 pr-2.5 text-sm text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 @xl:w-44"
             >
               {FOLLOW_UPS.map((f) => (
                 <option key={f.days} value={String(f.days)}>
@@ -366,7 +427,7 @@ export function TaskComposer({
               className="h-[38px] rounded-md-s border border-input bg-card px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             />
           )}
-          <Button type="submit" isLoading={add.isPending}>
+          <Button type="submit" variant={body.trim() ? 'primary' : 'secondary'} isLoading={add.isPending}>
             Add task
           </Button>
         </div>

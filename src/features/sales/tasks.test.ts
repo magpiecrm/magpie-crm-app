@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { daysFromNow, dueBucket, dueLabel, dueShort, fromLocalInput } from './tasks'
+import { daysFromNow, dueBucket, dueLabel, dueParts, dueShort, fromLocalInput, lateBy } from './tasks'
 
 // Local times throughout, so these hold in any time zone.
 const now = new Date(2026, 8, 30, 14, 0)
@@ -32,6 +32,18 @@ describe('task due times', () => {
     expect(dueShort(at(26, 9), now)).toMatch(/^Sat 26 Sept?$/)
     expect(dueShort(at(45, 9), now)).toBe('Thu 15 Oct')
     expect(dueShort(new Date(2027, 0, 4, 9).toISOString(), now)).toBe('Mon 4 Jan 2027')
+  })
+
+  it('gives the day and the time apart, for a column that lines the times up', () => {
+    expect(dueParts(at(30, 17), now)).toEqual({ day: 'Today', time: '17:00', relative: true })
+    expect(dueParts(at(45, 9, 30), now)).toEqual({ day: 'Thu 15 Oct', time: '09:30', relative: false })
+  })
+
+  it('says how late an overdue task is', () => {
+    expect(lateBy(at(30, 13, 35), now)).toBe('25m late')
+    expect(lateBy(at(30, 9), now)).toBe('5h late')
+    expect(lateBy(at(29, 13), now)).toBe('1 day late')
+    expect(lateBy(at(26, 10), now)).toBe('4 days late')
   })
 
   it('reads a date-and-time field', () => {

@@ -46,19 +46,35 @@ export function dueLabel(dueAt: string | null | undefined, now = new Date()): st
  * this one).
  */
 export function dueShort(at: string, now = new Date()): string {
+  const { day, time, relative } = dueParts(at, now)
+  return relative ? `${day} ${time}` : day
+}
+
+/** The day ("Today", "Tomorrow", "Yesterday", else "Fri 6 Nov") and the time ("09:00") apart, for a column that lines the times up. */
+export function dueParts(at: string, now = new Date()): { day: string; time: string; relative: boolean } {
   const due = new Date(at)
   const time = due.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  const day = (offset: number) => {
+  const offset = (n: number) => {
     const d = new Date(now)
-    d.setDate(now.getDate() + offset)
+    d.setDate(now.getDate() + n)
     return dayKey(d)
   }
-  if (dayKey(due) === dayKey(now)) return `Today ${time}`
-  if (dayKey(due) === day(1)) return `Tomorrow ${time}`
-  if (dayKey(due) === day(-1)) return `Yesterday ${time}`
+  const near = dayKey(due) === dayKey(now) ? 'Today' : dayKey(due) === offset(1) ? 'Tomorrow' : dayKey(due) === offset(-1) ? 'Yesterday' : null
+  if (near) return { day: near, time, relative: true }
   // Put together, as en-GB puts a comma after the weekday once there's a year.
   const weekday = due.toLocaleDateString('en-GB', { weekday: 'short' })
-  return `${weekday} ${due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(due.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })}`
+  const date = due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(due.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })
+  return { day: `${weekday} ${date}`, time, relative: false }
+}
+
+/** How late an overdue task is, for the Overdue group's column: "25m late", "5h late", "4 days late". */
+export function lateBy(at: string, now = new Date()): string {
+  const minutes = Math.max(1, Math.floor((now.getTime() - new Date(at).getTime()) / 60_000))
+  if (minutes < 60) return `${minutes}m late`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h late`
+  const days = Math.floor(hours / 24)
+  return `${days} ${days === 1 ? 'day' : 'days'} late`
 }
 
 /** A local date-and-time input's value ("2026-10-02T09:00") as an ISO time, or null. */
