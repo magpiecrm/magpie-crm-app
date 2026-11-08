@@ -42,8 +42,8 @@ describe('task due times', () => {
   it('says how late an overdue task is', () => {
     expect(lateBy(at(30, 13, 35), now)).toBe('25m late')
     expect(lateBy(at(30, 9), now)).toBe('5h late')
-    expect(lateBy(at(29, 13), now)).toBe('1 day late')
-    expect(lateBy(at(26, 10), now)).toBe('4 days late')
+    expect(lateBy(at(29, 13), now)).toBe('1d late')
+    expect(lateBy(at(26, 10), now)).toBe('4d late')
   })
 
   it('reads a date-and-time field', () => {

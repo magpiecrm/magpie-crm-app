@@ -67,14 +67,13 @@ export function dueParts(at: string, now = new Date()): { day: string; time: str
   return { day: `${weekday} ${date}`, time, relative: false }
 }
 
-/** How late an overdue task is, for the Overdue group's column: "25m late", "5h late", "4 days late". */
+/** How late an overdue task is, in one compact unit for the Overdue group's column: "25m late", "5h late", "4d late". */
 export function lateBy(at: string, now = new Date()): string {
   const minutes = Math.max(1, Math.floor((now.getTime() - new Date(at).getTime()) / 60_000))
   if (minutes < 60) return `${minutes}m late`
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h late`
-  const days = Math.floor(hours / 24)
-  return `${days} ${days === 1 ? 'day' : 'days'} late`
+  return `${Math.floor(hours / 24)}d late`
 }
 
 /** A local date-and-time input's value ("2026-10-02T09:00") as an ISO time, or null. */
