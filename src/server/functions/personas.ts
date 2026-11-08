@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
-import { personaInput } from '../prospecting/personaInput'
+import { personaInput, websiteUrlInput } from '../prospecting/personaInput'
 
 const idInput = z.object({ id: z.string().min(1).max(64) })
 
@@ -72,15 +72,7 @@ export const personaDraftStatusFn = createServerFn({ method: 'GET' }).handler(as
   return { ai: aiAvailable(), websiteUrl: db.getBrandKit()?.websiteUrl ?? '' }
 })
 
-// "acme.com" is taken as https://acme.com.
-const websiteUrl = z
-  .string()
-  .trim()
-  .min(1, "Enter your company's website")
-  .transform((u) => (/^https?:\/\//i.test(u) ? u : `https://${u}`))
-  .pipe(z.url({ protocol: /^https?$/, message: "That doesn't look like a website address" }).max(300))
-
-const draftInput = z.object({ websiteUrl, note: z.string().trim().max(1_000).optional() })
+const draftInput = z.object({ websiteUrl: websiteUrlInput, note: z.string().trim().max(1_000).optional() })
 
 /** Up to three personas the AI suggests from the website. Nothing is saved: the page adds the ones chosen. */
 export const draftPersonasFn = createServerFn({ method: 'POST' })

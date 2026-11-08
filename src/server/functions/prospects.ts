@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { HEADCOUNT_BUCKETS, SIGNAL_KINDS, SENIORITY_LEVELS } from '../prospecting/types'
+import { websiteUrlInput } from '../prospecting/personaInput'
 
 const EMAIL_STATUSES = ['verified', 'format_confirmed', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
 
@@ -193,6 +194,29 @@ export const prospectJobFn = createServerFn({ method: 'GET' })
     const job = getJob(data.jobId)
     if (!job) throw new Error('That save job has expired or never existed.')
     return job
+  })
+
+const suggestSearchInput = z.object({ websiteUrl: websiteUrlInput })
+
+/**
+ * People search filters the AI suggests from the workspace's own website, and
+ * why. It never searches: the page fills its filters with them, and the user
+ * changes them or runs the search. Whether it can run here, and the website to
+ * start from, come from personaDraftStatusFn.
+ */
+export const suggestSearchFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: z.input<typeof suggestSearchInput>) => suggestSearchInput.parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { suggestSearch } = await import('../prospecting/searchSuggest')
+    const { AiFailed } = await import('../copilot/generate')
+    try {
+      return await suggestSearch(data)
+    } catch (err) {
+      if (err instanceof AiFailed) throw new Error(`The AI couldn't finish: ${err.message} Try again in a moment.`)
+      throw err
+    }
   })
 
 /** SocialFetch balance plus verification setup and proxy health, for the sidebar. */

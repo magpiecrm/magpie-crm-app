@@ -21,6 +21,14 @@ export interface PersonaDraft {
 
 export const MAX_DRAFTS = 3
 
+/** What each of people search's filters is for, as the AI is told (searchSuggest.ts too). */
+export const CRITERIA_RULES = `  - titles: at most 5 job titles as people write them on LinkedIn, e.g. "Head of Marketing", "CFO", "Operations Manager". "Sales leaders", "Marketing leaders", "Operations leaders", "Finance leaders" and "Engineering leaders" each find that department's Heads, VPs and Directors.
+  - seniorities: only where it narrows the titles usefully; usually empty.
+  - industries: the industries of the companies these people work at, only from the allowed values. Empty rather than a guess.
+  - companySizes: staff-count bands of those companies, where the website makes them clear. A size needs an industry or a keyword as well.
+  - country: one country, only where the website plainly sells in one market; otherwise empty.
+  - keyword: one word or short phrase companies like theirs are found by, e.g. "logistics", or empty.`
+
 const SYSTEM = `You help a B2B company decide who its sales team should prospect. Read the company's own website and suggest the buyer personas for what it sells: the people who decide to buy it.
 
 Rules:
@@ -28,12 +36,7 @@ Rules:
 - Base everything on what the pages say: who it serves, in which industries, company sizes and countries, and which problems it solves. Nothing guessed.
 - 1 to ${MAX_DRAFTS} personas, each a different buyer (a different role, or a different kind of company), the most promising first.
 - Criteria are the filters of a people search on LinkedIn data:
-  - titles: at most 5 job titles as people write them on LinkedIn, e.g. "Head of Marketing", "CFO", "Operations Manager". "Sales leaders", "Marketing leaders", "Operations leaders", "Finance leaders" and "Engineering leaders" each find that department's Heads, VPs and Directors.
-  - seniorities: only where it narrows the titles usefully; usually empty.
-  - industries: the industries of the companies these people work at, only from the allowed values. Empty rather than a guess.
-  - companySizes: staff-count bands of those companies, where the website makes them clear. A size needs an industry or a keyword as well.
-  - country: one country, only where the website plainly sells in one market; otherwise empty.
-  - keyword: one word or short phrase companies like theirs are found by, e.g. "logistics", or empty.
+${CRITERIA_RULES}
 - name: a few words, e.g. "Marketing leaders at SaaS companies". description: one sentence on who they are. painPoints and valueProp: two or three short plain sentences each, in the website's own terms, never invented claims or numbers.
 - Never name or describe an individual person, and never search for one.
 - Answer by calling the suggestPersonas tool.`

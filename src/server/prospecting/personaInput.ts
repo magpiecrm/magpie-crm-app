@@ -19,3 +19,11 @@ export const personaInput = z.object({
   painPoints: z.string().max(5_000),
   valueProp: z.string().max(5_000),
 })
+
+/** The workspace's own website, for the AI to read (persona drafts, a suggested search). "acme.com" is taken as https://acme.com. */
+export const websiteUrlInput = z
+  .string()
+  .trim()
+  .min(1, "Enter your company's website")
+  .transform((u) => (/^[a-z][a-z0-9+.-]*:\/\//i.test(u) ? u : `https://${u}`))
+  .pipe(z.httpUrl({ message: "That doesn't look like a website address" }).max(300))

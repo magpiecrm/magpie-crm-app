@@ -44,12 +44,13 @@ import { useCompanySignals } from '../useCompanySignals'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
 import { INDUSTRIES } from '../constants/industries'
-import { normalizePersonaCriteria, type Persona } from '../types'
+import { normalizePersonaCriteria, type Persona, type PersonaCriteria } from '../types'
 import { CompanyPicker } from './CompanyPicker'
 import { CompanySizeField, CountryField, FILTER_INPUT_CLASS, IndustryField, KeywordField, SeniorityField, TitlesField } from './PeopleFilterFields'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
+import { SearchByAI } from './SearchByAI'
 import { streamPeopleSearch } from '../streamPeopleSearch'
 import { liveSearch, useLivePeople } from '../liveSearch'
 import { Select } from '../../../components/ui/Select'
@@ -272,18 +273,33 @@ export function ProspectSearch() {
     queryFn: () => getPersonasFn(),
   })
 
-  // A persona is a set of these filters: applying one starts the form again
-  // from it, so nothing from the last search (a company, signals) stays.
-  const applyPersona = (persona: Persona) => {
+  // A persona, or the AI's suggestion, is a set of these filters: applying
+  // one starts the form again from it, so nothing from the last search (a
+  // company, signals) stays.
+  const applyCriteria = (criteria: PersonaCriteria) => {
     setPeopleForm((f) => ({
       ...EMPTY_PEOPLE_FORM,
       count: f.count,
       includeContacts: f.includeContacts,
       relatedRoles: f.relatedRoles,
-      ...normalizePersonaCriteria(persona.criteria),
+      ...normalizePersonaCriteria(criteria),
     }))
-    setPersonaId(persona.id)
     setMode('people')
+    setFormError(null)
+  }
+  const applyPersona = (persona: Persona) => {
+    applyCriteria(persona.criteria)
+    setPersonaId(persona.id)
+  }
+  // The AI's search lands in the filters, opened where it filled them, for
+  // the user to check and run: it never searches by itself.
+  const applySuggestion = (criteria: PersonaCriteria) => {
+    applyCriteria(criteria)
+    setPersonaId(null)
+    const filled = { titles: criteria.titles, seniority: criteria.seniorities, peopleIndustry: criteria.industries, peopleSize: criteria.companySizes, country: criteria.country, keyword: criteria.keyword }
+    setExpanded((prev) => ({ ...prev, ...Object.fromEntries(Object.entries(filled).flatMap(([key, v]) => (v.length ? [[key, true]] : []))) }))
+    // On a phone the filters are in a sheet: open it on them.
+    if (!window.matchMedia('(min-width: 1024px)').matches) setIsFiltersOpen(true)
   }
   // One deleted since it was applied is no longer anyone's.
   const appliedPersona = (personas as Persona[]).find((p) => p.id === personaId) ?? null
@@ -890,6 +906,7 @@ export function ProspectSearch() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <SearchByAI onApply={applySuggestion} />
             <button
               type="button"
               onClick={() => setIsFiltersOpen(true)}

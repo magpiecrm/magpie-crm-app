@@ -3,39 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Sparkles } from 'lucide-react'
 import { Dialog } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
-import { Badge } from '../../../components/ui/Badge'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { createPersonaFn, draftPersonasFn } from '../../../server/functions'
-import { SENIORITY_LABEL } from '../../../server/prospecting/types'
-import type { PersonaDraft } from '../../../server/prospecting/personaDraft'
 import type { AiAvailability } from '../../../server/copilot/availability'
+import { CriteriaChips } from './CriteriaChips'
 
 // The AI reads the workspace's website and suggests personas
 // (server/prospecting/personaDraft.ts). Nothing is kept until one is added.
-
-/** A draft's filters, as chips: what applying it would search for. */
-function CriteriaChips({ draft }: { draft: PersonaDraft }) {
-  const c = draft.criteria
-  const chips = [
-    ...c.titles.map((t) => ({ text: t, variant: 'default' as const })),
-    ...c.seniorities.map((s) => ({ text: SENIORITY_LABEL[s], variant: 'default' as const })),
-    ...c.industries.map((i) => ({ text: i, variant: 'info' as const })),
-    ...c.companySizes.map((b) => ({ text: `${b} staff`, variant: 'info' as const })),
-    ...(c.country ? [{ text: c.country, variant: 'info' as const }] : []),
-    ...(c.keyword ? [{ text: `"${c.keyword}"`, variant: 'info' as const }] : []),
-  ]
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {chips.map((chip, i) => (
-        <Badge key={i} variant={chip.variant}>
-          {chip.text}
-        </Badge>
-      ))}
-    </div>
-  )
-}
 
 export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpen: boolean; onClose: () => void; websiteUrl: string; ai: AiAvailability }) {
   const queryClient = useQueryClient()
@@ -136,7 +112,7 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
                     </Button>
                   )}
                 </div>
-                <CriteriaChips draft={d} />
+                <CriteriaChips criteria={d.criteria} />
                 {d.painPoints && (
                   <p className="text-xs text-muted-foreground">
                     <span className="font-medium text-foreground">Pain points: </span>
