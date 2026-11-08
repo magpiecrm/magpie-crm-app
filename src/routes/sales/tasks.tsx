@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, ChevronRight, CircleDashed, ListChecks, type LucideIcon } from 'lucide-react'
+import { AlertCircle, CalendarClock, CalendarDays, CheckCircle2, ChevronDown, CircleDashed, ListChecks, Plus, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../queryKeys'
 import { tasksFn } from '../../server/functions'
 import { dueBucket, type DueBucket } from '../../features/sales/tasks'
 import { TaskComposer, TaskRow } from '../../features/sales/components/TaskParts'
 import { useCurrentUserEmail } from '../../features/sales/components/useSalesLookups'
+import { Button } from '../../components/ui/Button'
 
 export const Route = createFileRoute('/sales/tasks')({
   component: TasksPage,
@@ -25,7 +26,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon; tone: st
 /** Everyone's tasks, or only the ones you wrote: shown when more than one person writes them. */
 function WhoseToggle({ whose, onChange }: { whose: 'all' | 'mine'; onChange: (w: 'all' | 'mine') => void }) {
   return (
-    <div role="radiogroup" aria-label="Whose tasks" className="flex shrink-0 gap-1 rounded-md-s bg-muted p-1">
+    <div role="radiogroup" aria-label="Whose tasks" className="flex shrink-0 gap-1 rounded-md-s bg-muted p-1 max-sm:w-full">
       {(
         [
           ['all', 'Everyone'],
@@ -38,7 +39,7 @@ function WhoseToggle({ whose, onChange }: { whose: 'all' | 'mine'; onChange: (w:
           role="radio"
           aria-checked={whose === id}
           onClick={() => onChange(id)}
-          className={`cursor-pointer rounded-[7px] px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          className={`cursor-pointer rounded-[7px] px-3 py-1.5 text-sm transition-colors max-sm:flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
             whose === id ? 'bg-card font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -65,7 +66,7 @@ function TasksPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl p-4 lg:p-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-display text-foreground mb-1">Tasks</h1>
           <p className="text-sm text-muted-foreground">Follow-ups and to-dos. You'll get a notification when each one is due.</p>
@@ -73,7 +74,7 @@ function TasksPage() {
         {team && <WhoseToggle whose={whose} onChange={setWhose} />}
       </div>
 
-      <TaskComposer on={{}} placeholder="Add a task, e.g. Call Sam back" />
+      <TaskComposer on={{}} placeholder="Add a task, e.g. Call Sam back" inputId="new-task" />
 
       <div className="mt-6">
         {error ? (
@@ -88,22 +89,25 @@ function TasksPage() {
             ))}
           </div>
         ) : tasks.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border px-6 py-14 text-center">
+          <div className="rounded-xl border border-border bg-card px-6 py-14 text-center shadow-sm">
             <span className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-accent/10 text-accent">
               <ListChecks aria-hidden className="h-5 w-5" />
             </span>
             <h2 className="text-base font-semibold text-foreground">No tasks yet</h2>
             <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">
               Add one above, or open a{' '}
-              <Link to="/marketing/contacts" className="font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground">
+              <Link to="/marketing/contacts" className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
                 contact
               </Link>{' '}
               or{' '}
-              <Link to="/sales/deals" className="font-medium text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground">
+              <Link to="/sales/deals" className="font-medium text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
                 deal
               </Link>{' '}
               and press Follow up. You'll get a notification when each one is due.
             </p>
+            <Button variant="secondary" className="mt-5" leftIcon={<Plus className="h-4 w-4" />} onClick={() => document.getElementById('new-task')?.focus()}>
+              Write your first task
+            </Button>
           </div>
         ) : (
           <div className="overflow-clip rounded-xl border border-border bg-card shadow-sm">
@@ -118,17 +122,17 @@ function TasksPage() {
               const shut = Boolean(closed[s.id])
               return (
                 <section key={s.id} aria-labelledby={`tasks-${s.id}`} className="border-t border-border first:border-t-0">
-                  <h2 id={`tasks-${s.id}`} className={`sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-muted ${shut ? '' : 'border-b border-border'}`}>
+                  <h2 id={`tasks-${s.id}`} className={`sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-10 bg-background ${shut ? '' : 'border-b border-border'}`}>
                     <button
                       type="button"
                       aria-expanded={!shut}
                       onClick={() => setClosed((c) => ({ ...c, [s.id]: !shut }))}
-                      className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-[13px] font-semibold text-foreground hover:bg-muted-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+                      className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-left text-[13px] font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
                     >
-                      <ChevronRight aria-hidden className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${shut ? '' : 'rotate-90'}`} />
                       <s.Icon aria-hidden className={`h-4 w-4 ${s.tone}`} />
                       <span className={s.id === 'overdue' ? 'text-destructive' : ''}>{s.label}</span>
-                      <span className="rounded-full bg-card px-1.5 text-xs font-medium tabular-nums text-muted-foreground">{rows.length}</span>
+                      <span className="rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground">{rows.length}</span>
+                      <ChevronDown aria-hidden className={`ml-auto h-4 w-4 text-muted-foreground transition-transform ${shut ? '-rotate-90' : ''}`} />
                     </button>
                   </h2>
                   {!shut && (

@@ -30,8 +30,8 @@ describe('task due times', () => {
     expect(dueShort(at(31, 9), now)).toBe('Tomorrow 09:00')
     expect(dueShort(at(29, 16, 12), now)).toBe('Yesterday 16:12')
     expect(dueShort(at(26, 9), now)).toMatch(/^Sat 26 Sept?$/)
-    expect(dueShort(at(45, 9), now)).toBe('15 Oct')
-    expect(dueShort(new Date(2027, 0, 4, 9).toISOString(), now)).toBe('4 Jan 2027')
+    expect(dueShort(at(45, 9), now)).toBe('Thu 15 Oct')
+    expect(dueShort(new Date(2027, 0, 4, 9).toISOString(), now)).toBe('Mon 4 Jan 2027')
   })
 
   it('reads a date-and-time field', () => {

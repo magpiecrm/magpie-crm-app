@@ -42,8 +42,8 @@ export function dueLabel(dueAt: string | null | undefined, now = new Date()): st
 /**
  * A due (or done) time as the Tasks page's column shows it, under a heading
  * that already says whether it's overdue: "Today 14:00", "Tomorrow 09:00",
- * "Yesterday 16:12", a weekday within the week ("Fri 6 Nov"), else "24 Nov"
- * (with the year when it isn't this one).
+ * "Yesterday 16:12", else the day ("Fri 6 Nov", with the year when it isn't
+ * this one).
  */
 export function dueShort(at: string, now = new Date()): string {
   const due = new Date(at)
@@ -56,10 +56,9 @@ export function dueShort(at: string, now = new Date()): string {
   if (dayKey(due) === dayKey(now)) return `Today ${time}`
   if (dayKey(due) === day(1)) return `Tomorrow ${time}`
   if (dayKey(due) === day(-1)) return `Yesterday ${time}`
-  if (Math.abs(due.getTime() - now.getTime()) < 7 * 86_400_000) {
-    return due.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-  }
-  return due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(due.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })
+  // Put together, as en-GB puts a comma after the weekday once there's a year.
+  const weekday = due.toLocaleDateString('en-GB', { weekday: 'short' })
+  return `${weekday} ${due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(due.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }) })}`
 }
 
 /** A local date-and-time input's value ("2026-10-02T09:00") as an ISO time, or null. */

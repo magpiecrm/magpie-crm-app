@@ -55,14 +55,14 @@ function TaskCheck({ done, pending, onToggle }: { done: boolean; pending: boolea
       aria-label={done ? 'Mark as not done' : 'Mark as done'}
       onClick={onToggle}
       disabled={pending}
-      className="group/check relative mt-px flex shrink-0 cursor-pointer items-center justify-center rounded-full after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait"
+      className="group/check relative flex shrink-0 cursor-pointer items-center justify-center rounded-full after:absolute after:-inset-3 after:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait"
     >
       <span
-        className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border-[1.5px] transition-colors ${
+        className={`flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-colors ${
           done ? 'border-accent/70 bg-accent/15 text-accent' : 'border-input text-accent group-hover/check:border-accent'
         }`}
       >
-        <Check strokeWidth={3} className={`h-2.5 w-2.5 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
+        <Check strokeWidth={3} className={`h-3 w-3 transition-opacity ${done ? '' : 'opacity-0 group-hover/check:opacity-100'}`} />
       </span>
     </button>
   )
@@ -218,7 +218,7 @@ export function TaskRow({
     <div className="@container flex items-start gap-3">
       <TaskCheck done={done} pending={toggle.isPending} onToggle={() => toggle.mutate()} />
       <div className="min-w-0 flex-1 @2xl:flex @2xl:items-start @2xl:gap-4">
-        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground line-through decoration-muted-foreground/60' : 'text-foreground'}`}>
+        <p className={`min-w-0 flex-1 text-sm leading-5 break-words ${done ? 'text-muted-foreground line-through decoration-muted-foreground/40' : 'text-foreground'}`}>
           {task.body}
         </p>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] leading-5 text-muted-foreground @2xl:mt-0 @2xl:flex-nowrap @2xl:shrink-0">
@@ -232,8 +232,12 @@ export function TaskRow({
           {showAbout && (
             <span className={`min-w-0 @2xl:order-1 @2xl:w-48 ${about ? '' : 'hidden @2xl:block'}`}>
               {about && (
-                <Link to={task.link!} className="inline-flex max-w-full items-center gap-1.5 rounded-sm align-top hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-                  <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0" />
+                <Link
+                  to={task.link!}
+                  title={`${about.kind}: ${about.name}`}
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-md-xs px-1.5 align-top max-@2xl:-ml-1.5 @2xl:-mx-1.5 @2xl:max-w-[calc(100%+0.75rem)] text-foreground/80 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <about.Icon aria-label={about.kind} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="truncate">{about.name}</span>
                 </Link>
               )}
@@ -253,7 +257,18 @@ export function TaskRow({
 }
 
 /** Writing a task: what needs doing, and when (a quick choice or a date and time), on one line where there's room. */
-export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: { on: TaskOn; onDone?: () => void; placeholder?: string }) {
+export function TaskComposer({
+  on,
+  onDone,
+  placeholder = 'What needs doing?',
+  inputId,
+}: {
+  on: TaskOn
+  onDone?: () => void
+  placeholder?: string
+  /** For a "write one" button elsewhere on the page to focus it. */
+  inputId?: string
+}) {
   const [body, setBody] = useState('')
   const [when, setWhen] = useState<string>('3')
   const [custom, setCustom] = useState('')
@@ -280,6 +295,7 @@ export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: 
           <Plus aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="sr-only">New task</span>
           <input
+            id={inputId}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={placeholder}
@@ -295,14 +311,14 @@ export function TaskComposer({ on, onDone, placeholder = 'What needs doing?' }: 
               value={when}
               onChange={(e) => setWhen(e.target.value)}
               aria-label="Due"
-              className="h-[38px] w-full rounded-md-s bg-muted pl-8 pr-2.5 text-sm text-foreground hover:bg-muted-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 @xl:w-40"
+              className="h-[38px] w-full rounded-md-s border border-input bg-card pl-8 pr-2.5 text-sm text-foreground hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 @xl:w-44"
             >
               {FOLLOW_UPS.map((f) => (
                 <option key={f.days} value={String(f.days)}>
-                  {f.label}
+                  Due {f.label.toLowerCase()}
                 </option>
               ))}
-              <option value="custom">Pick a date…</option>
+              <option value="custom">Due on a date…</option>
               <option value="none">No due date</option>
             </Select>
           </div>
