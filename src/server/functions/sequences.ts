@@ -208,3 +208,29 @@ export const sendSequenceReplyFn = createServerFn({ method: 'POST' })
     const { message } = await sendReply(data.enrollmentId, { text: data.text, clientId: data.clientId }, actor)
     return { id: message.id, at: message.at }
   })
+
+/** Sell → Inbox: conversations across sequences, the latest first; those needing a reply, or all, from one sequence or every one. */
+export const inboxFn = createServerFn({ method: 'GET' })
+  .inputValidator((d: { needsReply?: boolean; sequenceId?: string } | undefined) => z.object({ needsReply: z.boolean().optional(), sequenceId: id.optional() }).optional().parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { conversations } = await import('../sequences/conversation')
+    return conversations.inbox(data)
+  })
+
+/** How many conversations wait for an answer, for the sidebar. */
+export const inboxWaitingFn = createServerFn({ method: 'GET' }).handler(async () => {
+  await signedIn()
+  const { conversations } = await import('../sequences/conversation')
+  return conversations.waiting()
+})
+
+/** Marks a conversation as needing no answer, or as needing one again. */
+export const setConversationDoneFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { enrollmentId: string; done: boolean }) => z.object({ enrollmentId: id, done: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    await signedIn()
+    const { conversations } = await import('../sequences/conversation')
+    conversations.setDone(data.enrollmentId, data.done)
+    return { ok: true }
+  })

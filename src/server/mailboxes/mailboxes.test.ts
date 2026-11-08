@@ -98,9 +98,9 @@ function fakeInbox(messages: Msg[], opts: { fail?: Error; sources?: Record<numbe
     if (opts.fail) throw opts.fail
     return {
       open: async () => ({ path: '[Gmail]/All Mail', uidValidity: '7', uidNext: Math.max(1, ...messages.map((m) => m.uid)) + 1 }),
-      fetch: async (from: { afterUid: number } | { since: Date }) => {
+      fetch: async (from: { afterUid: number } | { since: Date; sender?: string }) => {
         calls.fetches.push(from)
-        return messages.filter((m) => ('afterUid' in from ? m.uid > from.afterUid : true))
+        return messages.filter((m) => ('afterUid' in from ? m.uid > from.afterUid : !from.sender || m.from === from.sender))
       },
       source: async (uid: number) => opts.sources?.[uid] ?? 'Content-Type: text/plain\r\n\r\nThanks, tell me more.',
       text: async (uid: number, maxChars: number) => {
@@ -428,6 +428,52 @@ describe('keeping the conversation', () => {
     await pollMailboxes(new Date(t0 + 15 * 60_000), async () => ({ ...(await later.connect()), text: (await broken()).text }))
     expect(enrollment('ava@larkspur.test').messages!.at(-1)).toMatchObject({ message_id: '<later@x>', text: '' })
     expect(db.data.mailboxes![0].status).toBe('ok')
+  })
+})
+
+describe('replies from before their words were kept', () => {
+  it('looks each one up once, by who it is from, and keeps what is in the thread', async () => {
+    contact('ava@larkspur.test')
+    contact('ben@larkspur.test')
+    contact('cy@larkspur.test')
+    sequenceFor(['ava@larkspur.test', 'ben@larkspur.test', 'cy@larkspur.test'])
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    await runSequences(new Date(t0 + 21 * 60_000), () => 0)
+    await runSequences(new Date(t0 + 42 * 60_000), () => 0)
+    const at = (min: number) => new Date(t0 + min * 60_000).toISOString()
+    // Ava's reply was found by an older version, which kept only that she replied; Ben's was marked by hand; Cy's isn't in the inbox.
+    db.mutate(() => {
+      enrollment('ava@larkspur.test').reply = { at: at(60), matched_by: 'thread' }
+      enrollment('ben@larkspur.test').reply = { at: at(60), matched_by: 'manual' }
+      enrollment('cy@larkspur.test').reply = { at: at(60), matched_by: 'from' }
+      for (const e of db.data.sequence_enrollments!) e.status = 'replied'
+    })
+    connectInbox({ folder: '[Gmail]/All Mail', uid_validity: '7', last_uid: 9, last_polled_at: at(70) })
+    const avaFirst = enrollment('ava@larkspur.test').sends[0].message_id
+    const inbox = fakeInbox(
+      [
+        msg({ uid: 3, messageId: '<r1@larkspur.test>', inReplyTo: avaFirst, references: [avaFirst], date: at(60) }),
+        // Another email from her, outside the thread: not part of it.
+        msg({ uid: 4, messageId: '<news@larkspur.test>', subject: 'Our newsletter', date: at(65) }),
+        msg({ uid: 5, from: 'ben@larkspur.test', messageId: '<b1@larkspur.test>', subject: 'Re: Quick question', date: at(61) }),
+      ],
+      { texts: { 3: 'Yes please, Thursday?', 4: 'News', 5: 'Call me' } },
+    )
+    await pollMailboxes(new Date(t0 + 80 * 60_000), inbox.connect)
+    expect(enrollment('ava@larkspur.test').messages).toEqual([expect.objectContaining({ direction: 'in', message_id: '<r1@larkspur.test>', text: 'Yes please, Thursday?', seen: true })])
+    expect(enrollment('ben@larkspur.test').messages).toEqual([expect.objectContaining({ message_id: '<b1@larkspur.test>', text: 'Call me' })])
+    expect(enrollment('cy@larkspur.test').messages).toBeUndefined()
+    for (const e of db.data.sequence_enrollments!) expect(e.reply_searched_at).toBe(new Date(t0 + 80 * 60_000).toISOString())
+    // Old news: nobody is told, and they aren't counted as new replies.
+    expect(notices).toEqual([])
+    expect(db.data.mailboxes![0].replies_found).toBe(0)
+
+    // Looked up once: the next read doesn't search for them again.
+    const searches = inbox.calls.fetches.filter((f) => 'sender' in (f as object)).length
+    expect(searches).toBe(3)
+    await pollMailboxes(new Date(t0 + 85 * 60_000), inbox.connect)
+    expect(inbox.calls.fetches.filter((f) => 'sender' in (f as object))).toHaveLength(3)
   })
 })
 

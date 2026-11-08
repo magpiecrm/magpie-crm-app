@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -25,6 +25,8 @@ const { db } = await import('../db')
 const { sequences } = await import('.')
 const { runSequences } = await import('./engine')
 const { conversations, sendReply } = await import('./conversation')
+const { createDeal } = await import('../sales/deals')
+const { ensurePipelines } = await import('../sales/pipelines')
 const { encryptToken } = await import('../crypto')
 const { env } = await import('../env')
 type Connect = import('../mailboxes/imap').Connect
@@ -121,6 +123,7 @@ beforeEach(() => {
     d.sequence_enrollments = []
     d.mailboxes = []
     d.email_stops = {}
+    d.deals = []
     if (!d.senders.some((s) => s.id === 1)) d.senders.push({ id: 1, name: 'Jo', email: 'jo@acme.test' })
   })
 })
@@ -210,5 +213,76 @@ describe('answering a reply', () => {
     db.stopEmail('ava@larkspur.test', 'bounced')
     expect(conversations.get(e.id).cannot_reply).toMatch(/bounced/)
     expect(sent).toHaveLength(0)
+  })
+})
+
+describe('the inbox', () => {
+  it('lists replies across sequences, waits for an answer until one is sent or it is marked done, and asks again when they write', async () => {
+    const { sequenceId, e } = await started()
+    connectInbox()
+    const row = () => conversations.inbox().rows.find((r) => r.enrollment_id === e.id)!
+    expect(row()).toMatchObject({
+      sequence: { id: sequenceId, name: 'Intro' },
+      name: 'Ava Stone',
+      company: 'Larkspur',
+      at: repliedAt,
+      last: { direction: 'in', snippet: 'Yes, a spreadsheet. Thursday?' },
+      missing_reply: null,
+      unread: 1,
+      needs_reply: true,
+      deal: null,
+    })
+    expect(conversations.inbox({ needsReply: true }).rows).toHaveLength(1)
+    expect(conversations.inbox({ needsReply: false }).rows).toHaveLength(0)
+    expect(conversations.inbox({ sequenceId: 'another' })).toMatchObject({ rows: [], needs_reply: 0, sequences: [{ id: sequenceId, name: 'Intro' }] })
+    expect(conversations.waiting()).toBe(1)
+    expect(conversations.get(e.id)).toMatchObject({ needs_reply: true, done: false, sequence_name: 'Intro' })
+
+    // Marked done: not waiting, until she writes again.
+    conversations.setDone(e.id, true)
+    expect(conversations.waiting()).toBe(0)
+    expect(conversations.get(e.id)).toMatchObject({ needs_reply: false, done: true })
+    const later = new Date(Date.now() + 60_000).toISOString()
+    db.mutate(() => void e.messages!.push({ id: 'm2', direction: 'in', seen: false, message_id: '<r2@gmail.test>', from: 'ava.home@gmail.test', subject: 'Re: Quick question', at: later, text: 'Any news?' }))
+    expect(row()).toMatchObject({ needs_reply: true, at: later, last: { snippet: 'Any news?' }, unread: 2 })
+    expect(conversations.get(e.id).done).toBe(false)
+
+    // Answered, a minute after that: not waiting any more.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    onTestFinished(() => void vi.useRealTimers())
+    vi.setSystemTime(Date.parse(later) + 60_000)
+    await (await sendReply(e.id, { text: 'Thursday works.', clientId: 'c-10' }, 'jo@acme.test', sentFolder().connect)).copied
+    expect(row()).toMatchObject({ needs_reply: false, last: { direction: 'out' } })
+    expect(conversations.waiting()).toBe(0)
+  })
+
+  it("shows the person's deal, and doesn't wait on a stop, a reply marked by hand or one not read yet that can't be answered", async () => {
+    const { e } = await started()
+    db.mutate((d) => {
+      ensurePipelines(d)
+      createDeal(d, { name: 'Larkspur', contactEmails: ['ava@larkspur.test'] }, null)
+    })
+    const deal = conversations.get(e.id).deal!
+    expect(deal).toMatchObject({ name: 'Larkspur', status: 'open' })
+    expect(deal.stage).toBeTruthy()
+    expect(conversations.inbox().rows[0].deal).toEqual(deal)
+
+    // Unsubscribed (a "stop" reply does it): nothing to answer from here.
+    db.stopEmail('ava@larkspur.test', 'unsubscribed')
+    expect(conversations.inbox().rows[0].needs_reply).toBe(false)
+    expect(conversations.waiting()).toBe(0)
+  })
+
+  it('says why a reply has no words: not read yet, not found, or marked by hand', async () => {
+    const { e } = await started({ replied: false })
+    sequences.act([e.id], 'mark_replied')
+    expect(conversations.inbox().rows[0]).toMatchObject({ last: null, missing_reply: 'manual', needs_reply: false })
+    expect(conversations.get(e.id).missing_reply).toBe('manual')
+
+    // A reply found before replies' words were kept: waits, and says it's still to be read, then that it wasn't found.
+    db.mutate(() => (e.reply = { at: repliedAt, matched_by: 'thread' }))
+    expect(conversations.inbox().rows[0]).toMatchObject({ missing_reply: 'pending', needs_reply: true })
+    db.mutate(() => (e.reply_searched_at = new Date().toISOString()))
+    expect(conversations.get(e.id).missing_reply).toBe('not_found')
   })
 })

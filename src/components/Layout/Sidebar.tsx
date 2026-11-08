@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { AlertTriangle, Mail, BarChart3, Search, Users, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks, Repeat, ChevronDown, ChevronRight, ChevronsUpDown } from 'lucide-react'
+import { AlertTriangle, Mail, BarChart3, Search, Users, Contact, LogOut, Settings, FileText, UserCircle, X, ClipboardList, LayoutTemplate, Building2, Kanban, Handshake, ListChecks, Repeat, ChevronDown, ChevronRight, ChevronsUpDown, Inbox } from 'lucide-react'
 import { useSignOut } from '../../hooks/useSignOut'
-import { checkAuthFn, getUsageFn, prospectingStatusFn, tasksFn } from '../../server/functions'
+import { checkAuthFn, getUsageFn, inboxWaitingFn, prospectingStatusFn, tasksFn } from '../../server/functions'
 import { dueBucket } from '../../features/sales/tasks'
 import { AllowanceMeter } from '../../features/settings/components/AllowanceMeter'
 import { Avatar } from '../ui/Avatar'
@@ -31,6 +31,7 @@ const navItems = [
   {
     label: 'Sell',
     items: [
+      { label: 'Inbox', to: '/sales/inbox', icon: Inbox },
       { label: 'Pipeline', to: '/sales/pipeline', icon: Kanban },
       { label: 'Deals', to: '/sales/deals', icon: Handshake },
       { label: 'Sequences', to: '/sales/sequences', icon: Repeat },
@@ -136,6 +137,9 @@ export function Sidebar({
   // Open tasks due today or overdue, as a count beside Tasks.
   const { data: tasks } = useQuery({ queryKey: queryKeys.sales.tasks({}), queryFn: () => tasksFn({ data: {} }), refetchInterval: 60000 })
   const tasksDue = (tasks ?? []).filter((t) => !t.done_at && ['overdue', 'today'].includes(dueBucket(t.due_at))).length
+  // Replies waiting for an answer, as a count beside Inbox.
+  const { data: waiting = 0 } = useQuery({ queryKey: queryKeys.inbox.waiting(), queryFn: () => inboxWaitingFn(), refetchInterval: 60000 })
+  const counts: Record<string, { n: number; label: string }> = { '/sales/tasks': { n: tasksDue, label: 'due' }, '/sales/inbox': { n: waiting, label: 'waiting for a reply' } }
   const { data: account } = useQuery({ queryKey: queryKeys.account(), queryFn: () => checkAuthFn(), staleTime: 5 * 60_000 })
   const email = account?.isAuthenticated ? account.email : ''
 
@@ -218,10 +222,10 @@ export function Sidebar({
                   className="group flex w-full items-center gap-2 rounded-md-s px-3 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   <span>{section.label}</span>
-                  {/* Folded away, a section still says when a task in it is due. */}
-                  {!open && section.items.some((item) => item.to === '/sales/tasks') && tasksDue > 0 && (
-                    <span className="min-w-5 rounded-full bg-accent px-1.5 text-center font-sans text-[11px] font-semibold normal-case tracking-normal tabular-nums text-accent-foreground" aria-label={`${tasksDue} tasks due`}>
-                      {tasksDue}
+                  {/* Folded away, a section still says when a task in it is due or a reply waits. */}
+                  {!open && section.items.some((item) => counts[item.to]?.n) && (
+                    <span className="min-w-5 rounded-full bg-accent px-1.5 text-center font-sans text-[11px] font-semibold normal-case tracking-normal tabular-nums text-accent-foreground" aria-label={`${section.items.reduce((n, item) => n + (counts[item.to]?.n ?? 0), 0)} waiting`}>
+                      {section.items.reduce((n, item) => n + (counts[item.to]?.n ?? 0), 0)}
                     </span>
                   )}
                   {open ? (
@@ -258,9 +262,9 @@ export function Sidebar({
                         >
                           <item.icon className="w-4 h-4" />
                           {item.label}
-                          {item.to === '/sales/tasks' && tasksDue > 0 && (
-                            <span className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-[11px] font-semibold tabular-nums text-accent-foreground" aria-label={`${tasksDue} due`}>
-                              {tasksDue}
+                          {counts[item.to]?.n > 0 && (
+                            <span className="ml-auto min-w-5 rounded-full bg-accent px-1.5 text-center text-[11px] font-semibold tabular-nums text-accent-foreground" aria-label={`${counts[item.to].n} ${counts[item.to].label}`}>
+                              {counts[item.to].n}
                             </span>
                           )}
                         </Link>

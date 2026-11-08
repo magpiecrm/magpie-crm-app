@@ -171,7 +171,7 @@ function SequencePage() {
       {tab === 'people' && <PeopleTable sequence={s} onOpenConversation={openConversation} />}
       {tab === 'replies' && <RepliesList sequence={s} onOpen={openConversation} />}
       {tab === 'settings' && <SequenceSettingsForm sequence={s} />}
-      <ConversationSheet sequenceId={s.id} enrollmentId={person ?? null} onClose={() => openConversation(null)} />
+      <ConversationSheet enrollmentId={person ?? null} onClose={() => openConversation(null)} />
     </div>
   )
 }

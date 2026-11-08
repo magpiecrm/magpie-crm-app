@@ -46,8 +46,8 @@ export interface OpenedFolder {
 export interface MailClient {
   /** Opens the folder to read (Gmail's All Mail, so archived replies count; else INBOX), read-only. */
   open(): Promise<OpenedFolder>
-  /** Messages after `afterUid`, or since `since` when starting fresh, oldest first, at most `limit`. */
-  fetch(from: { afterUid: number } | { since: Date }, limit: number): Promise<InboundMessage[]>
+  /** Messages after `afterUid`, or since `since` when starting fresh (only those from `sender`, if given), oldest first, at most `limit`. */
+  fetch(from: { afterUid: number } | { since: Date; sender?: string }, limit: number): Promise<InboundMessage[]>
   /** The start of a message's raw source (headers and body), as text. */
   source(uid: number, maxBytes: number): Promise<string>
   /** A message's words: its plain-text part, else its HTML as text, at most `maxChars`. */
@@ -149,7 +149,7 @@ export const imapConnect: Connect = async (login) => {
       if ('afterUid' in from) {
         range = `${from.afterUid + 1}:*`
       } else {
-        const found = await imap.search({ since: from.since }, { uid: true })
+        const found = await imap.search({ since: from.since, ...(from.sender ? { from: from.sender } : {}) }, { uid: true })
         if (!found || !found.length) return []
         range = found.slice(-limit)
       }

@@ -478,8 +478,8 @@ function lastMessage(messages: ThreadMessage[] | undefined): EnrollmentView['las
   return m ? { at: m.at, direction: m.direction, snippet: snippet(m.text) } : null
 }
 
-/** Where a reply from someone in a sequence is read and answered. */
-export const conversationUrl = (sequenceId: string, enrollmentId: string) => `/sales/sequences/${sequenceId}?tab=replies&person=${encodeURIComponent(enrollmentId)}`
+/** Where a reply from someone in a sequence is read and answered: its conversation in the inbox. */
+export const conversationUrl = (enrollmentId: string) => `/sales/inbox?id=${encodeURIComponent(enrollmentId)}`
 
 /** When an email due at `due` can go: inside the sequence's sending days and hours. */
 function sendableAt(due: string | null, s: Sequence): string | null {
@@ -532,7 +532,7 @@ export function replyReceived(enrollmentId: string, reply: { at: string; matched
   notify(
     'sequence_reply',
     `${done.who} replied to "${done.sequence?.name ?? 'a sequence'}"${reply.stop ? ' asking not to be emailed again, so they\'re unsubscribed' : ''}`,
-    { url: done.sequence ? conversationUrl(done.sequence.id, done.e.id) : '/sales/sequences', contactEmail: done.e.contact_email },
+    { url: conversationUrl(done.e.id), contactEmail: done.e.contact_email },
   )
 }
 
@@ -560,7 +560,7 @@ export function laterReply(enrollmentId: string, reply: { stop: boolean }) {
   const stop = reply.stop && c?.status !== 'unsubscribed'
   if (stop) unsubscribeOnRequest(e.contact_email, e.sends.at(-1)?.campaign_id)
   notify('sequence_reply', `${who} wrote again about "${s?.name ?? 'a sequence'}"${stop ? ' asking not to be emailed again, so they\'re unsubscribed' : ''}`, {
-    url: s ? conversationUrl(s.id, e.id) : '/sales/sequences',
+    url: conversationUrl(e.id),
     contactEmail: e.contact_email,
   })
 }

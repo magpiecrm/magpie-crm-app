@@ -152,6 +152,13 @@ key), with the app's actions as tools.
     never a reply (`mailboxes/classify.ts`); Mailivery's carries only a code
     in its signature, so it isn't told apart yet. Placement tests (the campaign preview's third
     tab) go through the host too.
+  - `sequences/conversation.ts` — each reply's conversation, for Sell →
+    Inbox (across sequences: needs reply, marked done, the person's deal) and
+    the sequence's Replies tab. Reply detection (`mailboxes/`) keeps the text
+    of replies and of what follows in their thread (`Enrollment.messages`),
+    and looks up the text of replies found before it did, a few per read.
+    Answers go through `sendMail` from the sequence's sender, threaded under
+    their latest message, with a copy put in the inbox's Sent folder.
   - `functions/` — `createServerFn` endpoints split by domain (`prospects`,
     `contacts`, `lists`, `campaigns`, `copilot`, and others). They are
     re-exported from `functions/index.ts`. Add new endpoints to the matching

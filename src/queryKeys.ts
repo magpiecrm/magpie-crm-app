@@ -62,11 +62,17 @@ export const queryKeys = {
     enrollments: (id: string) => ['sequences', id, 'enrollments'] as const,
     /** Who has replied, for its Replies tab. */
     replies: (id: string) => ['sequences', id, 'replies'] as const,
-    /** One person's conversation with it (by enrollment). */
-    conversation: (id: string, enrollmentId: string) => ['sequences', id, 'conversation', enrollmentId] as const,
     /** Its spam score, for the steps and settings being edited (`draftKey`, a short hash). */
     spamScore: (id: string, draftKey: string) => ['sequences', id, 'spamScore', draftKey] as const,
     mailboxes: () => ['mailboxes'] as const,
+  },
+  /** Sell → Inbox: conversations with people who replied to a sequence. */
+  inbox: {
+    all: () => ['inbox'] as const,
+    list: (filters?: unknown) => ['inbox', 'list', filters] as const,
+    /** One person's conversation with a sequence (by enrollment). */
+    conversation: (enrollmentId: string) => ['inbox', 'conversation', enrollmentId] as const,
+    waiting: () => ['inbox', 'waiting'] as const,
   },
   surveys: {
     list: () => ['surveys'] as const,

@@ -1,6 +1,7 @@
 // Connected inboxes: each sender can connect theirs over IMAP so replies to
 // sequence emails stop the sequence (and bounces and "stop" replies count),
-// and the conversation that follows is kept for the sequence's Replies tab.
+// and the conversation that follows is kept for the inbox (Sell → Inbox, and
+// the sequence's Replies tab).
 // The email scheduler polls them every few minutes (pollMailboxes). The
 // password is stored encrypted (CREDENTIALS_SECRET) and never shown again.
 
@@ -21,6 +22,9 @@ const BATCH = 300
 const SOURCE_BYTES = 24_000
 /** Replies to a sequence finished this long ago still count (a late reply is still a reply), and a conversation quiet this long is still read. */
 const LATE_REPLY_MS = 30 * 86_400_000
+/** Replies from before their words were kept, looked for in the inbox in each read, and the most messages from one person read for it. */
+const LOOKUPS = 10
+const LOOKUP_BATCH = 20
 /**
  * How long an inbox has to keep failing (five reads) before anyone's told. Zoho, for one,
  * hangs up on a login now and then and the next read works; follow-ups wait meanwhile.
@@ -175,6 +179,17 @@ function enrollmentsFor(data: DbSchema, senderId: number, at: number): Enrollmen
   })
 }
 
+/**
+ * A sender's replies whose words aren't kept: found before replies' text was,
+ * or marked as replied by hand. Each is looked for in the inbox once.
+ */
+function repliesToLookUp(data: DbSchema, senderId: number): Enrollment[] {
+  const sequences = new Set((data.sequences ?? []).filter((s) => s.sender_id === senderId).map((s) => s.id))
+  return (data.sequence_enrollments ?? [])
+    .filter((e) => sequences.has(e.sequence_id) && e.reply && e.sends.length && !e.reply_searched_at && !(e.messages ?? []).some((m) => m.direction === 'in'))
+    .slice(0, LOOKUPS)
+}
+
 /** Whether a message is already in someone's conversation (an answer from the app, found again in Sent, say). */
 const kept = (e: Enrollment, messageId: string | null) => !!messageId && (e.messages ?? []).some((m) => m.message_id && bareId(m.message_id) === bareId(messageId))
 
@@ -211,7 +226,8 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
   const sender = db.data.senders.find((s) => s.id === m.sender_id)
   if (!sender) return 0
   const enrollments = enrollmentsFor(db.data, m.sender_id, at.getTime())
-  if (!enrollments.length) {
+  const lookUps = repliesToLookUp(db.data, m.sender_id)
+  if (!enrollments.length && !lookUps.length) {
     // Nothing a reply could stop: nothing to read, and follow-ups aren't held back.
     db.mutate(() => (m.last_polled_at = at.toISOString()))
     return 0
@@ -275,6 +291,22 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
       }
       replyReceived(match.item.id, { at: message.at, matched_by: match.by, stop })
       found++
+    }
+    // Replies from before their words were kept: each looked for once, by who it's from, since their first email.
+    for (const e of lookUps) {
+      if (!(e.messages ?? []).some((x) => x.direction === 'in')) {
+        const since = new Date(Date.parse(e.sends[0].at) - 86_400_000)
+        const theirs = (await client.fetch({ since, sender: e.contact_email }, LOOKUP_BATCH)).filter((x) => classifyInbound(x, own) === 'reply')
+        const one = buildIndex([{ item: e, email: e.contact_email, messageIds: e.sends.map((x) => x.message_id), firstSentAt: e.sends[0].at }])
+        const matched = theirs.filter((x) => matchReply(x, one))
+        // What's in the thread; else the first email from them after the sequence's, as reply detection took it.
+        const inThread = matched.filter((x) => matchReply(x, one)?.by === 'thread')
+        for (const x of inThread.length ? inThread : matched.slice(0, 1)) {
+          // Long since read in the mail app: not new here.
+          if (!kept(e, x.messageId)) keep(e, { ...(await toThreadMessage(client, x, 'in', at)), seen: true })
+        }
+      }
+      db.mutate(() => (e.reply_searched_at = at.toISOString()))
     }
     const lastUid = messages.length ? Math.max(...messages.map((x) => x.uid)) : fresh ? folder.uidNext - 1 : m.last_uid
     db.mutate(() => {

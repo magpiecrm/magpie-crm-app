@@ -1,25 +1,43 @@
-// One person's conversation with a sequence, for its Replies tab: the
-// sequence's emails as they went (rebuilt from the step, or their own
-// version where it's personalised), then their replies and the answers to
-// them (ThreadMessage, kept by mailboxes/), in order. And answering from the
-// app: from the sequence's sender, threaded under their latest message, with
-// a copy put in the sender's inbox's Sent folder so the conversation is
-// whole there too.
+// One person's conversation with a sequence, for Sell → Inbox and the
+// sequence's Replies tab: the sequence's emails as they went (rebuilt from
+// the step, or their own version where it's personalised), then their
+// replies and the answers to them (ThreadMessage, kept by mailboxes/), in
+// order. The inbox lists them across sequences: a conversation needs a reply
+// while their message is the latest and nobody has marked it done. And
+// answering from the app: from the sequence's sender, threaded under their
+// latest message, with a copy put in the sender's inbox's Sent folder so the
+// conversation is whole there too.
 
 import { randomUUID } from 'node:crypto'
 import MailComposer from 'nodemailer/lib/mail-composer'
 import { db, type DbSchema } from '../db'
 import { sendMail } from '../nodemailer'
-import { inboxOf } from '../mailboxes'
+import { inboxOf, lastActivity } from '../mailboxes'
 import { imapConnect, type Connect } from '../mailboxes/imap'
 import { logActivity } from '../sales/deals'
 import { composeText, htmlDocument, renderStep, textHash, textToHtml } from './render'
 import { stripRe } from './schedule'
 import { sequences, unreadIn } from '.'
-import { REPLY_TEXT_MAX, draftFor, type ConversationItem, type ConversationView, type Enrollment, type EnrollmentView, type Sequence, type ThreadMessage } from '../../features/sequences/types'
+import { snippet } from '../../features/sequences/quote'
+import {
+  REPLY_TEXT_MAX,
+  draftFor,
+  type ConversationDeal,
+  type ConversationItem,
+  type ConversationView,
+  type Enrollment,
+  type EnrollmentView,
+  type InboxList,
+  type InboxRow,
+  type MissingReply,
+  type Sequence,
+  type ThreadMessage,
+} from '../../features/sequences/types'
 
 /** Most of their message quoted under an answer. */
 const QUOTE_MAX = 4_000
+/** Most conversations the inbox lists, the latest first. */
+const LIST_MAX = 500
 
 function enrollmentOf(data: DbSchema, id: string): Enrollment {
   const e = data.sequence_enrollments?.find((x) => x.id === id)
@@ -55,7 +73,96 @@ function answering(e: Enrollment): { messageId: string; references: string[]; su
   return last ? { messageId: last.message_id, references: e.sends.slice(0, -1).map((x) => x.message_id), subject: last.subject, theirs: null } : null
 }
 
+/** Whether someone is in the inbox: they replied (or it was marked by hand), or there's a conversation. */
+const inInbox = (e: Enrollment) => !!e.reply || !!e.messages?.length
+
+const latestOf = (e: Enrollment) => (e.messages ?? []).reduce<ThreadMessage | null>((a, b) => (!a || b.at >= a.at ? b : a), null)
+
+/** Why none of their words show, if none do: a reply from before they were kept (not read yet, or not in the inbox), or one marked by hand. */
+function missingReply(e: Enrollment): MissingReply {
+  if (!e.reply || (e.messages ?? []).some((m) => m.direction === 'in')) return null
+  if (e.reply.matched_by === 'manual') return 'manual'
+  return e.reply_searched_at ? 'not_found' : 'pending'
+}
+
+/**
+ * Whether it waits for an answer from here: their message is the latest (or
+ * their reply, not read yet, is all there is), nobody has marked it done
+ * since, and they can be answered. One marked as replied by hand doesn't: it
+ * was dealt with elsewhere.
+ */
+function awaitsAnswer(data: DbSchema, e: Enrollment, s: Sequence): boolean {
+  const last = latestOf(e)
+  const theirs = last ? (last.direction === 'in' ? last.at : null) : e.reply && e.reply.matched_by !== 'manual' ? e.reply.at : null
+  if (!theirs || (e.inbox_done_at && e.inbox_done_at >= theirs)) return false
+  return !cannotReply(data, e, s)
+}
+
+/** The deal someone's conversation belongs to: their open one, else their latest. */
+function dealFor(data: DbSchema, email: string): ConversationDeal | null {
+  const theirs = (data.deals ?? []).filter((d) => d.contact_emails.includes(email))
+  const deal = theirs.find((d) => d.status === 'open') ?? theirs.sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]
+  if (!deal) return null
+  const stage = data.pipelines?.find((p) => p.id === deal.pipeline_id)?.stages.find((st) => st.id === deal.stage_id)
+  return { id: deal.id, name: deal.name, status: deal.status, pipeline_id: deal.pipeline_id, stage_id: deal.stage_id, stage: stage?.name ?? '' }
+}
+
+function inboxRow(data: DbSchema, e: Enrollment, s: Sequence): InboxRow {
+  const c = data.contacts.find((x) => x.email === e.contact_email)
+  const last = latestOf(e)
+  const at = [lastActivity(e), e.reply?.at ?? ''].reduce((a, b) => (b > a ? b : a))
+  return {
+    enrollment_id: e.id,
+    sequence: { id: s.id, name: s.name },
+    email: e.contact_email,
+    name: nameOf(c),
+    title: c?.job_title || null,
+    company: c?.company || null,
+    at,
+    last: last ? { direction: last.direction, snippet: snippet(last.text) } : null,
+    missing_reply: missingReply(e),
+    unread: unreadIn(e.messages),
+    needs_reply: awaitsAnswer(data, e, s),
+    deal: dealFor(data, e.contact_email),
+  }
+}
+
 export const conversations = {
+  /** Conversations across sequences, the latest first: those needing a reply, or all; from one sequence, or every one. */
+  inbox: (filter: { needsReply?: boolean; sequenceId?: string } = {}): InboxList => {
+    const data = db.data
+    const all = (data.sequence_enrollments ?? []).filter(inInbox).flatMap((e) => {
+      const s = data.sequences?.find((x) => x.id === e.sequence_id)
+      return s ? [inboxRow(data, e, s)] : []
+    })
+    const shown = all.filter((r) => !filter.sequenceId || r.sequence.id === filter.sequenceId)
+    const sequenceNames = new Map(all.map((r) => [r.sequence.id, r.sequence.name]))
+    return {
+      rows: shown
+        .filter((r) => filter.needsReply === undefined || r.needs_reply === filter.needsReply)
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, LIST_MAX),
+      needs_reply: shown.filter((r) => r.needs_reply).length,
+      sequences: [...sequenceNames].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)),
+    }
+  },
+
+  /** How many conversations wait for an answer, for the sidebar. */
+  waiting: (): number => {
+    const data = db.data
+    return (data.sequence_enrollments ?? []).filter((e) => {
+      const s = inInbox(e) && data.sequences?.find((x) => x.id === e.sequence_id)
+      return !!s && awaitsAnswer(data, e, s)
+    }).length
+  },
+
+  /** Marks a conversation as needing no answer, or as needing one again. */
+  setDone: (enrollmentId: string, done: boolean): void =>
+    db.mutate((data) => {
+      enrollmentOf(data, enrollmentId).inbox_done_at = done ? new Date().toISOString() : null
+    }),
+
+
   /** Everyone in a sequence who has replied, the latest conversation first. */
   replies: (sequenceId: string): EnrollmentView[] => {
     const latest = (e: EnrollmentView) => e.last_message?.at ?? e.replied_at ?? ''
@@ -75,6 +182,7 @@ export const conversations = {
     const contact = data.contacts.find((c) => c.email === e.contact_email)
     const sender = data.senders.find((x) => x.id === s.sender_id) ?? null
     const fromLabel = sender ? sender.name || sender.email : 'You'
+    const needs = awaitsAnswer(data, e, s)
 
     const sends: ConversationItem[] = e.sends.map((send, i) => {
       const index = s.steps.findIndex((st) => st.id === send.step_id)
@@ -124,6 +232,13 @@ export const conversations = {
       items: [...sends, ...messages].sort((a, b) => a.at.localeCompare(b.at)),
       cannot_reply: cannotReply(data, e, s),
       signature: s.settings.signature.trim(),
+      sequence_name: s.name,
+      title: contact?.job_title || null,
+      company_id: contact?.company_id ?? null,
+      deal: dealFor(data, e.contact_email),
+      needs_reply: needs,
+      done: !!e.inbox_done_at && !needs,
+      missing_reply: missingReply(e),
     }
   },
 

@@ -115,6 +115,10 @@ export interface Enrollment {
   drafts?: Record<string, PersonalDraft>
   /** The conversation after the sequence's emails: their replies, and the answers to them (ThreadMessage). */
   messages?: ThreadMessage[]
+  /** When someone marked the conversation as needing no answer; a newer message from them asks for one again. */
+  inbox_done_at?: string | null
+  /** A reply from before replies' text was kept (or marked by hand): when the inbox was searched for it, once. */
+  reply_searched_at?: string
 }
 
 /**
@@ -296,6 +300,56 @@ export interface ConversationView {
   cannot_reply: string | null
   /** What goes under an answer (the sequence's sign-off). */
   signature: string
+  sequence_name: string
+  title: string | null
+  /** Their contact's company, for starting a deal. */
+  company_id: string | null
+  deal: ConversationDeal | null
+  /** Their message is the latest, nobody has marked it done since, and it can be answered. */
+  needs_reply: boolean
+  /** Marked as needing no answer, and nothing of theirs since. */
+  done: boolean
+  /** Why none of their words show: replied before they were kept (not read yet, or not found in the inbox), or marked by hand. */
+  missing_reply: MissingReply
+}
+
+/** Why a reply's words don't show (ConversationView), or null when they do. */
+export type MissingReply = 'pending' | 'not_found' | 'manual' | null
+
+/** The deal someone's conversation belongs to: their open one, else their latest. */
+export interface ConversationDeal {
+  id: string
+  name: string
+  status: 'open' | 'won' | 'lost'
+  pipeline_id: string
+  stage_id: string
+  stage: string
+}
+
+/** A conversation as the inbox lists it (Sell → Inbox, across sequences). */
+export interface InboxRow {
+  enrollment_id: string
+  sequence: { id: string; name: string }
+  email: string
+  name: string | null
+  title: string | null
+  company: string | null
+  /** When anything last happened in it. */
+  at: string
+  /** Its latest message after the sequence's emails, or null with none to show (`missing_reply` says why). */
+  last: { direction: 'in' | 'out'; snippet: string } | null
+  missing_reply: MissingReply
+  unread: number
+  needs_reply: boolean
+  deal: ConversationDeal | null
+}
+
+export interface InboxList {
+  rows: InboxRow[]
+  /** How many need a reply, in the sequence and search asked for (whichever tab). */
+  needs_reply: number
+  /** The sequences anyone has replied to, for the filter. */
+  sequences: Array<{ id: string; name: string }>
 }
 
 /** A sender's connected inbox, as Settings shows it (never the password). */

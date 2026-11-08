@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CollectionIndexRouteImport } from './routes/collection/index'
 import { Route as SalesTasksRouteImport } from './routes/sales/tasks'
 import { Route as SalesPipelineRouteImport } from './routes/sales/pipeline'
+import { Route as SalesInboxRouteImport } from './routes/sales/inbox'
 import { Route as SSurveyIdRouteImport } from './routes/s/$surveyId'
 import { Route as PTokenRouteImport } from './routes/p/$token'
 import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templates'
@@ -99,6 +100,11 @@ const SalesTasksRoute = SalesTasksRouteImport.update({
 const SalesPipelineRoute = SalesPipelineRouteImport.update({
   id: '/sales/pipeline',
   path: '/sales/pipeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesInboxRoute = SalesInboxRouteImport.update({
+  id: '/sales/inbox',
+  path: '/sales/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SSurveyIdRoute = SSurveyIdRouteImport.update({
@@ -401,6 +407,7 @@ export interface FileRoutesByFullPath {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/p/$token': typeof PTokenRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/inbox': typeof SalesInboxRoute
   '/sales/pipeline': typeof SalesPipelineRoute
   '/sales/tasks': typeof SalesTasksRoute
   '/collection/': typeof CollectionIndexRoute
@@ -460,6 +467,7 @@ export interface FileRoutesByTo {
   '/auth/view': typeof AuthViewRoute
   '/p/$token': typeof PTokenRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/inbox': typeof SalesInboxRoute
   '/sales/pipeline': typeof SalesPipelineRoute
   '/sales/tasks': typeof SalesTasksRoute
   '/collection': typeof CollectionIndexRoute
@@ -524,6 +532,7 @@ export interface FileRoutesById {
   '/marketing/templates': typeof MarketingTemplatesRouteWithChildren
   '/p/$token': typeof PTokenRoute
   '/s/$surveyId': typeof SSurveyIdRoute
+  '/sales/inbox': typeof SalesInboxRoute
   '/sales/pipeline': typeof SalesPipelineRoute
   '/sales/tasks': typeof SalesTasksRoute
   '/collection/': typeof CollectionIndexRoute
@@ -589,6 +598,7 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/p/$token'
     | '/s/$surveyId'
+    | '/sales/inbox'
     | '/sales/pipeline'
     | '/sales/tasks'
     | '/collection/'
@@ -648,6 +658,7 @@ export interface FileRouteTypes {
     | '/auth/view'
     | '/p/$token'
     | '/s/$surveyId'
+    | '/sales/inbox'
     | '/sales/pipeline'
     | '/sales/tasks'
     | '/collection'
@@ -711,6 +722,7 @@ export interface FileRouteTypes {
     | '/marketing/templates'
     | '/p/$token'
     | '/s/$surveyId'
+    | '/sales/inbox'
     | '/sales/pipeline'
     | '/sales/tasks'
     | '/collection/'
@@ -775,6 +787,7 @@ export interface RootRouteChildren {
   MarketingTemplatesRoute: typeof MarketingTemplatesRouteWithChildren
   PTokenRoute: typeof PTokenRoute
   SSurveyIdRoute: typeof SSurveyIdRoute
+  SalesInboxRoute: typeof SalesInboxRoute
   SalesPipelineRoute: typeof SalesPipelineRoute
   SalesTasksRoute: typeof SalesTasksRoute
   CollectionIndexRoute: typeof CollectionIndexRoute
@@ -851,6 +864,13 @@ declare module '@tanstack/react-router' {
       path: '/sales/pipeline'
       fullPath: '/sales/pipeline'
       preLoaderRoute: typeof SalesPipelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/inbox': {
+      id: '/sales/inbox'
+      path: '/sales/inbox'
+      fullPath: '/sales/inbox'
+      preLoaderRoute: typeof SalesInboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/s/$surveyId': {
@@ -1331,6 +1351,7 @@ const rootRouteChildren: RootRouteChildren = {
   MarketingTemplatesRoute: MarketingTemplatesRouteWithChildren,
   PTokenRoute: PTokenRoute,
   SSurveyIdRoute: SSurveyIdRoute,
+  SalesInboxRoute: SalesInboxRoute,
   SalesPipelineRoute: SalesPipelineRoute,
   SalesTasksRoute: SalesTasksRoute,
   CollectionIndexRoute: CollectionIndexRoute,

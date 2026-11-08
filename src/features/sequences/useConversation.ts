@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../queryKeys'
-import { checkAuthFn, markConversationSeenFn, sendSequenceReplyFn, sequenceConversationFn } from '../../server/functions'
+import { checkAuthFn, markConversationSeenFn, sendSequenceReplyFn, sequenceConversationFn, setConversationDoneFn } from '../../server/functions'
 import type { ConversationView } from './types'
 
 /**
  * One person's conversation with a sequence: reading it (which marks their
- * messages as looked at, except in a view-only session) and answering it.
- * An answer keeps its id until it's gone, so trying again after an error
- * never sends it twice.
+ * messages as looked at, except in a view-only session), answering it, and
+ * marking it done. An answer keeps its id until it's gone, so trying again
+ * after an error never sends it twice.
  */
-export function useConversation(sequenceId: string, enrollmentId: string | null) {
+export function useConversation(enrollmentId: string | null) {
   const queryClient = useQueryClient()
-  const key = queryKeys.sequences.conversation(sequenceId, enrollmentId ?? '')
+  const key = queryKeys.inbox.conversation(enrollmentId ?? '')
   const conversation = useQuery({
     queryKey: key,
     queryFn: () => sequenceConversationFn({ data: { enrollmentId: enrollmentId! } }),
@@ -21,7 +21,11 @@ export function useConversation(sequenceId: string, enrollmentId: string | null)
   })
   const { data: account } = useQuery({ queryKey: queryKeys.account(), queryFn: () => checkAuthFn(), staleTime: 5 * 60_000 })
 
+  /** The inbox (its lists, this conversation, the sidebar's count) and the sequence's own lists. */
   const refreshLists = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.inbox.all() })
+    const sequenceId = conversation.data?.sequence_id
+    if (!sequenceId) return
     void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.replies(sequenceId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.enrollments(sequenceId) })
   }
@@ -46,10 +50,14 @@ export function useConversation(sequenceId: string, enrollmentId: string | null)
     mutationFn: (text: string) => sendSequenceReplyFn({ data: { enrollmentId: enrollmentId!, text, clientId } }),
     onSuccess: () => {
       setClientId(crypto.randomUUID())
-      void queryClient.invalidateQueries({ queryKey: key })
       refreshLists()
     },
   })
 
-  return { conversation, send, viewOnly }
+  const done = useMutation({
+    mutationFn: (to: boolean) => setConversationDoneFn({ data: { enrollmentId: enrollmentId!, done: to } }),
+    onSuccess: refreshLists,
+  })
+
+  return { conversation, send, done, viewOnly, refresh: refreshLists }
 }
