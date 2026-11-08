@@ -106,6 +106,8 @@ const USAGE_COUNTERS = [
   'researchCalls',
   'personalDrafts',
   'personalFallbacks',
+  /** Personas drafted by the AI from the workspace's own website (prospecting/personaDraft.ts). */
+  'personaDrafts',
   /**
    * Where the host runs the copilot (copilot/managedAi.ts): its model calls,
    * and what they used of the AI budget, in thousandths of a penny or cent

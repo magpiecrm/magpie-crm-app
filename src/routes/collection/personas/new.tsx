@@ -31,10 +31,11 @@ function NewPersonaPage() {
 
   return (
     <PersonaForm
-      title="New Persona"
+      title="New persona"
       initial={DEFAULT_PERSONA}
       onSave={data => createMutation.mutate(data)}
       isSaving={createMutation.isPending}
+      error={createMutation.error ? createMutation.error.message : null}
     />
   )
 }

@@ -78,6 +78,8 @@ export interface SaveDeps {
   sharedEmail?: (handle: string) => Promise<{ email: string; free: boolean } | null>
   /** This copy contributes to that database, so its emails are free. */
   sharedFree?: boolean
+  /** The persona applied in the search: the contacts this save creates are marked as found with it. */
+  personaId?: string
 }
 
 const jobs = new Map<string, ProspectJob>()
@@ -254,6 +256,7 @@ async function processPerson(
     email_status: found.status,
     notice_status: 'pending',
     ...profile,
+    ...(deps.personaId ? { persona_id: deps.personaId } : {}),
     search_hash: searchDetailsHash({ first_name: person.firstName, last_name: person.lastName, job_title: person.title, company: person.company, country: profile.country }),
   })
   deps.db.addDisclosure({

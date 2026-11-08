@@ -1,15 +1,15 @@
 import { useRef, useState, useEffect } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
-import { X, Check, Briefcase, Factory, MapPin, Users2, Info, Layers, Ban } from 'lucide-react'
-import { TagInput } from '../../../components/ui/TagInput'
-import { FilterAccordion } from '../../../components/ui/FilterAccordion'
+import { useQuery } from '@tanstack/react-query'
+import { X, Check, Info } from 'lucide-react'
+import { Notice } from '../../../components/ui/Notice'
+import { queryKeys } from '../../../queryKeys'
+import { prospectingStatusFn } from '../../../server/functions'
 import { PersonaMindMap } from './PersonaMindMap'
 import { PersonaSummaryCard } from './PersonaSummaryCard'
+import { CompanySizeField, CountryField, IndustryField, KeywordField, SeniorityField, TitlesField } from './PeopleFilterFields'
 import { copilotStore } from '../../copilot/copilotStore'
-import { INDUSTRIES } from '../constants/industries'
-import { LOCATIONS } from '../constants/locations'
-import { SENIORITIES } from '../constants/seniorities'
-import type { PersonaCriteria } from '../types'
+import { normalizePersonaCriteria, type PersonaCriteria } from '../types'
 
 export interface PersonaFormValues {
   name: string
@@ -33,24 +33,29 @@ interface PersonaFormProps {
   initial: PersonaFormValues
   onSave: (data: PersonaFormValues) => void
   isSaving: boolean
+  /** Why the last save failed. */
+  error?: string | null
 }
 
-
-export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormProps) {
+export function PersonaForm({ title, initial, onSave, isSaving, error }: PersonaFormProps) {
   const navigate = useNavigate()
   const [persona, setPersona] = useState(initial)
   const [aiUpdatedKeys, setAiUpdatedKeys] = useState<Set<string>>(new Set())
   const aiFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({
-    title: true,
-    industry: true,
-    seniority: false,
-    location: false,
-    employeeCount: false,
-    excludedTitles: false,
+  // Keyed as the criteria are, so the copilot's changes open the filters they touch.
+  const [expanded, setExpanded] = useState<Record<keyof PersonaCriteria, boolean>>({
+    titles: true,
+    seniorities: false,
+    industries: true,
+    companySizes: false,
+    country: false,
+    keyword: false,
   })
-
-  const toggle = (key: string) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
+  const section = (key: keyof PersonaCriteria) => ({ isOpen: expanded[key], onToggle: () => setExpanded((prev) => ({ ...prev, [key]: !prev[key] })) })
+  // Search's own notes on titles and countries depend on who runs the search (Shares the sidebar's status query).
+  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  const hosted = Boolean(status?.managed)
+  const c = persona.criteria
 
   // Merge a copilot updatePersona patch into form state; form state stays the
   // single source of truth (manual edits reach the AI on its next request).
@@ -58,7 +63,8 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
     setPersona(p => ({
       ...p,
       ...updates,
-      criteria: { ...p.criteria, ...(updates.criteria ?? {}) },
+      // Anything search couldn't take (an industry off the list, say) is left out.
+      criteria: normalizePersonaCriteria({ ...p.criteria, ...(updates.criteria ?? {}) }),
     }))
 
     const touched = new Set<string>(Object.keys(updates.criteria ?? {}))
@@ -67,7 +73,7 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
     }
     setExpanded(prev => {
       const next = { ...prev }
-      touched.forEach(k => { if (k in next) next[k] = true })
+      touched.forEach(k => { if (k in next) next[k as keyof PersonaCriteria] = true })
       return next
     })
     setAiUpdatedKeys(touched)
@@ -112,11 +118,11 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className={`px-6 pt-5 max-w-md ${flash('name')}`}>
             <label className="block text-sm font-medium text-foreground mb-1.5">
-              Persona Name <span className="text-destructive">*</span>
+              Persona name <span className="text-destructive">*</span>
             </label>
             <input
               className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-              placeholder="e.g. Marketing Leaders"
+              placeholder="e.g. Marketing leaders at SaaS companies"
               value={persona.name}
               onChange={e => setPersona(p => ({ ...p, name: e.target.value }))}
             />
@@ -128,122 +134,33 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
             <div className="w-full lg:w-72 shrink-0 card border border-border rounded-md-m overflow-hidden">
               <div className="px-4 py-3 border-b border-border flex items-center gap-1.5 bg-card/50">
                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Filters</h3>
-                <span title="Criteria used to search Prospect Search">
+                <span title="The filters Prospect Search uses when you apply this persona">
                   <Info className="w-3 h-3 text-muted-foreground" />
                 </span>
               </div>
               <div className="px-4">
-                <div className={flash('title')}>
-                  <FilterAccordion
-                    label="Job Titles"
-                    icon={<Briefcase className="w-4 h-4" />}
-                    isOpen={!!expanded.title}
-                    onToggle={() => toggle('title')}
-                    badgeCount={persona.criteria.title.length}
-                  >
-                    <TagInput
-                      label="Job Titles"
-                      tags={persona.criteria.title}
-                      placeholder="e.g. VP Sales, Head of Marketing"
-                      onChange={val => setCriteria('title', val)}
-                    />
-                  </FilterAccordion>
+                <div className={flash('titles')}>
+                  <TitlesField value={c.titles} onChange={(v) => setCriteria('titles', v)} hosted={hosted} {...section('titles')} />
                 </div>
-
-                <div className={flash('seniority')}>
-                  <FilterAccordion
-                    label="Seniority"
-                    icon={<Layers className="w-4 h-4" />}
-                    isOpen={!!expanded.seniority}
-                    onToggle={() => toggle('seniority')}
-                    badgeCount={persona.criteria.seniority.length}
-                  >
-                    <TagInput
-                      label="Seniority Levels"
-                      tags={persona.criteria.seniority}
-                      placeholder="e.g. VP, Director, C-Level"
-                      suggestions={SENIORITIES}
-                      onChange={val => setCriteria('seniority', val)}
-                    />
-                  </FilterAccordion>
+                <div className={flash('seniorities')}>
+                  <SeniorityField value={c.seniorities} onChange={(v) => setCriteria('seniorities', v)} {...section('seniorities')} />
                 </div>
-
-                <div className={`${flash('industry')} ${flash('keywords')}`}>
-                  <FilterAccordion
-                    label="Industry & Keywords"
-                    icon={<Factory className="w-4 h-4" />}
-                    isOpen={!!expanded.industry}
-                    onToggle={() => toggle('industry')}
-                    badgeCount={persona.criteria.industry.length + persona.criteria.keywords.length}
-                  >
-                    <div className="space-y-3">
-                      <TagInput
-                        label="Industries"
-                        tags={persona.criteria.industry}
-                        placeholder="e.g. Software Development, Financial Services"
-                        suggestions={INDUSTRIES}
-                        onChange={val => setCriteria('industry', val)}
-                      />
-                      <TagInput
-                        label="Keywords"
-                        tags={persona.criteria.keywords}
-                        placeholder="e.g. Series B, hiring SDRs"
-                        onChange={val => setCriteria('keywords', val)}
-                      />
-                    </div>
-                  </FilterAccordion>
+                <div className={flash('industries')}>
+                  <IndustryField value={c.industries} onChange={(v) => setCriteria('industries', v)} {...section('industries')} />
                 </div>
-
-                <div className={flash('location')}>
-                  <FilterAccordion
-                    label="Location"
-                    icon={<MapPin className="w-4 h-4" />}
-                    isOpen={!!expanded.location}
-                    onToggle={() => toggle('location')}
-                    badgeCount={persona.criteria.location.length}
-                  >
-                    <TagInput
-                      label="Locations"
-                      tags={persona.criteria.location}
-                      suggestions={LOCATIONS}
-                      placeholder="e.g. United States, London, United Kingdom"
-                      onChange={val => setCriteria('location', val)}
-                    />
-                  </FilterAccordion>
+                <div className={flash('companySizes')}>
+                  <CompanySizeField
+                    value={c.companySizes}
+                    onChange={(v) => setCriteria('companySizes', v)}
+                    needsTerm={c.companySizes.length > 0 && c.industries.length === 0 && !c.keyword.trim()}
+                    {...section('companySizes')}
+                  />
                 </div>
-
-                <div className={flash('employeeCount')}>
-                  <FilterAccordion
-                    label="# Employees"
-                    icon={<Users2 className="w-4 h-4" />}
-                    isOpen={!!expanded.employeeCount}
-                    onToggle={() => toggle('employeeCount')}
-                    badgeCount={persona.criteria.employeeCount ? 1 : 0}
-                  >
-                    <input
-                      className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                      placeholder="e.g. 51-200"
-                      value={persona.criteria.employeeCount}
-                      onChange={e => setCriteria('employeeCount', e.target.value)}
-                    />
-                  </FilterAccordion>
+                <div className={flash('country')}>
+                  <CountryField value={c.country} onChange={(v) => setCriteria('country', v)} hosted={hosted} {...section('country')} />
                 </div>
-
-                <div className={flash('excludedTitles')}>
-                  <FilterAccordion
-                    label="Excluded Titles"
-                    icon={<Ban className="w-4 h-4" />}
-                    isOpen={!!expanded.excludedTitles}
-                    onToggle={() => toggle('excludedTitles')}
-                    badgeCount={persona.criteria.excludedTitles.length}
-                  >
-                    <TagInput
-                      label="Exclude Titles"
-                      tags={persona.criteria.excludedTitles}
-                      placeholder="e.g. Assistant, Intern"
-                      onChange={val => setCriteria('excludedTitles', val)}
-                    />
-                  </FilterAccordion>
+                <div className={flash('keyword')}>
+                  <KeywordField value={c.keyword} onChange={(v) => setCriteria('keyword', v)} {...section('keyword')} />
                 </div>
               </div>
             </div>
@@ -252,7 +169,7 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
             <div className="flex-1 space-y-4 min-w-0">
               <div className="card border border-border rounded-md-m overflow-hidden">
                 <div className="px-4 py-3 border-b border-border flex items-center gap-1.5 bg-card/50">
-                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Persona Map</h3>
+                  <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Persona map</h3>
                   <span title="Updates live as you add filters">
                     <Info className="w-3 h-3 text-muted-foreground" />
                   </span>
@@ -279,7 +196,7 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
                 />
               </div>
               <div className={flash('painPoints')}>
-                <label className="block text-xs text-muted-foreground mb-1">Pain Points</label>
+                <label className="block text-xs text-muted-foreground mb-1">Pain points</label>
                 <textarea
                   rows={3}
                   className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent resize-none"
@@ -289,7 +206,7 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
                 />
               </div>
               <div className={flash('valueProp')}>
-                <label className="block text-xs text-muted-foreground mb-1">Value Proposition</label>
+                <label className="block text-xs text-muted-foreground mb-1">Value proposition</label>
                 <textarea
                   rows={3}
                   className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent resize-none"
@@ -303,15 +220,21 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
         </div>
       </div>
 
+      {error && (
+        <div className="px-6 py-3 border-t border-border shrink-0">
+          <Notice level="error">{error}</Notice>
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between px-6 py-4 border-t border-border shrink-0 bg-card/50">
         <Link
           to="/collection/personas"
-          className="text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
-          Manage Personas
+          All personas
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 ml-auto">
           <button
             onClick={() => navigate({ to: '/collection/personas' })}
             className="px-4 py-2 text-sm font-medium border border-border rounded-md-s text-foreground hover:bg-muted transition-colors cursor-pointer"
@@ -321,9 +244,9 @@ export function PersonaForm({ title, initial, onSave, isSaving }: PersonaFormPro
           <button
             onClick={() => onSave(persona)}
             disabled={isSaving || !persona.name.trim()}
-            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
+            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2 whitespace-nowrap"
           >
-            {isSaving ? 'Saving...' : <><Check className="w-4 h-4" /> Save Persona</>}
+            {isSaving ? 'Saving…' : <><Check className="w-4 h-4" /> Save persona</>}
           </button>
         </div>
       </div>

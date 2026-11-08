@@ -1,9 +1,10 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, ArrowDown, ArrowUp, BellOff, ExternalLink, HelpCircle, Mail, Plus } from 'lucide-react'
 import { Avatar } from '../../../components/ui/Avatar'
-import { setContactCustomFn } from '../../../server/functions'
+import { getPersonasFn, setContactCustomFn } from '../../../server/functions'
+import { queryKeys } from '../../../queryKeys'
 import { columnLabel, formatCellValue, PINNED_COLUMN } from '../contactColumns'
 import { patchContactCustom } from '../contactCache'
 import type { ContactCustomValue, ContactFieldDef } from '../contactFields'
@@ -20,13 +21,14 @@ export interface TableContact {
   companyId: string | null
   linkedinUrl: string
   country: string
+  personaId?: string
 }
 
 const addedOn = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit', year: 'numeric' })
 
 const nameOf = (c: TableContact) => `${c.attributes.FIRSTNAME} ${c.attributes.LASTNAME}`.trim() || c.email
 
-const UNSORTABLE = ['blocklisted']
+const UNSORTABLE = ['blocklisted', 'persona']
 
 const fieldOf = (id: string, fields: ContactFieldDef[]) => (id.startsWith('custom:') ? fields.find((f) => `custom:${f.key}` === id) : undefined)
 
@@ -285,9 +287,18 @@ function Cell({ id, contact, fields }: { id: string; contact: TableContact; fiel
       return <td className="px-6 py-4 text-foreground">{contact.attributes.JOB_TITLE || <span className="text-muted-foreground">—</span>}</td>
     case 'created_at':
       return <td className="px-6 py-4 text-xs text-muted-foreground font-medium whitespace-nowrap">{addedOn(contact.createdAt)}</td>
+    case 'persona':
+      return <PersonaCell id={contact.personaId} />
     default:
       return <td className="px-6 py-4 text-muted-foreground">—</td>
   }
+}
+
+/** The persona applied in the search that found them, by its name now. */
+function PersonaCell({ id }: { id?: string }) {
+  const { data: personas = [] } = useQuery({ queryKey: queryKeys.prospects.personas(), queryFn: () => getPersonasFn(), enabled: Boolean(id) })
+  const name = id ? personas.find((p) => p.id === id)?.name : undefined
+  return <td className="px-6 py-4 text-foreground">{name ?? <span className="text-muted-foreground">—</span>}</td>
 }
 
 /** A custom value, which a click edits in place (not a multi select: its chips want more room than a cell has). */

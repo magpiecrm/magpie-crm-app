@@ -28,9 +28,11 @@ interface Props {
   isOpen: boolean
   onClose: (saved: boolean) => void
   people: PersonResult[]
+  /** The persona applied in the search: new contacts are marked as found with it. */
+  persona?: { id: string; name: string } | null
 }
 
-export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
+export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props) {
   const queryClient = useQueryClient()
   const [listId, setListId] = useState<number | ''>('')
   const [newListName, setNewListName] = useState<string | null>(null)
@@ -60,7 +62,7 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
   })
 
   const save = useMutation({
-    mutationFn: (id: number) => saveProspectsFn({ data: { listId: id, people } }),
+    mutationFn: (id: number) => saveProspectsFn({ data: { listId: id, people, ...(persona ? { personaId: persona.id } : {}) } }),
     onSuccess: setJob,
   })
 
@@ -169,6 +171,12 @@ export function SaveProspectsDialog({ isOpen, onClose, people }: Props) {
                 : 'Unconfirmed best guesses are saved too, with their status. '}
               Anyone who has opted out is skipped. New contacts are marked{' '}
               <span className="font-semibold">notice pending</span> until they've been told how their details were found.
+              {persona && (
+                <>
+                  {' '}
+                  They're also marked as found with the <span className="font-semibold">{persona.name}</span> persona.
+                </>
+              )}
               {people.length > 10 && ' This many people runs in the background, and you can watch progress here.'}
             </p>
 

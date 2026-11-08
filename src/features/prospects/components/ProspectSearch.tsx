@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router'
 import {
   AlertCircle,
   BookUser,
-  Briefcase,
   Building2,
   Factory,
   Globe,
@@ -13,7 +12,6 @@ import {
   Search,
   SlidersHorizontal,
   Flame,
-  UserCheck,
   Users2,
   X,
 } from 'lucide-react'
@@ -34,8 +32,6 @@ import {
   HEADCOUNT_BUCKETS,
   PAGE_SIZES,
   pageSizeFor,
-  SENIORITY_LABEL,
-  SENIORITY_LEVELS,
   type CompanyResult,
   type HeadcountBucket,
   type Page,
@@ -45,13 +41,12 @@ import {
 } from '../../../server/prospecting/types'
 import { signalScore } from '../../../server/prospecting/signals'
 import { useCompanySignals } from '../useCompanySignals'
-import { parseSeniorityLabel } from '../../../server/prospecting/seniority'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
 import { INDUSTRIES } from '../constants/industries'
-import { JOB_TITLES } from '../constants/jobTitles'
-import type { Persona } from '../types'
+import { normalizePersonaCriteria, type Persona } from '../types'
 import { CompanyPicker } from './CompanyPicker'
+import { CompanySizeField, CountryField, FILTER_INPUT_CLASS, IndustryField, KeywordField, SeniorityField, TitlesField } from './PeopleFilterFields'
 import { CompanyResults, DomainCell } from './CompanyResults'
 import { PeopleResults, type RevealState } from './PeopleResults'
 import { SaveProspectsDialog } from './SaveProspectsDialog'
@@ -109,7 +104,6 @@ const signalsNeedTerm = (f: PeopleForm) =>
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
 const EMPTY_PEOPLE_FORM: PeopleForm = { company: null, titles: [], seniorities: [], country: '', keyword: '', industries: [], companySizes: [], includeContacts: false, signals: [], relatedRoles: true, count: PAGE_SIZES[0] }
-const KNOWN_INDUSTRIES = new Set<string>(INDUSTRIES)
 
 /** A size with no company chosen is searched companies first, which needs an industry or keyword to find them by. */
 const sizeNeedsTerm = (f: PeopleForm) => !f.company && f.companySizes.length > 0 && f.industries.length === 0 && !f.keyword.trim() && !f.signals.includes('warm')
@@ -131,6 +125,8 @@ interface StoredState {
   peopleForm: PeopleForm
   companySearch: CompanyForm | null
   peopleSearch: PeopleSearch | null
+  /** The persona last applied: people saved while it is are marked as found with it. */
+  personaId?: string | null
 }
 
 /** A people search as run: the form, and whether to start at the top rather than carry on. */
@@ -147,8 +143,7 @@ function loadStoredState(): Partial<StoredState> | null {
   }
 }
 
-const inputClass =
-  'w-full px-2 py-1.5 text-xs bg-background border border-border rounded focus:ring-1 focus:ring-accent focus:border-transparent outline-none'
+const inputClass = FILTER_INPUT_CLASS
 
 // Every search page costs SocialFetch credits, so results are never refetched
 // behind the user's back — only an explicit Search or Load more spends.
@@ -159,12 +154,6 @@ const NO_REVEALS: Map<string, RevealState> = new Map()
 /** How many times a Reveal held back by verification pacing is tried again (20 seconds apart) before giving up. */
 const MAX_REVEAL_WAITS = 6
 
-/** "Founders and owners": what the person running a small company calls themselves. */
-const FOUNDER_TITLES = ['Founder', 'Owner', 'CEO', 'Managing Director', 'President']
-/** A department's leaders: the search finds its Heads of, VPs and Directors, however they word it. */
-const LEADER_TITLES = ['Sales', 'Marketing', 'Operations', 'Finance', 'Engineering'].map((department) => `${department} leaders`)
-const MAX_TITLES = 5
-
 export function ProspectSearch() {
   const queryClient = useQueryClient()
   const [mode, setMode] = useState<Mode>('people')
@@ -173,6 +162,7 @@ export function ProspectSearch() {
   const [signalsFirst, setSignalsFirst] = useState(false)
   const [companySearch, setCompanySearch] = useState<CompanyForm | null>(null)
   const [peopleSearch, setPeopleSearch] = useState<PeopleSearch | null>(null)
+  const [personaId, setPersonaId] = useState<string | null>(null)
   const [restored, setRestored] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Map<string, PersonResult>>(new Map())
@@ -190,6 +180,7 @@ export function ProspectSearch() {
       if (stored.companyForm) setCompanyForm({ ...EMPTY_COMPANY_FORM, ...stored.companyForm })
       // Page sizes go up in 25s; one saved from before is rounded up.
       if (stored.peopleForm) setPeopleForm({ ...EMPTY_PEOPLE_FORM, ...stored.peopleForm, count: pageSizeFor(stored.peopleForm.count) })
+      if (stored.personaId) setPersonaId(stored.personaId)
       // Bring back results while they're cached, or still coming: a search
       // keeps running when the user moves to another page, and lands here.
       // After a full reload that would mean re-running a paid search unasked,
@@ -211,12 +202,12 @@ export function ProspectSearch() {
   useEffect(() => {
     if (!restored) return
     try {
-      const state: StoredState = { mode, companyForm, peopleForm, companySearch, peopleSearch }
+      const state: StoredState = { mode, companyForm, peopleForm, companySearch, peopleSearch, personaId }
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
     } catch {
       // storage unavailable; state just won't survive navigation
     }
-  }, [restored, mode, companyForm, peopleForm, companySearch, peopleSearch])
+  }, [restored, mode, companyForm, peopleForm, companySearch, peopleSearch, personaId])
 
   const companies = useInfiniteQuery({
     queryKey: queryKeys.prospects.companies(companySearch),
@@ -281,18 +272,21 @@ export function ProspectSearch() {
     queryFn: () => getPersonasFn(),
   })
 
+  // A persona is a set of these filters: applying one starts the form again
+  // from it, so nothing from the last search (a company, signals) stays.
   const applyPersona = (persona: Persona) => {
-    // Persona locations look like "London, United Kingdom"; only the country
-    // can be filtered on.
-    const country = persona.criteria.location?.[0]?.split(',').pop()?.trim() ?? ''
     setPeopleForm((f) => ({
-      ...f,
-      titles: persona.criteria.title ?? [],
-      seniorities: (persona.criteria.seniority ?? []).map(parseSeniorityLabel).filter((s): s is Seniority => s !== null),
-      country: country || f.country,
+      ...EMPTY_PEOPLE_FORM,
+      count: f.count,
+      includeContacts: f.includeContacts,
+      relatedRoles: f.relatedRoles,
+      ...normalizePersonaCriteria(persona.criteria),
     }))
+    setPersonaId(persona.id)
     setMode('people')
   }
+  // One deleted since it was applied is no longer anyone's.
+  const appliedPersona = (personas as Persona[]).find((p) => p.id === personaId) ?? null
 
   // Persona handed off from the Personas page ("Use in Prospect Search").
   useEffect(() => {
@@ -365,7 +359,10 @@ export function ProspectSearch() {
   const handleClear = () => {
     setFormError(null)
     if (mode === 'companies') setCompanyForm(EMPTY_COMPANY_FORM)
-    else setPeopleForm(EMPTY_PEOPLE_FORM)
+    else {
+      setPeopleForm(EMPTY_PEOPLE_FORM)
+      setPersonaId(null)
+    }
   }
 
   const findPeople = (c: Pick<CompanyResult, 'ref' | 'name' | 'domain' | 'catchAll'>) => {
@@ -614,6 +611,42 @@ export function ProspectSearch() {
 
   const peopleFilters = (
     <div className="flex flex-col gap-3 py-2">
+      {(personas as Persona[]).length > 0 && (
+        <div>
+          <label htmlFor="apply-persona" className="block text-[11px] font-semibold text-foreground mb-1">
+            Persona
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Select
+              id="apply-persona"
+              className={inputClass}
+              value={appliedPersona?.id ?? ''}
+              onChange={(e) => {
+                const persona = (personas as Persona[]).find((p) => p.id === e.target.value)
+                if (persona) applyPersona(persona)
+                else setPersonaId(null)
+              }}
+            >
+              <option value="">{appliedPersona ? 'None' : 'Choose a persona…'}</option>
+              {(personas as Persona[]).map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </Select>
+            {appliedPersona && (
+              <button type="button" aria-label="Stop using this persona" onClick={() => setPersonaId(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+            {appliedPersona
+              ? 'People you save are marked as found with this persona. Changing the filters below keeps it.'
+              : 'Replaces the filters below with the persona\'s.'}
+          </p>
+        </div>
+      )}
       <div>
         <label className="block text-[11px] font-semibold text-foreground mb-1">Company</label>
         {peopleForm.company ? (
@@ -653,125 +686,39 @@ export function ProspectSearch() {
         )}
       </div>
 
-      <FilterAccordion label="Job titles" icon={<Briefcase className="w-4 h-4" />} isOpen={!!expanded.titles} onToggle={() => toggleSection('titles')} badgeCount={peopleForm.titles.length}>
-        <TagInput label="Job titles" tags={peopleForm.titles} placeholder="e.g. Head of Marketing" onChange={(titles) => setPeopleForm({ ...peopleForm, titles })} suggestions={JOB_TITLES} />
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">{hosted ? 'Up to 5.' : 'Up to 5. Each title is a separate search (3 credits per page).'}</p>
-        <div className="mt-2">
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-            {FOUNDER_TITLES.some((t) => !peopleForm.titles.includes(t)) && (
-              <button
-                type="button"
-                onClick={() => setPeopleForm({ ...peopleForm, titles: FOUNDER_TITLES })}
-                className="text-[11px] font-semibold text-accent hover:underline"
-              >
-                Founders and owners
-              </button>
-            )}
-            {peopleForm.titles.includes('Founder') && !peopleForm.titles.includes('CEO') && (
-              <button
-                type="button"
-                disabled={peopleForm.titles.length >= MAX_TITLES}
-                onClick={() => setPeopleForm({ ...peopleForm, titles: [...peopleForm.titles, 'CEO'] })}
-                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-              >
-                Add CEO
-              </button>
-            )}
-            {LEADER_TITLES.filter((t) => !peopleForm.titles.includes(t)).map((t) => (
-              <button
-                key={t}
-                type="button"
-                disabled={peopleForm.titles.length >= MAX_TITLES}
-                onClick={() => setPeopleForm({ ...peopleForm, titles: [...peopleForm.titles, t] })}
-                className="text-[11px] font-semibold text-accent hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed"
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">
-            Founders and owners searches Founder, Owner, CEO, Managing Director and President
-            {peopleForm.titles.length ? ', in place of the titles above' : ''}. A department's leaders finds its Heads, VPs and Directors however
-            they word it, as does a title like "Head of Sales".
-          </p>
-        </div>
-        <label className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
-          <input
-            type="checkbox"
-            className="rounded border-border text-accent focus:ring-accent mt-0.5"
-            checked={peopleForm.relatedRoles}
-            onChange={(e) => setPeopleForm({ ...peopleForm, relatedRoles: e.target.checked })}
-          />
-          <span>
-            Fill with related roles when few match
-            <span className="block text-[10px] text-muted-foreground leading-snug">
-              Someone else in the same department, such as a Sales Executive for Sales Manager, after everyone with your titles and marked "Related role".
+      <TitlesField
+        value={peopleForm.titles}
+        onChange={(titles) => setPeopleForm({ ...peopleForm, titles })}
+        hosted={hosted}
+        isOpen={!!expanded.titles}
+        onToggle={() => toggleSection('titles')}
+        extra={
+          <label className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
+            <input
+              type="checkbox"
+              className="rounded border-border text-accent focus:ring-accent mt-0.5"
+              checked={peopleForm.relatedRoles}
+              onChange={(e) => setPeopleForm({ ...peopleForm, relatedRoles: e.target.checked })}
+            />
+            <span>
+              Fill with related roles when few match
+              <span className="block text-[10px] text-muted-foreground leading-snug">
+                Someone else in the same department, such as a Sales Executive for Sales Manager, after everyone with your titles and marked "Related role".
+              </span>
             </span>
-          </span>
-        </label>
-      </FilterAccordion>
-
-      <FilterAccordion label="Seniority" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} badgeCount={peopleForm.seniorities.length}>
-        <div className="grid grid-cols-2 gap-1">
-          {SENIORITY_LEVELS.map((s) => (
-            <label key={s} className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-border text-accent focus:ring-accent"
-                checked={peopleForm.seniorities.includes(s)}
-                onChange={(e) =>
-                  setPeopleForm({
-                    ...peopleForm,
-                    seniorities: e.target.checked ? [...peopleForm.seniorities, s] : peopleForm.seniorities.filter((x) => x !== s),
-                  })
-                }
-              />
-              {SENIORITY_LABEL[s]}
-            </label>
-          ))}
-        </div>
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Worked out from each person's title.</p>
-      </FilterAccordion>
-
-      <FilterAccordion label="Industry" icon={<Factory className="w-4 h-4" />} isOpen={!!expanded.peopleIndustry} onToggle={() => toggleSection('peopleIndustry')} badgeCount={peopleForm.industries.length}>
-        <TagInput
-          label="Industries"
-          tags={peopleForm.industries}
-          placeholder="e.g. Software Development"
-          suggestions={INDUSTRIES}
-          onChange={(industries) => setPeopleForm({ ...peopleForm, industries: industries.filter((i) => KNOWN_INDUSTRIES.has(i)) })}
-        />
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Pick from the list. The industry of the company they work at.</p>
-      </FilterAccordion>
-
-      <FilterAccordion label="Company size" icon={<Users2 className="w-4 h-4" />} isOpen={!!expanded.peopleSize} onToggle={() => toggleSection('peopleSize')} badgeCount={peopleForm.companySizes.length}>
-        <div className="grid grid-cols-2 gap-1">
-          {HEADCOUNT_BUCKETS.map((b) => (
-            <label key={b} className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                className="rounded border-border text-accent focus:ring-accent"
-                checked={peopleForm.companySizes.includes(b)}
-                disabled={Boolean(peopleForm.company)}
-                onChange={(e) =>
-                  setPeopleForm({
-                    ...peopleForm,
-                    companySizes: e.target.checked ? [...peopleForm.companySizes, b] : peopleForm.companySizes.filter((x) => x !== b),
-                  })
-                }
-              />
-              {b}
-            </label>
-          ))}
-        </div>
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-          {peopleForm.company
-            ? 'Not used while a company is chosen.'
-            : sizeNeedsTerm(peopleForm)
-              ? 'Add an industry or keyword too: companies of this size are found first, then the people who work there.'
-              : 'Companies of this size are found first, then the people who work there, so no credits go on people at other sizes.'}
-        </p>
-      </FilterAccordion>
+          </label>
+        }
+      />
+      <SeniorityField value={peopleForm.seniorities} onChange={(seniorities) => setPeopleForm({ ...peopleForm, seniorities })} isOpen={!!expanded.seniority} onToggle={() => toggleSection('seniority')} />
+      <IndustryField value={peopleForm.industries} onChange={(industries) => setPeopleForm({ ...peopleForm, industries })} isOpen={!!expanded.peopleIndustry} onToggle={() => toggleSection('peopleIndustry')} />
+      <CompanySizeField
+        value={peopleForm.companySizes}
+        onChange={(companySizes) => setPeopleForm({ ...peopleForm, companySizes })}
+        companyChosen={Boolean(peopleForm.company)}
+        needsTerm={sizeNeedsTerm(peopleForm)}
+        isOpen={!!expanded.peopleSize}
+        onToggle={() => toggleSection('peopleSize')}
+      />
 
       <FilterAccordion label="Signals" icon={<Flame className="w-4 h-4" />} isOpen={!!expanded.signals} onToggle={() => toggleSection('signals')} badgeCount={peopleForm.signals.length}>
         <div className="space-y-2">
@@ -805,25 +752,8 @@ export function ProspectSearch() {
         </p>
       </FilterAccordion>
 
-      <FilterAccordion label="Country" icon={<Globe className="w-4 h-4" />} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} badgeCount={peopleForm.country ? 1 : 0}>
-        <TagInput
-          label="Country"
-          max={1}
-          tags={peopleForm.country ? [peopleForm.country] : []}
-          placeholder="e.g. United Kingdom"
-          suggestions={SUPPORTED_COUNTRIES}
-          onChange={(t) => setPeopleForm({ ...peopleForm, country: t[0] ?? '' })}
-        />
-        <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-          {hosted
-            ? 'Pick a country from the list for the fullest results.'
-            : 'Countries in the list are filtered by SocialFetch. Others are filtered after each page, so pages can be thin.'}
-        </p>
-      </FilterAccordion>
-
-      <FilterAccordion label="Keyword" icon={<Search className="w-4 h-4" />} isOpen={!!expanded.keyword} onToggle={() => toggleSection('keyword')} badgeCount={peopleForm.keyword ? 1 : 0}>
-        <input className={inputClass} value={peopleForm.keyword} placeholder="e.g. fintech" onChange={(e) => setPeopleForm({ ...peopleForm, keyword: e.target.value })} />
-      </FilterAccordion>
+      <CountryField value={peopleForm.country} onChange={(country) => setPeopleForm({ ...peopleForm, country })} hosted={hosted} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} />
+      <KeywordField value={peopleForm.keyword} onChange={(keyword) => setPeopleForm({ ...peopleForm, keyword })} isOpen={!!expanded.keyword} onToggle={() => toggleSection('keyword')} />
 
       <div className="flex items-start justify-between gap-3 py-3.5">
         <div className="min-w-0">
@@ -855,22 +785,6 @@ export function ProspectSearch() {
         </button>
       </div>
 
-      {(personas as Persona[]).length > 0 && (
-        <FilterAccordion label="Apply persona" icon={<UserCheck className="w-4 h-4" />} isOpen={!!expanded.personas} onToggle={() => toggleSection('personas')}>
-          <Select
-            className={inputClass}
-            value=""
-            onChange={(e) => {
-              const persona = (personas as Persona[]).find((p) => p.id === e.target.value)
-              if (persona) applyPersona(persona)
-            }}
-          >
-            <option value="">Choose a persona…</option>
-            {(personas as Persona[]).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">Fills titles, seniority and country.</p>
-        </FilterAccordion>
-      )}
     </div>
   )
 
@@ -1134,6 +1048,7 @@ export function ProspectSearch() {
       <SaveProspectsDialog
         isOpen={isSaveOpen}
         people={peopleToSave}
+        persona={appliedPersona}
         onClose={(saved) => {
           setIsSaveOpen(false)
           if (saved) setSelected(new Map())

@@ -199,6 +199,14 @@ describe('saveProspects', () => {
     expect(state.contacts[1]).toMatchObject({ linkedin_url: 'https://www.linkedin.com/in/bob-the-first', country: 'Ireland' })
   })
 
+  it('marks the contacts it creates with the persona applied, and nobody already saved', async () => {
+    const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe', 'bob.jones@acme.com': 'safe' }), db: fakeDb as any }
+    await saveProspects(1, [person('Jane', 'Smith')], deps)
+    await saveProspects(1, [person('Jane', 'Smith'), person('Bob', 'Jones')], { ...deps, personaId: 'p1' })
+    expect('persona_id' in state.contacts[0]).toBe(false)
+    expect(state.contacts[1]).toMatchObject({ email: 'bob.jones@acme.com', persona_id: 'p1' })
+  })
+
   it('passes each newly saved contact on for the shared database, and nobody already saved', async () => {
     const contributed: unknown[] = []
     const deps = { source, finder: finder({ 'jane.smith@acme.com': 'safe' }), db: fakeDb as any, contribute: (...args: unknown[]) => void contributed.push(args) }

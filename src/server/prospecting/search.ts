@@ -2484,9 +2484,11 @@ function searchPositionKey(input: PeopleFilters & { company?: { ref: string; nam
   return createHash('sha256').update(key).digest('base64url').slice(0, 32)
 }
 
-export async function startSave(listId: number, people: PersonResult[]) {
+export async function startSave(listId: number, people: PersonResult[], personaId?: string) {
   const { db } = await import('../db')
   if (!db.data.lists.some((l) => l.id === listId)) throw new Error(`List ${listId} does not exist`)
+  // One deleted since it was applied marks nobody.
+  const persona = personaId && db.getPersona(personaId) ? personaId : undefined
   const { getSource, getFinderDeps } = await import('./runtime')
   const { saveProspects } = await import('./save')
   const { allowsFormatConfirmed, isVerifiedOnly } = await import('./settings')
@@ -2501,5 +2503,6 @@ export async function startSave(listId: number, people: PersonResult[]) {
     contribute,
     sharedEmail,
     sharedFree: Boolean(sharedDatabase()?.contributing),
+    personaId: persona,
   })
 }

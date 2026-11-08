@@ -30,6 +30,8 @@ export function contactForPage(r: any) {
     country: (r.country as string | undefined) ?? '',
     source: (r.source as string | undefined) ?? '',
     emailStatus: (r.email_status as string | undefined) ?? '',
+    /** The persona applied in the search that found them. */
+    personaId: (r.persona_id as string | undefined) ?? '',
   }
 }
 
@@ -49,6 +51,7 @@ export interface FilterableContact {
   country?: string
   source?: string
   emailStatus?: string
+  personaId?: string
   /** Worked out on the server when building a list (listBuilder.ts). */
   seniority?: string
   companySize?: string
@@ -156,8 +159,11 @@ function optionsIn(contacts: FilterableContact[], value: FilterField['value'], l
 
 const KIND_OF: Record<ContactFieldDef['type'], FilterKind> = { text: 'text', number: 'number', date: 'date', boolean: 'boolean', select: 'choice', multiselect: 'choice' }
 
+/** A persona's id and name, to show which one found someone. */
+export type PersonaName = { id: string; name: string }
+
 /** Everything the page can filter on: the built-in fields, then each custom one. */
-export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableContact[]): FilterField[] {
+export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableContact[], personas: PersonaName[] = []): FilterField[] {
   const text = (key: string, label: string, value: FilterField['value']): FilterField => ({ key, label, kind: 'text', value })
   const choice = (key: string, label: string, value: FilterField['value'], labels?: Record<string, string>): FilterField => ({ key, label, kind: 'choice', value, options: optionsIn(contacts, value, labels) })
   return [
@@ -172,6 +178,7 @@ export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableC
     choice('status', 'Subscription', (c) => c.status, STATUS_LABELS),
     choice('email_status', 'Email check', (c) => c.emailStatus, EMAIL_STATUS_LABELS),
     choice('source', 'Found by', (c) => c.source, SOURCE_LABELS),
+    choice('persona', 'Persona', (c) => c.personaId, Object.fromEntries(personas.map((p) => [p.id, p.name]))),
     { key: 'created_at', label: 'Date added', kind: 'date', value: (c) => c.createdAt },
     ...fieldDefs.map((def): FilterField => ({
       key: `custom:${def.key}`,
@@ -187,8 +194,8 @@ export function filterFields(fieldDefs: ContactFieldDef[], contacts: FilterableC
  * What building a list can filter on besides the Contacts page's fields, which
  * need a pass over companies and sends the page doesn't make (listBuilder.ts).
  */
-export function listFilterFields(fieldDefs: ContactFieldDef[], contacts: FilterableContact[]): FilterField[] {
-  const all = filterFields(fieldDefs, contacts)
+export function listFilterFields(fieldDefs: ContactFieldDef[], contacts: FilterableContact[], personas: PersonaName[] = []): FilterField[] {
+  const all = filterFields(fieldDefs, contacts, personas)
   const builtIn = all.filter((f) => !f.key.startsWith('custom:'))
   const afterCompany = builtIn.findIndex((f) => f.key === 'company') + 1
   const happened = (key: 'opened' | 'clicked' | 'replied', label: string, hint: string): FilterField => ({ key, label, kind: 'activity', value: () => undefined, activity: (c) => c[key], hint })

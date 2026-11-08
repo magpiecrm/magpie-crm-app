@@ -7,7 +7,8 @@ import {
   listsFn, 
   listContactsFn,
   createContactFn,
-  deleteContactsFn
+  deleteContactsFn,
+  getPersonasFn
 } from '../../../server/functions'
 import { 
   Search, 
@@ -35,21 +36,24 @@ import { Select } from '../../../components/ui/Select'
 import { EnrollDialog } from '../../../features/sequences/components/EnrollDialog'
 
 export const Route = createFileRoute('/marketing/contacts/')({
-  // ?contact=<email> opens that contact (links from tasks and their reminders).
-  validateSearch: (search: Record<string, unknown>): { contact?: string } =>
-    typeof search.contact === 'string' && search.contact ? { contact: search.contact } : {},
+  // ?contact=<email> opens that contact (links from tasks and their reminders);
+  // ?persona=<id> shows the people found with that persona (the Personas page).
+  validateSearch: (search: Record<string, unknown>): { contact?: string; persona?: string } => ({
+    ...(typeof search.contact === 'string' && search.contact ? { contact: search.contact } : {}),
+    ...(typeof search.persona === 'string' && search.persona ? { persona: search.persona } : {}),
+  }),
   component: ContactsPage,
 })
 
 function ContactsPage() {
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
-  const { contact: linkedContact } = Route.useSearch()
+  const { contact: linkedContact, persona: linkedPersona } = Route.useSearch()
   const [selectedContactEmail, setSelectedContactEmail] = useState<string | null>(linkedContact ?? null)
   const [selectedListId, setSelectedListId] = useState<number | null>(null)
   const [enrolling, setEnrolling] = useState(false)
   const [showListDropdown, setShowListDropdown] = useState(false)
-  const [filters, setFilters] = useState<ContactFilter[]>([])
+  const [filters, setFilters] = useState<ContactFilter[]>(() => (linkedPersona ? [{ id: 'persona:linked', field: 'persona', op: 'is', value: linkedPersona }] : []))
   const [showAddFilter, setShowAddFilter] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
@@ -122,6 +126,7 @@ function ContactsPage() {
   })
 
   const { fields: contactFields, columns } = useContactColumns('contacts')
+  const { data: personas = [] } = useQuery({ queryKey: queryKeys.prospects.personas(), queryFn: () => getPersonasFn() })
 
   // Fetch all contacts
   const { data: allContactsData, isLoading: isLoadingAllContacts } = useQuery({
@@ -147,7 +152,7 @@ function ContactsPage() {
   const isLoading = selectedListId !== null ? isLoadingListContacts : isLoadingAllContacts
 
   // What can be filtered on: the built-in fields, with the values each has among these contacts, and the custom ones.
-  const fields = useMemo(() => filterFields(contactFields, rawContacts), [contactFields, rawContacts])
+  const fields = useMemo(() => filterFields(contactFields, rawContacts, personas), [contactFields, rawContacts, personas])
   const activeFilters = useMemo(() => filters.filter((f) => isComplete(f, fields.find((x) => x.key === f.field))), [filters, fields])
 
   // Worked out once, on the first search, rather than on every letter typed.

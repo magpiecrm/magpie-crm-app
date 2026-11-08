@@ -1,4 +1,5 @@
-import { Briefcase, Factory, MapPin, Users2, Sparkles, Layers, Ban } from 'lucide-react'
+import { Briefcase, Factory, MapPin, Users2, Sparkles, Layers } from 'lucide-react'
+import { SENIORITY_LABEL } from '../../../server/prospecting/types'
 import type { PersonaCriteria } from '../types'
 
 interface PersonaMindMapProps {
@@ -41,27 +42,19 @@ function curvedPath(from: { x: number; y: number }, to: { x: number; y: number }
 }
 
 export function PersonaMindMap({ name, criteria }: PersonaMindMapProps) {
-  const allBranches: Branch[] = [
-    { key: 'title', label: 'Job Titles', icon: <Briefcase className="w-3.5 h-3.5" />, leaves: criteria.title, hue: 'var(--accent)' },
-    { key: 'seniority', label: 'Seniority', icon: <Layers className="w-3.5 h-3.5" />, leaves: criteria.seniority, hue: 'var(--accent)' },
-    { key: 'industry', label: 'Industries', icon: <Factory className="w-3.5 h-3.5" />, leaves: criteria.industry, hue: 'var(--accent)' },
-    { key: 'keywords', label: 'Keywords', icon: <Sparkles className="w-3.5 h-3.5" />, leaves: criteria.keywords, hue: 'var(--accent)' },
-    { key: 'location', label: 'Location', icon: <MapPin className="w-3.5 h-3.5" />, leaves: criteria.location, hue: 'var(--accent)' },
-    { key: 'employeeCount', label: '# Employees', icon: <Users2 className="w-3.5 h-3.5" />, leaves: criteria.employeeCount ? [criteria.employeeCount] : [], hue: 'var(--accent)' },
-    { key: 'excludedTitles', label: 'Excluded', icon: <Ban className="w-3.5 h-3.5" />, leaves: criteria.excludedTitles, hue: 'var(--destructive)' },
+  const branches: Branch[] = [
+    { key: 'titles', label: 'Job titles', icon: <Briefcase className="w-3.5 h-3.5" />, leaves: criteria.titles, hue: 'var(--accent)' },
+    { key: 'seniorities', label: 'Seniority', icon: <Layers className="w-3.5 h-3.5" />, leaves: criteria.seniorities.map((s) => SENIORITY_LABEL[s]), hue: 'var(--accent)' },
+    { key: 'industries', label: 'Industries', icon: <Factory className="w-3.5 h-3.5" />, leaves: criteria.industries, hue: 'var(--accent)' },
+    { key: 'companySizes', label: 'Company size', icon: <Users2 className="w-3.5 h-3.5" />, leaves: criteria.companySizes, hue: 'var(--accent)' },
+    { key: 'country', label: 'Country', icon: <MapPin className="w-3.5 h-3.5" />, leaves: criteria.country ? [criteria.country] : [], hue: 'var(--accent)' },
+    { key: 'keyword', label: 'Keyword', icon: <Sparkles className="w-3.5 h-3.5" />, leaves: criteria.keyword ? [criteria.keyword] : [], hue: 'var(--accent)' },
   ]
-
-  // Empty branches beyond the original five stay hidden so a fresh persona
-  // isn't cluttered; populated ones always show.
-  const CORE_KEYS = ['title', 'industry', 'keywords', 'location', 'employeeCount']
-  const branches = allBranches
-    .filter(b => b.leaves.length > 0 || CORE_KEYS.includes(b.key))
-    .slice(0, 8)
 
   // Evenly spaced around the circle, starting at the top, going clockwise.
   const angles = branches.map((_, i) => ((-90 + (360 / branches.length) * i) * Math.PI) / 180)
 
-  const centerLabel = name.trim() || 'Untitled Persona'
+  const centerLabel = name.trim() || 'Untitled persona'
 
   return (
     <div className="w-full flex justify-center">
@@ -96,9 +89,7 @@ export function PersonaMindMap({ name, criteria }: PersonaMindMapProps) {
                 <div
                   className={`h-full flex items-center justify-center gap-1.5 rounded-full border px-3 text-xs font-medium ${
                     hasLeaves
-                      ? branch.key === 'excludedTitles'
-                        ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                        : 'border-accent/40 bg-accent/10 text-accent'
+                      ? 'border-accent/40 bg-accent/10 text-accent'
                       : 'border-border bg-card text-muted-foreground border-dashed'
                   }`}
                 >

@@ -53,6 +53,7 @@ function EditPersonaPage() {
       initial={persona}
       onSave={data => updateMutation.mutate(data)}
       isSaving={updateMutation.isPending}
+      error={updateMutation.error ? updateMutation.error.message : null}
     />
   )
 }

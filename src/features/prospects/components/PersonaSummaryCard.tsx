@@ -9,13 +9,12 @@ interface PersonaSummaryCardProps {
 export function PersonaSummaryCard({ persona }: PersonaSummaryCardProps) {
   const c = persona.criteria
   const groups: Array<{ label: string; count: number }> = [
-    { label: 'titles', count: c.title.length },
-    { label: 'seniorities', count: c.seniority.length },
-    { label: 'industries', count: c.industry.length },
-    { label: 'locations', count: c.location.length },
-    { label: 'keywords', count: c.keywords.length },
-    { label: 'exclusions', count: c.excludedTitles.length },
-    { label: 'size range', count: c.employeeCount.trim() ? 1 : 0 },
+    { label: c.titles.length === 1 ? 'title' : 'titles', count: c.titles.length },
+    { label: c.seniorities.length === 1 ? 'seniority' : 'seniorities', count: c.seniorities.length },
+    { label: c.industries.length === 1 ? 'industry' : 'industries', count: c.industries.length },
+    { label: c.companySizes.length === 1 ? 'size' : 'sizes', count: c.companySizes.length },
+    { label: 'country', count: c.country ? 1 : 0 },
+    { label: 'keyword', count: c.keyword.trim() ? 1 : 0 },
   ].filter(g => g.count > 0)
 
   const summary = groups.length > 0
@@ -27,7 +26,7 @@ export function PersonaSummaryCard({ persona }: PersonaSummaryCardProps) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-foreground truncate">
-            {persona.name.trim() || 'Untitled Persona'}
+            {persona.name.trim() || 'Untitled persona'}
           </h3>
           {persona.description.trim() && (
             <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{persona.description}</p>

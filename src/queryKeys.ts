@@ -18,6 +18,8 @@ export const queryKeys = {
     job: (id: string) => ['prospects', 'job', id] as const,
     personas: () => ['prospects', 'personas'] as const,
     persona: (id: string) => ['prospects', 'personas', id] as const,
+    personaStats: () => ['prospects', 'personas', 'stats'] as const,
+    personaDraftStatus: () => ['prospects', 'personaDraftStatus'] as const,
   },
   email: {
     lists: () => ['email', 'lists'] as const,

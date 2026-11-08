@@ -171,6 +171,8 @@ export const revealEmailFn = createServerFn({ method: 'POST' })
 const saveInput = z.object({
   listId: z.number().int().positive(),
   people: z.array(personInput).min(1).max(500),
+  /** The persona applied in the search, if any. */
+  personaId: z.string().min(1).max(64).optional(),
 })
 
 export const saveProspectsFn = createServerFn({ method: 'POST' })
@@ -179,7 +181,7 @@ export const saveProspectsFn = createServerFn({ method: 'POST' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { startSave } = await import('../prospecting/search')
-    return startSave(data.listId, data.people)
+    return startSave(data.listId, data.people, data.personaId)
   })
 
 export const prospectJobFn = createServerFn({ method: 'GET' })

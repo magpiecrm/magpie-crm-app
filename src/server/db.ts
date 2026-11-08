@@ -115,6 +115,8 @@ export interface DbSchema {
     signed_up_at?: string
     /** The company they work at (sales/companies.ts links them by email domain or name). */
     company_id?: string | null
+    /** The persona applied in the prospect search that found them (prospecting/save.ts). Never sent to the host. */
+    persona_id?: string
   }>
   list_contacts: Array<{ list_id: number; contact_email: string }>
   senders: Array<{ id: number; name: string; email: string }>
@@ -682,6 +684,8 @@ class JsonDb {
     }
     // A draft for every email, not just the first (sequences/personalise.ts).
     moveFirstEmailDrafts(loaded.sequences ?? [], loaded.sequence_enrollments ?? [])
+    // Personas' criteria as search's own filters (features/prospects/types.ts).
+    for (const p of loaded.personas) p.criteria = normalizePersonaCriteria(p.criteria)
 
     return loaded
   }
@@ -1138,7 +1142,7 @@ class JsonDb {
   }
 
   /** Patches the prospecting fields on an existing contact without touching its status. */
-  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status' | 'linkedin_url' | 'country' | 'search_hash'>>) {
+  setContactProspectFields(email: string, patch: Partial<Pick<ContactRecord, 'source' | 'email_status' | 'notice_status' | 'linkedin_url' | 'country' | 'search_hash' | 'persona_id'>>) {
     const contact = this.getContact(email)
     if (!contact) return null
     Object.assign(contact, patch)
@@ -1862,16 +1866,19 @@ class JsonDb {
     painPoints: string
     valueProp: string
   }>) {
-    if (!this.data.personas) return
+    if (!this.data.personas) return false
     const idx = this.data.personas.findIndex(p => p.id === id)
-    if (idx < 0) return
+    if (idx < 0) return false
     this.data.personas[idx] = { ...this.data.personas[idx], ...data, updated_at: new Date().toISOString() }
     this.save()
+    return true
   }
 
   deletePersona(id: string) {
     if (!this.data.personas) return
     this.data.personas = this.data.personas.filter(p => p.id !== id)
+    // The contacts found with it stay, without it.
+    for (const c of this.data.contacts) if (c.persona_id === id) delete c.persona_id
     this.save()
   }
 

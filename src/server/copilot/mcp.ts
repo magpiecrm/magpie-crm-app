@@ -58,9 +58,13 @@ async function awaitApproval(sessionId: string, tool: CopilotTool<any>, args: un
 /** Mirror a client-targeted mutation onto the server's copy of browser state. */
 function applyToClientState(session: CopilotSessionState, action: ClientAction) {
   if (action.action === 'updatePersona') {
+    const persona = session.clientState.persona ?? {}
+    const args = action.args as Record<string, unknown>
+    // Criteria merge key by key, as the form does (PersonaForm applyPersonaUpdates).
     session.clientState.persona = {
-      ...(session.clientState.persona ?? {}),
-      ...(action.args as Record<string, unknown>),
+      ...persona,
+      ...args,
+      ...(args.criteria ? { criteria: { ...(persona.criteria as Record<string, unknown> | undefined), ...(args.criteria as Record<string, unknown>) } } : {}),
     }
     return
   }

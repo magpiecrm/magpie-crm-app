@@ -39,8 +39,8 @@ describe('usage counts', () => {
     expect(sep).toMatchObject({ month: '2026-09', searches: 0, prospects: 1, emailLookups: 3, emailsFound: 1, contactsSaved: 0, emailsSent: 250 })
     // One counter per lookup outcome, every one filled in.
     expect(sep).toMatchObject({ lookupVerified: 1, lookupCatchAll: 2, lookupRejected: 0, lookupNoDomain: 0, lookupLimit: 0 })
-    expect(Object.keys(sep)).toHaveLength(1 + 7 + 2 + 20 + 5 + 1 + 3 + 2 + LOOKUP_OUTCOMES.length) // month, 7 counts, 2 shared-database counts, 20 search-yield counts, 5 limit counts, signal searches, 3 personalised-email counts, 2 copilot AI counts, outcomes
-    expect(sep).toMatchObject({ signalSearches: 0, researchCalls: 0, personalDrafts: 0, personalFallbacks: 0, aiRequests: 0, aiCharge: 0 })
+    expect(Object.keys(sep)).toHaveLength(1 + 7 + 2 + 20 + 5 + 1 + 3 + 1 + 2 + LOOKUP_OUTCOMES.length) // month, 7 counts, 2 shared-database counts, 20 search-yield counts, 5 limit counts, signal searches, 3 personalised-email counts, persona drafts, 2 copilot AI counts, outcomes
+    expect(sep).toMatchObject({ signalSearches: 0, researchCalls: 0, personalDrafts: 0, personalFallbacks: 0, personaDrafts: 0, aiRequests: 0, aiCharge: 0 })
     expect(usageForMonth('2025-01')).toMatchObject({ prospects: 0, emailsSent: 0 })
   })
 

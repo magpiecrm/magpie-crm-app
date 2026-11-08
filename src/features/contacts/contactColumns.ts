@@ -17,6 +17,7 @@ export const BUILTIN_COLUMNS: Array<{ id: string; label: string }> = [
   { id: 'company', label: 'Company' },
   { id: 'job_title', label: 'Job title' },
   { id: 'country', label: 'Country' },
+  { id: 'persona', label: 'Persona' },
   { id: 'created_at', label: 'Date added' },
 ]
 
