@@ -20,6 +20,7 @@ function criteriaSummary(criteria: PersonaCriteria) {
   if (criteria.industries.length) parts.push(`${criteria.industries.length} industr${criteria.industries.length !== 1 ? 'ies' : 'y'}`)
   if (criteria.companySizes.length) parts.push(`${criteria.companySizes.join(', ')} staff`)
   if (criteria.country) parts.push(criteria.country)
+  if (criteria.keyword) parts.push(`"${criteria.keyword}"`)
   return parts.length ? parts.join(' · ') : 'No criteria set'
 }
 

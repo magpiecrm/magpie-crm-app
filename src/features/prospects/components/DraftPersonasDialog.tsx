@@ -113,7 +113,7 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
           <Button onClick={() => draft.mutate()} isLoading={draft.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
             {drafts.length ? 'Draft again' : 'Draft personas'}
           </Button>
-          {draft.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes a minute or so.</span>}
+          {draft.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes two or three minutes.</span>}
         </div>
         {draft.isError && <Notice level="error">{(draft.error as Error).message}</Notice>}
 
