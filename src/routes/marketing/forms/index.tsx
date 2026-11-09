@@ -1,673 +1,216 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { queryKeys } from '../../../queryKeys'
-import { Plus, FileText, Trash2, Code2, Pencil, Check, Copy, Mail, Clock, Users, List as ListIcon, ArrowLeft } from 'lucide-react'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { getFormsFn, createFormFn, updateFormFn, deleteFormFn, getSendersFn } from '../../../server/functions'
-import { listsFn, createListFn } from '../../../server/functions'
-import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { ChevronRight, Copy, FileText, Pause, Pencil, Play, Plus, Search, Share2, Trash2 } from 'lucide-react'
+import { queryKeys } from '../../../queryKeys'
+import { deleteFormFn, duplicateFormFn, getContactFieldsFn, getFormsFn, listsFn, setFormPausedFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { Badge } from '../../../components/ui/Badge'
-import { Select } from '../../../components/ui/Select'
+import { INPUT_CLASS } from '../../../components/ui/Field'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
 import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
+import { ShareDialog } from '../../../features/forms/components/ShareDialog'
+import { FormStatus } from '../../../features/forms/components/FormStatus'
+import { FORM_TEMPLATES } from '../../../features/forms/templates'
+import { publicForm, type FormRecord } from '../../../features/forms/model'
+import { ago } from '../../../features/forms/format'
 
 export const Route = createFileRoute('/marketing/forms/')({
   component: FormsPage,
 })
 
-type Form = {
-  id: string
-  name: string
-  fields: string[]
-  list_id: number
-  save_to_list_enabled: boolean
-  save_to_list_fields: string[]
-  welcome_email_enabled: boolean
-  welcome_email_subject: string
-  welcome_email_body: string
-  welcome_email_delay_minutes: number
-  sender_id: number | null
-  created_at: string
-  submission_count: number
-}
+type FormRow = Awaited<ReturnType<typeof getFormsFn>>[number]
 
-const AVAILABLE_FIELDS = ['first_name', 'last_name', 'email', 'company', 'message']
-const FIELD_LABELS: Record<string, string> = {
-  first_name: 'First Name',
-  last_name: 'Last Name',
-  email: 'Email',
-  company: 'Company',
-  message: 'Message',
-}
-
-// Fields that map to an actual contact attribute — email is always the
-// join key and message has no contact column, so neither is selectable.
-const SAVEABLE_CONTACT_FIELDS = ['first_name', 'last_name', 'company']
-
-const DEFAULT_FORM = {
-  name: '',
-  fields: ['first_name', 'email'],
-  list_id: 1,
-  save_to_list_enabled: true,
-  save_to_list_fields: ['first_name', 'last_name', 'company'],
-  welcome_email_enabled: false,
-  welcome_email_subject: 'Thanks for getting in touch',
-  welcome_email_body: 'Hi {{first_name}},\n\nThank you for getting in touch. Someone from our team will be in touch shortly.\n\nBest,\nThe Team',
-  welcome_email_delay_minutes: 5,
-  sender_id: null as number | null,
-}
-
-function generateEmbedSnippet(form: Form, origin: string) {
-  const fieldInputs = form.fields
-    .map(f => {
-      if (f === 'email') return `  <input name="email" type="email" placeholder="Email *" required />`
-      if (f === 'message') return `  <textarea name="message" placeholder="Message" rows="4"></textarea>`
-      return `  <input name="${f}" placeholder="${FIELD_LABELS[f] || f}${f === 'first_name' ? ' *' : ''}"${f === 'first_name' ? ' required' : ''} />`
-    })
-    .join('\n')
-
-  return `<!-- Place this where you want the form -->
-<div id="em-form-${form.id}"></div>
-
-<!-- Paste this script once on your page -->
-<script>
-(function() {
-  var FORM_ID = '${form.id}';
-  var API = '${origin}';
-  var root = document.getElementById('em-form-' + FORM_ID);
-  if (!root) return;
-
-  /* Override these CSS variables to style the form */
-  var style = document.createElement('style');
-  style.textContent = [
-    '#em-form-' + FORM_ID + '{display:flex;flex-direction:column;gap:var(--em-gap,12px);width:var(--em-width,100%);font-family:var(--em-font,inherit)}',
-    '#em-form-' + FORM_ID + ' input,#em-form-' + FORM_ID + ' textarea{width:100%;box-sizing:border-box;padding:var(--em-input-p,10px 14px);border:var(--em-input-border,1px solid #d1d5db);border-radius:var(--em-radius,6px);background:var(--em-input-bg,#fff);color:var(--em-input-color,inherit);font:inherit}',
-    '#em-form-' + FORM_ID + ' button{padding:var(--em-btn-p,10px 20px);background:var(--em-btn-bg,#111827);color:var(--em-btn-color,#fff);border:none;border-radius:var(--em-radius,6px);cursor:pointer;font:inherit;font-weight:600}',
-    '#em-form-' + FORM_ID + ' button:hover{opacity:0.9}',
-  ].join('');
-  document.head.appendChild(style);
-
-  root.innerHTML = '${fieldInputs.replace(/\n/g, '\\n').replace(/'/g, "\\'")}\\n  <button type="button">Submit</button>';
-
-  root.querySelector('button').addEventListener('click', function() {
-    var inputs = root.querySelectorAll('input,textarea');
-    var data = {};
-    inputs.forEach(function(i) { data[i.name] = i.value; });
-    fetch(API + '/api/form-submit/' + FORM_ID, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }).then(function(r) {
-      if (r.ok) root.innerHTML = '<p style="margin:0">Thanks! We\\'ll be in touch shortly.</p>';
-    });
-  });
-})();
-<\/script>`
-}
-
-/**
- * Full-page form builder. Rendered in place of the forms list rather than in a
- * modal — the field/list/welcome-email sections are too tall for a dialog on a
- * phone. The caller remounts it via `key` when switching between create and
- * edit, so the initial state is picked up on mount.
- */
-function FormBuilder({
-  onClose,
-  initial,
-  onSave,
-  isSaving,
-  lists,
-  senders,
-}: {
-  onClose: () => void
-  initial: typeof DEFAULT_FORM
-  onSave: (data: typeof DEFAULT_FORM) => void
-  isSaving: boolean
-  lists: Array<{ id: number; name: string }>
-  senders: Array<{ id: number; name: string; email: string }>
-}) {
+function FormsPage() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  // Forms created before save-to-list existed won't have these fields set.
-  const normalize = (data: typeof DEFAULT_FORM) => ({
-    ...data,
-    save_to_list_enabled: data.save_to_list_enabled ?? true,
-    save_to_list_fields: data.save_to_list_fields ?? DEFAULT_FORM.save_to_list_fields,
-  })
-  const [form, setForm] = useState(() => normalize(initial))
-  const [isCreatingList, setIsCreatingList] = useState(false)
-  const [newListName, setNewListName] = useState('')
+  const [sharing, setSharing] = useState<FormRow | null>(null)
+  const [query, setQuery] = useState('')
 
-  const createListMutation = useMutation({
-    mutationFn: (name: string) => createListFn({ data: { name } }),
-    onSuccess: (newList) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
-      setForm(f => ({ ...f, list_id: newList.id }))
-      setIsCreatingList(false)
-      setNewListName('')
+  const { data: forms = [], isLoading } = useQuery({ queryKey: queryKeys.email.forms(), queryFn: () => getFormsFn() })
+  const { data: listsData } = useQuery({ queryKey: queryKeys.email.lists(), queryFn: () => listsFn() })
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
+  const lists = (listsData?.lists ?? []) as Array<{ id: number; name: string }>
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
+  const pause = useMutation({
+    mutationFn: (f: FormRow) => setFormPausedFn({ data: { id: f.id, paused: !f.paused } }),
+    onSuccess: (_, f) => {
+      invalidate()
+      toast.success(f.paused ? `“${f.name}” is taking submissions again` : `“${f.name}” is paused`)
     },
   })
-
-  const toggleField = (field: string) => {
-    if (field === 'email') return // email is always required
-    setForm(f => ({
-      ...f,
-      fields: f.fields.includes(field) ? f.fields.filter(x => x !== field) : [...f.fields, field],
-      // Dropping a field from the form also drops it from what gets saved to the list
-      save_to_list_fields: f.fields.includes(field)
-        ? f.save_to_list_fields.filter(x => x !== field)
-        : f.save_to_list_fields,
-    }))
+  const duplicate = useMutation({
+    mutationFn: (f: FormRow) => duplicateFormFn({ data: { id: f.id } }),
+    onSuccess: ({ id }) => {
+      invalidate()
+      navigate({ to: '/marketing/forms/$formId/edit', params: { formId: id } })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (f: FormRow) => deleteFormFn({ data: { id: f.id } }),
+    onSuccess: (_, f) => {
+      invalidate()
+      toast.success(`Deleted “${f.name}”`)
+    },
+  })
+  const confirmDelete = async (f: FormRow) => {
+    const n = f.submission_count
+    const ok = await confirmDialog({
+      title: `Delete “${f.name}”?`,
+      message: `It stops working wherever it's embedded${n ? `, and its ${n} submission${n === 1 ? '' : 's'} go too` : ''}. Contacts it added stay. This can't be undone.`,
+      confirmLabel: 'Delete form',
+      tone: 'danger',
+    })
+    if (ok) remove.mutate(f)
   }
 
-  const toggleSaveField = (field: string) => {
-    setForm(f => ({
-      ...f,
-      save_to_list_fields: f.save_to_list_fields.includes(field)
-        ? f.save_to_list_fields.filter(x => x !== field)
-        : [...f.save_to_list_fields, field],
-    }))
-  }
+  const listName = (f: FormRow) => (f.save_to_list_enabled === false ? null : lists.find((l) => l.id === f.list_id)?.name ?? 'a list')
+  const shown = query.trim() ? forms.filter((f) => f.name.toLowerCase().includes(query.trim().toLowerCase())) : forms
 
   return (
-    <div className="p-4 lg:p-8 max-w-2xl mx-auto flex flex-col gap-6 animate-in fade-in duration-200">
-      <button
-        onClick={onClose}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-accent transition-colors group cursor-pointer"
-      >
-        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-        Back to forms
-      </button>
-
-      <div>
-        <h1 className="text-2xl font-display text-foreground mb-2">
-          {initial.name ? 'Edit form' : 'Create a form'}
-        </h1>
-        <p className="text-muted-foreground">
-          Pick the fields to capture, choose where submissions are saved, and optionally send a welcome email.
-        </p>
+    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+        <div className="min-w-0 flex-1 basis-80">
+          <h1 className="mb-1.5 text-2xl font-display text-foreground">Forms</h1>
+          <p className="text-muted-foreground">Sign-up and contact forms for your website. Everyone who sends one can be added to a list and sent a welcome email.</p>
+        </div>
+        {forms.length > 0 && (
+          <Button leftIcon={<Plus className="h-4 w-4" />} className="max-sm:w-full" onClick={() => navigate({ to: '/marketing/forms/new' })}>
+            New form
+          </Button>
+        )}
       </div>
 
-      <div className="space-y-5">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1.5">Form Name</label>
-          <input
-            className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-            placeholder="e.g. Contact Page Form"
-            value={form.name}
-            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          />
+      {isLoading ? (
+        <div className="overflow-hidden rounded-md-m border border-border bg-card" aria-busy="true">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-b border-border/70 px-5 py-4 last:border-0">
+              <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+              <div className="ml-auto h-4 w-24 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
         </div>
-
-        <div className="border-t border-border pt-4">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <ListIcon className="w-4 h-4" /> Save Contact to a List
-            </label>
-            <button
-              type="button"
-              onClick={() => setForm(f => ({ ...f, save_to_list_enabled: !f.save_to_list_enabled }))}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                form.save_to_list_enabled ? 'bg-accent' : 'bg-border'
-              }`}
-            >
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-                form.save_to_list_enabled ? 'translate-x-4.5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </div>
-
-          {form.save_to_list_enabled && (
-            <div className="space-y-4">
-              {isCreatingList ? (
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">New list name</label>
-                  <div className="flex gap-2">
-                    <input
-                      autoFocus
-                      type="text"
-                      className="flex-1 px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                      placeholder="e.g. Newsletter Subscribers"
-                      value={newListName}
-                      onChange={e => setNewListName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && newListName.trim()) {
-                          e.preventDefault()
-                          createListMutation.mutate(newListName.trim())
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      disabled={!newListName.trim() || createListMutation.isPending}
-                      onClick={() => createListMutation.mutate(newListName.trim())}
-                      className="px-3 py-2 bg-primary text-primary-foreground rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer whitespace-nowrap"
-                    >
-                      {createListMutation.isPending ? 'Creating...' : 'Create'}
-                    </button>
-                  </div>
-                  {createListMutation.isError && (
-                    <p className="text-xs text-destructive mt-1.5">
-                      {(createListMutation.error as Error).message}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => { setIsCreatingList(false); setNewListName('') }}
-                    className="text-xs text-accent hover:underline font-medium mt-2 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs text-muted-foreground mb-1">Contact List</label>
-                  <Select
-                    className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                    value={form.list_id}
-                    onChange={e => setForm(f => ({ ...f, list_id: Number(e.target.value) }))}
-                  >
-                    <option value="">Choose a list...</option>
-                    {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </Select>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingList(true)}
-                    className="text-xs text-accent hover:underline font-medium mt-2 inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                    Create new list
-                  </button>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs text-muted-foreground mb-2">Fields to save to the contact record</label>
-                <div className="flex flex-wrap gap-2">
-                  {SAVEABLE_CONTACT_FIELDS.filter(field => form.fields.includes(field)).map(field => {
-                    const active = form.save_to_list_fields.includes(field)
-                    return (
-                      <button
-                        key={field}
-                        type="button"
-                        onClick={() => toggleSaveField(field)}
-                        className={`px-3 py-1.5 rounded-md-s text-xs font-medium border transition-colors cursor-pointer ${
-                          active
-                            ? 'bg-accent text-accent-foreground border-accent'
-                            : 'bg-background text-muted-foreground border-border hover:border-accent/50'
-                        }`}
-                      >
-                        {FIELD_LABELS[field]}
-                      </button>
-                    )
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1.5">
-                  Email is always saved as the contact&apos;s identifier.{' '}
-                  {SAVEABLE_CONTACT_FIELDS.filter(f => form.fields.includes(f)).length === 0 &&
-                    'Enable more fields above to choose what else gets saved.'}
-                </p>
-              </div>
+      ) : forms.length === 0 ? (
+        <EmptyForms />
+      ) : (
+        <>
+          {forms.length > 6 && (
+            <div className="relative mb-4 max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <input className={`${INPUT_CLASS} pl-9`} placeholder="Search forms" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search forms" />
             </div>
           )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-2">Fields</label>
-          <div className="flex flex-wrap gap-2">
-            {AVAILABLE_FIELDS.map(field => {
-              const active = form.fields.includes(field)
-              const locked = field === 'email'
-              return (
-                <button
-                  key={field}
-                  type="button"
-                  onClick={() => toggleField(field)}
-                  disabled={locked}
-                  className={`px-3 py-1.5 rounded-md-s text-xs font-medium border transition-colors ${
-                    active
-                      ? 'bg-accent text-accent-foreground border-accent'
-                      : 'bg-background text-muted-foreground border-border hover:border-accent/50'
-                  } ${locked ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  {FIELD_LABELS[field]}{locked ? ' *' : ''}
-                </button>
-              )
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1.5">Email is always included.</p>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-foreground flex items-center gap-2">
-              <Mail className="w-4 h-4" /> Welcome Email
-            </label>
-            <button
-              type="button"
-              onClick={() => setForm(f => ({ ...f, welcome_email_enabled: !f.welcome_email_enabled }))}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer ${
-                form.welcome_email_enabled ? 'bg-accent' : 'bg-border'
-              }`}
-            >
-              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-                form.welcome_email_enabled ? 'translate-x-4.5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </div>
-
-          {form.welcome_email_enabled && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <input
-                  type="number"
-                  min={1}
-                  max={1440}
-                  className="w-20 px-2 py-1.5 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={form.welcome_email_delay_minutes}
-                  onChange={e => setForm(f => ({ ...f, welcome_email_delay_minutes: Number(e.target.value) }))}
-                />
-                <span className="text-sm text-muted-foreground">minutes after submission</span>
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Send from</label>
-                <Select
-                  className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={form.sender_id ?? ''}
-                  onChange={e => setForm(f => ({ ...f, sender_id: e.target.value ? Number(e.target.value) : null }))}
-                >
-                  <option value="">— Default sender —</option>
-                  {senders.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} &lt;{s.email}&gt;</option>
-                  ))}
-                </Select>
-              </div>
-
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">Subject</label>
-                <input
-                  className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={form.welcome_email_subject}
-                  onChange={e => setForm(f => ({ ...f, welcome_email_subject: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1">
-                  Body <span className="text-accent">{'{{first_name}}'}</span> and <span className="text-accent">{'{{last_name}}'}</span> are replaced automatically
-                </label>
-                <textarea
-                  rows={5}
-                  className="w-full px-3 py-2 rounded-md-s border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-1 focus:ring-accent resize-none"
-                  value={form.welcome_email_body}
-                  onChange={e => setForm(f => ({ ...f, welcome_email_body: e.target.value }))}
-                />
-              </div>
+          <div className="overflow-hidden rounded-md-m border border-border bg-card">
+            {/* Column heads, where the rows are a table. */}
+            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem] items-center gap-4 border-b border-border bg-muted/40 px-5 py-2.5 text-xs font-medium text-muted-foreground md:grid">
+              <span>Form</span>
+              <span>Status</span>
+              <span className="text-right">Submissions</span>
+              <span>Last submission</span>
+              <span className="sr-only">Actions</span>
             </div>
-          )}
-        </div>
+            <ul className="divide-y divide-border/70">
+              {shown.map((f) => {
+                const list = listName(f)
+                return (
+                  <li key={f.id} data-form-card className="group/row relative">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem]">
+                      <div className="min-w-0">
+                        <Link
+                          to="/marketing/forms/$formId"
+                          params={{ formId: f.id }}
+                          className="block truncate text-[15px] font-semibold text-foreground after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:rounded-md-s focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring/50"
+                        >
+                          {f.name}
+                        </Link>
+                        <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                          {f.fields.length} field{f.fields.length === 1 ? '' : 's'} · {list ? <>Adds people to {list}</> : 'Not added to a list'}
+                          {f.welcome_email_enabled && ' · Welcome email'}
+                        </p>
+                        {/* On a phone the numbers go under the name. */}
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground md:hidden">
+                          <FormStatus paused={!!f.paused} />
+                          <span>
+                            <span className="font-medium tabular-nums text-foreground">{f.submission_count}</span> submission{f.submission_count === 1 ? '' : 's'}
+                          </span>
+                          {f.last_submission_at && <span>· last {ago(f.last_submission_at)}</span>}
+                        </p>
+                      </div>
+                      <div className="hidden md:block">
+                        <FormStatus paused={!!f.paused} />
+                      </div>
+                      <div className="hidden text-right md:block">
+                        <p className="text-[15px] font-semibold tabular-nums text-foreground">{f.submission_count.toLocaleString('en-GB')}</p>
+                        <p className="text-xs text-muted-foreground">{f.submissions_this_week ? `${f.submissions_this_week} this week` : 'None this week'}</p>
+                      </div>
+                      <p className="hidden text-sm text-muted-foreground md:block">{f.last_submission_at ? ago(f.last_submission_at).replace(/^on /, '') : 'None yet'}</p>
+                      <div className="relative z-10 flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => setSharing(f)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden text-foreground/80">
+                          Share
+                        </Button>
+                        <ActionMenu
+                          label={`Actions for ${f.name}`}
+                          items={[
+                            { label: 'Edit form', icon: Pencil, onSelect: () => navigate({ to: '/marketing/forms/$formId/edit', params: { formId: f.id } }) },
+                            { label: 'Share', icon: Share2, onSelect: () => setSharing(f) },
+                            { label: 'Duplicate', icon: Copy, onSelect: () => duplicate.mutate(f) },
+                            { label: f.paused ? 'Resume' : 'Pause', icon: f.paused ? Play : Pause, onSelect: () => pause.mutate(f) },
+                            'separator',
+                            { label: 'Delete', icon: Trash2, tone: 'danger', onSelect: () => confirmDelete(f) },
+                          ]}
+                        />
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+              {shown.length === 0 && <li className="px-5 py-8 text-center text-sm text-muted-foreground">No forms called “{query.trim()}”.</li>}
+            </ul>
+          </div>
+        </>
+      )}
 
-        <div className="flex justify-end gap-3 border-t border-border pt-5">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(form)}
-            disabled={isSaving || !form.name.trim() || (form.save_to_list_enabled && !form.list_id)}
-            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-2"
-          >
-            {isSaving ? 'Saving...' : <><Check className="w-4 h-4" /> Save Form</>}
-          </button>
-        </div>
-      </div>
+      {sharing && <ShareDialog form={publicForm(sharing as FormRecord, contactFields)} onClose={() => setSharing(null)} />}
     </div>
   )
 }
 
-function EmbedModal({ form, onClose }: { form: Form; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const snippet = generateEmbedSnippet(form, origin)
-
-  const copy = () => {
-    navigator.clipboard.writeText(snippet)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
+/** No forms yet: what they're for, and a few to start from. */
+function EmptyForms() {
   return (
-    <Dialog
-      isOpen
-      onClose={onClose}
-      title={`Embed “${form.name}”`}
-      description="Paste this snippet into your website where you want the form to appear. It resizes to fit its container and can be styled with CSS variables."
-      className="sm:max-w-2xl"
-    >
-      <DialogBody className="space-y-4">
-
-        <div className="relative">
-          <pre className="bg-muted rounded-md-s p-4 text-xs overflow-x-auto text-foreground/80 max-h-64 border border-border">
-            {snippet}
-          </pre>
-          <button
-            onClick={copy}
-            aria-label="Copy snippet"
-            className="absolute top-2 right-2 p-1.5 rounded-md-s bg-background border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-
-        <div className="bg-muted/40 rounded-md-s p-4 border border-border text-[13px] space-y-1.5">
-          <p className="font-semibold text-foreground mb-2">Style it with CSS variables</p>
-          <p className="text-muted-foreground font-mono">{'--em-btn-bg'}: your button colour</p>
-          <p className="text-muted-foreground font-mono">{'--em-radius'}: border radius</p>
-          <p className="text-muted-foreground font-mono">{'--em-input-border'}: input border style</p>
-          <p className="text-muted-foreground font-mono">{'--em-gap'}: spacing between fields</p>
-          <p className="text-muted-foreground font-mono">{'--em-font'}: font family</p>
-          <p className="text-muted-foreground mt-2">Add these to <code className="bg-muted px-1 rounded">#em-form-{form.id} {'{ }'}</code> in your CSS.</p>
-        </div>
-
-        <div className="pt-1">
-          <p className="text-[13px] text-foreground mb-1.5 font-medium">Or post JSON to the API endpoint</p>
-          <code className="text-xs bg-muted px-3 py-2 rounded-md-s block text-foreground/70 border border-border break-all">
-            {origin}/api/form-submit/{form.id}
-          </code>
-        </div>
-      </DialogBody>
-      <DialogFooter>
-        <Button variant="secondary" onClick={onClose}>
-          Close
-        </Button>
-        <Button onClick={copy} leftIcon={copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}>
-          {copied ? 'Copied' : 'Copy snippet'}
-        </Button>
-      </DialogFooter>
-    </Dialog>
-  )
-}
-
-function FormsPage() {
-  const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const [showCreate, setShowCreate] = useState(false)
-  const [editForm, setEditForm] = useState<Form | null>(null)
-  const [embedForm, setEmbedForm] = useState<Form | null>(null)
-
-  const { data: forms = [], isLoading } = useQuery({
-    queryKey: queryKeys.email.forms(),
-    queryFn: () => getFormsFn(),
-  })
-
-  const { data: listsData } = useQuery({
-    queryKey: queryKeys.email.lists(),
-    queryFn: () => listsFn(),
-  })
-  const lists = (listsData?.lists || []) as Array<{ id: number; name: string }>
-
-  const { data: sendersData } = useQuery({
-    queryKey: queryKeys.email.senders(),
-    queryFn: () => getSendersFn(),
-  })
-  const senders = (sendersData?.senders || []) as Array<{ id: number; name: string; email: string }>
-
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
-
-  const createMutation = useMutation({
-    mutationFn: (data: typeof DEFAULT_FORM) => createFormFn({ data }),
-    onSuccess: () => { invalidate(); setShowCreate(false) },
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: (data: typeof DEFAULT_FORM) =>
-      updateFormFn({ data: { id: editForm!.id, updates: data } }),
-    onSuccess: () => { invalidate(); setEditForm(null) },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteFormFn({ data: { id } }),
-    onSuccess: invalidate,
-  })
-
-  const confirmDelete = async (form: Form) => {
-    const ok = await confirmDialog({ title: `Delete “${form.name}”?`, message: "It stops working wherever it's embedded. This can't be undone.", confirmLabel: 'Delete form', tone: 'danger' })
-    if (ok) deleteMutation.mutate(form.id)
-  }
-
-  // Take over the viewport while building a form rather than opening a modal.
-  // `key` forces a remount so the builder picks up whichever form is being
-  // edited (or a blank one) as its initial state.
-  if (showCreate || editForm) {
-    return (
-      <FormBuilder
-        key={editForm?.id ?? 'new'}
-        initial={editForm ?? DEFAULT_FORM}
-        onClose={() => {
-          setShowCreate(false)
-          setEditForm(null)
-        }}
-        onSave={data => (editForm ? updateMutation.mutate(data) : createMutation.mutate(data))}
-        isSaving={editForm ? updateMutation.isPending : createMutation.isPending}
-        lists={lists}
-        senders={senders}
-      />
-    )
-  }
-
-  return (
-    <div className="p-4 lg:p-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-2xl font-display text-foreground mb-2">Forms</h1>
-          <p className="text-muted-foreground">Create embeddable forms that capture contacts and trigger welcome emails.</p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          New Form
-        </button>
+    <div className="rounded-md-m border border-border bg-card px-5 py-10 sm:px-10 sm:py-14">
+      <div className="mx-auto flex max-w-xl flex-col items-center text-center">
+        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <FileText className="h-6 w-6" aria-hidden />
+        </span>
+        <h2 className="text-lg font-semibold text-foreground">Make your first form</h2>
+        <p className="mt-1.5 text-muted-foreground">Put it on your website or share its link. Everyone who sends it becomes a contact you can email.</p>
       </div>
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card p-6 animate-pulse h-40 border border-border rounded-md-m" />
-          ))}
-        </div>
-      ) : (forms as Form[]).length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-4">
-            <FileText className="w-8 h-8 text-accent" />
-          </div>
-          <h3 className="text-lg font-medium text-foreground mb-2">No forms yet</h3>
-          <p className="text-muted-foreground mb-6 max-w-sm">
-            Create your first form to start capturing contacts from your website.
-          </p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
+      <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-2">
+        {FORM_TEMPLATES.map((t) => (
+          <Link
+            key={t.id}
+            to="/marketing/forms/new"
+            search={{ template: t.id }}
+            className="group flex items-start gap-3 rounded-md-s border border-border bg-background px-4 py-3.5 text-left transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
-            <Plus className="w-4 h-4" /> Create Form
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {(forms as Form[]).map(form => {
-            const list = lists.find(l => l.id === form.list_id)
-            return (
-              <div 
-                key={form.id} 
-                className="card border border-border rounded-md-m p-6 flex flex-col gap-4 cursor-pointer hover:border-accent/50 transition-colors relative group"
-                onClick={() => navigate({ to: '/marketing/forms/$formId', params: { formId: form.id } })}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-foreground truncate">{form.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {form.save_to_list_enabled === false
-                        ? 'Not saved to a list'
-                        : (list?.name || `List #${form.list_id}`)}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditForm(form) }}
-                      className="p-1.5 rounded-md-s text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer relative z-10"
-                      title="Edit"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); confirmDelete(form) }}
-                      className="p-1.5 rounded-md-s text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer relative z-10"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                  {form.fields.map(f => (
-                    <Badge key={f} variant="default">{FIELD_LABELS[f] || f}</Badge>
-                  ))}
-                </div>
-
-                <button 
-                  onClick={(e) => { e.stopPropagation(); navigate({ to: '/marketing/forms/$formId', params: { formId: form.id } }) }}
-                  className="flex items-center gap-2 text-xs text-muted-foreground transition-colors cursor-pointer text-left w-fit relative z-10"
-                >
-                  <Users className="w-3.5 h-3.5 transition-colors" />
-                  <span>
-                    <span className="font-semibold text-foreground transition-colors">{form.submission_count}</span>
-                    {' '}submission{form.submission_count !== 1 ? 's' : ''}
-                  </span>
-                </button>
-
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Mail className="w-3.5 h-3.5" />
-                  {form.welcome_email_enabled
-                    ? <span className="text-green-600 dark:text-green-400">Welcome email in {form.welcome_email_delay_minutes}min</span>
-                    : <span>No welcome email</span>}
-                </div>
-
-                <button
-                  onClick={(e) => { e.stopPropagation(); setEmbedForm(form) }}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium border border-accent/30 text-accent rounded-md-s hover:bg-accent/10 transition-colors cursor-pointer mt-auto relative z-10"
-                >
-                  <Code2 className="w-4 h-4" /> Get Embed Code
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {embedForm && <EmbedModal form={embedForm} onClose={() => setEmbedForm(null)} />}
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md-xs bg-muted text-foreground/75">
+              <t.icon className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">{t.name}</span>
+              <span className="block text-[13px] text-muted-foreground">{t.description}</span>
+            </span>
+            <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+          </Link>
+        ))}
+      </div>
+      <div className="mt-5 text-center">
+        <Link to="/marketing/forms/new" search={{ template: 'blank' }} className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
+          <Plus className="h-4 w-4" aria-hidden /> Start from a blank form
+        </Link>
+      </div>
     </div>
   )
 }

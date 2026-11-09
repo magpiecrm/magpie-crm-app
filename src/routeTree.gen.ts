@@ -22,6 +22,7 @@ import { Route as MarketingTemplatesRouteImport } from './routes/marketing/templ
 import { Route as MarketingSurveysRouteImport } from './routes/marketing/surveys'
 import { Route as MarketingFormsRouteImport } from './routes/marketing/forms'
 import { Route as MarketingContactsRouteImport } from './routes/marketing/contacts'
+import { Route as FFormIdRouteImport } from './routes/f/$formId'
 import { Route as AuthViewRouteImport } from './routes/auth/view'
 import { Route as AuthLinkRouteImport } from './routes/auth/link'
 import { Route as ApiUsageRouteImport } from './routes/api/usage'
@@ -47,6 +48,7 @@ import { Route as SalesProposalsProposalIdRouteImport } from './routes/sales/pro
 import { Route as SalesDealsIdRouteImport } from './routes/sales/deals/$id'
 import { Route as MarketingListsNewRouteImport } from './routes/marketing/lists/new'
 import { Route as MarketingListsListIdRouteImport } from './routes/marketing/lists/$listId'
+import { Route as MarketingFormsNewRouteImport } from './routes/marketing/forms/new'
 import { Route as MarketingFormsFormIdRouteImport } from './routes/marketing/forms/$formId'
 import { Route as MarketingContactsImportRouteImport } from './routes/marketing/contacts/import'
 import { Route as MarketingCompaniesIdRouteImport } from './routes/marketing/companies/$id'
@@ -67,8 +69,10 @@ import { Route as ApiFormSubmitFormIdRouteImport } from './routes/api/form-submi
 import { Route as ApiCopilotStreamRouteImport } from './routes/api/copilot/stream'
 import { Route as ApiCopilotPermissionRouteImport } from './routes/api/copilot/permission'
 import { Route as MarketingSurveysSurveyIdIndexRouteImport } from './routes/marketing/surveys/$surveyId/index'
+import { Route as MarketingFormsFormIdIndexRouteImport } from './routes/marketing/forms/$formId/index'
 import { Route as MarketingTemplatesTemplateIdEditRouteImport } from './routes/marketing/templates/$templateId/edit'
 import { Route as MarketingSurveysSurveyIdEditRouteImport } from './routes/marketing/surveys/$surveyId/edit'
+import { Route as MarketingFormsFormIdEditRouteImport } from './routes/marketing/forms/$formId/edit'
 import { Route as ApiWebhooksEmailProviderRouteImport } from './routes/api/webhooks/email.$provider'
 import { Route as ApiSurveysSurveyIdTokenRouteImport } from './routes/api/surveys/$surveyId/token'
 
@@ -135,6 +139,11 @@ const MarketingFormsRoute = MarketingFormsRouteImport.update({
 const MarketingContactsRoute = MarketingContactsRouteImport.update({
   id: '/marketing/contacts',
   path: '/marketing/contacts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FFormIdRoute = FFormIdRouteImport.update({
+  id: '/f/$formId',
+  path: '/f/$formId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthViewRoute = AuthViewRouteImport.update({
@@ -264,6 +273,11 @@ const MarketingListsListIdRoute = MarketingListsListIdRouteImport.update({
   path: '/marketing/lists/$listId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketingFormsNewRoute = MarketingFormsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => MarketingFormsRoute,
+} as any)
 const MarketingFormsFormIdRoute = MarketingFormsFormIdRouteImport.update({
   id: '/$formId',
   path: '/$formId',
@@ -366,6 +380,12 @@ const MarketingSurveysSurveyIdIndexRoute =
     path: '/$surveyId/',
     getParentRoute: () => MarketingSurveysRoute,
   } as any)
+const MarketingFormsFormIdIndexRoute =
+  MarketingFormsFormIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => MarketingFormsFormIdRoute,
+  } as any)
 const MarketingTemplatesTemplateIdEditRoute =
   MarketingTemplatesTemplateIdEditRouteImport.update({
     id: '/$templateId/edit',
@@ -377,6 +397,12 @@ const MarketingSurveysSurveyIdEditRoute =
     id: '/$surveyId/edit',
     path: '/$surveyId/edit',
     getParentRoute: () => MarketingSurveysRoute,
+  } as any)
+const MarketingFormsFormIdEditRoute =
+  MarketingFormsFormIdEditRouteImport.update({
+    id: '/edit',
+    path: '/edit',
+    getParentRoute: () => MarketingFormsFormIdRoute,
   } as any)
 const ApiWebhooksEmailProviderRoute =
   ApiWebhooksEmailProviderRouteImport.update({
@@ -401,6 +427,7 @@ export interface FileRoutesByFullPath {
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/auth/view': typeof AuthViewRoute
+  '/f/$formId': typeof FFormIdRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -429,7 +456,8 @@ export interface FileRoutesByFullPath {
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
   '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
-  '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
+  '/marketing/forms/$formId': typeof MarketingFormsFormIdRouteWithChildren
+  '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
@@ -450,8 +478,10 @@ export interface FileRoutesByFullPath {
   '/sales/sequences/': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
+  '/marketing/forms/$formId/edit': typeof MarketingFormsFormIdEditRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
   '/marketing/templates/$templateId/edit': typeof MarketingTemplatesTemplateIdEditRoute
+  '/marketing/forms/$formId/': typeof MarketingFormsFormIdIndexRoute
   '/marketing/surveys/$surveyId/': typeof MarketingSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesByTo {
@@ -465,6 +495,7 @@ export interface FileRoutesByTo {
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/auth/view': typeof AuthViewRoute
+  '/f/$formId': typeof FFormIdRoute
   '/p/$token': typeof PTokenRoute
   '/s/$surveyId': typeof SSurveyIdRoute
   '/sales/inbox': typeof SalesInboxRoute
@@ -489,7 +520,7 @@ export interface FileRoutesByTo {
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
   '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
-  '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
+  '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
@@ -510,8 +541,10 @@ export interface FileRoutesByTo {
   '/sales/sequences': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
+  '/marketing/forms/$formId/edit': typeof MarketingFormsFormIdEditRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
   '/marketing/templates/$templateId/edit': typeof MarketingTemplatesTemplateIdEditRoute
+  '/marketing/forms/$formId': typeof MarketingFormsFormIdIndexRoute
   '/marketing/surveys/$surveyId': typeof MarketingSurveysSurveyIdIndexRoute
 }
 export interface FileRoutesById {
@@ -526,6 +559,7 @@ export interface FileRoutesById {
   '/api/usage': typeof ApiUsageRouteWithChildren
   '/auth/link': typeof AuthLinkRoute
   '/auth/view': typeof AuthViewRoute
+  '/f/$formId': typeof FFormIdRoute
   '/marketing/contacts': typeof MarketingContactsRouteWithChildren
   '/marketing/forms': typeof MarketingFormsRouteWithChildren
   '/marketing/surveys': typeof MarketingSurveysRouteWithChildren
@@ -554,7 +588,8 @@ export interface FileRoutesById {
   '/marketing/campaigns/$id': typeof MarketingCampaignsIdRoute
   '/marketing/companies/$id': typeof MarketingCompaniesIdRoute
   '/marketing/contacts/import': typeof MarketingContactsImportRoute
-  '/marketing/forms/$formId': typeof MarketingFormsFormIdRoute
+  '/marketing/forms/$formId': typeof MarketingFormsFormIdRouteWithChildren
+  '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
@@ -575,8 +610,10 @@ export interface FileRoutesById {
   '/sales/sequences/': typeof SalesSequencesIndexRoute
   '/api/surveys/$surveyId/token': typeof ApiSurveysSurveyIdTokenRoute
   '/api/webhooks/email/$provider': typeof ApiWebhooksEmailProviderRoute
+  '/marketing/forms/$formId/edit': typeof MarketingFormsFormIdEditRoute
   '/marketing/surveys/$surveyId/edit': typeof MarketingSurveysSurveyIdEditRoute
   '/marketing/templates/$templateId/edit': typeof MarketingTemplatesTemplateIdEditRoute
+  '/marketing/forms/$formId/': typeof MarketingFormsFormIdIndexRoute
   '/marketing/surveys/$surveyId/': typeof MarketingSurveysSurveyIdIndexRoute
 }
 export interface FileRouteTypes {
@@ -592,6 +629,7 @@ export interface FileRouteTypes {
     | '/api/usage'
     | '/auth/link'
     | '/auth/view'
+    | '/f/$formId'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -621,6 +659,7 @@ export interface FileRouteTypes {
     | '/marketing/companies/$id'
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
+    | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
     | '/sales/deals/$id'
@@ -641,8 +680,10 @@ export interface FileRouteTypes {
     | '/sales/sequences/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
+    | '/marketing/forms/$formId/edit'
     | '/marketing/surveys/$surveyId/edit'
     | '/marketing/templates/$templateId/edit'
+    | '/marketing/forms/$formId/'
     | '/marketing/surveys/$surveyId/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -656,6 +697,7 @@ export interface FileRouteTypes {
     | '/api/usage'
     | '/auth/link'
     | '/auth/view'
+    | '/f/$formId'
     | '/p/$token'
     | '/s/$surveyId'
     | '/sales/inbox'
@@ -680,7 +722,7 @@ export interface FileRouteTypes {
     | '/marketing/campaigns/$id'
     | '/marketing/companies/$id'
     | '/marketing/contacts/import'
-    | '/marketing/forms/$formId'
+    | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
     | '/sales/deals/$id'
@@ -701,8 +743,10 @@ export interface FileRouteTypes {
     | '/sales/sequences'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
+    | '/marketing/forms/$formId/edit'
     | '/marketing/surveys/$surveyId/edit'
     | '/marketing/templates/$templateId/edit'
+    | '/marketing/forms/$formId'
     | '/marketing/surveys/$surveyId'
   id:
     | '__root__'
@@ -716,6 +760,7 @@ export interface FileRouteTypes {
     | '/api/usage'
     | '/auth/link'
     | '/auth/view'
+    | '/f/$formId'
     | '/marketing/contacts'
     | '/marketing/forms'
     | '/marketing/surveys'
@@ -745,6 +790,7 @@ export interface FileRouteTypes {
     | '/marketing/companies/$id'
     | '/marketing/contacts/import'
     | '/marketing/forms/$formId'
+    | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
     | '/sales/deals/$id'
@@ -765,8 +811,10 @@ export interface FileRouteTypes {
     | '/sales/sequences/'
     | '/api/surveys/$surveyId/token'
     | '/api/webhooks/email/$provider'
+    | '/marketing/forms/$formId/edit'
     | '/marketing/surveys/$surveyId/edit'
     | '/marketing/templates/$templateId/edit'
+    | '/marketing/forms/$formId/'
     | '/marketing/surveys/$surveyId/'
   fileRoutesById: FileRoutesById
 }
@@ -781,6 +829,7 @@ export interface RootRouteChildren {
   ApiUsageRoute: typeof ApiUsageRouteWithChildren
   AuthLinkRoute: typeof AuthLinkRoute
   AuthViewRoute: typeof AuthViewRoute
+  FFormIdRoute: typeof FFormIdRoute
   MarketingContactsRoute: typeof MarketingContactsRouteWithChildren
   MarketingFormsRoute: typeof MarketingFormsRouteWithChildren
   MarketingSurveysRoute: typeof MarketingSurveysRouteWithChildren
@@ -913,6 +962,13 @@ declare module '@tanstack/react-router' {
       path: '/marketing/contacts'
       fullPath: '/marketing/contacts'
       preLoaderRoute: typeof MarketingContactsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/f/$formId': {
+      id: '/f/$formId'
+      path: '/f/$formId'
+      fullPath: '/f/$formId'
+      preLoaderRoute: typeof FFormIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/view': {
@@ -1090,6 +1146,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketingListsListIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/marketing/forms/new': {
+      id: '/marketing/forms/new'
+      path: '/new'
+      fullPath: '/marketing/forms/new'
+      preLoaderRoute: typeof MarketingFormsNewRouteImport
+      parentRoute: typeof MarketingFormsRoute
+    }
     '/marketing/forms/$formId': {
       id: '/marketing/forms/$formId'
       path: '/$formId'
@@ -1230,6 +1293,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MarketingSurveysSurveyIdIndexRouteImport
       parentRoute: typeof MarketingSurveysRoute
     }
+    '/marketing/forms/$formId/': {
+      id: '/marketing/forms/$formId/'
+      path: '/'
+      fullPath: '/marketing/forms/$formId/'
+      preLoaderRoute: typeof MarketingFormsFormIdIndexRouteImport
+      parentRoute: typeof MarketingFormsFormIdRoute
+    }
     '/marketing/templates/$templateId/edit': {
       id: '/marketing/templates/$templateId/edit'
       path: '/$templateId/edit'
@@ -1243,6 +1313,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/marketing/surveys/$surveyId/edit'
       preLoaderRoute: typeof MarketingSurveysSurveyIdEditRouteImport
       parentRoute: typeof MarketingSurveysRoute
+    }
+    '/marketing/forms/$formId/edit': {
+      id: '/marketing/forms/$formId/edit'
+      path: '/edit'
+      fullPath: '/marketing/forms/$formId/edit'
+      preLoaderRoute: typeof MarketingFormsFormIdEditRouteImport
+      parentRoute: typeof MarketingFormsFormIdRoute
     }
     '/api/webhooks/email/$provider': {
       id: '/api/webhooks/email/$provider'
@@ -1292,13 +1369,28 @@ const MarketingContactsRouteChildren: MarketingContactsRouteChildren = {
 const MarketingContactsRouteWithChildren =
   MarketingContactsRoute._addFileChildren(MarketingContactsRouteChildren)
 
+interface MarketingFormsFormIdRouteChildren {
+  MarketingFormsFormIdEditRoute: typeof MarketingFormsFormIdEditRoute
+  MarketingFormsFormIdIndexRoute: typeof MarketingFormsFormIdIndexRoute
+}
+
+const MarketingFormsFormIdRouteChildren: MarketingFormsFormIdRouteChildren = {
+  MarketingFormsFormIdEditRoute: MarketingFormsFormIdEditRoute,
+  MarketingFormsFormIdIndexRoute: MarketingFormsFormIdIndexRoute,
+}
+
+const MarketingFormsFormIdRouteWithChildren =
+  MarketingFormsFormIdRoute._addFileChildren(MarketingFormsFormIdRouteChildren)
+
 interface MarketingFormsRouteChildren {
-  MarketingFormsFormIdRoute: typeof MarketingFormsFormIdRoute
+  MarketingFormsFormIdRoute: typeof MarketingFormsFormIdRouteWithChildren
+  MarketingFormsNewRoute: typeof MarketingFormsNewRoute
   MarketingFormsIndexRoute: typeof MarketingFormsIndexRoute
 }
 
 const MarketingFormsRouteChildren: MarketingFormsRouteChildren = {
-  MarketingFormsFormIdRoute: MarketingFormsFormIdRoute,
+  MarketingFormsFormIdRoute: MarketingFormsFormIdRouteWithChildren,
+  MarketingFormsNewRoute: MarketingFormsNewRoute,
   MarketingFormsIndexRoute: MarketingFormsIndexRoute,
 }
 
@@ -1345,6 +1437,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiUsageRoute: ApiUsageRouteWithChildren,
   AuthLinkRoute: AuthLinkRoute,
   AuthViewRoute: AuthViewRoute,
+  FFormIdRoute: FFormIdRoute,
   MarketingContactsRoute: MarketingContactsRouteWithChildren,
   MarketingFormsRoute: MarketingFormsRouteWithChildren,
   MarketingSurveysRoute: MarketingSurveysRouteWithChildren,

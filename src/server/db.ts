@@ -9,6 +9,7 @@ import { DEFAULT_FOOTER, FIRST_DEFAULT_FOOTER, moveFirstEmailDrafts, type Enroll
 import type { Survey, SurveyResponse } from '../features/survey-builder/types'
 import type { EmailTemplate } from '../features/templates/types'
 import type { ContactCustomValue, ContactFieldDef, ContactTableView } from '../features/contacts/contactFields'
+import { submissionId, type FormRecord, type FormSubmissionRecord, type FormValue } from '../features/forms/model'
 import type { SavedFilter } from '../features/contacts/contactFilters'
 import { isUnconfirmedGuess, type EmailStatus, type NoticeStatus } from './prospecting/types'
 import type { EmailDomainRecord } from './prospecting/emailDomain'
@@ -238,26 +239,8 @@ export interface DbSchema {
     scope?: ApiKeyScope
     last_used_at?: string
   }>
-  forms?: Array<{
-    id: string
-    name: string
-    fields: string[]
-    list_id: number
-    save_to_list_enabled?: boolean
-    save_to_list_fields?: string[]
-    welcome_email_enabled: boolean
-    welcome_email_subject: string
-    welcome_email_body: string
-    welcome_email_delay_minutes: number
-    sender_id: number | null
-    created_at: string
-  }>
-  form_submissions?: Array<{
-    form_id: string
-    contact_email: string
-    submitted_at: string
-    message?: string
-  }>
+  forms?: FormRecord[]
+  form_submissions?: FormSubmissionRecord[]
   pending_emails?: Array<{
     id: string
     contact_email: string
@@ -1782,42 +1765,29 @@ class JsonDb {
     return this.data.forms.find(f => f.id === id) || null
   }
 
-  addForm(data: {
-    name: string
-    fields: string[]
-    list_id: number
-    save_to_list_enabled: boolean
-    save_to_list_fields: string[]
-    welcome_email_enabled: boolean
-    welcome_email_subject: string
-    welcome_email_body: string
-    welcome_email_delay_minutes: number
-    sender_id: number | null
-  }) {
+  addForm(data: Omit<FormRecord, 'id' | 'created_at' | 'updated_at'>) {
     if (!this.data.forms) this.data.forms = []
     const id = crypto.randomUUID()
-    this.data.forms.push({ ...data, id, created_at: new Date().toISOString() })
+    const now = new Date().toISOString()
+    this.data.forms.push({ ...data, id, created_at: now, updated_at: now })
     this.save()
     return id
   }
 
-  updateForm(id: string, data: Partial<{
-    name: string
-    fields: string[]
-    list_id: number
-    save_to_list_enabled: boolean
-    save_to_list_fields: string[]
-    welcome_email_enabled: boolean
-    welcome_email_subject: string
-    welcome_email_body: string
-    welcome_email_delay_minutes: number
-    sender_id: number | null
-  }>) {
+  updateForm(id: string, data: Partial<Omit<FormRecord, 'id' | 'created_at'>>) {
     if (!this.data.forms) return
     const idx = this.data.forms.findIndex(f => f.id === id)
     if (idx < 0) return
-    this.data.forms[idx] = { ...this.data.forms[idx], ...data }
+    this.data.forms[idx] = { ...this.data.forms[idx], ...data, updated_at: new Date().toISOString() }
     this.save()
+  }
+
+  /** A copy with no submissions, called "… (copy)". */
+  duplicateForm(id: string) {
+    const form = this.getForm(id)
+    if (!form) throw new Error('Form not found')
+    const { id: _id, created_at: _c, updated_at: _u, ...rest } = structuredClone(form)
+    return this.addForm({ ...rest, name: `${form.name} (copy)` })
   }
 
   deleteForm(id: string) {
@@ -1882,10 +1852,35 @@ class JsonDb {
     this.save()
   }
 
-  addFormSubmission(formId: string, contactEmail: string, message?: string) {
+  addFormSubmission(formId: string, contactEmail: string, values: Record<string, FormValue>, extra: { consent_text?: string } = {}) {
     if (!this.data.form_submissions) this.data.form_submissions = []
-    this.data.form_submissions.push({ form_id: formId, contact_email: contactEmail, message, submitted_at: new Date().toISOString() })
+    this.data.form_submissions.push({
+      id: crypto.randomUUID(), form_id: formId, contact_email: contactEmail, values, ...extra, submitted_at: new Date().toISOString(),
+    })
     this.save()
+  }
+
+  /** Removes one submission (`submissionId`). The contact it made stays. */
+  deleteFormSubmission(formId: string, id: string) {
+    const before = this.data.form_submissions?.length ?? 0
+    this.data.form_submissions = (this.data.form_submissions ?? []).filter(s => !(s.form_id === formId && submissionId(s) === id))
+    if (this.data.form_submissions.length === before) return false
+    this.save()
+    return true
+  }
+
+  /** Each form's count, how many in the last 7 days and when the latest came. */
+  getFormStats() {
+    const week = Date.now() - 7 * 24 * 3600e3
+    const stats = new Map<string, { total: number; week: number; last: string | null }>()
+    for (const s of this.data.form_submissions ?? []) {
+      const st = stats.get(s.form_id) ?? { total: 0, week: 0, last: null }
+      st.total++
+      if (Date.parse(s.submitted_at) >= week) st.week++
+      if (!st.last || s.submitted_at > st.last) st.last = s.submitted_at
+      stats.set(s.form_id, st)
+    }
+    return stats
   }
 
   getFormSubmissionCount(formId: string) {
@@ -1897,13 +1892,8 @@ class JsonDb {
     if (!this.data.form_submissions) return []
     const subs = this.data.form_submissions.filter(s => s.form_id === formId)
     subs.sort((a, b) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())
-    return subs.map(s => {
-      const contact = this.data.contacts.find(c => c.email.toLowerCase() === s.contact_email.toLowerCase())
-      return {
-        ...s,
-        contact
-      }
-    })
+    const contacts = new Map(this.data.contacts.map(c => [c.email.toLowerCase(), c]))
+    return subs.map(s => ({ ...s, id: submissionId(s), contact: contacts.get(s.contact_email.toLowerCase()) ?? null }))
   }
 
   // Pending email helpers

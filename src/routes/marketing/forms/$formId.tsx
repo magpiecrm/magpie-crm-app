@@ -1,195 +1,169 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, type ReactNode } from 'react'
+import { ArrowLeft, Copy, ExternalLink, Pause, Play, Share2, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { getFormFn, getFormSubmissionsFn } from '../../../server/functions'
-import { ArrowLeft, Users } from 'lucide-react'
-import { Dialog, DialogBody } from '../../../components/ui/Dialog'
+import { deleteFormFn, duplicateFormFn, getContactFieldsFn, getFormFn, listsFn, setFormPausedFn } from '../../../server/functions'
+import { Button } from '../../../components/ui/Button'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
+import { ShareDialog } from '../../../features/forms/components/ShareDialog'
+import { FormStatus } from '../../../features/forms/components/FormStatus'
+import { publicForm } from '../../../features/forms/model'
+import { delayLabel } from '../../../features/forms/format'
 
 export const Route = createFileRoute('/marketing/forms/$formId')({
-  component: FormSubmissionsPage,
+  // `share=new` straight after a form is made, to show how to put it on a website.
+  validateSearch: (search: Record<string, unknown>): { share?: 'new' | 'open' } =>
+    search.share === 'new' || search.share === 'open' ? { share: search.share } : {},
+  component: FormPage,
 })
 
-const FIELD_LABELS: Record<string, string> = {
-  first_name: 'First Name',
-  last_name: 'Last Name',
-  email: 'Email',
-  company: 'Company',
-  message: 'Message',
-}
-
-/** Resolve a form field to its submitted value. Shared by the table, the mobile cards and the detail dialog. */
-function getSubmissionValue(sub: any, field: string): string {
-  if (field === 'email') return sub.contact_email
-  if (field === 'first_name') return sub.contact?.first_name || '-'
-  if (field === 'last_name') return sub.contact?.last_name || '-'
-  if (field === 'company') return sub.contact?.company || '-'
-  if (field === 'message') return sub.message || '-'
-  return '-'
-}
-
-function FormSubmissionsPage() {
+/** One form: what it is and does, its submissions, and the builder, as tabs. */
+function FormPage() {
   const { formId } = Route.useParams()
-  const [selectedSubmission, setSelectedSubmission] = useState<any>(null)
+  const { share } = Route.useSearch()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const editing = path.endsWith('/edit')
+  const [sharing, setSharing] = useState(false)
 
-  const { data: form, isLoading: formLoading } = useQuery({
-    queryKey: queryKeys.email.form(formId),
-    queryFn: () => getFormFn({ data: { id: formId } }),
+  const { data: form, isLoading, isError } = useQuery({ queryKey: queryKeys.email.form(formId), queryFn: () => getFormFn({ data: { id: formId } }), retry: false })
+  const { data: listsData } = useQuery({ queryKey: queryKeys.email.lists(), queryFn: () => listsFn() })
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
+  const lists = (listsData?.lists ?? []) as Array<{ id: number; name: string }>
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
+  }
+  const pause = useMutation({
+    mutationFn: () => setFormPausedFn({ data: { id: formId, paused: !form?.paused } }),
+    onSuccess: () => {
+      invalidate()
+      toast.success(form?.paused ? 'Taking submissions again' : 'Paused', { description: form?.paused ? undefined : "It stays on your site, but won't take submissions." })
+    },
+  })
+  const duplicate = useMutation({
+    mutationFn: () => duplicateFormFn({ data: { id: formId } }),
+    onSuccess: ({ id }) => {
+      invalidate()
+      navigate({ to: '/marketing/forms/$formId/edit', params: { formId: id } })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: () => deleteFormFn({ data: { id: formId } }),
+    onSuccess: () => {
+      invalidate()
+      toast.success(`Deleted “${form?.name}”`)
+      navigate({ to: '/marketing/forms' })
+    },
   })
 
-  const { data: submissions, isLoading: submissionsLoading } = useQuery({
-    queryKey: queryKeys.email.formSubmissions(formId),
-    queryFn: () => getFormSubmissionsFn({ data: { formId } }),
-  })
-
-  if (formLoading) {
+  if (isLoading) {
     return (
-      <div className="p-4 lg:p-8">
-        <div className="animate-pulse h-8 w-64 bg-muted rounded mb-8"></div>
-        <div className="animate-pulse h-64 bg-muted rounded"></div>
+      <div className="mx-auto w-full max-w-6xl p-4 lg:p-8" aria-busy="true">
+        <div className="mb-3 h-4 w-20 animate-pulse rounded bg-muted" />
+        <div className="mb-6 h-8 w-72 animate-pulse rounded bg-muted" />
+        <div className="h-64 animate-pulse rounded-md-m bg-muted" />
+      </div>
+    )
+  }
+  if (isError || !form) {
+    return (
+      <div className="mx-auto flex w-full max-w-lg flex-col items-center p-8 text-center">
+        <h1 className="mb-2 text-xl font-semibold text-foreground">This form doesn't exist any more</h1>
+        <p className="mb-5 text-muted-foreground">It may have been deleted.</p>
+        <Link to="/marketing/forms" className="font-medium text-accent hover:underline">Back to forms</Link>
       </div>
     )
   }
 
-  if (!form) {
+  const list = form.save_to_list_enabled === false ? null : lists.find((l) => l.id === form.list_id)
+  const confirmDelete = async () => {
+    const n = form.submission_count
+    const ok = await confirmDialog({
+      title: `Delete “${form.name}”?`,
+      message: `It stops working wherever it's embedded${n ? `, and its ${n} submission${n === 1 ? '' : 's'} go too` : ''}. Contacts it added stay. This can't be undone.`,
+      confirmLabel: 'Delete form',
+      tone: 'danger',
+    })
+    if (ok) remove.mutate()
+  }
+  const closeShare = () => {
+    setSharing(false)
+    if (share) navigate({ to: '.', search: {}, replace: true })
+  }
+
+  const tab = (to: 'submissions' | 'edit', label: ReactNode) => {
+    const active = to === 'edit' ? editing : !editing
     return (
-      <div className="p-4 lg:p-8 text-center">
-        <h2 className="text-xl font-medium text-foreground mb-4">Form not found</h2>
-        <Link to="/marketing/forms" className="text-accent hover:underline">
-          Return to forms
-        </Link>
-      </div>
+      <Link
+        to={to === 'edit' ? '/marketing/forms/$formId/edit' : '/marketing/forms/$formId'}
+        params={{ formId }}
+        aria-current={active ? 'page' : undefined}
+        className={`relative inline-flex min-h-10 items-center gap-2 px-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          active ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        {label}
+      </Link>
     )
   }
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="mb-8">
-        <Link
-          to="/marketing/forms"
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Forms
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-display text-foreground mb-2">
-              Submissions: {form.name}
-            </h1>
-            <p className="text-muted-foreground">
-              Total submissions: {form.submission_count}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="card border border-border overflow-hidden">
-        {submissionsLoading ? (
-          <div className="p-4 lg:p-8 text-center text-muted-foreground text-sm">
-            Loading submissions...
-          </div>
-        ) : !submissions || submissions.length === 0 ? (
-          <div className="p-16 text-center">
-            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
-              <Users className="w-8 h-8 text-accent" />
+    <div className="flex min-h-full flex-col">
+      <header className="border-b border-border px-4 pt-4 lg:px-8 lg:pt-6">
+        <div className={`mx-auto w-full ${editing ? '' : 'max-w-6xl'}`}>
+          <Link to="/marketing/forms" className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Forms
+          </Link>
+          <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+            <div className="min-w-0 flex-1 basis-72">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h1 className="min-w-0 break-words text-2xl font-display text-foreground">{form.name}</h1>
+                <FormStatus paused={!!form.paused} />
+              </div>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                {list ? <>Adds people to <span className="font-medium text-foreground">{list.name}</span></> : 'Not added to a list'}
+                {' · '}
+                {form.welcome_email_enabled ? `Welcome email ${form.welcome_email_delay_minutes ? `after ${delayLabel(form.welcome_email_delay_minutes)}` : 'straight away'}` : 'No welcome email'}
+              </p>
             </div>
-            <h3 className="text-lg font-medium text-foreground mb-2">No submissions yet</h3>
-            <p className="text-muted-foreground text-sm">
-              When people submit your form, their details will appear here.
-            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" leftIcon={<Share2 className="h-4 w-4" />} onClick={() => setSharing(true)}>
+                Share
+              </Button>
+              <ActionMenu
+                label={`More actions for ${form.name}`}
+                triggerClassName="inline-flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-md-s border border-control bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.06)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted dark:bg-white/[0.04] dark:shadow-none"
+                items={[
+                  { label: "Open the form's page", icon: ExternalLink, onSelect: () => window.open(`/f/${form.id}`, '_blank', 'noopener') },
+                  { label: 'Duplicate', icon: Copy, onSelect: () => duplicate.mutate() },
+                  { label: form.paused ? 'Resume' : 'Pause', icon: form.paused ? Play : Pause, onSelect: () => pause.mutate() },
+                  'separator',
+                  { label: 'Delete form', icon: Trash2, tone: 'danger', onSelect: confirmDelete },
+                ]}
+              />
+            </div>
           </div>
-        ) : (
-          <>
-          {/* Mobile card list — a form can define arbitrarily many columns */}
-          <ul className="md:hidden divide-y divide-border">
-            {submissions.map((sub, i) => (
-              <li
-                key={i}
-                onClick={() => setSelectedSubmission(sub)}
-                className="p-4 space-y-1 active:bg-muted/40 transition-colors cursor-pointer"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="font-semibold text-foreground truncate">{sub.contact_email}</p>
-                  <p className="text-[10px] text-muted-foreground shrink-0">
-                    {new Date(sub.submitted_at).toLocaleDateString()}
-                  </p>
-                </div>
-                {form.fields
-                  .filter(field => field !== 'email')
-                  .map(field => (
-                    <p key={field} className="text-xs text-muted-foreground truncate">
-                      <span className="font-medium">{FIELD_LABELS[field] || field}: </span>
-                      {getSubmissionValue(sub, field)}
-                    </p>
-                  ))}
-              </li>
-            ))}
-          </ul>
+          <nav aria-label="Form" className="mt-4 flex gap-6">
+            {tab(
+              'submissions',
+              <>
+                Submissions
+                <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">{form.submission_count}</span>
+              </>,
+            )}
+            {tab('edit', 'Edit form')}
+          </nav>
+        </div>
+      </header>
 
-          <table className="hidden md:table w-full text-sm text-left">
-            <thead className="bg-muted text-xs text-muted-foreground border-b border-border">
-              <tr>
-                {form.fields.map(field => {
-                  const label = FIELD_LABELS[field] || field
-                  return <th key={field} className="px-6 py-3 font-medium">{label}</th>
-                })}
-                <th className="px-6 py-3 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {submissions.map((sub, i) => {
-                return (
-                  <tr
-                    key={i}
-                    className="hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => setSelectedSubmission(sub)}
-                  >
-                    {form.fields.map(field => {
-                      const val = getSubmissionValue(sub, field)
-                      const isMessage = field === 'message'
-                      return (
-                        <td key={field} className={`px-6 py-4 text-muted-foreground ${isMessage ? 'max-w-[200px] truncate' : ''}`} title={isMessage ? sub.message : undefined}>
-                          {field === 'email' ? <span className="font-medium text-foreground">{val}</span> : val}
-                        </td>
-                      )
-                    })}
-                    <td className="px-6 py-4 text-muted-foreground whitespace-nowrap">
-                      {new Date(sub.submitted_at).toLocaleString()}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          </>
-        )}
-      </div>
+      <Outlet />
 
-      <Dialog
-        isOpen={!!selectedSubmission}
-        onClose={() => setSelectedSubmission(null)}
-        title="Submission"
-        description={selectedSubmission ? `Sent ${new Date(selectedSubmission.submitted_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : undefined}
-        className="sm:max-w-lg"
-      >
-        {selectedSubmission && (
-          <DialogBody>
-            <dl className="divide-y divide-border rounded-md-s border border-border">
-            {form.fields.map(field => {
-              const val = getSubmissionValue(selectedSubmission, field)
-
-              return (
-                <div key={field} className="grid grid-cols-[8rem_1fr] gap-3 px-3 py-2.5">
-                  <dt className="text-[13px] text-muted-foreground">{FIELD_LABELS[field] || field}</dt>
-                  <dd className="text-sm text-foreground whitespace-pre-wrap break-words">{val || <span className="text-muted-foreground">—</span>}</dd>
-                </div>
-              )
-            })}
-            </dl>
-          </DialogBody>
-        )}
-      </Dialog>
+      {(sharing || share) && <ShareDialog form={publicForm(form, contactFields)} ready={share === 'new'} onClose={closeShare} />}
     </div>
   )
 }
