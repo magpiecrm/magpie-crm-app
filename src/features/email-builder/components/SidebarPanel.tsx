@@ -1,9 +1,23 @@
 import type React from 'react'
 import type { DragPayload } from '../hooks/useBlockDrag'
 import type { EmailBlock, GlobalStyle } from '../types'
-import type { StarterTemplate } from '../templates/starters'
+import { STARTER_CATEGORIES, type StarterTemplate } from '../templates/starters'
 import type { EmailTemplate } from '../../templates/types'
+import { TemplateTile } from '../../templates/components/TemplateTile'
+import { starterHtml } from '../../templates/preview'
 import { BlockEditor } from './BlockEditor'
+
+/** The content tabs, in order, with the names they show. */
+const CONTENT_TABS = [
+  { id: 'blocks', label: 'Blocks' },
+  { id: 'sections', label: 'Sections' },
+  { id: 'templates', label: 'Starters' },
+  { id: 'saved', label: 'Saved' },
+] as const
+
+/** A group's label in the side panel. */
+const PANEL_LABEL = 'text-xs font-semibold text-muted-foreground'
+const PANEL_HINT = 'text-xs leading-snug text-muted-foreground mt-1'
 import { GlobalStyleEditor } from './GlobalStyleEditor'
 
 interface SidebarPanelProps {
@@ -53,15 +67,15 @@ export function SidebarPanel({
         // CONTENT TAB
         <div className="flex flex-col h-full overflow-hidden">
           <div className="flex border-b border-border select-none bg-muted/15 shrink-0">
-            {(['blocks', 'templates', 'sections', 'saved'] as const).map(tab => (
+            {CONTENT_TABS.map(tab => (
               <button
-                key={tab}
-                onClick={() => setContentTab(tab)}
-                className={`flex-1 py-2.5 text-[11px] font-semibold border-b-2 capitalize transition-colors ${
-                  contentTab === tab ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
+                key={tab.id}
+                onClick={() => setContentTab(tab.id)}
+                className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                  contentTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
@@ -87,8 +101,8 @@ export function SidebarPanel({
               <div>
                 {contentTab === 'blocks' && (
                   <div className="animate-in fade-in duration-200">
-                    <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">Element blocks</span>
-                    <p className="text-[10px] text-muted-foreground/80 mt-0.5 leading-snug">Drag elements to the template canvas or click to insert at the bottom.</p>
+                    <h3 className={PANEL_LABEL}>Blocks</h3>
+                    <p className={PANEL_HINT}>Drag one onto the canvas, or click to add it at the bottom.</p>
                     
                     <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-2 gap-2 mt-4 select-none">
                       {emailBlocksList.map(item => (
@@ -113,31 +127,30 @@ export function SidebarPanel({
                 )}
 
                 {contentTab === 'templates' && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="space-y-5 animate-in fade-in duration-200">
                     <div>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">Starter templates</span>
-                      <p className="text-[10px] text-muted-foreground/80 mt-0.5 leading-snug">
-                        Complete, responsive designs. Applying one replaces the canvas — swap the placeholder images for your own before sending.
-                      </p>
+                      <h3 className={PANEL_LABEL}>Starter layouts</h3>
+                      <p className={PANEL_HINT}>Complete designs to build on. Using one replaces the canvas.</p>
                     </div>
 
-                    {['Newsletter', 'E-commerce', 'Transactional'].map(category => {
+                    {STARTER_CATEGORIES.map(category => {
                       const inCategory = templates.filter(t => t.category === category)
                       if (inCategory.length === 0) return null
                       return (
-                        <div key={category} className="space-y-2">
-                          <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-wider">{category}</span>
-                          {inCategory.map(template => (
-                            <button
-                              key={template.id}
-                              onClick={() => applyTemplate(template)}
-                              className="w-full p-3.5 bg-muted/20 border border-border/60 hover:border-accent/30 rounded-xl text-left hover:bg-accent/5 transition-all group"
-                            >
-                              <p className="font-bold text-xs text-foreground group-hover:text-accent transition-colors">{template.name}</p>
-                              <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{template.description}</p>
-                            </button>
-                          ))}
-                        </div>
+                        <section key={category} className="space-y-2.5">
+                          <h4 className={PANEL_LABEL}>{category}</h4>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                            {inCategory.map(template => (
+                              <TemplateTile
+                                key={template.id}
+                                size="sm"
+                                html={starterHtml(template)}
+                                name={template.name}
+                                onSelect={() => applyTemplate(template)}
+                              />
+                            ))}
+                          </div>
+                        </section>
                       )
                     })}
                   </div>
@@ -146,8 +159,8 @@ export function SidebarPanel({
                 {contentTab === 'sections' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
                     <div>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">Predefined layouts</span>
-                      <p className="text-[10px] text-muted-foreground/80 mt-0.5 leading-snug">Quickly add structured sections with placeholder text and graphics.</p>
+                      <h3 className={PANEL_LABEL}>Sections</h3>
+                      <p className={PANEL_HINT}>Groups of blocks with placeholder text and images, added at the bottom.</p>
                     </div>
 
                     <div className="space-y-3">
@@ -155,24 +168,24 @@ export function SidebarPanel({
                         onClick={() => addSection('hero')}
                         className="w-full p-4 bg-muted/20 border border-border/60 hover:border-accent/30 rounded-xl text-left hover:bg-accent/5 transition-all group"
                       >
-                        <p className="font-bold text-xs text-foreground group-hover:text-accent transition-colors">Featured Hero Section</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Hero image, title, paragraph and primary button.</p>
+                        <p className="font-semibold text-[13px] text-foreground group-hover:text-accent transition-colors">Hero</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">An image, a heading, a paragraph and a button.</p>
                       </button>
                       
                       <button 
                         onClick={() => addSection('split')}
                         className="w-full p-4 bg-muted/20 border border-border/60 hover:border-accent/30 rounded-xl text-left hover:bg-accent/5 transition-all group"
                       >
-                        <p className="font-bold text-xs text-foreground group-hover:text-accent transition-colors">Split Article Row</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Side-by-side split image and content layout.</p>
+                        <p className="font-semibold text-[13px] text-foreground group-hover:text-accent transition-colors">Image beside text</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">An image with a heading and text next to it.</p>
                       </button>
 
                       <button 
                         onClick={() => addSection('features')}
                         className="w-full p-4 bg-muted/20 border border-border/60 hover:border-accent/30 rounded-xl text-left hover:bg-accent/5 transition-all group"
                       >
-                        <p className="font-bold text-xs text-foreground group-hover:text-accent transition-colors">3-Column Feature Cards</p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Triple columns grid highlighting features/services.</p>
+                        <p className="font-semibold text-[13px] text-foreground group-hover:text-accent transition-colors">Three features</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-snug">Three columns, each with an image, a heading and a line.</p>
                       </button>
                     </div>
                   </div>
@@ -181,36 +194,35 @@ export function SidebarPanel({
                 {contentTab === 'saved' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
                     <div>
-                      <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-wider">Your templates</span>
-                      <p className="text-[10px] text-muted-foreground/80 mt-0.5 leading-snug">
-                        Designs you've saved. Applying one replaces the canvas.
-                      </p>
+                      <h3 className={PANEL_LABEL}>Your templates</h3>
+                      <p className={PANEL_HINT}>Designs your team has saved. Using one replaces the canvas.</p>
                     </div>
 
-                    <button
-                      onClick={onSaveAsTemplate}
-                      className="w-full p-3 border border-dashed border-border hover:border-accent/40 rounded-xl text-xs font-semibold text-muted-foreground hover:text-accent hover:bg-accent/5 transition-all"
-                    >
-                      Save current design as template
-                    </button>
-
                     {savedTemplates === undefined ? (
-                      <p className="text-[10px] text-muted-foreground text-center py-4">Loading…</p>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+                        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="aspect-[4/5] animate-pulse rounded-md-m bg-muted" />)}
+                      </div>
                     ) : savedTemplates.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground text-center py-4">No saved templates yet.</p>
+                      <div className="rounded-md-m border border-dashed border-border px-4 py-6 text-center">
+                        <p className="text-sm font-medium text-foreground">No saved templates yet</p>
+                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Keep this design to start other emails from.</p>
+                        <button
+                          onClick={onSaveAsTemplate}
+                          className="mt-3 cursor-pointer text-xs font-semibold text-accent underline-offset-2 hover:underline"
+                        >
+                          Save as template
+                        </button>
+                      </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
                         {savedTemplates.map(template => (
-                          <button
+                          <TemplateTile
                             key={template.id}
-                            onClick={() => applySavedTemplate(template)}
-                            className="w-full p-3.5 bg-muted/20 border border-border/60 hover:border-accent/30 rounded-xl text-left hover:bg-accent/5 transition-all group"
-                          >
-                            <p className="font-bold text-xs text-foreground group-hover:text-accent transition-colors">{template.name}</p>
-                            {template.description && (
-                              <p className="text-[10px] text-muted-foreground mt-0.5 leading-snug">{template.description}</p>
-                            )}
-                          </button>
+                            size="sm"
+                            html={template.html}
+                            name={template.name}
+                            onSelect={() => applySavedTemplate(template)}
+                          />
                         ))}
                       </div>
                     )}

@@ -151,8 +151,10 @@ export const msoColsClose = (): string => `<!--[if (gte mso 9)|(IE)]></td></tr><
  * `float` + `display:inline-table` is the only combination Gmail, Apple Mail and
  * Yahoo all honour; Outlook gets the `msoCols*` table instead.
  */
-export const column = (widthPercent: number, inner: string, extraClass = '', extraStyle = ''): string =>
-  `<table cellpadding="0" cellspacing="0" border="0" role="presentation" class="xs-col mso-col-100 ${extraClass}" style="display: inline-table; vertical-align: top; float: left; width: ${widthPercent}%; ${extraStyle}"><tbody><tr><td>${inner}</td></tr></tbody></table>`
+export const column = (widthPercent: number, inner: string, extraClass = '', extraStyle = '', gutter = ''): string =>
+  // The gutter is the cell's padding: padding on the table itself is dropped, since the
+  // table inherits border-collapse: collapse from its row. `xs-col-pad` removes it once stacked.
+  `<table cellpadding="0" cellspacing="0" border="0" role="presentation" class="xs-col mso-col-100 ${extraClass}" style="display: inline-table; vertical-align: top; float: left; width: ${widthPercent}%; ${extraStyle}"><tbody><tr><td${gutter ? ` class="xs-col-pad" style="${gutter}"` : ''}>${inner}</td></tr></tbody></table>`
 
 /**
  * A bulletproof button: VML rounded rectangle for the Word engine, a normal

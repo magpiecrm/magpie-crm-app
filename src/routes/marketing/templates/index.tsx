@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
-import { ArrowLeft, Copy, LayoutTemplate, Pencil, Plus, Send, Trash2, Type } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowLeft, Copy, LayoutTemplate, Pencil, Plus, Search, Send, Trash2, Type } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import {
   createTemplateFn,
@@ -10,12 +10,17 @@ import {
   getTemplatesFn,
   updateTemplateFn,
 } from '../../../server/functions'
-import { STARTER_TEMPLATES } from '../../../features/email-builder/templates/starters'
+import { STARTER_CATEGORIES, STARTER_TEMPLATES, type StarterCategory, type StarterTemplate } from '../../../features/email-builder/templates/starters'
 import { TemplateThumbnail } from '../../../features/templates/components/TemplateThumbnail'
+import { TemplatePreviewDialog, TemplateTile } from '../../../features/templates/components/TemplateTile'
+import { SegmentedTabs } from '../../../features/templates/components/TemplateLibraryDialog'
+import { starterHtml } from '../../../features/templates/preview'
 import type { EmailTemplate } from '../../../features/templates/types'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { ActionMenu } from '../../../components/ui/Menu'
+import { Select } from '../../../components/ui/Select'
 import { confirmDialog } from '../../../components/ui/confirm'
 import { toast } from '../../../components/ui/toast'
 
@@ -23,27 +28,46 @@ export const Route = createFileRoute('/marketing/templates/')({
   component: TemplatesPage,
 })
 
+/** The starters the empty page offers, one from each kind most teams send. */
+const FIRST_STARTERS = ['plain-email', 'newsletter-editorial', 'product-update', 'event-invite']
+
+const editedOn = (iso: string) => {
+  const d = new Date(iso)
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
+}
+
 function TemplatesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [showCreate, setShowCreate] = useState(false)
+  // Undefined while the list shows; otherwise New template, with a starter already picked or none (blank).
+  const [creating, setCreating] = useState<{ starterId?: string } | undefined>(undefined)
   const [renaming, setRenaming] = useState<EmailTemplate | null>(null)
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<'edited' | 'name'>('edited')
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: queryKeys.templates.list(),
     queryFn: () => getTemplatesFn(),
   })
 
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const list = q ? templates.filter((t) => `${t.name} ${t.description}`.toLowerCase().includes(q)) : templates
+    return sort === 'name' ? [...list].sort((a, b) => a.name.localeCompare(b.name)) : list
+  }, [templates, query, sort])
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.templates.list() })
 
   const openBuilder = (id: string) =>
     navigate({ to: '/marketing/templates/$templateId/edit', params: { templateId: id } })
+  const startCampaign = (id: string) => navigate({ to: '/marketing/campaigns', search: { template: id } })
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; starterId?: string }) => createTemplateFn({ data }),
     onSuccess: template => {
       invalidate()
-      setShowCreate(false)
+      setCreating(undefined)
       openBuilder(template.id)
     },
   })
@@ -90,10 +114,11 @@ function TemplatesPage() {
   }
 
   // Take over the page rather than opening a modal, as the Surveys page does.
-  if (showCreate) {
+  if (creating) {
     return (
       <CreateTemplateView
-        onClose={() => setShowCreate(false)}
+        initialStarterId={creating.starterId}
+        onClose={() => setCreating(undefined)}
         onCreate={data => createMutation.mutate(data)}
         isSaving={createMutation.isPending}
         error={createMutation.error?.message}
@@ -102,93 +127,65 @@ function TemplatesPage() {
   }
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="flex justify-between items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-display text-foreground mb-2">Templates</h1>
-          <p className="text-muted-foreground">
-            Reusable email designs. Start campaigns from them, or apply them from the builder's Saved tab.
-          </p>
+    <div className="mx-auto max-w-[1400px] p-4 lg:p-8">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-display text-foreground">Templates</h1>
+          <p className="mt-1 text-muted-foreground max-sm:text-[15px]">Reusable email designs to start campaigns from.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          New Template
-        </button>
+        <Button onClick={() => setCreating({})} leftIcon={<Plus className="h-4 w-4" />} className="shrink-0">
+          New template
+        </Button>
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card animate-pulse h-72 border border-border rounded-md-m" />
-          ))}
-        </div>
-      ) : templates.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-4">
-            <LayoutTemplate className="w-8 h-8 text-accent" />
-          </div>
-          <h3 className="text-lg font-medium text-foreground mb-2">No templates yet</h3>
-          <p className="text-muted-foreground mb-6 max-w-sm">
-            Design one from a starter layout, or open any campaign in the builder and choose "Save as template".
-          </p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Create Template
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {templates.map(template => (
-            <div
-              key={template.id}
-              className="card border border-border rounded-md-m overflow-hidden flex flex-col cursor-pointer hover:border-accent/50 transition-colors"
-              onClick={() => openBuilder(template.id)}
-            >
-              <TemplateThumbnail html={template.html} />
-              <div className="p-4 flex flex-col gap-3 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-foreground truncate">{template.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      updated {new Date(template.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <IconButton title="Edit" onClick={() => openBuilder(template.id)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </IconButton>
-                    <IconButton title="Rename" onClick={() => rename(template)}>
-                      <Type className="w-3.5 h-3.5" />
-                    </IconButton>
-                    <IconButton title="Duplicate" onClick={() => duplicateMutation.mutate(template.id)}>
-                      <Copy className="w-3.5 h-3.5" />
-                    </IconButton>
-                    <IconButton title="Delete" danger onClick={() => confirmDelete(template)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </IconButton>
-                  </div>
-                </div>
-                {template.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{template.description}</p>
-                )}
-                <button
-                  onClick={e => {
-                    e.stopPropagation()
-                    navigate({ to: '/marketing/campaigns', search: { template: template.id } })
-                  }}
-                  className="mt-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-md-s border border-border hover:bg-muted text-foreground cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" /> Use in campaign
-                </button>
-              </div>
+        <div className="grid grid-cols-2 gap-x-5 gap-y-8 md:grid-cols-3 2xl:grid-cols-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="aspect-[4/3] rounded-md-m bg-muted" />
+              <div className="mt-3 h-4 w-2/3 rounded bg-muted" />
+              <div className="mt-2 h-3 w-1/3 rounded bg-muted" />
             </div>
           ))}
         </div>
+      ) : templates.length === 0 ? (
+        <EmptyTemplates onStart={starterId => setCreating({ starterId })} />
+      ) : (
+        <>
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <label className="relative w-full sm:w-72">
+              <span className="sr-only">Search templates</span>
+              <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search templates" className={`${INPUT_CLASS} pl-9`} />
+            </label>
+            <p className="text-[13px] text-muted-foreground tabular-nums max-sm:order-last max-sm:w-full">
+              {query.trim() ? `${shown.length} of ${templates.length}` : `${templates.length} ${templates.length === 1 ? 'template' : 'templates'}`}
+            </p>
+            <div className="w-44 sm:ml-auto max-sm:flex-1">
+              <Select value={sort} onChange={e => setSort(e.target.value as 'edited' | 'name')} aria-label="Sort templates" className={INPUT_CLASS}>
+                <option value="edited">Last edited</option>
+                <option value="name">Name</option>
+              </Select>
+            </div>
+          </div>
+          {shown.length === 0 ? (
+            <p className="py-16 text-center text-sm text-muted-foreground">No templates match “{query.trim()}”.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 md:grid-cols-3 2xl:grid-cols-4">
+              {shown.map(template => (
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  onOpen={() => openBuilder(template.id)}
+                  onUse={() => startCampaign(template.id)}
+                  onRename={() => rename(template)}
+                  onDuplicate={() => duplicateMutation.mutate(template.id)}
+                  onDelete={() => confirmDelete(template)}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
       {renaming && (
         <RenameTemplateDialog
@@ -204,140 +201,220 @@ function TemplatesPage() {
   )
 }
 
-function IconButton({
-  title,
-  onClick,
-  danger,
-  children,
+/** A saved template: its picture opens the builder; the rest is in its "…" menu. */
+function TemplateCard({
+  template,
+  onOpen,
+  onUse,
+  onRename,
+  onDuplicate,
+  onDelete,
 }: {
-  title: string
-  onClick: () => void
-  danger?: boolean
-  children: React.ReactNode
+  template: EmailTemplate
+  onOpen: () => void
+  onUse: () => void
+  onRename: () => void
+  onDuplicate: () => void
+  onDelete: () => void
 }) {
   return (
-    <button
-      title={title}
-      onClick={e => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className={`p-1.5 rounded-md-s text-muted-foreground transition-colors cursor-pointer ${
-        danger ? 'hover:text-destructive hover:bg-destructive/10' : 'hover:text-foreground hover:bg-muted'
-      }`}
-    >
-      {children}
-    </button>
+    <article data-template-card className="group flex min-w-0 flex-col">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Edit ${template.name}`}
+        className="block cursor-pointer overflow-hidden rounded-md-m border border-border transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-[0_4px_16px_-6px_rgb(17_19_22/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <TemplateThumbnail html={template.html} className="aspect-[4/3]" />
+      </button>
+      <div className="mt-3 flex items-start gap-1.5">
+        <div className="min-w-0 flex-1">
+          <h3 className="line-clamp-2 text-[15px] font-medium leading-snug text-foreground" title={template.name}>
+            {template.name}
+          </h3>
+          <p className="mt-1 truncate text-[13px] text-muted-foreground">
+            Edited {editedOn(template.updated_at)}
+            {template.description && <span className="max-sm:hidden"> · {template.description}</span>}
+          </p>
+        </div>
+        <ActionMenu
+          label={`Actions for ${template.name}`}
+          className="-mr-1.5 -mt-1"
+          actions={[
+            { label: 'Edit design', icon: Pencil, onSelect: onOpen },
+            { label: 'Use in campaign', icon: Send, onSelect: onUse },
+            { label: 'Rename', icon: Type, onSelect: onRename },
+            { label: 'Duplicate', icon: Copy, onSelect: onDuplicate },
+            { label: 'Delete', icon: Trash2, onSelect: onDelete, danger: true, separated: true },
+          ]}
+        />
+      </div>
+      <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="mt-3 w-full max-sm:hidden">
+        Use in campaign
+      </Button>
+    </article>
+  )
+}
+
+/** No templates yet: say what they're for and offer a few layouts to start from. */
+function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) {
+  const [previewing, setPreviewing] = useState<StarterTemplate | null>(null)
+  const starters = FIRST_STARTERS.map(id => STARTER_TEMPLATES.find(t => t.id === id)!).filter(Boolean)
+  return (
+    <div className="rounded-md-l border border-border bg-card px-5 py-10 sm:px-10">
+      <div className="mx-auto max-w-md text-center">
+        <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full bg-accent/10 text-accent">
+          <LayoutTemplate aria-hidden className="h-5 w-5" />
+        </div>
+        <h2 className="text-lg font-medium text-foreground">No templates yet</h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+          Keep the designs you send often, and start each campaign from one. Begin with a layout, or save any campaign's design from the builder.
+        </p>
+      </div>
+      <div className="mx-auto mt-8 grid max-w-4xl grid-cols-2 gap-x-4 gap-y-6 sm:gap-x-5 md:grid-cols-4">
+        {starters.map(t => (
+          <TemplateTile
+            key={t.id}
+            html={starterHtml(t)}
+            name={t.name}
+            description={t.description}
+            onSelect={() => onStart(t.id)}
+            onPreview={() => setPreviewing(t)}
+          />
+        ))}
+      </div>
+      <p className="mt-8 text-center text-sm text-muted-foreground">
+        <button type="button" onClick={() => onStart(undefined)} className="cursor-pointer font-medium text-accent underline-offset-2 hover:underline">
+          See all {STARTER_TEMPLATES.length} layouts, or start from blank
+        </button>
+      </p>
+      {previewing && (
+        <TemplatePreviewDialog
+          html={starterHtml(previewing)}
+          name={previewing.name}
+          description={previewing.description}
+          onClose={() => setPreviewing(null)}
+          actionLabel="Use this layout"
+          onAction={() => onStart(previewing.id)}
+        />
+      )}
+    </div>
   )
 }
 
 function CreateTemplateView({
+  initialStarterId,
   onClose,
   onCreate,
   isSaving,
   error,
 }: {
+  initialStarterId?: string
   onClose: () => void
   onCreate: (data: { name: string; starterId?: string }) => void
   isSaving: boolean
   error?: string
 }) {
   const [name, setName] = useState('')
-  const [starterId, setStarterId] = useState<string | undefined>(undefined)
-  const categories = [...new Set(STARTER_TEMPLATES.map(t => t.category))]
+  const [starterId, setStarterId] = useState<string | undefined>(initialStarterId)
+  const [category, setCategory] = useState<StarterCategory | 'all'>('all')
+  const [previewing, setPreviewing] = useState<StarterTemplate | null>(null)
+  const starter = STARTER_TEMPLATES.find(t => t.id === starterId)
+  const shown = category === 'all' ? STARTER_TEMPLATES : STARTER_TEMPLATES.filter(t => t.category === category)
 
   const create = (id: string | undefined) => {
-    const starter = STARTER_TEMPLATES.find(t => t.id === id)
-    onCreate({ name: name.trim() || starter?.name || 'Untitled template', starterId: id })
+    const picked = STARTER_TEMPLATES.find(t => t.id === id)
+    onCreate({ name: name.trim() || picked?.name || 'Untitled template', starterId: id })
   }
-
-  const optionClass = (selected: boolean) =>
-    `card text-left p-5 rounded-md-m border transition-colors cursor-pointer flex flex-col gap-2 ${
-      selected ? 'border-accent ring-1 ring-accent bg-accent/5' : 'border-border hover:border-accent/50'
-    }`
 
   return (
     <form
-      className="p-4 lg:p-8 max-w-5xl"
+      className="flex min-h-full flex-col"
       onSubmit={e => {
         e.preventDefault()
         create(starterId)
       }}
     >
-      <div className="flex items-center gap-3 mb-8">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Back to templates"
-          className="p-2 rounded-md-s hover:bg-muted text-muted-foreground cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-display text-foreground">New template</h1>
-          <p className="text-muted-foreground text-sm">Name it and pick a starting point. You can change everything in the builder.</p>
-        </div>
-      </div>
-
-      <div className="space-y-8">
-        <label className="flex flex-col gap-1.5 text-sm max-w-md">
-          <span className="font-medium text-foreground">Name</span>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="e.g. Monthly newsletter"
-            className="w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </label>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-8">
+        <div className="mb-6 flex items-start gap-2">
           <button
             type="button"
-            onClick={() => setStarterId(undefined)}
-            onDoubleClick={() => create(undefined)}
-            className={optionClass(starterId === undefined)}
+            onClick={onClose}
+            aria-label="Back to templates"
+            className="-ml-2 mt-0.5 grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-md-s text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            <div className="font-medium text-foreground">Blank</div>
-            <div className="text-xs text-muted-foreground">An empty canvas.</div>
+            <ArrowLeft className="h-4 w-4" />
           </button>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-display text-foreground">New template</h1>
+            <p className="mt-1 text-muted-foreground max-sm:text-[15px]">Pick a layout to start from. You can change everything in the builder.</p>
+          </div>
         </div>
 
-        {categories.map(category => (
-          <div key={category} className="space-y-3">
-            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{category}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {STARTER_TEMPLATES.filter(t => t.category === category).map(t => (
-                <button
-                  type="button"
-                  key={t.id}
-                  onClick={() => setStarterId(t.id)}
-                  onDoubleClick={() => create(t.id)}
-                  className={optionClass(starterId === t.id)}
-                >
-                  <div className="font-medium text-foreground">{t.name}</div>
-                  <div className="text-xs text-muted-foreground">{t.description}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+        <SegmentedTabs
+          label="Kinds of layout"
+          className="mb-6"
+          value={category}
+          onChange={setCategory}
+          options={[{ value: 'all' as const, label: 'All' }, ...STARTER_CATEGORIES.map(c => ({ value: c, label: c }))]}
+        />
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="flex justify-end gap-2 border-t border-border pt-6">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md-s border border-border hover:bg-muted cursor-pointer">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 cursor-pointer"
-          >
-            {isSaving ? 'Creating…' : 'Create & open builder'}
-          </button>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 2xl:grid-cols-5">
+          {category === 'all' && (
+            <TemplateTile
+              blank
+              name="Blank"
+              description="An empty canvas to build on."
+              selected={starterId === undefined}
+              onSelect={() => setStarterId(undefined)}
+              onActivate={() => create(undefined)}
+            />
+          )}
+          {shown.map(t => (
+            <TemplateTile
+              key={t.id}
+              html={starterHtml(t)}
+              name={t.name}
+              description={t.description}
+              selected={starterId === t.id}
+              onSelect={() => setStarterId(t.id)}
+              onActivate={() => create(t.id)}
+              onPreview={() => setPreviewing(t)}
+            />
+          ))}
         </div>
       </div>
+
+      {/* Stays at the bottom of the screen, so the name and Create are always in reach. */}
+      <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-end gap-3 px-4 py-3 lg:px-8">
+          <Field label="Template name" className="w-full sm:w-80">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={starter?.name ?? 'Untitled template'} maxLength={200} className={INPUT_CLASS} />
+          </Field>
+          {error && <p className="text-[13px] text-destructive sm:self-center">{error}</p>}
+          <div className="flex gap-2 max-sm:w-full sm:ml-auto [&>button]:max-sm:flex-1">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={isSaving}>
+              Create template
+            </Button>
+          </div>
+        </div>
+      </div>
+      {previewing && (
+        <TemplatePreviewDialog
+          html={starterHtml(previewing)}
+          name={previewing.name}
+          description={previewing.description}
+          onClose={() => setPreviewing(null)}
+          actionLabel="Use this layout"
+          onAction={() => {
+            setStarterId(previewing.id)
+            setPreviewing(null)
+          }}
+        />
+      )}
     </form>
   )
 }
@@ -359,7 +436,7 @@ function RenameTemplateDialog({
   const [name, setName] = useState(template.name)
   const [description, setDescription] = useState(template.description ?? '')
   return (
-    <Dialog isOpen onClose={onClose}  title="Edit template details" description="Shown on the template's card." className="sm:max-w-md">
+    <Dialog isOpen onClose={onClose} title="Rename template" className="sm:max-w-md">
       <form
         className="flex min-h-0 flex-col"
         onSubmit={e => {
@@ -379,7 +456,7 @@ function RenameTemplateDialog({
               className={INPUT_CLASS}
             />
           </Field>
-          <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>}>
+          <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>} hint="Shown on the template's card.">
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />
           </Field>
         </DialogBody>

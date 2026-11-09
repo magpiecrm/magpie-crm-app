@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { Save, Layout, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCircle, ChevronRight, Search, Clock } from 'lucide-react'
+import { Save, Layout, LayoutTemplate, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCircle, ChevronRight, Search, Clock } from 'lucide-react'
 import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn, getContactFieldsFn } from '../../../server/functions'
 import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
@@ -14,7 +14,8 @@ import { copilotStore } from '../../copilot/copilotStore'
 import { Button } from '../../../components/ui/Button'
 import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
 import { Switch } from '../../../components/ui/Switch'
-import { TemplatePicker } from '../../templates/components/TemplatePicker'
+import { TemplateLibraryDialog } from '../../templates/components/TemplateLibraryDialog'
+import { TemplateThumbnail } from '../../templates/components/TemplateThumbnail'
 import { extractDesign } from '../../email-builder/utils/design'
 import { Select } from '../../../components/ui/Select'
 import { mergeTagOptions, mergeTagText } from '../../contacts/mergeTagOptions'
@@ -53,6 +54,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const queryClient = useQueryClient()
   const [activeSection, setActiveSection] = useState<SectionKey | null>(campaignId ? null : 'sender')
   const [showBuilder, setShowBuilder] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [showScheduleDrawer, setShowScheduleDrawer] = useState(false)
   const [formData, setFormData] = useState({
@@ -252,6 +254,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const isRecipientsValid = !!formData.selectedListId
   const isDesignValid = !!formData.htmlContent
   const isCampaignSent = campaignToEdit?.status === 'sent'
+  const hasDesign = (extractDesign(formData.htmlContent)?.blocks.length ?? 0) > 0
 
   const isSaveDisabled = createMutation.isPending || !formData.name || isCampaignSent
 
@@ -791,6 +794,31 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           triggerLabel="Edit design"
         >
           <div className="space-y-4 pt-1">
+            {!isCampaignSent && (
+              <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center">
+                {hasDesign ? (
+                  <TemplateThumbnail html={formData.htmlContent} inset="sm" className="aspect-[4/3] w-full shrink-0 rounded-md-s border border-border sm:w-36" />
+                ) : (
+                  <div className="grid aspect-[4/3] w-full shrink-0 place-items-center rounded-md-s border border-dashed border-border bg-muted/50 text-muted-foreground sm:w-36">
+                    <LayoutTemplate aria-hidden className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground">{hasDesign ? 'Email design' : 'No design yet'}</p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+                    {hasDesign ? 'Edit it in the builder, or start again from a template.' : 'Start from one of your templates or a starter layout, or design it from scratch in the builder.'}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2 max-sm:[&>button]:flex-1">
+                  <Button variant="secondary" size="sm" onClick={() => setShowTemplates(true)} leftIcon={<LayoutTemplate className="h-3.5 w-3.5" />}>
+                    Choose a template
+                  </Button>
+                  <Button size="sm" onClick={() => setShowBuilder(true)}>
+                    {hasDesign ? 'Edit design' : 'Open builder'}
+                  </Button>
+                </div>
+              </div>
+            )}
             <CampaignSetting
               title="Include Unsubscribe Link"
               description={
@@ -809,13 +837,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
               onChange={(on) => setFormData({ ...formData, trackOpens: on })}
             />
 
-            {!isCampaignSent && (
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider">Start from a template</label>
-                <TemplatePicker onPick={applyTemplateHtml} />
-              </div>
-            )}
-
+            {isCampaignSent && (
             <div className="flex flex-col items-center justify-center p-8 border border-dashed border-border rounded-xl bg-muted/10 text-center">
               <Layout className="w-8 h-8 text-accent mb-2" />
               <h4 className="font-semibold text-foreground text-sm">Drag & Drop Editor</h4>
@@ -829,6 +851,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
                 Open Design Builder
               </Button>
             </div>
+            )}
             
             <div className="space-y-2">
               <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider">Or Edit HTML Source Directly</label>
@@ -871,6 +894,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
       </div>
 
       {/* Preview & Test Modal */}
+      {showTemplates && <TemplateLibraryDialog onClose={() => setShowTemplates(false)} onPick={applyTemplateHtml} />}
       <PreviewTestModal
         isOpen={showPreviewModal}
         onClose={() => setShowPreviewModal(false)}

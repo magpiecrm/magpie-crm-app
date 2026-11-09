@@ -191,7 +191,8 @@ const renderSplit: BlockRenderer = (block, globalStyle) => {
     48,
     emailImage({ src: block.subImage || 'https://via.placeholder.com/300x200', alt: block.alt || '', radius: block.style?.borderRadius ?? 6 }),
     'xs-mb-16',
-    `padding-${mediaFirst ? 'right' : 'left'}: 12px;`,
+    '',
+    `padding-${mediaFirst ? 'right' : 'left'}: 16px;`,
   )
   const copy = column(
     52,
@@ -220,6 +221,18 @@ const renderSplit: BlockRenderer = (block, globalStyle) => {
   )
 }
 
+/**
+ * The padding that leaves every column of a row the same content width with
+ * `GRID_GAP` between neighbours: column i of n gives up i/n of the gap on its
+ * left and the rest on its right, so outer columns aren't wider than middle ones.
+ */
+const GRID_GAP = 18
+const gutterCss = (index: number, perRow: number): string => {
+  const left = Math.round((index * GRID_GAP) / perRow)
+  const right = Math.round(((perRow - 1 - index) * GRID_GAP) / perRow)
+  return `padding: 0 ${right}px 0 ${left}px;`
+}
+
 /** Shared engine for the evenly-split card grids (`columns`, `articles`, `product`). */
 const renderGrid = (
   block: EmailBlock,
@@ -238,7 +251,7 @@ const renderGrid = (
   for (let i = 0; i < items.length; i += perRow) {
     const slice = items.slice(i, i + perRow)
     const cols = slice
-      .map((item, index) => column(widthPercent, cell(item, f), 'xs-mb-20', `padding: 0 ${index === 0 ? '8px 0 0' : index === slice.length - 1 ? '0 0 0 8px' : '8px'};`))
+      .map((item, index) => column(widthPercent, cell(item, f), 'xs-mb-20', '', gutterCss(index, perRow)))
       .join(msoColsNext(msoWidth))
     rows.push(`<tr><td style="${i === 0 ? '' : 'padding-top: 24px;'}">${msoColsOpen(msoWidth)}${cols}${msoColsClose()}</td></tr>`)
   }
@@ -507,6 +520,7 @@ const headStyles = (globalStyle: GlobalStyle): string => `
     @media screen and (max-width: 620px) {
       .em-container { width: 100% !important; }
       .xs-col { width: 100% !important; display: block !important; float: none !important; padding-left: 0 !important; padding-right: 0 !important; }
+      .xs-col-pad { padding-left: 0 !important; padding-right: 0 !important; }
       .xs-center { text-align: center !important; }
       .xs-table-center { float: none !important; margin: 0 auto !important; }
       .xs-mb-16 { padding-bottom: 16px !important; }
