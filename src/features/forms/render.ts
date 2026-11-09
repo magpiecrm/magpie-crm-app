@@ -30,7 +30,7 @@ export function formCssVars(style: Required<FormStyle>): Record<string, string> 
 
 export const FORM_CSS = `
 .mf-wrap{container-type:inline-size}
-.mf{--mf-text:#111827;--mf-muted:#5b616e;--mf-border:#8f949d;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235b616e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");--mf-bg:#fff;--mf-error:#b42318;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--mf-text);font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:18px;margin:0;text-align:left}
+.mf{color-scheme:light;--mf-text:#111827;--mf-muted:#5b616e;--mf-border:#8f949d;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235b616e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");--mf-bg:#fff;--mf-error:#b42318;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--mf-text);font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:18px;margin:0;text-align:left}
 .mf *{box-sizing:border-box}
 .mf-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @container (max-width:340px){.mf-row{grid-template-columns:1fr}}
@@ -56,7 +56,7 @@ textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-ra
 .mf-done p{margin:0;white-space:pre-line}
 .mf-preview-reset{appearance:none;align-self:flex-start;background:none;border:0;padding:0;color:var(--mf-muted);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .mf-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
-.mf-dark{--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
+.mf-dark{color-scheme:dark;--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
 `.trim()
 
 /** Fields as the page lays them out: first and last name side by side. */
