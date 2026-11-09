@@ -6,6 +6,7 @@ import { queryKeys } from '../../../../queryKeys'
 import { getTemplateFn, updateTemplateFn } from '../../../../server/functions'
 import { EmailBuilder } from '../../../../features/email-builder/EmailBuilderContainer'
 import type { EmailTemplate } from '../../../../features/templates/types'
+import { toast } from '../../../../components/ui/toast'
 
 export const Route = createFileRoute('/marketing/templates/$templateId/edit')({
   component: TemplateEditPage,
@@ -53,7 +54,7 @@ function TemplateEditor({ template }: { template: EmailTemplate }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.templates.list(), exact: true })
       close()
     },
-    onError: err => window.alert(`Could not save the template: ${err.message}`),
+    onError: err => toast.error("Couldn't save the template", { description: err.message }),
   })
 
   return (

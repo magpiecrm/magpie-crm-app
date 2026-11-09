@@ -34,14 +34,16 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const variants = {
       primary:
         'border-transparent bg-primary text-primary-foreground hover:bg-primary/85 active:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:border-border',
+      // Raised, not inset: a lighter edge than a field's and a hairline shadow, so Cancel never reads as one more field.
       secondary:
-        'bg-card text-foreground border-input hover:bg-muted active:bg-muted-hover disabled:opacity-50',
+        'bg-card text-foreground border-control shadow-[0_1px_2px_rgb(17_19_22/0.06)] hover:bg-muted active:bg-muted-hover dark:bg-white/[0.04] dark:hover:bg-white/[0.08] dark:shadow-none disabled:opacity-50',
       outline:
-        'border-input bg-transparent text-foreground hover:bg-muted active:bg-muted-hover disabled:opacity-50',
+        'border-control bg-transparent text-foreground hover:bg-muted active:bg-muted-hover dark:hover:bg-white/[0.06] disabled:opacity-50',
       ghost:
         'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted-hover disabled:opacity-50',
+      // The same deep red with white text in both themes, so a destructive action keeps its weight in dark mode.
       danger:
-        'border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/95 disabled:bg-muted disabled:text-muted-foreground disabled:border-border',
+        'border-transparent bg-destructive text-destructive-foreground dark:bg-[#d23b30] dark:text-white hover:bg-destructive/90 dark:hover:bg-[#d23b30]/90 active:bg-destructive/95 disabled:bg-muted disabled:text-muted-foreground disabled:border-border dark:disabled:bg-muted dark:disabled:text-muted-foreground',
     }
 
     const sizes = {
@@ -60,7 +62,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {isLoading && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
         {!isLoading && leftIcon && <span className="shrink-0">{leftIcon}</span>}
-        {size !== 'icon' && children}
+        {/* An icon button's icon can come as `leftIcon` or as its children. */}
+        {size === 'icon' ? !isLoading && !leftIcon && children : children}
         {!isLoading && rightIcon && <span className="shrink-0">{rightIcon}</span>}
       </button>
     )

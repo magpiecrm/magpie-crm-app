@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -76,12 +76,15 @@ function SearchByAIDialog({
   }
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} title="Prospect search by AI" className="max-w-xl">
-      <form onSubmit={submit} className="p-4 sm:p-6 space-y-4 overflow-y-auto">
-        <p className="text-sm text-muted-foreground">
-          The AI reads your website, works out what you sell and who buys it, and suggests who to search for. Only your website goes to it. You can change the
-          filters before you search, and nothing is searched until you do.
-        </p>
+    <Dialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Prospect search by AI"
+      description="The AI reads your website, works out what you sell and who buys it, and suggests who to search for. Only your website goes to it. You can change the filters before you search, and nothing is searched until you do."
+      className="sm:max-w-xl"
+    >
+      <form onSubmit={submit} className="flex min-h-0 flex-col">
+        <DialogBody className="space-y-4">
         <Field label="Your website" error={websiteError}>
           <input
             className={INPUT_CLASS}
@@ -90,22 +93,11 @@ function SearchByAIDialog({
               setWebsite(e.target.value)
               setWebsiteError(null)
             }}
-            placeholder="acme.com"
+            placeholder="e.g. acme.com"
             disabled={suggest.isPending}
           />
         </Field>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Button
-            type="submit"
-            variant={suggestion ? 'outline' : 'primary'}
-            isLoading={suggest.isPending}
-            disabled={!website.trim()}
-            leftIcon={<Sparkles className="w-4 h-4" />}
-          >
-            {suggestion ? 'Suggest again' : 'Suggest a search'}
-          </Button>
-          {suggest.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes a few minutes; you can close this meanwhile.</span>}
-        </div>
+        {suggest.isPending && <Notice>Reading your website. This takes a few minutes; you can close this meanwhile.</Notice>}
         {suggest.isError && <Notice level="error">{(suggest.error as Error).message}</Notice>}
 
         {suggestion && (
@@ -114,17 +106,34 @@ function SearchByAIDialog({
               <p className="text-sm text-foreground">{suggestion.why}</p>
               <CriteriaChips criteria={suggestion.criteria} />
             </div>
-            <p className="text-xs text-muted-foreground">Apply puts these in the filters, in place of the ones there now. Change them if you like, then search.</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={onClose}>
+            <p className="text-[13px] text-muted-foreground">Apply puts these in the filters, in place of the ones there now. Change them if you like, then search.</p>
+          </div>
+        )}
+        </DialogBody>
+        <DialogFooter>
+          {suggestion && !suggest.isPending ? (
+            <>
+              <Button type="submit" variant="ghost" className="sm:mr-auto" disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+                Suggest again
+              </Button>
+              <Button type="button" variant="secondary" onClick={onClose}>
                 Cancel
               </Button>
               <Button type="button" onClick={() => onApply(suggestion.criteria)}>
                 Apply filters
               </Button>
-            </div>
-          </div>
-        )}
+            </>
+          ) : (
+            <>
+              <Button type="button" variant="secondary" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={suggest.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+                Suggest a search
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </form>
     </Dialog>
   )

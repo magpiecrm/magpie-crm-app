@@ -10,6 +10,7 @@ import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Select } from '../../../components/ui/Select'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 /** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
 type InboxFilter = 'none' | 'broken' | 'connected'
@@ -121,7 +122,7 @@ export function SendersTab() {
   }
 
   const handleDeleteSender = async (id: number, name: string) => {
-    if (!window.confirm(`Delete the sender "${name}"?`)) return
+    if (!(await confirmDialog({ title: `Delete the sender “${name}”?`, message: 'Campaigns and sequences sending from it will need another sender.', confirmLabel: 'Delete sender', tone: 'danger' }))) return
     setSenderError(null)
     try {
       await deleteSenderFn({ data: { id } })

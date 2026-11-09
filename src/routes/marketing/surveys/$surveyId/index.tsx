@@ -11,7 +11,8 @@ import {
   getSurveySummaryFn,
   publishSurveyFn,
 } from '../../../../server/functions'
-import { Dialog } from '../../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../../components/ui/Dialog'
+import { Button } from '../../../../components/ui/Button'
 import { Badge } from '../../../../components/ui/Badge'
 import { ExportMenu } from '../../../../components/ui/ExportMenu'
 import type { ExportColumn } from '../../../../utils/export'
@@ -23,6 +24,7 @@ import { SurveyStatusBadge } from '../../../../features/surveys/components/Surve
 import { SharePanel } from '../../../../features/surveys/components/SharePanel'
 import { BarList, Distribution, NpsSplit, npsBand } from '../../../../features/surveys/components/charts'
 import { Select } from '../../../../components/ui/Select'
+import { confirmDialog } from '../../../../components/ui/confirm'
 
 export const Route = createFileRoute('/marketing/surveys/$surveyId/')({
   component: SurveyResultsPage,
@@ -79,7 +81,7 @@ function SurveyResultsPage() {
           </button>
           {survey.status === 'published' ? (
             <button
-              onClick={() => confirm('Close this survey? It will stop accepting responses.') && statusMutation.mutate('close')}
+              onClick={async () => (await confirmDialog({ title: 'Close this survey?', message: 'It stops accepting responses. You can open it again later.', confirmLabel: 'Close survey' })) && statusMutation.mutate('close')}
               className="flex items-center gap-2 px-4 py-2 text-sm rounded-md-s border border-border hover:bg-muted cursor-pointer"
             >
               <Square className="w-4 h-4" /> Close
@@ -342,32 +344,48 @@ function ResponsesTab({ survey }: { survey: Survey }) {
         </table>
       </div>
 
-      <Dialog isOpen={!!open} onClose={() => setOpen(null)} title={open?.contact_email ?? 'Anonymous response'} className="max-w-2xl">
+      <Dialog
+        isOpen={!!open}
+        onClose={() => setOpen(null)}
+        title={open?.contact_email ?? 'Anonymous response'}
+        description={
+          open ? (
+            <>
+              {SOURCE_LABELS[open.source]} · started {new Date(open.started_at).toLocaleString('en-GB')}
+              {open.completed_at && ` · completed ${new Date(open.completed_at).toLocaleString('en-GB')}`}
+            </>
+          ) : undefined
+        }
+        className="sm:max-w-2xl"
+      >
         {open && (
-          <div className="space-y-4">
-            <p className="text-xs text-muted-foreground">
-              {SOURCE_LABELS[open.source]} · started {new Date(open.started_at).toLocaleString()}
-              {open.completed_at && ` · completed ${new Date(open.completed_at).toLocaleString()}`}
-            </p>
-            <dl className="space-y-3">
+          <>
+          <DialogBody>
+            <dl className="space-y-4">
               {questions.map(q => (
                 <div key={q.id}>
-                  <dt className="text-xs font-medium text-muted-foreground">{q.question?.title}</dt>
+                  <dt className="text-[13px] font-medium text-muted-foreground mb-0.5">{q.question?.title}</dt>
                   <dd className="text-sm text-foreground whitespace-pre-wrap">
                     {answerToDisplay(q, open.answers[q.id]) || <span className="text-muted-foreground">—</span>}
                   </dd>
                 </div>
               ))}
             </dl>
-            <div className="flex justify-end">
-              <button
-                onClick={() => confirm('Delete this response?') && deleteMutation.mutate(open.id)}
-                className="flex items-center gap-2 text-sm text-destructive hover:bg-destructive/10 px-3 py-1.5 rounded-md-s cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" /> Delete response
-              </button>
-            </div>
-          </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              className="sm:mr-auto text-destructive hover:!text-destructive hover:!bg-destructive/10"
+              leftIcon={<Trash2 className="w-4 h-4" />}
+              onClick={async () => (await confirmDialog({ title: 'Delete this response?', message: 'It’s removed from the results. This can’t be undone.', confirmLabel: 'Delete response', tone: 'danger' })) && deleteMutation.mutate(open.id)}
+            >
+              Delete response
+            </Button>
+            <Button variant="secondary" onClick={() => setOpen(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+          </>
         )}
       </Dialog>
     </div>

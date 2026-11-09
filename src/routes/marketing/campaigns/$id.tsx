@@ -30,6 +30,7 @@ import {
   UnsubscribesTab,
 } from '../../../features/campaigns/components/CampaignResultTabs'
 import { RECIPIENT_EXPORT_COLUMNS, campaignTotals, percent } from '../../../features/campaigns/results'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -257,8 +258,9 @@ function CampaignDetailPage() {
                 {unschedule.isPending ? 'Cancelling…' : 'Cancel schedule'}
               </button>
               <button
-                onClick={() => {
-                  if (confirm('Send this campaign now instead of at its scheduled time?')) sendNow.mutate()
+                onClick={async () => {
+                  const ok = await confirmDialog({ title: 'Send this campaign now?', message: 'It goes out now instead of at its scheduled time.', confirmLabel: 'Send now' })
+                  if (ok) sendNow.mutate()
                 }}
                 disabled={sendNow.isPending || unschedule.isPending}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/85 disabled:opacity-50"

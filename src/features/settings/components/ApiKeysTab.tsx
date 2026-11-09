@@ -8,6 +8,7 @@ import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { CopyButton } from './McpTab'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 /** A key or snippet in a box that scrolls sideways, so a long line never widens the column. */
 
@@ -60,7 +61,7 @@ export function ApiKeysTab() {
   }
 
   const handleDeleteApiKey = async (id: string) => {
-    if (!window.confirm("Revoke this key? This can't be undone.")) return
+    if (!(await confirmDialog({ title: 'Revoke this key?', message: "Anything using it stops working. This can't be undone.", confirmLabel: 'Revoke key', tone: 'danger' }))) return
     try {
       const res = await deleteApiKeyFn({ data: { id } })
       if (res.success) {

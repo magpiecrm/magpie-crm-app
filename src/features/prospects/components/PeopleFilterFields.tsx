@@ -106,7 +106,6 @@ function Choices<T extends string>({ label, options, value, onChange, format, di
         <label key={o} className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
           <input
             type="checkbox"
-            className="rounded border-border text-accent focus:ring-accent"
             checked={value.includes(o)}
             disabled={disabled}
             onChange={(e) => toggle(o, e.target.checked)}

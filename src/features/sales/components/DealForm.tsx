@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { createDealFn } from '../../../server/functions'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
-import { FIELD_CLASS } from '../forms'
+import { FIELD_CLASS, LABEL_CLASS as LABEL } from '../forms'
 import { usePipelines } from '../usePipelines'
 import type { DealView } from '../types'
 import { openStages, poundsToPence } from '../utils'
@@ -19,8 +19,6 @@ export interface DealFormInitial {
   contactEmails?: string[]
 }
 
-const LABEL = 'block text-xs font-medium text-muted-foreground mb-1.5'
-
 /** The "New deal" dialog, used by the board, the deals list and (through the board's URL) the company page. */
 export function DealForm({
   isOpen,
@@ -34,7 +32,7 @@ export function DealForm({
   onCreated?: (deal: DealView) => void
 }) {
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} title="New deal" className="max-w-lg">
+    <Dialog isOpen={isOpen} onClose={onClose} title="New deal" description="Added to the pipeline at the stage you pick." className="sm:max-w-lg">
       {/* Mounted only while open, so each opening starts from `initial`. */}
       {isOpen && <DealFormBody initial={initial} onClose={onClose} onCreated={onCreated} />}
     </Dialog>
@@ -99,7 +97,7 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
         if (name.trim() && pence !== null) create.mutate()
       }}
     >
-      <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
+      <DialogBody className="space-y-4">
         <div>
           <label htmlFor="deal-name" className={LABEL}>
             Name
@@ -111,7 +109,7 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
             maxLength={200}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="For example: Larkspur annual plan"
+            placeholder="e.g. Larkspur annual plan"
             className={FIELD_CLASS}
           />
         </div>
@@ -119,10 +117,13 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label htmlFor="deal-value" className={LABEL}>
-              Value
+              Value <span className="font-normal text-muted-foreground">(optional)</span>
             </label>
+            {/* The currency sits in the field like the search fields' icon. */}
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">£</span>
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground" aria-hidden="true">
+                £
+              </span>
               <input
                 id="deal-value"
                 inputMode="decimal"
@@ -130,16 +131,17 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
                 onChange={(e) => setValue(e.target.value)}
                 placeholder="0"
                 aria-invalid={pence === null}
+                aria-label="Value in pounds"
                 className={`${FIELD_CLASS} pl-7`}
               />
             </div>
-            {pence === null && <p className="text-xs text-destructive mt-1">Enter an amount in pounds.</p>}
+            {pence === null && <p className="text-[13px] text-destructive mt-1.5">Enter an amount in pounds.</p>}
           </div>
           <div>
             <label htmlFor="deal-close" className={LABEL}>
-              Expected close
+              Expected close <span className="font-normal text-muted-foreground">(optional)</span>
             </label>
-            <input id="deal-close" type="date" value={expectedClose} onChange={(e) => setExpectedClose(e.target.value)} className={FIELD_CLASS} />
+            <input id="deal-close" type="date" data-empty={!expectedClose} value={expectedClose} onChange={(e) => setExpectedClose(e.target.value)} className={FIELD_CLASS} />
           </div>
         </div>
 
@@ -173,12 +175,12 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
         </div>
 
         <div>
-          <span className={LABEL}>Company</span>
+          <span className={LABEL}>Company <span className="font-normal text-muted-foreground">(optional)</span></span>
           <CompanyPicker value={companyId} onChange={setCompanyId} />
         </div>
 
         <div>
-          <span className={LABEL}>People</span>
+          <span className={LABEL}>People <span className="font-normal text-muted-foreground">(optional)</span></span>
           <ContactPicker value={contactEmails} onChange={setContactEmails} />
         </div>
 
@@ -200,17 +202,17 @@ function DealFormBody({ initial, onClose, onCreated }: { initial?: DealFormIniti
             ))}
           </Select>
         </div>
-      </div>
+      </DialogBody>
 
-      <div className="px-4 sm:px-6 py-4 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
-        {create.error && <p className="text-xs text-destructive mr-auto">{create.error.message}</p>}
+      <DialogFooter>
+        {create.error && <p className="text-[13px] text-destructive sm:mr-auto">{create.error.message}</p>}
         <Button type="button" variant="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" isLoading={create.isPending} disabled={!name.trim() || pence === null}>
+        <Button type="submit" isLoading={create.isPending}>
           Create deal
         </Button>
-      </div>
+      </DialogFooter>
     </form>
   )
 }

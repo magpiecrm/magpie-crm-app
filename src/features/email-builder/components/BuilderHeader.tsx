@@ -60,11 +60,11 @@ export function BuilderHeader({
 
         <button 
           onClick={onPreview} 
-          aria-label="Preview & Test"
+          aria-label="Preview and test"
           className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted transition-colors text-foreground"
         >
           <Eye className="w-4 h-4" />
-          <span className="hidden lg:inline">Preview & Test</span>
+          <span className="hidden lg:inline">Preview and test</span>
         </button>
 
         <button

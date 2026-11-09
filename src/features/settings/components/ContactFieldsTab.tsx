@@ -15,6 +15,7 @@ import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 /**
  * User-defined contact attributes. Survey questions can map answers onto
@@ -51,8 +52,8 @@ export function ContactFieldsTab() {
                   key={field.key}
                   field={field}
                   onSaved={invalidate}
-                  onDelete={() => {
-                    if (confirm(`Delete "${field.label}"? Its value will be removed from every contact.`)) deleteMutation.mutate(field.key)
+                  onDelete={async () => {
+                    if (await confirmDialog({ title: `Delete “${field.label}”?`, message: 'Its value is removed from every contact. This can’t be undone.', confirmLabel: 'Delete field', tone: 'danger' })) deleteMutation.mutate(field.key)
                   }}
                 />
               ))}

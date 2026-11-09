@@ -30,3 +30,9 @@ export function sentMessage(
     tail
   )
 }
+
+/** A message split for a toast: its first sentence as the title, the rest as the detail. */
+export function toastParts(message: string): [string, string | undefined] {
+  const i = message.indexOf('. ')
+  return i === -1 ? [message.replace(/\.$/, ''), undefined] : [message.slice(0, i), message.slice(i + 2)]
+}

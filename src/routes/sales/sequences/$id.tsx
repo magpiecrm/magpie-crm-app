@@ -102,7 +102,7 @@ function SequencePage() {
               Pause
             </Button>
           ) : s.status !== 'archived' ? (
-            <Button leftIcon={<Play className="w-4 h-4" />} isLoading={setStatus.isPending} disabled={!!notReady} onClick={() => confirmSpamRisk(spam.data, 'This sequence') && setStatus.mutate('active')}>
+            <Button leftIcon={<Play className="w-4 h-4" />} isLoading={setStatus.isPending} disabled={!!notReady} onClick={async () => (await confirmSpamRisk(spam.data, 'This sequence')) && setStatus.mutate('active')}>
               {s.status === 'draft' ? 'Start sending' : 'Resume'}
             </Button>
           ) : null}

@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
-import { X, HelpCircle, AlertCircle, Info } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
+import { toast } from '../../../components/ui/toast'
 import { Select } from '../../../components/ui/Select'
 import { sendCampaignFn, unconfirmedInListFn, updateCampaignFn } from '../../../server/functions'
 import { BATCH_WAITS, everyText } from '../batches'
-import { sentMessage } from '../sendResult'
+import { sentMessage, toastParts } from '../sendResult'
 import { SpamScoreCard, confirmSpamRisk } from '../../spam-score/SpamScoreCard'
 import { useCampaignSpamScore } from '../../spam-score/useSpamScore'
 
@@ -77,16 +80,6 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
     }
   }, [isOpen])
 
-  // Prevent background scroll
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow
-      document.body.style.overflow = 'hidden'
-      return () => {
-        document.body.style.overflow = originalOverflow
-      }
-    }
-  }, [isOpen])
 
   type Batches = { size: number; everyMinutes: number } | null
 
@@ -129,7 +122,8 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
       return sendCampaignFn({ data: { id: campaignId } })
     },
     onSuccess: (res: any) => {
-      alert(sentMessage(res))
+      const [title, description] = toastParts(sentMessage(res))
+      toast.success(title, { description })
       done()
     },
     onError: (err: any) => {
@@ -140,7 +134,8 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   const scheduleMutation = useMutation({
     mutationFn: async (plan: { scheduledAt: string; batches: Batches }) => save(plan),
     onSuccess: (_res, plan) => {
-      alert(plan.batches ? `Campaign scheduled: ${plan.batches.size} ${everyText(plan.batches.everyMinutes)} from then.` : 'Campaign scheduled successfully!')
+      const when = new Date(plan.scheduledAt).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      toast.success('Campaign scheduled', { description: plan.batches ? `From ${when}, ${plan.batches.size} ${everyText(plan.batches.everyMinutes)}.` : `It sends ${when}.` })
       done()
     },
     onError: (err: any) => {
@@ -148,30 +143,28 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
     }
   })
 
-  if (!isOpen) return null
-
   const missingFields = []
-  if (!campaignData.name) missingFields.push('Campaign Name')
-  if (!campaignData.senderEmail) missingFields.push('Sender Profile')
-  if (!campaignData.subject) missingFields.push('Subject Line')
-  if (!campaignData.selectedListId) missingFields.push('Recipients List')
-  if (!campaignData.htmlContent) missingFields.push('Design Content')
+  if (!campaignData.name) missingFields.push('A campaign name')
+  if (!campaignData.senderEmail) missingFields.push('Who it sends from')
+  if (!campaignData.subject) missingFields.push('A subject line')
+  if (!campaignData.selectedListId) missingFields.push('A list to send to')
+  if (!campaignData.htmlContent) missingFields.push('The email itself')
 
   const isCampaignInvalid = missingFields.length > 0
 
   /** The date and time picked, as an ISO string, or null after saying what's wrong with them. */
   const pickedTime = (): string | null => {
     if (!scheduleDate || !scheduleTime) {
-      setErrorMsg('Please select a date and time to schedule.')
+      setErrorMsg('Choose a date and a time.')
       return null
     }
     const combinedDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
     if (isNaN(combinedDateTime.getTime())) {
-      setErrorMsg('Invalid date or time selected.')
+      setErrorMsg("That date or time isn't valid.")
       return null
     }
     if (combinedDateTime.getTime() <= Date.now()) {
-      setErrorMsg('Schedule time must be in the future.')
+      setErrorMsg('Choose a time in the future.')
       return null
     }
     return combinedDateTime.toISOString()
@@ -179,9 +172,9 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
 
   const startsLater = selectedOption === 'later' || (selectedOption === 'batches' && batchStart === 'later')
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (isCampaignInvalid) return
-    if (!confirmSpamRisk(spam.data, 'This campaign')) return
+    if (!(await confirmSpamRisk(spam.data, 'This campaign'))) return
     setErrorMsg('')
     let batches: Batches = null
     if (selectedOption === 'batches') {
@@ -202,251 +195,145 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
 
   const isPending = sendMutation.isPending || scheduleMutation.isPending
   const isScheduleDisabled = startsLater && (!scheduleDate || !scheduleTime)
-  const INPUT = 'w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:ring-1 focus:ring-accent outline-none'
-  const SMALL_LABEL = 'block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5'
+  const INPUT = INPUT_CLASS
+  const option = (on: boolean) =>
+    `rounded-md-s border transition-colors ${on ? 'border-accent ring-1 ring-accent' : 'border-control hover:border-input'}`
+  const optionHead = 'flex cursor-pointer items-start gap-3 px-4 py-3.5'
+  const radio = 'mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)] cursor-pointer'
+  const optionTitle = 'block text-sm font-medium text-foreground'
+  const optionText = 'mt-0.5 block text-[13px] leading-5 text-muted-foreground'
+  const optionMore = 'space-y-3.5 border-t border-border px-4 pb-4 pt-3.5'
   const dateAndTime = (
     <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label htmlFor="schedule-date" className={SMALL_LABEL}>Date</label>
+      <Field label="Date">
         <input
           id="schedule-date"
           type="date"
+          data-empty={!scheduleDate}
           value={scheduleDate}
           onChange={(e) => setScheduleDate(e.target.value)}
           min={new Date().toISOString().split('T')[0]}
           className={INPUT}
         />
-      </div>
-      <div>
-        <label htmlFor="schedule-time" className={SMALL_LABEL}>Time</label>
-        <input id="schedule-time" type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className={INPUT} />
-      </div>
+      </Field>
+      <Field label="Time">
+        <input id="schedule-time" type="time" data-empty={!scheduleTime} value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} className={INPUT} />
+      </Field>
     </div>
   )
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden font-sans">
-      {/* Backdrop overlay */}
-      <div 
-        className="absolute inset-0 bg-black/40 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in"
-        onClick={onClose} 
-      />
-
-      {/* Drawer Container */}
-      <div className="absolute right-0 top-0 h-full w-full sm:w-[460px] bg-card border-l border-border shadow-2xl flex flex-col z-10 transition-transform duration-300 animate-in slide-in-from-right">
-        
-        {/* Header */}
-        <div className="px-6 py-5 bg-emerald-500/10 dark:bg-emerald-950/20 border-b border-emerald-500/15 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-xl font-bold text-foreground">Schedule</h3>
-          </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={onClose} 
-            className="text-muted-foreground hover:text-foreground rounded-full"
-            aria-label="Close schedule drawer"
-          >
-            <X className="w-5 h-5" />
-          </Button>
-        </div>
-
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-          {isCampaignInvalid && (
-            <div className="p-4 bg-amber-500/10 border border-amber-500/25 text-amber-800 dark:text-amber-200 text-xs rounded-xl flex gap-3 items-start animate-in fade-in duration-200">
-              <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-              <div>
-                <h5 className="font-bold text-sm text-amber-900 dark:text-amber-100">Setup Required Before Send</h5>
-                <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-300/90 leading-normal">
-                  Please complete the following checklist steps in the editor wizard before sending or scheduling this campaign:
-                </p>
-                <ul className="list-disc pl-4 mt-2 space-y-1 font-semibold text-xs text-amber-900 dark:text-amber-200">
-                  {missingFields.map(field => <li key={field}>{field}</li>)}
+    <Dialog isOpen={isOpen} onClose={onClose} title="Send or schedule" description={campaignData.name || undefined} className="sm:max-w-lg">
+          <DialogBody className="space-y-5">
+            {isCampaignInvalid && (
+              <Notice level="warning" title="Finish the campaign first">
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {missingFields.map((field) => (
+                    <li key={field}>{field}</li>
+                  ))}
                 </ul>
-              </div>
-            </div>
-          )}
-          {unconfirmed && unconfirmed.unconfirmed > 0 && (
-            <div className="p-4 bg-muted/40 border border-border text-xs rounded-xl flex gap-3 items-start">
-              <Info className="w-5 h-5 shrink-0 text-muted-foreground mt-0.5" />
-              <p className="text-muted-foreground leading-normal">
-                <span className="font-semibold text-foreground">
-                  {unconfirmed.unconfirmed} of {unconfirmed.total} recipients have unverified addresses
-                </span>{' '}
-                (at companies whose mail server accepts every address, or that couldn't be checked).
+              </Notice>
+            )}
+            {unconfirmed && unconfirmed.unconfirmed > 0 && (
+              <Notice title={`${unconfirmed.unconfirmed} of ${unconfirmed.total} recipients have unverified addresses`}>
+                At companies whose mail server accepts every address, or that couldn't be checked.
                 {unconfirmed.unconfirmed > unconfirmed.firstBatch
                   ? ` The first ${unconfirmed.firstBatch} go out with everyone else; the rest follow at least ${hours(unconfirmed.holdHours)} later, once their bounces are in, unless more than ${pct(unconfirmed.maxBounceRate)} of those bounce.`
                   : ' Some may bounce.'}
-              </p>
-            </div>
-          )}
-          {!isCampaignInvalid && (
-            <SpamScoreCard score={spam.data} loading={spam.isFetching} error={spam.error ? (spam.error as Error).message : null} defaultOpen={spam.data?.level === 'high'} onFixWithAI={onFixWithAI} />
-          )}
-          <div>
-            <h4 className="text-base font-bold text-foreground">When would you like to send the campaign?</h4>
-          </div>
+              </Notice>
+            )}
 
-          {/* Options List */}
-          <div className="space-y-4">
-            
-            {/* Option 1: Send now */}
-            <label className={`flex items-start gap-3.5 p-4 rounded-xl border transition-all cursor-pointer ${
-              selectedOption === 'now' 
-                ? 'bg-accent/5 border-accent ring-1 ring-accent' 
-                : 'bg-muted/10 border-border hover:bg-muted/20'
-            }`}>
-              <input
-                type="radio"
-                name="send-option"
-                checked={selectedOption === 'now'}
-                onChange={() => setSelectedOption('now')}
-                className="mt-1 w-4 h-4 text-accent border-border focus:ring-accent accent-accent shrink-0"
-              />
-              <div className="flex-1">
-                <span className="font-bold text-sm text-foreground">Send now</span>
-              </div>
-            </label>
+            <fieldset className="space-y-2.5">
+              <legend className="mb-2.5 text-[13px] font-medium text-foreground">When should it go out?</legend>
 
-            {/* Option 2: Schedule for later */}
-            <div className={`rounded-xl border transition-all ${
-              selectedOption === 'later' 
-                ? 'bg-accent/5 border-accent ring-1 ring-accent' 
-                : 'bg-muted/10 border-border hover:bg-muted/20'
-            }`}>
-              <label className="flex items-start gap-3.5 p-4 cursor-pointer">
-                <input
-                  type="radio"
-                  name="send-option"
-                  checked={selectedOption === 'later'}
-                  onChange={() => setSelectedOption('later')}
-                  className="mt-1 w-4 h-4 text-accent border-border focus:ring-accent accent-accent shrink-0"
-                />
-                <div className="flex-1">
-                  <span className="font-bold text-sm text-foreground">Schedule for later</span>
-                </div>
-              </label>
-
-              {/* Expansible Date-Time Picker if "later" selected */}
-              {selectedOption === 'later' && (
-                <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3.5 animate-in fade-in duration-200">
-                  {dateAndTime}
-                </div>
-              )}
-            </div>
-
-            {/* Option 3: Send in batches */}
-            <div className={`rounded-xl border transition-all ${
-              selectedOption === 'batches'
-                ? 'bg-accent/5 border-accent ring-1 ring-accent'
-                : 'bg-muted/10 border-border hover:bg-muted/20'
-            }`}>
-              <label className="flex items-start gap-3.5 p-4 cursor-pointer">
-                <input
-                  type="radio"
-                  name="send-option"
-                  checked={selectedOption === 'batches'}
-                  onChange={() => setSelectedOption('batches')}
-                  className="mt-1 w-4 h-4 text-accent border-border focus:ring-accent accent-accent shrink-0"
-                />
-                <div className="flex-1 flex items-center gap-2">
-                  <span className="font-bold text-sm text-foreground">Send in batches</span>
-                  <span title="Sends to a set number of recipients at a time, with a wait between, instead of everyone at once.">
-                    <HelpCircle className="w-4 h-4 text-muted-foreground/60" />
+              <div className={option(selectedOption === 'now')}>
+                <label className={optionHead}>
+                  <input type="radio" name="send-option" checked={selectedOption === 'now'} onChange={() => setSelectedOption('now')} className={radio} />
+                  <span>
+                    <span className={optionTitle}>Now</span>
+                    <span className={optionText}>Everyone on the list gets it straight away.</span>
                   </span>
-                </div>
-              </label>
-
-              {selectedOption === 'batches' && (
-                <div className="px-4 pb-4 pt-1 border-t border-border/40 space-y-3.5 animate-in fade-in duration-200">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="batch-size" className={SMALL_LABEL}>Emails per batch</label>
-                      <input
-                        id="batch-size"
-                        type="number"
-                        min={1}
-                        step={1}
-                        inputMode="numeric"
-                        value={batchSize}
-                        onChange={(e) => setBatchSize(e.target.value)}
-                        className={INPUT}
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="batch-wait" className={SMALL_LABEL}>Wait between batches</label>
-                      <Select id="batch-wait" value={batchWait} onChange={(e) => setBatchWait(Number(e.target.value))} className={`${INPUT} text-left`}>
-                        {BATCH_WAITS.map((w) => (
-                          <option key={w.minutes} value={w.minutes}>{w.label}</option>
-                        ))}
-                      </Select>
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="batch-start" className={SMALL_LABEL}>First batch</label>
-                    <Select id="batch-start" value={batchStart} onChange={(e) => setBatchStart(e.target.value as 'now' | 'later')} className={`${INPUT} text-left`}>
-                      <option value="now">Goes now</option>
-                      <option value="later">Goes at a time I choose</option>
-                    </Select>
-                  </div>
-                  {batchStart === 'later' && dateAndTime}
-                  <p className="text-xs text-muted-foreground leading-normal">
-                    {unconfirmed && Number(batchSize) >= 1
-                      ? unconfirmed.total <= Number(batchSize)
-                        ? `All ${unconfirmed.total} recipients fit in one batch. `
-                        : `${unconfirmed.total} recipients in ${Math.ceil(unconfirmed.total / Number(batchSize))} batches, ${everyText(batchWait)}. `
-                      : ''}
-                    The batches carry on by themselves. Taking the campaign off the schedule stops the rest.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Option 4: Send at best time (not built yet) */}
-            <div className="flex items-start gap-3.5 p-4 rounded-xl border bg-muted/5 border-border/60 opacity-80">
-              <input
-                type="radio"
-                name="send-option"
-                disabled
-                aria-label="Send at best time (coming soon)"
-                className="mt-1 w-4 h-4 text-muted-foreground border-border/40 shrink-0 cursor-not-allowed"
-              />
-              <div className="flex-1 flex flex-wrap items-center gap-2">
-                <span className="font-bold text-sm text-muted-foreground">Send at best time</span>
-                <span title="Sends to each recipient at the time they're most likely to open.">
-                  <HelpCircle className="w-4 h-4 text-muted-foreground/60" />
-                </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
-                  Coming soon
-                </span>
+                </label>
               </div>
-            </div>
 
-          </div>
+              <div className={option(selectedOption === 'later')}>
+                <label className={optionHead}>
+                  <input type="radio" name="send-option" checked={selectedOption === 'later'} onChange={() => setSelectedOption('later')} className={radio} />
+                  <span>
+                    <span className={optionTitle}>At a time you choose</span>
+                    <span className={optionText}>Sends automatically at the time you pick.</span>
+                  </span>
+                </label>
+                {selectedOption === 'later' && <div className={optionMore}>{dateAndTime}</div>}
+              </div>
 
-          {/* Error Message Display */}
-          {errorMsg && (
-            <div className="p-3.5 bg-destructive/10 border border-destructive/25 text-destructive text-xs rounded-xl flex gap-2.5 items-start">
-              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-        </div>
+              <div className={option(selectedOption === 'batches')}>
+                <label className={optionHead}>
+                  <input type="radio" name="send-option" checked={selectedOption === 'batches'} onChange={() => setSelectedOption('batches')} className={radio} />
+                  <span>
+                    <span className={optionTitle}>In batches</span>
+                    <span className={optionText}>A set number at a time, with a wait between.</span>
+                  </span>
+                </label>
+                {selectedOption === 'batches' && (
+                  <div className={optionMore}>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Emails per batch">
+                        <input id="batch-size" type="number" min={1} step={1} inputMode="numeric" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} className={INPUT} />
+                      </Field>
+                      <Field label="Wait between">
+                        <Select id="batch-wait" value={batchWait} onChange={(e) => setBatchWait(Number(e.target.value))} className={`${INPUT} text-left`}>
+                          {BATCH_WAITS.map((w) => (
+                            <option key={w.minutes} value={w.minutes}>
+                              {w.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    </div>
+                    <Field label="First batch">
+                      <Select id="batch-start" value={batchStart} onChange={(e) => setBatchStart(e.target.value as 'now' | 'later')} className={`${INPUT} text-left`}>
+                        <option value="now">Goes now</option>
+                        <option value="later">Goes at a time I choose</option>
+                      </Select>
+                    </Field>
+                    {batchStart === 'later' && dateAndTime}
+                    <p className="text-[13px] leading-5 text-muted-foreground">
+                      {unconfirmed && Number(batchSize) >= 1
+                        ? unconfirmed.total <= Number(batchSize)
+                          ? `All ${unconfirmed.total} recipients fit in one batch. `
+                          : `${unconfirmed.total} recipients in ${Math.ceil(unconfirmed.total / Number(batchSize))} batches, ${everyText(batchWait)}. `
+                        : ''}
+                      The batches carry on by themselves. Taking the campaign off the schedule stops the rest.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </fieldset>
 
-        {/* Footer actions panel */}
-        <div className="px-6 py-4 border-t border-border bg-muted/15 flex justify-end shrink-0">
-          <Button
-            onClick={handleConfirm}
-            disabled={isScheduleDisabled || isPending || isCampaignInvalid}
-            isLoading={isPending}
-            className="px-6"
-          >
-            {startsLater ? 'Schedule' : selectedOption === 'batches' ? 'Send first batch' : 'Send now'}
-          </Button>
-        </div>
+            {!isCampaignInvalid && (
+              <div>
+              <SpamScoreCard score={spam.data} loading={spam.isFetching} error={spam.error ? (spam.error as Error).message : null} defaultOpen={spam.data?.level === 'high'} onFixWithAI={onFixWithAI} />
+              </div>
+            )}
 
-      </div>
-    </div>
+            {errorMsg && <Notice level="error">{errorMsg}</Notice>}
+          </DialogBody>
+
+          <DialogFooter>
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleConfirm()} disabled={isScheduleDisabled || isPending || isCampaignInvalid} isLoading={isPending}>
+              {startsLater
+                ? 'Schedule campaign'
+                : selectedOption === 'batches'
+                  ? 'Send first batch'
+                  : unconfirmed?.total
+                    ? `Send to ${unconfirmed.total.toLocaleString('en-GB')} ${unconfirmed.total === 1 ? 'person' : 'people'}`
+                    : 'Send now'}
+            </Button>
+          </DialogFooter>
+    </Dialog>
   )
 }

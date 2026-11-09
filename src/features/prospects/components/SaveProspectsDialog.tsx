@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Button } from '../../../components/ui/Button'
 import { createListFn, listsFn, prospectingStatusFn, prospectJobFn, saveProspectsFn } from '../../../server/functions'
 import type { PersonResult } from '../../../server/prospecting/types'
@@ -108,19 +110,19 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
       isOpen={isOpen}
       onClose={close}
       title={current ? 'Finding emails' : `Save ${people.length} ${people.length === 1 ? 'person' : 'people'} to a list`}
-      className="max-w-2xl"
+      className="sm:max-w-2xl"
     >
-      <div className="p-6 space-y-4">
         {!current ? (
           <>
+          <DialogBody className="space-y-4">
             {newListName !== null ? (
               <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">New list name</label>
+                <label className="block text-[13px] font-medium text-foreground mb-1.5">New list name</label>
                 <div className="flex gap-2">
                   <input
                     autoFocus
                     type="text"
-                    className="flex-1 px-3 py-2 text-sm bg-background border border-border rounded-md-s focus:ring-1 focus:ring-accent focus:border-transparent outline-none"
+                    className={`${INPUT_CLASS} flex-1`}
                     placeholder="e.g. Q1 Outreach"
                     value={newListName}
                     onChange={(e) => setNewListName(e.target.value)}
@@ -135,20 +137,20 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
                     Create
                   </Button>
                 </div>
-                {createList.isError && <p className="text-xs text-destructive mt-1.5">{(createList.error as Error).message}</p>}
-                <button type="button" onClick={() => setNewListName(null)} className="text-[10px] text-accent hover:underline font-semibold mt-2">
-                  Cancel
+                {createList.isError && <p className="text-[13px] text-destructive mt-1.5">{(createList.error as Error).message}</p>}
+                <button type="button" onClick={() => setNewListName(null)} className="mt-2 text-[13px] font-medium text-foreground underline-offset-4 hover:underline cursor-pointer">
+                  Choose an existing list instead
                 </button>
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">List</label>
+                <label className="block text-[13px] font-medium text-foreground mb-1.5">List</label>
                 <Select
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md-s focus:ring-1 focus:ring-accent focus:border-transparent outline-none"
+                  className={INPUT_CLASS}
                   value={listId}
                   onChange={(e) => setListId(e.target.value ? Number(e.target.value) : '')}
                 >
-                  <option value="">Choose a list...</option>
+                  <option value="">Choose a list…</option>
                   {lists.map((list) => (
                     <option key={list.id} value={list.id}>{list.name}</option>
                   ))}
@@ -156,15 +158,15 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
                 <button
                   type="button"
                   onClick={() => setNewListName('')}
-                  className="text-[10px] text-accent hover:underline font-semibold mt-2 inline-flex items-center gap-1"
+                  className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-foreground underline-offset-4 hover:underline cursor-pointer"
                 >
-                  <Plus className="w-3 h-3" />
-                  Create new list
+                  <Plus className="w-3.5 h-3.5" />
+                  New list
                 </button>
               </div>
             )}
 
-            <p className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-md-s p-3 leading-relaxed">
+            <p className="text-[13px] text-muted-foreground bg-muted/50 border border-border rounded-md-s px-3 py-2.5 leading-relaxed">
               Saving looks up a work email for each person at their current company, for these people only.{' '}
               {verifiedOnly
                 ? 'Only emails the mail server confirms are saved; anyone who can’t be verified is left out. '
@@ -180,19 +182,20 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
               {people.length > 10 && ' This many people runs in the background, and you can watch progress here.'}
             </p>
 
-            {save.isError && <p className="text-xs text-destructive font-medium">{(save.error as Error).message}</p>}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="ghost" onClick={close}>Cancel</Button>
-              <Button disabled={!listId} isLoading={save.isPending} onClick={() => listId && save.mutate(listId)}>
-                Find emails & save
-              </Button>
-            </div>
+            {save.isError && <Notice level="error">{(save.error as Error).message}</Notice>}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={close}>Cancel</Button>
+            <Button disabled={!listId} isLoading={save.isPending} onClick={() => listId && save.mutate(listId)}>
+              Find emails and save
+            </Button>
+          </DialogFooter>
           </>
         ) : (
           <>
+          <DialogBody className="space-y-4">
             <div>
-              <div className="flex justify-between text-xs font-semibold text-foreground mb-1.5">
+              <div className="flex justify-between text-[13px] font-medium text-foreground mb-1.5">
                 <span>{finished ? (current.status === 'failed' ? 'Stopped with an error' : 'Done') : 'Working…'}</span>
                 <span className="text-muted-foreground">{current.processed} / {current.total}</span>
               </div>
@@ -203,20 +206,20 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
                 />
               </div>
               {counts && (
-                <p className="text-[11px] text-muted-foreground mt-2">
+                <p className="text-[13px] text-muted-foreground mt-2">
                   {Object.entries(counts).map(([k, n]) => `${n} ${OUTCOME_LABEL[k as SaveStatus].toLowerCase()}`).join(' · ')}
                 </p>
               )}
-              {current.error && <p className="text-xs text-destructive mt-2">{current.error}</p>}
+              {current.error && <p className="text-[13px] text-destructive mt-2">{current.error}</p>}
             </div>
 
             <div className="max-h-80 overflow-auto border border-border rounded-md-s divide-y divide-border">
               {current.outcomes.map((o) => (
-                <div key={o.profileUrl} className="px-3 py-2 flex items-center gap-3 text-xs">
+                <div key={o.profileUrl} className="px-3 py-2 flex items-center gap-3 text-[13px]">
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-foreground truncate">{o.name}</p>
+                    <p className="font-medium text-foreground truncate">{o.name}</p>
                     <p className="text-muted-foreground truncate">{o.email ?? o.company}</p>
-                    {o.message && !o.email && <p className="text-[10px] text-muted-foreground leading-snug mt-0.5">{o.message}</p>}
+                    {o.message && !o.email && <p className="text-xs text-muted-foreground leading-snug mt-0.5">{o.message}</p>}
                   </div>
                   {o.emailStatus && <EmailStatusBadge status={o.emailStatus} />}
                   <span
@@ -229,18 +232,18 @@ export function SaveProspectsDialog({ isOpen, onClose, people, persona }: Props)
               ))}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              {savedEmails.length > 0 && (
-                <Button variant="secondary" onClick={() => setEnrolling(true)}>
-                  Add {savedEmails.length === 1 ? 'them' : `these ${savedEmails.length}`} to a sequence
-                </Button>
-              )}
-              <Button onClick={close}>{finished ? 'Close' : 'Close (keeps running)'}</Button>
-            </div>
-            {enrolling && <EnrollDialog emails={savedEmails} onClose={() => setEnrolling(false)} />}
+          </DialogBody>
+          <DialogFooter>
+            {savedEmails.length > 0 && (
+              <Button variant="secondary" onClick={() => setEnrolling(true)}>
+                Add {savedEmails.length === 1 ? 'them' : `these ${savedEmails.length}`} to a sequence
+              </Button>
+            )}
+            <Button onClick={close}>{finished ? 'Done' : 'Close (keeps running)'}</Button>
+          </DialogFooter>
+          {enrolling && <EnrollDialog emails={savedEmails} onClose={() => setEnrolling(false)} />}
           </>
         )}
-      </div>
     </Dialog>
   )
 }

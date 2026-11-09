@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { enrollInSequenceFn, listsFn, sequencesFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Field } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
 import { queryKeys } from '../../../queryKeys'
 import { FIELD_CLASS } from '../../sales/forms'
@@ -44,88 +46,83 @@ export function EnrollDialog({ sequenceId, emails, onClose }: { sequenceId?: str
   const sequenceName = all.find((s) => s.id === target)?.name
 
   return (
-    <Dialog isOpen onClose={onClose} title="Add people to a sequence" padded>
+    <Dialog isOpen onClose={onClose} title="Add people to a sequence" className="sm:max-w-md">
       {done !== null ? (
-        <div className="space-y-4">
-          <p className="text-sm text-foreground">
-            Added {done.toLocaleString('en-GB')} {done === 1 ? 'person' : 'people'}
-            {sequenceName ? ` to "${sequenceName}"` : ''}. Their first email goes out in the sequence's sending hours, once it's running.
-          </p>
-          <div className="flex justify-end">
+        <>
+          <DialogBody>
+            <Notice level="success" title={`Added ${done.toLocaleString('en-GB')} ${done === 1 ? 'person' : 'people'}${sequenceName ? ` to “${sequenceName}”` : ''}`}>
+              Their first email goes out in the sequence's sending hours, once it's running.
+            </Notice>
+          </DialogBody>
+          <DialogFooter>
             <Button onClick={onClose}>Done</Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </>
       ) : (
         <form
           onSubmit={(e) => {
             e.preventDefault()
             if (check.data?.enrolled) enroll.mutate()
           }}
-          className="space-y-4"
+          className="flex min-h-0 flex-col"
         >
-          {!sequenceId && (
-            <div>
-              <label htmlFor="enroll-seq" className="block text-sm font-medium text-foreground mb-1">
-                Sequence
-              </label>
-              {all.length ? (
-                <Select id="enroll-seq" value={chosenSequence} onChange={(e) => setChosenSequence(e.target.value)} className={FIELD_CLASS}>
-                  <option value="">Choose a sequence…</option>
-                  {all.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
+          <DialogBody className="space-y-4">
+            {!sequenceId &&
+              (all.length ? (
+                <Field label="Sequence">
+                  <Select id="enroll-seq" value={chosenSequence} onChange={(e) => setChosenSequence(e.target.value)} className={FIELD_CLASS}>
+                    <option value="">Choose a sequence…</option>
+                    {all.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : (
+                <Notice>Make a sequence first (Sell → Sequences).</Notice>
+              ))}
+            {emails ? (
+              <p className="text-sm text-muted-foreground">
+                {emails.length.toLocaleString('en-GB')} chosen {emails.length === 1 ? 'contact' : 'contacts'}.
+              </p>
+            ) : (
+              <Field label="From the list">
+                <Select id="enroll-list" value={listId} onChange={(e) => setListId(e.target.value)} className={FIELD_CLASS}>
+                  <option value="">Choose a list…</option>
+                  {lists.map((l: any) => (
+                    <option key={l.id} value={String(l.id)}>
+                      {l.name}
                     </option>
                   ))}
                 </Select>
-              ) : (
-                <p className="text-sm text-muted-foreground">Make a sequence first (Sell → Sequences).</p>
-              )}
-            </div>
-          )}
-          {emails ? (
-            <p className="text-sm text-muted-foreground">
-              {emails.length.toLocaleString('en-GB')} chosen {emails.length === 1 ? 'contact' : 'contacts'}.
-            </p>
-          ) : (
-            <div>
-              <label htmlFor="enroll-list" className="block text-sm font-medium text-foreground mb-1">
-                From the list
-              </label>
-              <Select id="enroll-list" value={listId} onChange={(e) => setListId(e.target.value)} className={FIELD_CLASS}>
-                <option value="">Choose a list…</option>
-                {lists.map((l: any) => (
-                  <option key={l.id} value={String(l.id)}>
-                    {l.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          )}
+              </Field>
+            )}
 
-          {check.isPending && <p className="text-sm text-muted-foreground">Checking…</p>}
-          {check.error && <p className="text-sm text-destructive">{(check.error as Error).message}</p>}
-          {check.data && (
-            <div className="rounded-lg bg-muted/40 p-3 text-sm space-y-1">
-              <p className="text-foreground font-medium">
-                {check.data.enrolled.toLocaleString('en-GB')} {check.data.enrolled === 1 ? 'person' : 'people'} will be added.
-              </p>
-              {skipped.map(([why, n]) => (
-                <p key={why} className="text-muted-foreground">
-                  {n.toLocaleString('en-GB')} left out: they {SKIP_REASONS[why] ?? why}.
+            {check.isPending && <p className="text-sm text-muted-foreground">Checking who can be added…</p>}
+            {check.error && <Notice level="error">{(check.error as Error).message}</Notice>}
+            {check.data && (
+              <div className="rounded-md-s border border-border bg-muted/40 px-3 py-2.5 text-sm space-y-1">
+                <p className="text-foreground font-medium">
+                  {check.data.enrolled.toLocaleString('en-GB')} {check.data.enrolled === 1 ? 'person' : 'people'} will be added.
                 </p>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center justify-end gap-2">
-            <span className="flex-1 text-xs text-destructive">{(enroll.error as Error | null)?.message}</span>
-            <Button type="button" variant="ghost" onClick={onClose}>
+                {skipped.map(([why, n]) => (
+                  <p key={why} className="text-muted-foreground">
+                    {n.toLocaleString('en-GB')} left out: they {SKIP_REASONS[why] ?? why}.
+                  </p>
+                ))}
+              </div>
+            )}
+          </DialogBody>
+          <DialogFooter>
+            {enroll.error && <p className="text-[13px] text-destructive sm:mr-auto">{(enroll.error as Error).message}</p>}
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" isLoading={enroll.isPending} disabled={!check.data?.enrolled}>
-              Add {check.data?.enrolled ? check.data.enrolled.toLocaleString('en-GB') : ''}
+              {check.data?.enrolled ? `Add ${check.data.enrolled.toLocaleString('en-GB')} ${check.data.enrolled === 1 ? 'person' : 'people'}` : 'Add people'}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       )}
     </Dialog>

@@ -3,6 +3,7 @@ import { AlertTriangle, Hourglass, Loader2, Send } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { sendHeldRecipientsFn } from '../../../server/functions'
 import type { GuessHold } from '../../../server/db'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 const people = (n: number) => `${n} recipient${n === 1 ? '' : 's'}`
@@ -47,11 +48,13 @@ export function HeldBackBanner({ campaignId, hold }: { campaignId: number; hold:
         </div>
       </div>
       <button
-        onClick={() => {
-          const ask = stopped
-            ? `Send to the ${people(hold.held)} anyway? Their addresses weren't verified and more may bounce.`
-            : `Send to the ${people(hold.held)} now, without waiting to see how many of the first batch bounce?`
-          if (confirm(ask)) send.mutate()
+        onClick={async () => {
+          const ok = await confirmDialog(
+            stopped
+              ? { title: `Send to the ${people(hold.held)} anyway?`, message: "Their addresses weren't verified, and more of them may bounce.", confirmLabel: 'Send anyway', tone: 'warning' }
+              : { title: `Send to the ${people(hold.held)} now?`, message: "This doesn't wait to see how many of the first batch bounce.", confirmLabel: 'Send now', tone: 'warning' },
+          )
+          if (ok) send.mutate()
         }}
         disabled={send.isPending}
         className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:bg-muted/40 disabled:opacity-50 shrink-0"

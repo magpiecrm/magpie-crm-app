@@ -1,6 +1,10 @@
-/** Text inputs and selects on the sales pages and forms. */
-export const FIELD_CLASS =
-  'w-full px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40'
+import { INPUT_CLASS } from '../../components/ui/Field'
+
+/** Text inputs and selects on the sales pages and forms: the app's one field style. */
+export const FIELD_CLASS = INPUT_CLASS
+
+/** A field's label above it, as `Field` draws one. */
+export const LABEL_CLASS = 'block text-[13px] font-medium text-foreground mb-1.5'
 
 /** "250" → 250, "" → null. */
 export function parseHeadcount(raw: string): number | null {

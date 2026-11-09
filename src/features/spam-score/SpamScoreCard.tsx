@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { ChevronDown, Loader2, Sparkles } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { confirmDialog } from '../../components/ui/confirm'
 import type { SpamFinding, SpamLevel, SpamPart, SpamScore, SpamStepScore } from './types'
 
 export const SPAM_LEVEL: Record<SpamLevel, { label: string; variant: 'success' | 'warning' | 'error' }> = {
@@ -28,7 +29,7 @@ export function SpamScoreBadge({ score, loading }: { score?: SpamScore; loading?
   if (!score) return loading ? <Badge>Spam score…</Badge> : null
   const level = SPAM_LEVEL[score.level]
   return (
-    <Badge variant={level.variant}>
+    <Badge variant={level.variant} status>
       Spam score {score.score} · {level.label}
     </Badge>
   )
@@ -80,22 +81,33 @@ export function SpamScoreCard({
   const level = score ? SPAM_LEVEL[score.level] : null
 
   return (
-    <section className={`rounded-xl border border-border bg-card text-xs ${className}`} aria-label="Spam score">
+    <section
+      className={`rounded-md-s border text-[13px] ${
+        // Neutral: the badge says the risk once.
+        'border-border bg-card'
+      } ${className}`}
+      aria-label="Spam score"
+    >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         disabled={!score}
-        className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+        className="flex w-full items-center gap-3 rounded-md-s px-4 py-3 text-left hover:bg-foreground/[0.03] disabled:cursor-default disabled:hover:bg-transparent cursor-pointer"
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-foreground">Spam score</span>
-            {score && <span className="text-sm font-semibold tabular-nums text-foreground">{score.score}</span>}
-            {level && <Badge variant={level.variant}>{level.label}</Badge>}
+            {score && (
+              <span className="text-sm font-semibold tabular-nums text-foreground">
+                {score.score}
+                <span className="font-normal text-muted-foreground">/100</span>
+              </span>
+            )}
+            {level && <Badge variant={level.variant} status>{level.label}</Badge>}
             {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-label="Checking" />}
           </div>
-          <p className="mt-0.5 truncate text-muted-foreground">
+          <p className="mt-0.5 leading-5 text-muted-foreground">
             {error
               ? `Couldn't check it: ${error}`
               : !score
@@ -163,7 +175,7 @@ export function SpamStepChip({ step }: { step?: SpamStepScore }) {
   return (
     <div className="text-xs">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={!counted.length} className="inline-flex items-center gap-1.5 disabled:cursor-default">
-        <Badge variant={level.variant}>
+        <Badge variant={level.variant} status>
           Spam score {step.score} · {level.label}
         </Badge>
         {counted.length > 0 && <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />}
@@ -181,14 +193,25 @@ export function SpamStepChip({ step }: { step?: SpamStepScore }) {
 
 /**
  * Before sending something likely to land in spam: the person says so first.
- * True to go ahead (always, below High).
+ * Resolves true to go ahead (always, below High).
  */
-export function confirmSpamRisk(score: SpamScore | undefined, what = 'It'): boolean {
+export async function confirmSpamRisk(score: SpamScore | undefined, what = 'It'): Promise<boolean> {
   if (score?.level !== 'high') return true
-  const reasons = score.findings
-    .filter((f) => f.hard || f.points > 0)
-    .slice(0, 3)
-    .map((f) => `• ${f.text}`)
-    .join('\n')
-  return window.confirm(`${what} is likely to land in spam (spam score ${score.score}):\n\n${reasons}\n\nSend anyway?`)
+  const reasons = score.findings.filter((f) => f.hard || f.points > 0).slice(0, 3)
+  return confirmDialog({
+    title: `${what} is likely to land in spam`,
+    message: (
+      <>
+        <span className="block">Its spam score is {score.score}. The main reasons:</span>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {reasons.map((f) => (
+            <li key={f.text}>{f.text}</li>
+          ))}
+        </ul>
+      </>
+    ),
+    confirmLabel: 'Send anyway',
+    cancelLabel: 'Go back',
+    tone: 'warning',
+  })
 }

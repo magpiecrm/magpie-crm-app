@@ -36,6 +36,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-control: var(--control);
   --color-ring: var(--ring);
 
   --shadow-sm: 0 1px 2px rgb(17 19 22 / 0.05);
@@ -81,6 +82,8 @@
     --border: #e2e2dc;
     /* A field's edge: 3:1 against the card and the page, as a control's boundary needs (WCAG 1.4.11). */
     --input: #8a8c85;
+    /* Outline buttons' edge: lighter than a field's, so a button reads as raised and a field as inset. */
+    --control: #d2d3cd;
     --ring: #0d7285;
     --radius: 0.75rem;
   }
@@ -90,7 +93,8 @@
     --foreground: #eef0f2;
     --card: #15171a;
     --card-foreground: #eef0f2;
-    --popover: #15171a;
+    /* Pop-ups (dialogs, toasts, menus) sit a step above the page's cards. */
+    --popover: #1a1d21;
     --popover-foreground: #eef0f2;
     --primary: #eef0f2;
     --primary-foreground: #0c0d0f;
@@ -107,6 +111,7 @@
     --destructive-foreground: #1f0806;
     --border: #32363d;
     --input: #6a6f78;
+    --control: #3a3e45;
     --ring: #4fc3d2;
   }
 
@@ -134,6 +139,77 @@
     input, textarea, select {
       font-size: 16px !important;
     }
+  }
+
+  /*
+   * Checkboxes and radios drawn by the app rather than the browser, so they match
+   * the fields (same border strength) and the accent (teal when chosen) in every
+   * browser and both themes. Sizes, margins and spacing still come from utilities.
+   */
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none;
+    -webkit-appearance: none;
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    display: inline-grid;
+    place-content: center;
+    vertical-align: middle;
+    border: 1px solid var(--input);
+    background-color: var(--card);
+    color: var(--accent-foreground);
+    cursor: pointer;
+    transition: background-color 120ms, border-color 120ms;
+  }
+  input[type='checkbox'] {
+    border-radius: 4px;
+  }
+  input[type='radio'] {
+    border-radius: 9999px;
+  }
+  input[type='checkbox']:hover:not(:disabled):not(:checked),
+  input[type='radio']:hover:not(:disabled):not(:checked) {
+    border-color: var(--muted-foreground);
+  }
+  input[type='checkbox']:checked,
+  input[type='checkbox']:indeterminate {
+    background-color: var(--accent);
+    border-color: var(--accent);
+  }
+  input[type='checkbox']:checked::before,
+  input[type='checkbox']:indeterminate::before {
+    content: '';
+    width: 0.75rem;
+    height: 0.75rem;
+    background-color: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  input[type='checkbox']:indeterminate::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M4 8h8'/%3E%3C/svg%3E");
+  }
+  input[type='radio']:checked {
+    border-color: var(--accent);
+  }
+  input[type='radio']:checked::before {
+    content: '';
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background-color: var(--accent);
+  }
+  input[type='checkbox']:focus-visible,
+  input[type='radio']:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Placeholder examples readable at about 5:1, where a field doesn't set its own. */
@@ -229,6 +305,67 @@
       min-height: 44px;
     }
   }
+}
+
+/*
+ * Pop-ups (Dialog, Sheet, confirmations, toasts) come in quickly and quietly:
+ * the dim fades, the box rises a few pixels. A dialog on a phone is a sheet
+ * from the bottom. Nothing moves for someone who has asked for less motion.
+ */
+@keyframes popup-fade-in {
+  from { opacity: 0; }
+}
+@keyframes popup-rise-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+}
+@keyframes popup-sheet-in {
+  from { transform: translateY(100%); }
+}
+@keyframes popup-slide-in-right {
+  from { transform: translateX(100%); }
+}
+@keyframes popup-slide-in-left {
+  from { transform: translateX(-100%); }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+}
+.popup-overlay { animation: popup-fade-in 160ms var(--ease-md); }
+.popup-panel { animation: popup-rise-in 180ms var(--ease-md); }
+.popup-sheet-bottom { animation: popup-sheet-in 240ms var(--ease-md); }
+.popup-sheet-right { animation: popup-slide-in-right 240ms var(--ease-md); }
+.popup-sheet-left { animation: popup-slide-in-left 240ms var(--ease-md); }
+.toast-in { animation: toast-in 200ms var(--ease-md); }
+@media (max-width: 639px) {
+  .popup-panel { animation: popup-sheet-in 240ms var(--ease-md); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .popup-overlay, .popup-panel, .popup-sheet-bottom, .popup-sheet-right, .popup-sheet-left, .toast-in { animation: none; }
+}
+
+/* Date and time fields: the app's own calendar and clock icons, in the theme's colour, in place of the browser's. */
+input[type='date'] { --picker-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 2v4M16 2v4'/%3E%3Crect width='18' height='18' x='3' y='4' rx='2'/%3E%3Cpath d='M3 10h18'/%3E%3C/svg%3E"); }
+input[type='time'] { --picker-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 6v6l4 2'/%3E%3C/svg%3E"); }
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 8px;
+  background: var(--muted-foreground);
+  -webkit-mask: var(--picker-icon) center / 16px 16px no-repeat;
+  mask: var(--picker-icon) center / 16px 16px no-repeat;
+  opacity: 1;
+  cursor: pointer;
+}
+input[type='date']::-webkit-calendar-picker-indicator:hover,
+input[type='time']::-webkit-calendar-picker-indicator:hover {
+  background: var(--foreground);
+}
+
+input[type='date'][data-empty='true']::-webkit-datetime-edit,
+input[type='time'][data-empty='true']::-webkit-datetime-edit {
+  color: color-mix(in oklab, var(--muted-foreground) 90%, transparent);
 }
 
 /* Plan sliders: a track you can see in both themes and a thumb big enough to grab. */

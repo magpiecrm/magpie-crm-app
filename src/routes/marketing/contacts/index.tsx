@@ -34,6 +34,8 @@ import { CustomFieldInput } from '../../../features/contacts/components/CustomFi
 import type { ContactCustomValue } from '../../../features/contacts/contactFields'
 import { Select } from '../../../components/ui/Select'
 import { EnrollDialog } from '../../../features/sequences/components/EnrollDialog'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 
 export const Route = createFileRoute('/marketing/contacts/')({
   // ?contact=<email> opens that contact (links from tasks and their reminders);
@@ -96,10 +98,11 @@ function ContactsPage() {
       setSelectedListIds([])
       setOptIn('')
       setCustomValues({})
-      alert(fieldProblems.length ? `Contact created, but some values weren't saved:\n${fieldProblems.join('\n')}` : 'Contact created successfully!')
+      if (fieldProblems.length) toast.info("Contact created, but some values weren't saved", { description: fieldProblems.join(' ') })
+      else toast.success('Contact created')
     },
     onError: (err: any) => {
-      alert(`Failed to create contact: ${err.message}`)
+      toast.error("Couldn't create the contact", { description: err.message })
     }
   })
 
@@ -112,10 +115,10 @@ function ContactsPage() {
         queryClient.invalidateQueries({ queryKey: queryKeys.email.contactsByList(selectedListId) })
       }
       setSelectedEmails([])
-      alert('Selected contacts deleted successfully!')
+      toast.success('Contacts deleted')
     },
     onError: (err: any) => {
-      alert(`Failed to delete contacts: ${err.message}`)
+      toast.error("Couldn't delete the contacts", { description: err.message })
     }
   })
 
@@ -392,7 +395,7 @@ function ContactsPage() {
                             setSelectedListIds(selectedListIds.filter(id => id !== l.id))
                           }
                         }}
-                        className="w-4 h-4 rounded border-border text-accent focus:ring-accent accent-accent"
+                        className="w-4 h-4 accent-accent"
                       />
                       <span className="font-semibold text-foreground">{l.name}</span>
                       <span className="text-[9px] text-muted-foreground font-mono bg-muted/65 px-1.5 py-0.5 rounded ml-auto">ID: {l.id}</span>
@@ -558,10 +561,15 @@ function ContactsPage() {
           {enrolling && <EnrollDialog emails={selectedEmails} onClose={() => setEnrolling(false)} />}
           {selectedEmails.length > 0 && (
             <button 
-              onClick={() => {
-                if (confirm(`Are you sure you want to delete the ${selectedEmails.length} selected contact(s)?`)) {
-                  deleteContactsMutation.mutate(selectedEmails)
-                }
+              onClick={async () => {
+                const n = selectedEmails.length
+                const ok = await confirmDialog({
+                  title: `Delete ${n === 1 ? 'this contact' : `${n} contacts`}?`,
+                  message: `They come off every list and out of Contacts. This can't be undone.`,
+                  confirmLabel: n === 1 ? 'Delete contact' : `Delete ${n} contacts`,
+                  tone: 'danger',
+                })
+                if (ok) deleteContactsMutation.mutate(selectedEmails)
               }}
               disabled={deleteContactsMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-2 bg-destructive/10 hover:bg-destructive/15 text-destructive border border-destructive/20 rounded-xl text-xs font-semibold transition-colors cursor-pointer"

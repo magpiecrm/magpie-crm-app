@@ -3,9 +3,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, Plus } from 'lucide-react'
+import { GripVertical, Lock, Plus, RotateCcw } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { saveContactColumnsFn } from '../../../server/functions'
@@ -13,6 +13,11 @@ import { BUILTIN_COLUMNS, columnLabel, PINNED_COLUMN } from '../contactColumns'
 import { invalidateContactFields } from '../contactCache'
 import { FIELD_LIMITS, type ContactFieldDef, type ContactTableView } from '../contactFields'
 import { ContactFieldForm } from './ContactFieldForm'
+
+const SECTION = 'flex items-center gap-2 text-[13px] font-semibold text-foreground'
+const LIST = 'flex flex-col divide-y divide-border overflow-hidden rounded-md-s border border-border'
+const ROW = 'flex min-h-10 items-center gap-2.5 px-3 py-1.5 text-sm'
+const CHECK = 'h-4 w-4 shrink-0 accent-[var(--accent)] cursor-pointer'
 
 /** Which columns a table shows and in what order, for everyone in the workspace. Saved once, on Save. */
 export function ColumnPicker({
@@ -51,60 +56,79 @@ export function ColumnPicker({
   }
 
   return (
-    <Dialog isOpen onClose={onClose} title="Columns" className="max-w-md" padded>
-      <div className="flex flex-col gap-4">
-        <p className="text-xs text-muted-foreground">Everyone in this workspace sees the same columns. Drag to reorder.</p>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
-          <SortableContext items={shown} strategy={verticalListSortingStrategy}>
-            <ul className="flex flex-col gap-1">
-              <li className="flex items-center gap-2 rounded-md-s px-2 py-1.5 text-sm text-muted-foreground">
-                <span className="w-4" />
-                <input type="checkbox" checked disabled aria-label="Contact is always shown" className="w-4 h-4 accent-accent" />
-                Contact
-              </li>
-              {shown.map((id) => (
-                <ColumnRow key={id} id={id} label={columnLabel(id, fields) ?? id} onHide={() => setShown((all) => all.filter((x) => x !== id))} />
+    <Dialog
+      isOpen
+      onClose={onClose}
+      title="Columns"
+      description="Shared by everyone in the workspace. Drag to reorder."
+      className="sm:max-w-md"
+    >
+      <DialogBody className="flex flex-col gap-5">
+        <section className="flex flex-col gap-2">
+          <h3 className={SECTION}>
+            Shown <span className="rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground">{shown.length + 1}</span>
+          </h3>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
+            <SortableContext items={shown} strategy={verticalListSortingStrategy}>
+              <ul className={LIST}>
+                <li className={`${ROW} text-foreground`}>
+                  <span className="w-4 shrink-0" />
+                  <input type="checkbox" checked disabled aria-label="Contact is always shown" className={CHECK} />
+                  <span className="flex-1">Contact</span>
+                  <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+                    <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                    Always shown
+                  </span>
+                </li>
+                {shown.map((id) => (
+                  <ColumnRow key={id} id={id} label={columnLabel(id, fields) ?? id} onHide={() => setShown((all) => all.filter((x) => x !== id))} />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        </section>
+        {hidden.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <h3 className={SECTION}>
+              Hidden <span className="rounded-full bg-muted px-1.5 text-xs font-medium tabular-nums text-muted-foreground">{hidden.length}</span>
+            </h3>
+            <ul className={LIST}>
+              {hidden.map((id) => (
+                <li key={id}>
+                  <label className={`${ROW} text-foreground ${full ? 'opacity-60' : 'cursor-pointer hover:bg-muted/50'}`}>
+                    <input type="checkbox" checked={false} disabled={full} onChange={() => setShown((all) => [...all, id])} className={CHECK} />
+                    <span className="truncate">{columnLabel(id, fields) ?? id}</span>
+                  </label>
+                </li>
               ))}
             </ul>
-          </SortableContext>
-        </DndContext>
-        {hidden.length > 0 && (
-          <div className="flex flex-col gap-1 border-t border-border pt-3">
-            <span className="text-xs font-semibold text-muted-foreground">Hidden</span>
-            {hidden.map((id) => (
-              <label key={id} className={`flex items-center gap-2 rounded-md-s px-2 py-1.5 text-sm text-foreground ${full ? 'opacity-50' : 'cursor-pointer hover:bg-muted/40'}`}>
-                <span className="w-4" />
-                <input type="checkbox" checked={false} disabled={full} onChange={() => setShown((all) => [...all, id])} className="w-4 h-4 accent-accent" />
-                {columnLabel(id, fields) ?? id}
-              </label>
-            ))}
-          </div>
+          </section>
         )}
+        <Button
+          variant="ghost"
+          className="-mt-2 -ml-3 self-start !text-foreground"
+          leftIcon={<Plus className="h-4 w-4" />}
+          onClick={() => {
+            onClose()
+            onAddColumn()
+          }}
+        >
+          Add a column
+        </Button>
         {full && <Notice>A table can show up to {FIELD_LIMITS.visibleColumns} columns.</Notice>}
         {save.error && <Notice level="error">{save.error.message}</Notice>}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => save.mutate([PINNED_COLUMN, ...shown])} isLoading={save.isPending}>
-            Save
-          </Button>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="ghost" onClick={() => save.mutate(null)}>
-            Reset to defaults
-          </Button>
-          <Button
-            variant="ghost"
-            className="sm:ml-auto"
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => {
-              onClose()
-              onAddColumn()
-            }}
-          >
-            Add column
-          </Button>
-        </div>
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="ghost" className="sm:-ml-3 sm:mr-auto !text-foreground" leftIcon={<RotateCcw className="h-4 w-4" />} onClick={() => save.mutate(null)}>
+          Reset to defaults
+        </Button>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={() => save.mutate([PINNED_COLUMN, ...shown])} isLoading={save.isPending}>
+          Save columns
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }
@@ -112,12 +136,12 @@ export function ColumnPicker({
 function ColumnRow({ id, label, onHide }: { id: string; label: string; onHide: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   return (
-    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`flex items-center gap-2 rounded-md-s bg-card px-2 py-1.5 text-sm text-foreground ${isDragging ? 'relative z-10 shadow-md' : ''}`}>
-      <button type="button" {...attributes} {...listeners} aria-label={`Move ${label}`} className="touch-none cursor-grab text-muted-foreground hover:text-foreground">
+    <li ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={`${ROW} bg-card text-foreground ${isDragging ? 'relative z-10 rounded-md-s shadow-md' : ''}`}>
+      <button type="button" {...attributes} {...listeners} aria-label={`Move ${label}`} className="-m-1.5 shrink-0 touch-none cursor-grab rounded-md-xs p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
         <GripVertical className="h-4 w-4" />
       </button>
-      <label className="flex min-w-0 flex-1 items-center gap-2 cursor-pointer">
-        <input type="checkbox" checked onChange={onHide} className="w-4 h-4 accent-accent" />
+      <label className="flex min-w-0 flex-1 items-center gap-2.5 cursor-pointer">
+        <input type="checkbox" checked onChange={onHide} className={CHECK} />
         <span className="truncate">{label}</span>
       </label>
     </li>
@@ -128,7 +152,7 @@ function ColumnRow({ id, label, onHide }: { id: string; label: string; onHide: (
 export function AddColumnDialog({ view, onClose }: { view: ContactTableView; onClose: () => void }) {
   const queryClient = useQueryClient()
   return (
-    <Dialog isOpen onClose={onClose} title="Add column" className="max-w-lg" padded>
+    <Dialog isOpen onClose={onClose} title="Add a column" description="A new contact field, shown as a column in this table." className="sm:max-w-lg">
       <ContactFieldForm
         showIn={view}
         submitLabel="Add column"
@@ -136,11 +160,7 @@ export function AddColumnDialog({ view, onClose }: { view: ContactTableView; onC
           invalidateContactFields(queryClient)
           onClose()
         }}
-        extraActions={
-          <Button type="button" variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-        }
+        onCancel={onClose}
       />
     </Dialog>
   )

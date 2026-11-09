@@ -6,7 +6,7 @@ import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../serve
 import { useIsDesktop } from '../../hooks/useMediaQuery'
 import { useResizablePanel } from '../../hooks/useResizablePanel'
 import { Sheet } from '../../components/ui/Sheet'
-import { Dialog } from '../../components/ui/Dialog'
+import { Dialog, DialogBody } from '../../components/ui/Dialog'
 import { AIChat } from '../copilot/components/AIChat'
 import { useBlockDrag, type BlockDropTarget, type DragPayload } from '../email-builder/hooks/useBlockDrag'
 import type { Survey, SurveyBlockType, SurveyDesign, SurveySettings } from './types'
@@ -20,6 +20,7 @@ import { SurveySidebarMenu, type SurveyMenu } from './components/SurveySidebarMe
 import { SurveySidebarPanel, type SurveyContentTab } from './components/SurveySidebarPanel'
 import { SurveyCanvas } from './components/SurveyCanvas'
 import { SurveyRenderer } from './runtime/SurveyRenderer'
+import { confirmDialog } from '../../components/ui/confirm'
 
 export interface SurveyBuilderProps {
   survey: Survey & { responseCount: number }
@@ -163,9 +164,9 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   )
   const { startDrag, dragging, dropTarget, didDrag } = useBlockDrag<SurveyBlockType>(handleDrop)
 
-  const applyTemplate = (template: SurveyStarterTemplate) => {
+  const applyTemplate = async (template: SurveyStarterTemplate) => {
     const hasContent = design.pages.some(p => p.blocks.length > 0)
-    if (hasContent && !window.confirm(`Replace every page with "${template.name}"?`)) return
+    if (hasContent && !(await confirmDialog({ title: `Replace every page with “${template.name}”?`, message: 'The questions on your pages now are discarded.', confirmLabel: 'Replace pages', tone: 'danger' }))) return
     if (dispatch('survey.applyTemplate', { pages: template.build(), theme: template.theme })) setSelectedBlockId(null)
   }
 
@@ -198,8 +199,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
     onError: (err: Error) => setNotice(err.message),
   })
 
-  const handleRequestClose = () => {
-    if (isDirty && !window.confirm('You have unsaved changes. Leave without saving?')) return
+  const handleRequestClose = async () => {
+    if (isDirty && !(await confirmDialog({ title: 'Leave without saving?', message: 'Your changes since the last save will be lost.', confirmLabel: 'Leave', cancelLabel: 'Keep editing', tone: 'danger' }))) return
     onClose()
   }
 
@@ -354,12 +355,19 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         {isChatResizing && <div style={{ cursor: 'col-resize' }} className="fixed inset-0 z-[9999] pointer-events-auto select-none" />}
       </div>
 
-      <Dialog isOpen={showPreview} onClose={() => setShowPreview(false)} title="Preview" className="max-w-4xl">
-        <p className="text-xs text-muted-foreground mb-3">Logic and validation run as they will for respondents. Nothing is saved.</p>
-        <div className="rounded-lg overflow-hidden border border-border max-h-[70vh] overflow-y-auto">
-          {/* Remount per open so every preview starts from page one. */}
-          {showPreview && <SurveyRenderer design={design} settings={settings} />}
-        </div>
+      <Dialog
+        isOpen={showPreview}
+        onClose={() => setShowPreview(false)}
+        title="Preview"
+        description="Logic and validation run as they will for respondents. Nothing is saved."
+        className="sm:max-w-4xl"
+      >
+        <DialogBody>
+          <div className="rounded-md-s overflow-hidden border border-border">
+            {/* Remount per open so every preview starts from page one. */}
+            {showPreview && <SurveyRenderer design={design} settings={settings} />}
+          </div>
+        </DialogBody>
       </Dialog>
     </div>
   )

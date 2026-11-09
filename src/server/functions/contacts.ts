@@ -125,6 +125,14 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
     }
   })
 
+/** Who an email from a contact's record comes from (the workspace's default sender, as `sendMail` uses it), for the dialog to say. */
+export const getDefaultSenderFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  await requireAuth()
+  const { getActiveProviderConfig } = await import('../emailSettings')
+  return { sender: getActiveProviderConfig().defaultSender ?? null }
+})
+
 export const sendIndividualEmailFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { email: string; subject: string; htmlContent: string }) => d)
   .handler(async ({ data }) => {

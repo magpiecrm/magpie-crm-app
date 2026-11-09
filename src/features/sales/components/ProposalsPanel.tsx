@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Copy, ExternalLink, FilePlus2, Pencil, Send, Trash2 } from 'lucide-react'
 import { createProposalFn, deleteProposalFn, getTemplatesFn, proposalsFn, sendProposalFn, shareProposalFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Notice } from '../../../components/ui/Notice'
+import { Field } from '../../../components/ui/Field'
 import { queryKeys } from '../../../queryKeys'
 import { FIELD_CLASS } from '../forms'
 import { formatDay } from '../utils'
@@ -184,28 +186,25 @@ function NewProposalDialog({ deal, onClose }: { deal: DealView; onClose: () => v
       <input type="radio" name="start" value={value} checked={start === value} disabled={disabled} onChange={() => setStart(value)} className="mt-1 accent-accent" />
       <span>
         <span className="block text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
+        <span className="block text-[13px] text-muted-foreground">{hint}</span>
       </span>
     </label>
   )
   return (
-    <Dialog isOpen onClose={onClose} title="New proposal" padded>
+    <Dialog isOpen onClose={onClose} title="New proposal" className="sm:max-w-lg">
       <form
         onSubmit={(e) => {
           e.preventDefault()
           if (ready) create.mutate()
         }}
-        className="space-y-4"
+        className="flex min-h-0 flex-col"
       >
-        <div>
-          <label htmlFor="proposal-title" className="block text-sm font-medium text-foreground mb-1">
-            Title
-          </label>
-          <input id="proposal-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} className={FIELD_CLASS} />
-          <p className="mt-1 text-xs text-muted-foreground">They'll see it at the top of the page and in the email.</p>
-        </div>
+        <DialogBody className="space-y-4">
+        <Field label="Title" hint="They'll see it at the top of the page and in the email.">
+          <input id="proposal-title" required value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} className={FIELD_CLASS} />
+        </Field>
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-foreground mb-1">Start from</legend>
+          <legend className="text-[13px] font-medium text-foreground mb-1.5">Start from</legend>
           {option('layout', 'Proposal layout', 'Summary, scope, price and next steps, filled in from this deal.')}
           {option('template', 'A saved template', templates.length ? 'One of your email templates.' : "You haven't saved any templates yet.", !templates.length)}
           {start === 'template' && (
@@ -220,15 +219,16 @@ function NewProposalDialog({ deal, onClose }: { deal: DealView; onClose: () => v
           )}
           {option('blank', 'Blank', 'An empty page.')}
         </fieldset>
-        <div className="flex items-center justify-end gap-2">
-          <span className="flex-1 text-xs text-destructive">{(create.error as Error | null)?.message}</span>
-          <Button type="button" variant="ghost" onClick={onClose}>
+        </DialogBody>
+        <DialogFooter>
+          {create.error && <p className="text-[13px] text-destructive sm:mr-auto">{(create.error as Error).message}</p>}
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" isLoading={create.isPending} disabled={!ready}>
             Create and edit
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </Dialog>
   )
@@ -262,51 +262,55 @@ function SendProposalDialog({
   })
   const toggle = (email: string) => setTo((cur) => (cur.includes(email) ? cur.filter((e) => e !== email) : [...cur, email]))
   return (
-    <Dialog isOpen onClose={onClose} title={`Email “${proposal.title}”`} padded>
+    <Dialog isOpen onClose={onClose} title={`Email “${proposal.title}”`} className="sm:max-w-lg">
       {deal.contacts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Add someone to this deal (People) to email it, or copy its link and send it yourself.</p>
+        <>
+          <DialogBody>
+            <Notice>Add someone to this deal (People) to email it, or copy its link and send it yourself.</Notice>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </DialogFooter>
+        </>
       ) : (
         <form
           onSubmit={(e) => {
             e.preventDefault()
             if (to.length) send.mutate()
           }}
-          className="space-y-4"
+          className="flex min-h-0 flex-col"
         >
+          <DialogBody className="space-y-4">
           <fieldset>
-            <legend className="text-sm font-medium text-foreground mb-1">To</legend>
+            <legend className="text-[13px] font-medium text-foreground mb-1.5">To</legend>
             <div className="space-y-1">
               {deal.contacts.map((c) => (
-                <label key={c.email} className="flex items-center gap-2 text-sm text-foreground">
-                  <input type="checkbox" checked={to.includes(c.email)} onChange={() => toggle(c.email)} className="accent-accent" />
+                <label key={c.email} className="flex items-center gap-2.5 py-1 text-sm text-foreground cursor-pointer">
+                  <input type="checkbox" checked={to.includes(c.email)} onChange={() => toggle(c.email)} className="h-4 w-4 accent-[var(--accent)]" />
                   {c.name ? `${c.name} · ` : ''}
                   <span className="text-muted-foreground">{c.email}</span>
                 </label>
               ))}
             </div>
           </fieldset>
-          <div>
-            <label htmlFor="proposal-subject" className="block text-sm font-medium text-foreground mb-1">
-              Subject
-            </label>
-            <input id="proposal-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={300} className={FIELD_CLASS} />
-          </div>
-          <div>
-            <label htmlFor="proposal-message" className="block text-sm font-medium text-foreground mb-1">
-              Message
-            </label>
-            <textarea id="proposal-message" value={message} onChange={(e) => setMessage(e.target.value)} rows={7} className={`${FIELD_CLASS} resize-y`} />
-            <p className="mt-1 text-xs text-muted-foreground">A button to open the proposal goes below your message. It's sent from your default sender.</p>
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <span className="flex-1 text-xs text-destructive">{(send.error as Error | null)?.message}</span>
-            <Button type="button" variant="ghost" onClick={onClose}>
+          <Field label="Subject">
+            <input id="proposal-subject" required value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={300} className={FIELD_CLASS} />
+          </Field>
+          <Field label="Message" hint="A button to open the proposal goes below your message. It's sent from your default sender.">
+            <textarea id="proposal-message" value={message} onChange={(e) => setMessage(e.target.value)} rows={7} className={`${FIELD_CLASS} resize-none`} />
+          </Field>
+          </DialogBody>
+          <DialogFooter>
+            {send.error && <p className="text-[13px] text-destructive sm:mr-auto">{(send.error as Error).message}</p>}
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" leftIcon={<Send className="w-4 h-4" />} isLoading={send.isPending} disabled={!to.length || !subject.trim()}>
-              Send
+            <Button type="submit" isLoading={send.isPending} disabled={!to.length}>
+              Send proposal
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       )}
     </Dialog>

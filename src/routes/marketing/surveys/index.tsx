@@ -7,6 +7,7 @@ import { createSurveyFn, deleteSurveyFn, duplicateSurveyFn, getSurveysFn } from 
 import { Badge } from '../../../components/ui/Badge'
 import { SURVEY_STARTER_TEMPLATES } from '../../../features/survey-builder/templates/starters'
 import { SurveyStatusBadge } from '../../../features/surveys/components/SurveyStatusBadge'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 export const Route = createFileRoute('/marketing/surveys/')({
   component: SurveysPage,
@@ -47,9 +48,11 @@ function SurveysPage() {
     onSuccess: invalidate,
   })
 
-  const confirmDelete = (survey: SurveySummaryRow) => {
-    const warning = survey.responseCount ? ` Its ${survey.responseCount} response(s) will be deleted too.` : ''
-    if (confirm(`Delete "${survey.name}"?${warning} This cannot be undone.`)) deleteMutation.mutate(survey.id)
+  const confirmDelete = async (survey: SurveySummaryRow) => {
+    const n = survey.responseCount
+    const warning = n ? `Its ${n} ${n === 1 ? 'response goes' : 'responses go'} too. ` : ''
+    const ok = await confirmDialog({ title: `Delete “${survey.name}”?`, message: `${warning}This can't be undone.`, confirmLabel: 'Delete survey', tone: 'danger' })
+    if (ok) deleteMutation.mutate(survey.id)
   }
 
   // Take over the page rather than opening a modal, as the Forms builder does.

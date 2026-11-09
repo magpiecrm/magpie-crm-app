@@ -34,6 +34,7 @@ import { SurveyBlockEditor, inputClass } from './SurveyBlockEditor'
 import { SurveyThemeEditor } from './SurveyThemeEditor'
 import { LogicEditor } from './LogicEditor'
 import { SurveySettingsPanel } from './SurveySettingsPanel'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 /** Palette icons, keyed by the catalogue so a new type can't be missing one. */
 const SURVEY_BLOCK_ICONS: Record<SurveyBlockType, React.ReactNode> = {
@@ -252,9 +253,18 @@ function ContentMenu({
                   <button
                     disabled={design.pages.length <= 1 || hasLocked}
                     title={hasLocked ? 'This page has questions with responses' : 'Delete page'}
-                    onClick={e => {
+                    onClick={async e => {
                       e.stopPropagation()
-                      if (page.blocks.length === 0 || confirm(`Delete ${page.title || `page ${i + 1}`} and its ${page.blocks.length} block(s)?`)) {
+                      const n = page.blocks.length
+                      if (
+                        n === 0 ||
+                        (await confirmDialog({
+                          title: `Delete ${page.title ? `“${page.title}”` : `page ${i + 1}`}?`,
+                          message: `Its ${n} ${n === 1 ? 'block goes' : 'blocks go'} with it.`,
+                          confirmLabel: 'Delete page',
+                          tone: 'danger',
+                        }))
+                      ) {
                         dispatch('survey.deletePage', { id: page.id })
                       }
                     }}

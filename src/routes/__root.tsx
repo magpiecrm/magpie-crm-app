@@ -15,6 +15,8 @@ import { isSignedIn } from '../utils/auth'
 import { isPublicPath } from '../utils/publicRoutes'
 import { checkAuthFn } from '../server/functions'
 import { copilotStore } from '../features/copilot/copilotStore'
+import { ConfirmHost } from '../components/ui/confirm'
+import { Toaster } from '../components/ui/toast'
 
 import appCss from '../styles.css?url'
 import { APP_NAME } from '../brand'
@@ -328,6 +330,8 @@ function RootDocument() {
               <div className="fixed inset-0 cursor-col-resize z-[9999] pointer-events-auto select-none" />
             )}
           </div>
+          <ConfirmHost />
+          <Toaster />
           <TanStackDevtools
             config={{
               position: 'bottom-right',

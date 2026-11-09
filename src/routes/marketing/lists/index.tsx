@@ -1,10 +1,15 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { Users, Plus, List as ListIcon, Loader2, X, Trash2, Filter } from 'lucide-react'
+import { Users, Plus, List as ListIcon, Trash2, Filter } from 'lucide-react'
 import { useState } from 'react'
 import { listsFn, createListFn, deleteListFn } from '../../../server/functions'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Button } from '../../../components/ui/Button'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 import type { ExportColumn } from '../../../utils/export'
 
 interface ListRow {
@@ -37,26 +42,30 @@ function ListsPage() {
 
   const createMutation = useMutation({
     mutationFn: (name: string) => createListFn({ data: { name } }),
-    onSuccess: () => {
+    onSuccess: (_res, name) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
       setShowModal(false)
       setNewListName('')
-      alert('List created successfully!')
+      toast.success('List created', { description: `“${name}” is ready for contacts.` })
     },
-    onError: (err: any) => {
-      alert(`Failed to create list: ${err.message}`)
-    }
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteListFn({ data: { id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
+      toast.success('List deleted')
     },
     onError: (err: any) => {
-      alert(`Failed to delete list: ${err.message}`)
+      toast.error("Couldn't delete the list", { description: err.message })
     }
   })
+
+  const closeModal = () => {
+    setShowModal(false)
+    setNewListName('')
+    createMutation.reset()
+  }
 
   const lists = listsData?.lists || []
 
@@ -86,7 +95,7 @@ function ListsPage() {
             className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            Create New List
+            New list
           </button>
         </div>
       </div>
@@ -117,12 +126,16 @@ function ListsPage() {
                   <button
                     type="button"
                     disabled={deleteMutation.isPending}
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      if (confirm(`Delete list "${list.name}"? This won't delete the contacts themselves, just this list.`)) {
-                        deleteMutation.mutate(list.id)
-                      }
+                      const ok = await confirmDialog({
+                        title: `Delete “${list.name}”?`,
+                        message: 'The list goes, but the contacts on it stay in Contacts.',
+                        confirmLabel: 'Delete list',
+                        tone: 'danger',
+                      })
+                      if (ok) deleteMutation.mutate(list.id)
                     }}
                     className="text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all p-1 -m-1 rounded cursor-pointer disabled:opacity-50"
                     aria-label={`Delete list ${list.name}`}
@@ -142,59 +155,38 @@ function ListsPage() {
         )}
       </div>
 
-      {/* Create List Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-card border border-border rounded-xl p-6 w-full max-w-md shadow-xl animate-in zoom-in-95 duration-200 relative">
-            <button 
-              onClick={() => {
-                setShowModal(false)
-                setNewListName('')
-              }}
-              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-1 rounded-lg transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            
-            <h2 className="text-xl font-bold mb-1 text-foreground">Create Contact List</h2>
-            <p className="text-xs text-muted-foreground mb-6">Enter a descriptive name for your new marketing list.</p>
-            
-            <input
-              type="text"
-              placeholder="e.g. Newsletter Subscribers"
-              value={newListName}
-              onChange={(e) => setNewListName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground mb-6 focus:outline-none focus:ring-2 focus:ring-accent"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newListName.trim() && !createMutation.isPending) {
-                  createMutation.mutate(newListName.trim())
-                }
-              }}
-            />
-            
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowModal(false)
-                  setNewListName('')
-                }}
-                className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:bg-muted/50 transition-colors text-sm font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={createMutation.isPending || !newListName.trim()}
-                onClick={() => createMutation.mutate(newListName.trim())}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/85 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all text-sm font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                Create List
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Dialog isOpen={showModal} onClose={closeModal} title="New list" description="Add contacts to it by hand or from an import." className="sm:max-w-md">
+        <form
+          className="flex min-h-0 flex-col"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (newListName.trim() && !createMutation.isPending) createMutation.mutate(newListName.trim())
+          }}
+        >
+          <DialogBody>
+            <Field label="Name" error={createMutation.error?.message}>
+              <input
+                type="text"
+                required
+                maxLength={200}
+                placeholder="e.g. Newsletter subscribers"
+                value={newListName}
+                onChange={(e) => setNewListName(e.target.value)}
+                className={INPUT_CLASS}
+                autoFocus
+              />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button type="submit" isLoading={createMutation.isPending}>
+              Create list
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
     </div>
   )
 }

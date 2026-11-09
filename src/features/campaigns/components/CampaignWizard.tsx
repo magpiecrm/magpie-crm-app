@@ -18,6 +18,8 @@ import { TemplatePicker } from '../../templates/components/TemplatePicker'
 import { extractDesign } from '../../email-builder/utils/design'
 import { Select } from '../../../components/ui/Select'
 import { mergeTagOptions, mergeTagText } from '../../contacts/mergeTagOptions'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 
 interface CampaignWizardProps {
   onClose: () => void
@@ -125,7 +127,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
       setShowScheduleDrawer(false)
       copilotStore.ask(spamFixPrompt({ kind: 'campaign', id: campaignId, name: formData.name || 'Untitled campaign' }, spam.data))
     },
-    onError: (err: Error) => alert(`Couldn't save the campaign first: ${err.message}`),
+    onError: (err: Error) => toast.error("Couldn't save the campaign first", { description: err.message }),
   })
   const onFixWithAI = campaignId && copilotReady ? () => fixWithAI.mutate() : undefined
   const spamCard = (
@@ -153,9 +155,9 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   }, [initialTemplate])
 
   /** Swap the body for a template, confirming before discarding a design that has blocks. */
-  const applyTemplateHtml = (html: string, name: string) => {
+  const applyTemplateHtml = async (html: string, name: string) => {
     const hasDesign = (extractDesign(formData.htmlContent)?.blocks.length ?? 0) > 0
-    if (hasDesign && !window.confirm(`Replace the current email design with "${name}"?`)) return
+    if (hasDesign && !(await confirmDialog({ title: `Replace the design with “${name}”?`, message: "The email's current design is discarded.", confirmLabel: 'Replace design', tone: 'danger' }))) return
     setFormData(prev => ({ ...prev, htmlContent: html }))
   }
 
@@ -219,11 +221,11 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
-      alert(`Campaign ${campaignId ? 'updated' : 'created'} successfully!`)
+      toast.success(campaignId ? 'Campaign saved' : 'Campaign created')
       onClose()
     },
     onError: (err: any) => {
-      alert(`Failed to ${campaignId ? 'update' : 'create'} campaign: ${err.message}`)
+      toast.error(campaignId ? "Couldn't save the campaign" : "Couldn't create the campaign", { description: err.message })
     }
   })
 
@@ -335,7 +337,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
             onClick={() => setShowPreviewModal(true)}
             leftIcon={<Eye className="w-4 h-4 text-accent" />}
           >
-            Preview & Test
+            Preview and test
           </Button>
           {campaignId && !isCampaignSent && (
             <Button

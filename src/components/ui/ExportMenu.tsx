@@ -6,6 +6,7 @@ import {
   timestampedFilename,
   type ExportColumn,
 } from '../../utils/export'
+import { toast } from './toast'
 
 interface ExportMenuProps<T> {
   /** Base for the download name; a date and extension are appended. */
@@ -90,7 +91,7 @@ export function ExportMenu<T>({
         )
       }
     } catch (err: any) {
-      alert(`Export failed: ${err?.message ?? err}`)
+      toast.error("Couldn't export", { description: String(err?.message ?? err) })
     } finally {
       setBusy(false)
     }

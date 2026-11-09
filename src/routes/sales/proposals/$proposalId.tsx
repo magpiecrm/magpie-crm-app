@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { proposalFn, updateProposalFn } from '../../../server/functions'
 import { EmailBuilder } from '../../../features/email-builder/EmailBuilderContainer'
+import { toast } from '../../../components/ui/toast'
 
 export const Route = createFileRoute('/sales/proposals/$proposalId')({
   component: ProposalEditPage,
@@ -47,7 +48,7 @@ function ProposalEditor({ proposal }: { proposal: { id: string; deal_id: string;
       void queryClient.invalidateQueries({ queryKey: queryKeys.sales.proposals(proposal.deal_id) })
       close()
     },
-    onError: (err) => window.alert(`Could not save the proposal: ${err.message}`),
+    onError: (err) => toast.error("Couldn't save the proposal", { description: err.message }),
   })
 
   return <EmailBuilder initialHtml={initialHtml} onSave={(html) => save.mutate(html)} onClose={close} campaignName={proposal.title} />

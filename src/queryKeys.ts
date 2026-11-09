@@ -24,6 +24,7 @@ export const queryKeys = {
   email: {
     lists: () => ['email', 'lists'] as const,
     senders: () => ['email', 'senders'] as const,
+    defaultSender: () => ['email', 'defaultSender'] as const,
     contacts: () => ['email', 'contacts'] as const,
     contactsAll: () => ['email', 'contacts', 'all'] as const,
     contactsByList: (listId: number | null) => ['email', 'contacts', 'list', listId] as const,

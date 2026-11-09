@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react'
 import { Loader2, Plus, Search } from 'lucide-react'
+import { INPUT_CLASS } from '../../../components/ui/Field'
 
 export interface SearchOption {
   id: string
@@ -101,14 +102,14 @@ export function SearchSelect({
               setOpen(false)
             }
           }}
-          className="w-full pl-9 pr-9 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
+          className={`${INPUT_CLASS} pl-9 pr-9`}
         />
         {(isLoading || isCreating) && (
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2" />
         )}
       </div>
       {open && (
-        <ul id={listId} role="listbox" className="max-h-56 overflow-y-auto border border-border rounded-lg bg-card divide-y divide-border/60">
+        <ul id={listId} role="listbox" className="max-h-56 overflow-y-auto border border-border rounded-md-s bg-card divide-y divide-border/60">
           {matches.map((o, i) => (
             <li
               key={o.id}

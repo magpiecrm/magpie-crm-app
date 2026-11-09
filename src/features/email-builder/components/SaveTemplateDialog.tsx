@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Button } from '../../../components/ui/Button'
 import { createTemplateFn } from '../../../server/functions'
 import { queryKeys } from '../../../queryKeys'
@@ -28,41 +29,31 @@ export function SaveTemplateDialog({ isOpen, onClose, getHtml, defaultName }: Sa
   })
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} title="Save as template" className="max-w-md">
+    <Dialog isOpen={isOpen} onClose={onClose} title="Save as template" description="Keep this design to start new campaigns from." className="sm:max-w-md">
       <form
-        className="p-6 space-y-4"
+        className="flex min-h-0 flex-col"
         onSubmit={e => {
           e.preventDefault()
           if (name.trim()) save.mutate()
         }}
       >
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Name</span>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
-          />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Description (optional)</span>
-          <textarea
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            rows={3}
-            className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent/40"
-          />
-        </label>
-        {save.error && <p className="text-xs text-destructive">{save.error.message}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+        <DialogBody className="space-y-4">
+          <Field label="Name">
+            <input autoFocus required maxLength={200} value={name} onChange={e => setName(e.target.value)} className={INPUT_CLASS} />
+          </Field>
+          <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>} hint="Shown on the template's card.">
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />
+          </Field>
+        </DialogBody>
+        <DialogFooter>
+          {save.error && <p className="text-[13px] text-destructive sm:mr-auto">{save.error.message}</p>}
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" isLoading={save.isPending} disabled={!name.trim()}>
+          <Button type="submit" isLoading={save.isPending}>
             Save template
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </Dialog>
   )

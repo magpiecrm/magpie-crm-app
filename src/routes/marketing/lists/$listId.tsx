@@ -13,6 +13,8 @@ import { ContactTable } from '../../../features/contacts/components/ContactTable
 import { AddColumnDialog, ColumnPicker } from '../../../features/contacts/components/ColumnPicker'
 import { sortContacts, type ContactSort } from '../../../features/contacts/contactFilters'
 import { useContactColumns } from '../../../features/contacts/useContactColumns'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 
 export const Route = createFileRoute('/marketing/lists/$listId')({
   component: ListDetailsPage,
@@ -44,10 +46,11 @@ function ListDetailsPage() {
     mutationFn: () => deleteListFn({ data: { id: parseInt(listId) } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
+      toast.success('List deleted')
       navigate({ to: '/marketing/lists' })
     },
     onError: (err: any) => {
-      alert(`Failed to delete list: ${err.message}`)
+      toast.error("Couldn't delete the list", { description: err.message })
     }
   })
 
@@ -58,7 +61,7 @@ function ListDetailsPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
     },
     onError: (err: any) => {
-      alert(`Failed to remove contact: ${err.message}`)
+      toast.error("Couldn't remove the contact", { description: err.message })
     }
   })
 
@@ -109,10 +112,14 @@ function ListDetailsPage() {
             <button
               type="button"
               disabled={deleteMutation.isPending}
-              onClick={() => {
-                if (confirm(`Delete list "${currentList?.name || 'this list'}"? This won't delete the contacts themselves, just this list.`)) {
-                  deleteMutation.mutate()
-                }
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: currentList?.name ? `Delete “${currentList.name}”?` : 'Delete this list?',
+                  message: 'The list goes, but the contacts on it stay in Contacts.',
+                  confirmLabel: 'Delete list',
+                  tone: 'danger',
+                })
+                if (ok) deleteMutation.mutate()
               }}
               className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground rounded-md-s hover:bg-destructive/10 hover:text-destructive transition-colors border border-transparent hover:border-destructive/20 cursor-pointer font-semibold disabled:opacity-50"
             >
@@ -142,11 +149,10 @@ function ListDetailsPage() {
             <button
               type="button"
               disabled={removeContactMutation.isPending}
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation()
-                if (confirm(`Remove ${contact.email} from this list?`)) {
-                  removeContactMutation.mutate(contact.email)
-                }
+                const ok = await confirmDialog({ title: `Remove ${contact.email} from this list?`, message: 'They stay in Contacts and on any other lists.', confirmLabel: 'Remove' })
+                if (ok) removeContactMutation.mutate(contact.email)
               }}
               className="touch-target md:opacity-0 md:group-hover:opacity-100 touch-reveal text-muted-foreground hover:text-destructive transition-all p-1.5 rounded cursor-pointer disabled:opacity-50"
               aria-label={`Remove ${contact.email} from list`}

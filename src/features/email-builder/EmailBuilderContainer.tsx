@@ -78,6 +78,16 @@ import { SaveTemplateDialog } from './components/SaveTemplateDialog'
 import { STARTER_TEMPLATES, type StarterTemplate } from './templates/starters'
 import { compileHTML } from './utils/compiler'
 import { DEFAULT_GLOBAL_STYLE, extractDesign, loadDesign } from './utils/design'
+import { confirmDialog } from '../../components/ui/confirm'
+import { toast } from '../../components/ui/toast'
+
+const LEAVE_UNSAVED = { title: 'Leave without saving?', message: "Your changes since the last save will be lost.", confirmLabel: 'Leave', cancelLabel: 'Keep editing', tone: 'danger' as const }
+const replaceDesign = (name: string) => ({
+  title: `Replace the design with “${name}”?`,
+  message: 'The blocks on the canvas are discarded.',
+  confirmLabel: 'Replace design',
+  tone: 'danger' as const,
+})
 
 const DEFAULT_BLOCKS: EmailBlock[] = []
 
@@ -206,15 +216,11 @@ export function EmailBuilder({
 
   /**
    * Guards the builder's back button: if the live design differs from what
-   * was last loaded or saved, confirm before discarding it. `window.confirm`
-   * matches the pattern already used for destructive actions elsewhere in the
-   * app (delete chat, delete campaign, delete list).
+   * was last loaded or saved, confirm before discarding it.
    */
-  const handleRequestClose = () => {
+  const handleRequestClose = async () => {
     const current = JSON.stringify({ blocks, globalStyle })
-    if (current !== savedSnapshotRef.current && !window.confirm('You have unsaved changes. Leave without saving?')) {
-      return
-    }
+    if (current !== savedSnapshotRef.current && !(await confirmDialog(LEAVE_UNSAVED))) return
     onClose()
   }
 
@@ -341,24 +347,20 @@ export function EmailBuilder({
   }
 
   /** Replacing the canvas discards whatever is on it, so confirm first when it isn't empty. */
-  const applyTemplate = (template: StarterTemplate) => {
-    if (blocks.length > 0 && !window.confirm(`Replace the current design with "${template.name}"? This discards the blocks on the canvas.`)) {
-      return
-    }
+  const applyTemplate = async (template: StarterTemplate) => {
+    if (blocks.length > 0 && !(await confirmDialog(replaceDesign(template.name)))) return
     setGlobalStyle(prev => ({ ...prev, ...template.globalStyle }))
     setBlocks(template.build())
     setSelectedBlockId(null)
   }
 
-  const applySavedTemplate = (saved: EmailTemplate) => {
+  const applySavedTemplate = async (saved: EmailTemplate) => {
     const design = extractDesign(saved.html)
     if (!design) {
-      window.alert(`"${saved.name}" has no editable design to apply.`)
+      toast.error(`“${saved.name}” can't be applied`, { description: "It has no design the builder can edit." })
       return
     }
-    if (blocks.length > 0 && !window.confirm(`Replace the current design with "${saved.name}"? This discards the blocks on the canvas.`)) {
-      return
-    }
+    if (blocks.length > 0 && !(await confirmDialog(replaceDesign(saved.name)))) return
     setGlobalStyle(design.globalStyle)
     setBlocks(design.blocks)
     setSelectedBlockId(null)

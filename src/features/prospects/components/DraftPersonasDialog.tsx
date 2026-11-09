@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Sparkles } from 'lucide-react'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
@@ -51,28 +51,30 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
   const blocked = !ai.ok ? ai.reason : !ai.web ? "It reads your website with Claude's web tools, so it needs an Anthropic key: add one in Settings → Copilot." : null
   if (blocked) {
     return (
-      <Dialog isOpen={isOpen} onClose={close} title="Draft personas with AI">
-        <div className="p-4 sm:p-6 space-y-4">
+      <Dialog isOpen={isOpen} onClose={close} title="Draft personas with AI" className="sm:max-w-md">
+        <DialogBody>
           <Notice>{blocked}</Notice>
-          <div className="flex justify-end">
-            <Button variant="outline" onClick={close}>
-              Close
-            </Button>
-          </div>
-        </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={close}>
+            Close
+          </Button>
+        </DialogFooter>
       </Dialog>
     )
   }
 
   return (
-    <Dialog isOpen={isOpen} onClose={close} title="Draft personas with AI" className="max-w-2xl">
-      <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
-        <p className="text-sm text-muted-foreground">
-          The AI reads your website and suggests who to prospect: job titles, the companies they work at, and what they care about. Only your website and
-          what you add below go to it. Nothing is saved until you add a persona.
-        </p>
+    <Dialog
+      isOpen={isOpen}
+      onClose={close}
+      title="Draft personas with AI"
+      description="The AI reads your website and suggests who to prospect: job titles, the companies they work at, and what they care about. Only your website and what you add below go to it. Nothing is saved until you add a persona."
+      className="sm:max-w-2xl"
+    >
+      <DialogBody className="space-y-4">
         <Field label="Your website">
-          <input className={INPUT_CLASS} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="acme.com" disabled={draft.isPending} />
+          <input className={INPUT_CLASS} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="e.g. acme.com" disabled={draft.isPending} />
         </Field>
         <Field label="Anything it should know" hint="Optional. For example who your best customers are, or a market you don't sell to.">
           <textarea
@@ -82,25 +84,20 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
             value={note}
             onChange={(e) => setNote(e.target.value)}
             disabled={draft.isPending}
-            placeholder="We sell mostly to UK firms with a few hundred staff."
+            placeholder="e.g. We sell mostly to UK firms with a few hundred staff."
           />
         </Field>
-        <div className="flex items-center gap-3">
-          <Button onClick={() => draft.mutate()} isLoading={draft.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
-            {drafts.length ? 'Draft again' : 'Draft personas'}
-          </Button>
-          {draft.isPending && <span className="text-xs text-muted-foreground">Reading your website. This takes a few minutes.</span>}
-        </div>
+        {draft.isPending && <Notice>Reading your website. This takes a few minutes.</Notice>}
         {draft.isError && <Notice level="error">{(draft.error as Error).message}</Notice>}
 
         {drafts.length > 0 && !draft.isPending && (
-          <div className="space-y-3 pt-2 border-t border-border">
+          <div className="space-y-3 pt-4 border-t border-border">
             {drafts.map((d, i) => (
               <div key={i} className="card border border-border rounded-md-m p-4 space-y-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
-                    {d.description && <p className="text-xs text-muted-foreground mt-0.5">{d.description}</p>}
+                    {d.description && <p className="text-[13px] text-muted-foreground mt-0.5">{d.description}</p>}
                   </div>
                   {added.has(i) ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
@@ -114,13 +111,13 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
                 </div>
                 <CriteriaChips criteria={d.criteria} />
                 {d.painPoints && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[13px] text-muted-foreground">
                     <span className="font-medium text-foreground">Pain points: </span>
                     {d.painPoints}
                   </p>
                 )}
                 {d.valueProp && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[13px] text-muted-foreground">
                     <span className="font-medium text-foreground">Why they'd care: </span>
                     {d.valueProp}
                   </p>
@@ -128,19 +125,41 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
               </div>
             ))}
             {add.isError && <Notice level="error">{(add.error as Error).message}</Notice>}
-            <div className="flex justify-end gap-2">
-              {left.length > 1 && (
-                <Button variant="outline" onClick={() => add.mutate(left)} isLoading={add.isPending}>
-                  Add all {left.length}
-                </Button>
-              )}
-              <Button variant={left.length ? 'ghost' : 'primary'} onClick={close}>
-                {left.length ? 'Close' : 'Done'}
-              </Button>
-            </div>
           </div>
         )}
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        {drafts.length > 0 && !draft.isPending ? (
+          <>
+            <Button variant="ghost" className="sm:mr-auto" onClick={() => draft.mutate()} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+              Draft again
+            </Button>
+            {left.length > 0 ? (
+              <>
+                <Button variant="secondary" onClick={close}>
+                  Close
+                </Button>
+                {left.length > 1 && (
+                  <Button onClick={() => add.mutate(left)} isLoading={add.isPending}>
+                    Add all {left.length}
+                  </Button>
+                )}
+              </>
+            ) : (
+              <Button onClick={close}>Done</Button>
+            )}
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={close}>
+              Cancel
+            </Button>
+            <Button onClick={() => draft.mutate()} isLoading={draft.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+              Draft personas
+            </Button>
+          </>
+        )}
+      </DialogFooter>
     </Dialog>
   )
 }

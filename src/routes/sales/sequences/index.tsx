@@ -6,7 +6,9 @@ import { queryKeys } from '../../../queryKeys'
 import { createSequenceFn, getSendersFn, sequencesFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
 import { Badge } from '../../../components/ui/Badge'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Field } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Select } from '../../../components/ui/Select'
 import { FIELD_CLASS } from '../../../features/sales/forms'
 import { percent, SEQUENCE_STATUS } from '../../../features/sequences/components/labels'
@@ -108,46 +110,43 @@ function NewSequenceDialog({ onClose }: { onClose: () => void }) {
     onSuccess: (s) => navigate({ to: '/sales/sequences/$id', params: { id: s.id } }),
   })
   return (
-    <Dialog isOpen onClose={onClose} title="New sequence" padded>
+    <Dialog isOpen onClose={onClose} title="New sequence" description="Choose a sender. You'll write the emails next." className="sm:max-w-md">
       <form
         onSubmit={(e) => {
           e.preventDefault()
           if (name.trim()) create.mutate()
         }}
-        className="space-y-4"
+        className="flex min-h-0 flex-col"
       >
-        <div>
-          <label htmlFor="seq-name" className="block text-sm font-medium text-foreground mb-1">
-            Name
-          </label>
-          <input id="seq-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. UK agency founders" className={FIELD_CLASS} autoFocus />
-          <p className="mt-1 text-xs text-muted-foreground">Only you see this.</p>
-        </div>
-        <div>
-          <label htmlFor="seq-sender" className="block text-sm font-medium text-foreground mb-1">
-            Sends from
-          </label>
+        <DialogBody className="space-y-4">
+          <Field label="Name" hint="Only your team sees this.">
+            <input id="seq-name" required value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="e.g. UK agency founders" className={FIELD_CLASS} autoFocus />
+          </Field>
           {senders.length ? (
-            <Select id="seq-sender" value={chosen} onChange={(e) => setSenderId(e.target.value)} className={FIELD_CLASS}>
-              {senders.map((s: any) => (
-                <option key={s.id} value={String(s.id)}>
-                  {s.name ? `${s.name} <${s.email}>` : s.email}
-                </option>
-              ))}
-            </Select>
+            <Field label="Sends from">
+              <Select id="seq-sender" value={chosen} onChange={(e) => setSenderId(e.target.value)} className={FIELD_CLASS}>
+                {senders.map((s: any) => (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.name ? `${s.name} · ${s.email}` : s.email}
+                  </option>
+                ))}
+              </Select>
+            </Field>
           ) : (
-            <p className="text-sm text-muted-foreground">Add a sender in Settings → Sending first.</p>
+            <Field label="Sends from" as="div">
+              <Notice level="warning">Add a sender in Settings → Sending first.</Notice>
+            </Field>
           )}
-        </div>
-        <div className="flex items-center justify-end gap-2">
-          <span className="flex-1 text-xs text-destructive">{(create.error as Error | null)?.message}</span>
-          <Button type="button" variant="ghost" onClick={onClose}>
+        </DialogBody>
+        <DialogFooter>
+          {create.error && <p className="text-[13px] text-destructive sm:mr-auto">{(create.error as Error).message}</p>}
+          <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" isLoading={create.isPending} disabled={!name.trim()}>
-            Create
+          <Button type="submit" isLoading={create.isPending}>
+            Create sequence
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </Dialog>
   )

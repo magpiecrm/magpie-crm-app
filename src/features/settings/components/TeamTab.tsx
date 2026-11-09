@@ -9,6 +9,7 @@ import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { ChangePasswordForm } from './ChangePasswordForm'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 /** Settings → Team and login: who can sign in, and your own password. */
 export function TeamTab() {
@@ -58,7 +59,7 @@ export function TeamTab() {
   }
 
   const handleDeleteUser = async (email: string) => {
-    if (!window.confirm(`Remove ${email}? They won't be able to sign in.`)) return
+    if (!(await confirmDialog({ title: `Remove ${email}?`, message: "They won't be able to sign in to this workspace any more.", confirmLabel: 'Remove', tone: 'danger' }))) return
     setUserError(null)
     try {
       const res = await deleteUserFn({ data: { email } })

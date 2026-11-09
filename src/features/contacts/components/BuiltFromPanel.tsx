@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '../../../components/ui/Button'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { addNewMatchesFn, listFilterFieldsFn } from '../../../server/functions'
@@ -27,18 +27,21 @@ function AddMatchesDialog({ listId, onClose }: { listId: number; onClose: () => 
   const preview = check.data
 
   return (
-    <Dialog isOpen onClose={onClose} title="Add new matches" padded>
+    <Dialog isOpen onClose={onClose} title="Add new matches" description="Who matches the list's filters now and isn't on it yet." className="sm:max-w-md">
       {add.isSuccess ? (
-        <div className="space-y-4">
-          <p className="text-sm text-foreground">
-            Added {count(add.data.toAdd)} {add.data.toAdd === 1 ? 'person' : 'people'} to this list.
-          </p>
-          <div className="flex justify-end">
+        <>
+          <DialogBody>
+            <Notice level="success">
+              Added {count(add.data.toAdd)} {add.data.toAdd === 1 ? 'person' : 'people'} to this list.
+            </Notice>
+          </DialogBody>
+          <DialogFooter>
             <Button onClick={onClose}>Done</Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </>
       ) : (
-        <div className="space-y-4">
+        <>
+        <DialogBody className="space-y-4">
           {check.isError ? (
             <Notice level="error">{check.error.message}</Notice>
           ) : !preview ? (
@@ -54,21 +57,22 @@ function AddMatchesDialog({ listId, onClose }: { listId: number; onClose: () => 
             </>
           )}
           {preview && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               {count(preview.alreadyOn)} already on the list.
               {preview.removedByHand > 0 && ` ${count(preview.removedByHand)} taken off by hand ${preview.removedByHand === 1 ? 'stays' : 'stay'} off.`} Nobody is removed.
             </p>
           )}
           {add.isError && <Notice level="error">{add.error.message}</Notice>}
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button isLoading={add.isPending} disabled={!preview?.toAdd} onClick={() => add.mutate()}>
-              {preview?.toAdd ? `Add ${count(preview.toAdd)}` : 'Add'}
-            </Button>
-          </div>
-        </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button isLoading={add.isPending} disabled={!preview?.toAdd} onClick={() => add.mutate()}>
+            {preview?.toAdd ? `Add ${count(preview.toAdd)} ${preview.toAdd === 1 ? 'person' : 'people'}` : 'Add people'}
+          </Button>
+        </DialogFooter>
+        </>
       )}
     </Dialog>
   )

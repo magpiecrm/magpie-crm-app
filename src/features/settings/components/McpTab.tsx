@@ -8,6 +8,7 @@ import { Button } from '../../../components/ui/Button'
 import { CODE_CLASS, Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 type McpKey = Awaited<ReturnType<typeof getMcpKeysFn>>['keys'][number]
 
@@ -91,7 +92,7 @@ export function McpTab() {
   }
 
   const revoke = async (id: string) => {
-    if (!window.confirm('Revoke this key? Any AI app using it loses access immediately.')) return
+    if (!(await confirmDialog({ title: 'Revoke this key?', message: 'Any AI app using it loses access straight away.', confirmLabel: 'Revoke key', tone: 'danger' }))) return
     await deleteApiKeyFn({ data: { id } })
     await load()
   }

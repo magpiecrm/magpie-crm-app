@@ -31,7 +31,7 @@ export function CompanyPicker({
 
   if (value) {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 bg-card border border-border rounded-lg text-sm">
+      <div className="flex min-h-[38px] items-center gap-2 px-3 py-2 bg-card border border-input rounded-md-s text-sm">
         <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
         <span className="min-w-0 flex-1 truncate text-foreground">
           {selected?.name ?? (isLoading ? 'Loading…' : 'Company')}

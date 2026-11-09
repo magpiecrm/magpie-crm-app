@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { getContactDetailsFn, sendIndividualEmailFn, resubscribeContactFn } from '../../../server/functions'
+import { getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn, resubscribeContactFn } from '../../../server/functions'
 import { 
   ArrowLeft, 
   Mail, 
@@ -16,7 +16,9 @@ import {
   RefreshCw
 } from 'lucide-react'
 import { Avatar } from '../../../components/ui/Avatar'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter, MetaList } from '../../../components/ui/Dialog'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { toast } from '../../../components/ui/toast'
 import { Button } from '../../../components/ui/Button'
 import { ContactCustomFields } from './ContactCustomFields'
 import { ContactSurveysTab } from './ContactSurveysTab'
@@ -34,6 +36,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const [isResubscribing, setIsResubscribing] = useState(false)
   const [resubError, setResubError] = useState('')
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
+  // Who the email comes from: the workspace's default sender, as sending uses it.
+  const { data: fromData } = useQuery({ queryKey: queryKeys.email.defaultSender(), queryFn: () => getDefaultSenderFn(), enabled: isEmailModalOpen })
+  // `"Alex Morgan" <alex@acme.com>` → name and address.
+  const fromMatch = fromData?.sender?.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/)
+  const from = fromData?.sender ? { name: fromMatch?.[1]?.trim() || null, email: fromMatch?.[2] ?? fromData.sender } : null
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
   const [isSendingEmail, setIsSendingEmail] = useState(false)
@@ -99,10 +106,10 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
       setIsEmailModalOpen(false)
       setEmailSubject('')
       setEmailBody('')
-      alert('Email sent successfully!')
+      toast.success('Email sent', { description: `To ${email}` })
     } catch (err) {
       console.error('Failed to send email:', err)
-      alert('Failed to send email')
+      toast.error("Couldn't send the email", { description: err instanceof Error ? err.message : undefined })
     } finally {
       setIsSendingEmail(false)
     }
@@ -443,42 +450,50 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
       <Dialog
         isOpen={isEmailModalOpen}
         onClose={() => setIsEmailModalOpen(false)}
-        title={`Send Email to ${fullName}`}
-        className="max-w-xl"
+        title={`Email ${fullName}`}
+        className="sm:max-w-lg"
       >
-        <div className="p-6 space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Subject</label>
-            <input
-              type="text"
-              value={emailSubject}
-              onChange={(e) => setEmailSubject(e.target.value)}
-              placeholder="Email subject"
-              className="w-full px-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+        <form
+          className="flex min-h-0 flex-col"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSendEmail()
+          }}
+        >
+          <DialogBody className="space-y-4">
+            <MetaList
+              className="-mt-1 border-b border-border pb-4"
+              rows={[
+                [
+                  'From',
+                  from ? (
+                    <>
+                      {from.name ?? from.email}
+                      {from.name && <span className="text-muted-foreground"> · {from.email}</span>}
+                    </>
+                  ) : (
+                    'Your default sender'
+                  ),
+                ],
+                ['To', contact.email],
+              ]}
             />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-foreground">Message</label>
-            <textarea
-              value={emailBody}
-              onChange={(e) => setEmailBody(e.target.value)}
-              placeholder="Type your message here..."
-              rows={6}
-              className="w-full px-4 py-2 bg-background border border-border rounded-xl text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent resize-none"
-            />
-          </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="ghost" onClick={() => setIsEmailModalOpen(false)}>
+            <Field label="Subject">
+              <input type="text" required autoFocus value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="e.g. Following up on our call" className={INPUT_CLASS} />
+            </Field>
+            <Field label="Message">
+              <textarea required value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={7} placeholder="Write your message…" className={`${INPUT_CLASS} resize-none leading-relaxed`} />
+            </Field>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setIsEmailModalOpen(false)}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSendEmail} 
-              disabled={isSendingEmail || !emailSubject || !emailBody}
-            >
-              {isSendingEmail ? 'Sending...' : 'Send Email'}
+            <Button type="submit" isLoading={isSendingEmail}>
+              Send email
             </Button>
-          </div>
-        </div>
+          </DialogFooter>
+        </form>
       </Dialog>
     </div>
   )

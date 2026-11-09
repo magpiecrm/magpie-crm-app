@@ -13,6 +13,11 @@ import {
 import { STARTER_TEMPLATES } from '../../../features/email-builder/templates/starters'
 import { TemplateThumbnail } from '../../../features/templates/components/TemplateThumbnail'
 import type { EmailTemplate } from '../../../features/templates/types'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Button } from '../../../components/ui/Button'
+import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 
 export const Route = createFileRoute('/marketing/templates/')({
   component: TemplatesPage,
@@ -22,6 +27,7 @@ function TemplatesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [showCreate, setShowCreate] = useState(false)
+  const [renaming, setRenaming] = useState<EmailTemplate | null>(null)
 
   const { data: templates = [], isLoading } = useQuery({
     queryKey: queryKeys.templates.list(),
@@ -44,30 +50,43 @@ function TemplatesPage() {
 
   const renameMutation = useMutation({
     mutationFn: (data: { id: string; name: string; description: string }) => updateTemplateFn({ data }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      setRenaming(null)
+    },
   })
 
   const duplicateMutation = useMutation({
     mutationFn: (id: string) => duplicateTemplateFn({ data: { id } }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      toast.success('Template duplicated')
+    },
+    onError: (err: Error) => toast.error("Couldn't duplicate the template", { description: err.message }),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTemplateFn({ data: { id } }),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      invalidate()
+      toast.success('Template deleted')
+    },
+    onError: (err: Error) => toast.error("Couldn't delete the template", { description: err.message }),
   })
 
   const rename = (template: EmailTemplate) => {
-    const name = prompt('Template name', template.name)
-    if (name === null || !name.trim()) return
-    const description = prompt('Description (optional)', template.description)
-    renameMutation.mutate({ id: template.id, name, description: description ?? template.description })
+    renameMutation.reset()
+    setRenaming(template)
   }
 
-  const confirmDelete = (template: EmailTemplate) => {
-    if (confirm(`Delete "${template.name}"? Campaigns created from it are not affected. This cannot be undone.`)) {
-      deleteMutation.mutate(template.id)
-    }
+  const confirmDelete = async (template: EmailTemplate) => {
+    const ok = await confirmDialog({
+      title: `Delete “${template.name}”?`,
+      message: "Campaigns made from it aren't affected. This can't be undone.",
+      confirmLabel: 'Delete template',
+      tone: 'danger',
+    })
+    if (ok) deleteMutation.mutate(template.id)
   }
 
   // Take over the page rather than opening a modal, as the Surveys page does.
@@ -170,6 +189,16 @@ function TemplatesPage() {
             </div>
           ))}
         </div>
+      )}
+      {renaming && (
+        <RenameTemplateDialog
+          key={renaming.id}
+          template={renaming}
+          onClose={() => setRenaming(null)}
+          onSave={(name, description) => renameMutation.mutate({ id: renaming.id, name, description })}
+          isSaving={renameMutation.isPending}
+          error={renameMutation.error?.message}
+        />
       )}
     </div>
   )
@@ -310,5 +339,60 @@ function CreateTemplateView({
         </div>
       </div>
     </form>
+  )
+}
+
+/** The template's name and description, edited together. */
+function RenameTemplateDialog({
+  template,
+  onClose,
+  onSave,
+  isSaving,
+  error,
+}: {
+  template: EmailTemplate
+  onClose: () => void
+  onSave: (name: string, description: string) => void
+  isSaving: boolean
+  error?: string
+}) {
+  const [name, setName] = useState(template.name)
+  const [description, setDescription] = useState(template.description ?? '')
+  return (
+    <Dialog isOpen onClose={onClose}  title="Edit template details" description="Shown on the template's card." className="sm:max-w-md">
+      <form
+        className="flex min-h-0 flex-col"
+        onSubmit={e => {
+          e.preventDefault()
+          if (name.trim()) onSave(name.trim(), description.trim())
+        }}
+      >
+        <DialogBody className="space-y-4">
+          <Field label="Name">
+            <input
+              required
+              maxLength={200}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onFocus={e => e.currentTarget.select()}
+              autoFocus
+              className={INPUT_CLASS}
+            />
+          </Field>
+          <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>}>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />
+          </Field>
+        </DialogBody>
+        <DialogFooter>
+          {error && <p className="text-[13px] text-destructive sm:mr-auto">{error}</p>}
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" isLoading={isSaving}>
+            Save changes
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   )
 }

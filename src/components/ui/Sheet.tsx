@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react'
+import React, { useRef } from 'react'
 import { X } from 'lucide-react'
+import { PopupPortal, usePopupLayer } from './Dialog'
 
 export interface SheetProps {
   isOpen: boolean
@@ -17,9 +18,9 @@ export interface SheetProps {
 }
 
 const SIDE_CLASSES: Record<NonNullable<SheetProps['side']>, string> = {
-  bottom: 'inset-x-0 bottom-0 w-full max-h-[85dvh] rounded-t-2xl border-t animate-in slide-in-from-bottom',
-  left: 'inset-y-0 left-0 h-full border-r animate-in slide-in-from-left',
-  right: 'inset-y-0 right-0 h-full border-l animate-in slide-in-from-right',
+  bottom: 'inset-x-0 bottom-0 w-full max-h-[85dvh] rounded-t-2xl border-t popup-sheet-bottom',
+  left: 'inset-y-0 left-0 h-full border-r popup-sheet-left',
+  right: 'inset-y-0 right-0 h-full border-l popup-sheet-right',
 }
 
 const sideWidth = (side: NonNullable<SheetProps['side']>, wide: boolean) => (side === 'bottom' ? '' : wide ? 'w-full sm:w-[min(42rem,92vw)]' : 'w-[min(22rem,90vw)]')
@@ -27,7 +28,7 @@ const sideWidth = (side: NonNullable<SheetProps['side']>, wide: boolean) => (sid
 /**
  * Mobile counterpart to `Dialog`: a slide-in panel for content that is an
  * inline side rail on desktop (filter forms, block editors, settings).
- * Shares Dialog's body-scroll lock and Escape handling.
+ * Shares Dialog's Escape, focus and scroll handling (`usePopupLayer`).
  */
 export function Sheet({
   isOpen,
@@ -39,35 +40,22 @@ export function Sheet({
   footer,
   wide = false,
 }: SheetProps) {
-  useEffect(() => {
-    if (isOpen) {
-      const originalStyle = window.getComputedStyle(document.body).overflow
-      document.body.style.overflow = 'hidden'
-      return () => {
-        document.body.style.overflow = originalStyle
-      }
-    }
-  }, [isOpen])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  const panelRef = useRef<HTMLDivElement>(null)
+  usePopupLayer(isOpen, onClose, panelRef)
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-60">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
-        onClick={onClose}
-      />
+    <PopupPortal>
+    <div className="fixed inset-0 z-[60]">
+      <div className="popup-overlay absolute inset-0 bg-black/[0.18] backdrop-blur-[1px] dark:bg-black/55" onClick={onClose} aria-hidden="true" />
 
       <div
-        className={`absolute bg-background border-border flex flex-col shadow-2xl duration-200 ${SIDE_CLASSES[side]} ${sideWidth(side, wide)} ${className}`}
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        className={`absolute bg-popover text-popover-foreground border-border dark:border-white/10 flex flex-col shadow-xl outline-none ${SIDE_CLASSES[side]} ${sideWidth(side, wide)} ${className}`}
       >
         {side === 'bottom' && (
           <div className="pt-2 pb-1 flex justify-center shrink-0">
@@ -75,29 +63,31 @@ export function Sheet({
           </div>
         )}
 
-        <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-3 shrink-0">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between gap-3 shrink-0">
           <div className="min-w-0 flex-1">
             {typeof title === 'string' ? (
-              <h3 className="text-base font-bold text-foreground truncate">{title}</h3>
+              <h2 className="text-lg font-semibold leading-6 tracking-[-0.015em] text-foreground truncate">{title}</h2>
             ) : (
               title
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Close"
-            className="touch-target flex items-center justify-center shrink-0 text-muted-foreground hover:text-foreground rounded-md-s hover:bg-muted transition-colors"
+            className="touch-target -mr-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="h-[18px] w-[18px]" />
           </button>
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">{children}</div>
 
         {footer && (
-          <div className="px-4 py-3 border-t border-border bg-card shrink-0 safe-b">{footer}</div>
+          <div className="px-5 py-3.5 border-t border-border bg-muted/40 dark:bg-white/[0.025] shrink-0 safe-b">{footer}</div>
         )}
       </div>
     </div>
+    </PopupPortal>
   )
 }

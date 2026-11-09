@@ -4,7 +4,7 @@ import { ArrowRight, Check, Flame, Inbox } from 'lucide-react'
 import { inboxWarmupFn, pauseWarmupFn, placementTestFn, resumeWarmupFn, startSenderCheckFn, startWarmupFn, stopWarmupFn, warmupPlacementFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Notice } from '../../../components/ui/Notice'
 import { queryKeys } from '../../../queryKeys'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsMore, SettingsPanel, SettingsRow } from './SettingsBlock'
@@ -256,27 +256,27 @@ function Consent({ row, consent, onClose }: { row: WarmupSenderRow; consent: { v
     },
   })
   return (
-    <Dialog isOpen onClose={onClose} title={`Warm up ${row.email}`} padded className="max-w-lg">
-      <div className="flex flex-col gap-4">
-        <ul className="flex flex-col gap-2 text-sm leading-relaxed text-muted-foreground">
+    <Dialog isOpen onClose={onClose} title={`Warm up ${row.email}`} description="Before it starts, please read what warmup does with this mailbox." className="sm:max-w-lg">
+      <DialogBody className="flex flex-col gap-4">
+        <ul className="flex list-disc flex-col gap-2 pl-5 text-sm leading-relaxed text-muted-foreground">
           {consent.points.map((p) => (
             <li key={p}>{p}</li>
           ))}
         </ul>
-        <label className="flex items-start gap-2 text-sm text-foreground">
-          <input type="checkbox" className="mt-1" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+        <label className="flex items-start gap-2.5 rounded-md-s border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground cursor-pointer">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
           <span>I agree to this for {row.email}, and I'm allowed to for this mailbox.</span>
         </label>
         {start.error && <Notice level="error">{(start.error as Error).message}</Notice>}
-        <SettingsActions>
-          <Button disabled={!agreed} isLoading={start.isPending} onClick={() => start.mutate()}>
-            Start warmup
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-        </SettingsActions>
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button disabled={!agreed} isLoading={start.isPending} onClick={() => start.mutate()}>
+          Start warmup
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }

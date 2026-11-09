@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom'
 import { Dialog } from '../../../components/ui/Dialog'
 import type { CopilotClientState } from '../../../server/copilot/types'
 import { SURVEY_ACTION_PREFIX } from '../../survey-builder/applyAction'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 function renderInlineMarkdown(text: string): React.ReactNode[] {
   const parts = text.split(/(`[^`]+`)/g)
@@ -846,10 +847,9 @@ export function AIChat({
                   </button>
 
                   <button
-                    onClick={() => {
-                      if (confirm(`Delete "${chat.title}"? This cannot be undone.`)) {
-                        deleteChatMutation.mutate(chat.id)
-                      }
+                    onClick={async () => {
+                      const ok = await confirmDialog({ title: `Delete “${chat.title}”?`, message: "The conversation is gone for good.", confirmLabel: 'Delete chat', tone: 'danger' })
+                      if (ok) deleteChatMutation.mutate(chat.id)
                     }}
                     disabled={deleteChatMutation.isPending}
                     title="Delete chat"

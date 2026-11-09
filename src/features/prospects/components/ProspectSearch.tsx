@@ -592,7 +592,7 @@ export function ProspectSearch() {
             <label key={b} className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
               <input
                 type="checkbox"
-                className="rounded border-border text-accent focus:ring-accent"
+               
                 checked={companyForm.headcount.includes(b)}
                 onChange={(e) =>
                   setCompanyForm({
@@ -714,7 +714,7 @@ export function ProspectSearch() {
           <label className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
             <input
               type="checkbox"
-              className="rounded border-border text-accent focus:ring-accent mt-0.5"
+              className="mt-0.5"
               checked={peopleForm.relatedRoles}
               onChange={(e) => setPeopleForm({ ...peopleForm, relatedRoles: e.target.checked })}
             />
@@ -744,7 +744,7 @@ export function ProspectSearch() {
             <label key={s.kind} className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer">
               <input
                 type="checkbox"
-                className="rounded border-border text-accent focus:ring-accent mt-0.5"
+                className="mt-0.5"
                 checked={peopleForm.signals.includes(s.kind)}
                 disabled={Boolean(peopleForm.company) && s.kind === 'warm'}
                 onChange={(e) =>
@@ -762,7 +762,7 @@ export function ProspectSearch() {
           ))}
         </div>
         <label className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
-          <input type="checkbox" className="rounded border-border text-accent focus:ring-accent" checked={signalsFirst} onChange={(e) => setSignalsFirst(e.target.checked)} />
+          <input type="checkbox" checked={signalsFirst} onChange={(e) => setSignalsFirst(e.target.checked)} />
           Show people with signals first
         </label>
         <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">

@@ -5,9 +5,11 @@ import { Plus, FileText, Trash2, Code2, Pencil, Check, Copy, Mail, Clock, Users,
 import { useState } from 'react'
 import { getFormsFn, createFormFn, updateFormFn, deleteFormFn, getSendersFn } from '../../../server/functions'
 import { listsFn, createListFn } from '../../../server/functions'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Button } from '../../../components/ui/Button'
 import { Badge } from '../../../components/ui/Badge'
 import { Select } from '../../../components/ui/Select'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 export const Route = createFileRoute('/marketing/forms/')({
   component: FormsPage,
@@ -436,11 +438,14 @@ function EmbedModal({ form, onClose }: { form: Form; onClose: () => void }) {
   }
 
   return (
-    <Dialog isOpen onClose={onClose} title={`Embed: ${form.name}`} className="max-w-2xl max-h-[90vh] overflow-y-auto">
-      <div className="px-6 pb-6 space-y-4 mt-4">
-        <p className="text-sm text-muted-foreground">
-          Paste this snippet into your website where you want the form to appear. The form will resize to fit its container and can be styled with CSS variables.
-        </p>
+    <Dialog
+      isOpen
+      onClose={onClose}
+      title={`Embed “${form.name}”`}
+      description="Paste this snippet into your website where you want the form to appear. It resizes to fit its container and can be styled with CSS variables."
+      className="sm:max-w-2xl"
+    >
+      <DialogBody className="space-y-4">
 
         <div className="relative">
           <pre className="bg-muted rounded-md-s p-4 text-xs overflow-x-auto text-foreground/80 max-h-64 border border-border">
@@ -448,13 +453,14 @@ function EmbedModal({ form, onClose }: { form: Form; onClose: () => void }) {
           </pre>
           <button
             onClick={copy}
+            aria-label="Copy snippet"
             className="absolute top-2 right-2 p-1.5 rounded-md-s bg-background border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
           </button>
         </div>
 
-        <div className="bg-accent/5 rounded-md-s p-4 border border-accent/10 text-xs space-y-1.5">
+        <div className="bg-muted/40 rounded-md-s p-4 border border-border text-[13px] space-y-1.5">
           <p className="font-semibold text-foreground mb-2">Style it with CSS variables</p>
           <p className="text-muted-foreground font-mono">{'--em-btn-bg'}: your button colour</p>
           <p className="text-muted-foreground font-mono">{'--em-radius'}: border radius</p>
@@ -465,12 +471,20 @@ function EmbedModal({ form, onClose }: { form: Form; onClose: () => void }) {
         </div>
 
         <div className="pt-1">
-          <p className="text-xs text-muted-foreground mb-1 font-medium">Or use the raw API endpoint (POST JSON):</p>
+          <p className="text-[13px] text-foreground mb-1.5 font-medium">Or post JSON to the API endpoint</p>
           <code className="text-xs bg-muted px-3 py-2 rounded-md-s block text-foreground/70 border border-border break-all">
             {origin}/api/form-submit/{form.id}
           </code>
         </div>
-      </div>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+        <Button onClick={copy} leftIcon={copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}>
+          {copied ? 'Copied' : 'Copy snippet'}
+        </Button>
+      </DialogFooter>
     </Dialog>
   )
 }
@@ -517,10 +531,9 @@ function FormsPage() {
     onSuccess: invalidate,
   })
 
-  const confirmDelete = (form: Form) => {
-    if (confirm(`Delete "${form.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(form.id)
-    }
+  const confirmDelete = async (form: Form) => {
+    const ok = await confirmDialog({ title: `Delete “${form.name}”?`, message: "It stops working wherever it's embedded. This can't be undone.", confirmLabel: 'Delete form', tone: 'danger' })
+    if (ok) deleteMutation.mutate(form.id)
   }
 
   // Take over the viewport while building a form rather than opening a modal.

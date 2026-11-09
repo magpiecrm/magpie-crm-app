@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Select } from '../../../components/ui/Select'
 import { Dialog } from '../../../components/ui/Dialog'
+import { toast } from '../../../components/ui/toast'
 import { Notice } from '../../../components/ui/Notice'
 import { ContactFieldForm } from '../../../features/contacts/components/ContactFieldForm'
 import { invalidateContactFields } from '../../../features/contacts/contactCache'
@@ -64,11 +65,8 @@ function ImportContactsPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
       queryClient.invalidateQueries({ queryKey: queryKeys.email.lists() })
       const left = res.fieldWarnings ? ` ${res.fieldWarnings} ${res.fieldWarnings === 1 ? "value didn't fit its field and wasn't" : "values didn't fit their fields and weren't"} saved.` : ''
-      alert(
-        res.skipped
-          ? `Imported ${res.added} contact${res.added === 1 ? '' : 's'}. ${res.skipped} ${res.skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.${left}`
-          : `Contacts imported successfully!${left}`,
-      )
+      const skipped = res.skipped ? `${res.skipped} ${res.skipped === 1 ? 'was' : 'were'} skipped: they opted out of being contacted.` : ''
+      toast.success(`Imported ${res.added} contact${res.added === 1 ? '' : 's'}`, { description: `${skipped}${left}`.trim() || undefined })
       navigate({ to: '/marketing/contacts' })
     },
     onError: (err: any) => {
@@ -308,7 +306,7 @@ function ImportContactsPage() {
 
             {/* Option 3: Integration */}
             <div 
-              onClick={() => alert('Integrations coming soon!')}
+              onClick={() => toast.info('Integrations are coming soon')}
               className="bg-card border border-border rounded-2xl p-6 hover:border-accent/40 cursor-pointer shadow-premium transition-all hover:-translate-y-0.5 flex flex-col items-start text-left space-y-4"
             >
               <div className="p-3 bg-accent/10 text-accent rounded-xl">
@@ -527,8 +525,9 @@ function ImportContactsPage() {
           ))}
 
           {newFieldFor !== null && (
-            <Dialog isOpen onClose={() => setNewFieldFor(null)} title="New field" className="max-w-lg" padded>
+            <Dialog isOpen onClose={() => setNewFieldFor(null)} title="New field" description="A contact field for this column's values." className="sm:max-w-lg">
               <ContactFieldForm
+                onCancel={() => setNewFieldFor(null)}
                 initial={guessField(grid, hasHeaders, newFieldFor)}
                 showIn="contacts"
                 submitLabel="Create field"

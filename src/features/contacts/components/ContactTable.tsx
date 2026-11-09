@@ -98,7 +98,7 @@ export function ContactTable({
               <li key={contact.email} onClick={() => onRowClick?.(contact.email)} className={`p-4 flex items-start gap-3 transition-colors ${onRowClick ? 'active:bg-muted/40 cursor-pointer' : ''}`}>
                 {selection && (
                   <label onClick={(e) => e.stopPropagation()} className="touch-target flex items-center justify-center shrink-0 -m-2 p-2">
-                    <input type="checkbox" checked={selected.includes(contact.email)} onChange={(e) => toggle(contact.email, e.target.checked)} className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent" />
+                    <input type="checkbox" checked={selected.includes(contact.email)} onChange={(e) => toggle(contact.email, e.target.checked)} className="w-4 h-4 cursor-pointer accent-accent" />
                   </label>
                 )}
                 <Avatar name={fullName} />
@@ -145,7 +145,7 @@ export function ContactTable({
                       if (el) el.indeterminate = someSelected
                     }}
                     onChange={(e) => toggleAll(e.target.checked)}
-                    className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent"
+                    className="w-4 h-4 cursor-pointer accent-accent"
                   />
                 </th>
               )}
@@ -198,7 +198,7 @@ export function ContactTable({
                 <tr key={contact.email} className={`group hover:bg-muted/30 transition-colors ${onRowClick ? 'cursor-pointer' : ''}`} onClick={() => onRowClick?.(contact.email)}>
                   {selection && (
                     <td className="sticky left-0 z-10 bg-card group-hover:bg-muted pl-6 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" aria-label={`Select ${contact.email}`} checked={selected.includes(contact.email)} onChange={(e) => toggle(contact.email, e.target.checked)} className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent" />
+                      <input type="checkbox" aria-label={`Select ${contact.email}`} checked={selected.includes(contact.email)} onChange={(e) => toggle(contact.email, e.target.checked)} className="w-4 h-4 cursor-pointer accent-accent" />
                     </td>
                   )}
                   {columns.map((id) =>

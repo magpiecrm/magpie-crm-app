@@ -9,6 +9,7 @@ import { Button } from '../../../components/ui/Button'
 import { DraftPersonasDialog } from '../../../features/prospects/components/DraftPersonasDialog'
 import type { Persona, PersonaCriteria } from '../../../features/prospects/types'
 import type { PersonaStats } from '../../../server/personaStats'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 export const Route = createFileRoute('/collection/personas/')({
   component: PersonasPage,
@@ -73,12 +74,11 @@ function PersonasPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.prospects.personas() }),
   })
 
-  const confirmDelete = (persona: Persona) => {
+  const confirmDelete = async (persona: Persona) => {
     const saved = stats[persona.id]?.saved ?? 0
     const found = saved ? ` The ${saved} contact${saved === 1 ? '' : 's'} found with it stay, without it.` : ''
-    if (confirm(`Delete "${persona.name}"? This can't be undone.${found}`)) {
-      deleteMutation.mutate(persona.id)
-    }
+    const ok = await confirmDialog({ title: `Delete “${persona.name}”?`, message: `This can't be undone.${found}`, confirmLabel: 'Delete persona', tone: 'danger' })
+    if (ok) deleteMutation.mutate(persona.id)
   }
 
   const useInSearch = (persona: Persona) => {

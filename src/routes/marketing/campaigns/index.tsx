@@ -10,7 +10,9 @@ import { CampaignWizard } from '../../../features/campaigns/components/CampaignW
 import { sortCampaigns } from '../../../features/campaigns/sort'
 import { campaignSummary } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
-import { sentMessage } from '../../../features/campaigns/sendResult'
+import { sentMessage, toastParts } from '../../../features/campaigns/sendResult'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 
 export const Route = createFileRoute('/marketing/campaigns/')({
   // `?template=<id>` opens the wizard on a new campaign seeded from that saved template.
@@ -28,10 +30,11 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
       // Report the real recipient count rather than a blanket success message.
-      alert(sentMessage(res))
+      const [title, description] = toastParts(sentMessage(res))
+      toast.success(title, { description })
     },
     onError: (err: any) => {
-      alert(err?.message || 'Failed to send campaign')
+      toast.error("Couldn't send the campaign", { description: err?.message })
     }
   })
 
@@ -39,21 +42,24 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
     mutationFn: (id: number) => deleteCampaignFn({ data: { id } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
-      alert('Campaign deleted successfully!')
+      toast.success('Campaign deleted', { description: `“${campaign.name}” is gone.` })
     },
     onError: (err: any) => {
-      alert(`Failed to delete campaign: ${err.message}`)
+      toast.error("Couldn't delete the campaign", { description: err.message })
     }
   })
 
   const duplicateMutation = useMutation({
     mutationFn: (id: number) => duplicateCampaignFn({ data: { id } }),
-    onSuccess: () => {
+    onSuccess: (copy: any) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.email.campaigns() })
-      alert('Campaign duplicated successfully!')
+      toast.success('Campaign duplicated', {
+        description: 'Saved as a draft at the top of the list.',
+        action: copy?.id ? { label: 'Open', onClick: () => onEdit(copy.id) } : undefined,
+      })
     },
     onError: (err: any) => {
-      alert(`Failed to duplicate campaign: ${err.message}`)
+      toast.error("Couldn't duplicate the campaign", { description: err.message })
     }
   })
 
@@ -85,7 +91,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
           type="checkbox" 
           checked={isChecked}
           onChange={(e) => setIsChecked(e.target.checked)}
-          className="w-4 h-4 rounded border-border text-accent focus:ring-accent cursor-pointer accent-accent" 
+          className="w-4 h-4 cursor-pointer accent-accent" 
         />
         
         <div className="flex-1 min-w-0">
@@ -163,10 +169,13 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
       <div className="flex items-center justify-end gap-1 shrink-0 xl:pl-4 xl:border-l border-border/80 w-full xl:w-[140px]">
         {!isSent && !isSending && (
           <button 
-            onClick={() => {
-              if (confirm(isScheduled ? 'This campaign is scheduled. Send it now instead?' : 'Are you sure you want to send this campaign now?')) {
-                sendMutation.mutate(campaign.id)
-              }
+            onClick={async () => {
+              const ok = await confirmDialog(
+                isScheduled
+                  ? { title: `Send “${campaign.name}” now?`, message: 'It goes out now instead of at its scheduled time.', confirmLabel: 'Send now' }
+                  : { title: `Send “${campaign.name}” now?`, message: 'It goes to everyone on its list straight away.', confirmLabel: 'Send now' },
+              )
+              if (ok) sendMutation.mutate(campaign.id)
             }}
             disabled={sendMutation.isPending}
             className="p-2 text-emerald-500 hover:text-emerald-400 rounded-md-s hover:bg-emerald-500/10 transition-colors md-state-hover"
@@ -185,11 +194,7 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
           </button>
         )}
         <button 
-          onClick={() => {
-            if (confirm('Are you sure you want to duplicate this campaign?')) {
-              duplicateMutation.mutate(campaign.id)
-            }
-          }}
+          onClick={() => duplicateMutation.mutate(campaign.id)}
           disabled={duplicateMutation.isPending}
           className="p-2 text-muted-foreground hover:text-accent rounded-md-s hover:bg-accent/10 transition-colors md-state-hover"
           title="Duplicate"
@@ -197,10 +202,17 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
           {duplicateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
         </button>
         <button 
-          onClick={() => {
-            if (confirm('Are you sure you want to delete this campaign?')) {
-              deleteMutation.mutate(campaign.id)
-            }
+          onClick={async () => {
+            const ok = await confirmDialog({
+              title: `Delete “${campaign.name}”?`,
+              message:
+                campaign.status === 'sent'
+                  ? 'This deletes its email and its results (opens, clicks, unsubscribes). It can’t be undone.'
+                  : 'This deletes the draft and its email design. It can’t be undone.',
+              confirmLabel: 'Delete campaign',
+              tone: 'danger',
+            })
+            if (ok) deleteMutation.mutate(campaign.id)
           }}
           disabled={deleteMutation.isPending}
           className="p-2 text-muted-foreground hover:text-destructive rounded-md-s hover:bg-destructive/10 transition-colors md-state-hover"

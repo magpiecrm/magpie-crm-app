@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
  * ring. Fields fill the width they're given; a grid decides how wide that is.
  */
 export const INPUT_CLASS =
-  'w-full min-h-[38px] bg-card border border-input rounded-md-s px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/90 transition-colors focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent disabled:opacity-60 disabled:cursor-not-allowed'
+  'w-full min-h-[38px] max-sm:min-h-11 bg-card border border-input rounded-md-s px-3 py-2 text-sm max-sm:text-base text-foreground placeholder:text-muted-foreground/90 transition-[color,border-color,box-shadow] focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60 disabled:cursor-not-allowed'
 
 /** A control under its label, with an optional hint or error beneath. */
 export function Field({

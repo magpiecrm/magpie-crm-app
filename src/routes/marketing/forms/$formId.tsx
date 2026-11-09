@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { queryKeys } from '../../../queryKeys'
 import { getFormFn, getFormSubmissionsFn } from '../../../server/functions'
 import { ArrowLeft, Users } from 'lucide-react'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody } from '../../../components/ui/Dialog'
 
 export const Route = createFileRoute('/marketing/forms/$formId')({
   component: FormSubmissionsPage,
@@ -169,30 +169,25 @@ function FormSubmissionsPage() {
       <Dialog
         isOpen={!!selectedSubmission}
         onClose={() => setSelectedSubmission(null)}
-        title="Submission Details"
-        className="max-w-lg"
+        title="Submission"
+        description={selectedSubmission ? `Sent ${new Date(selectedSubmission.submitted_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : undefined}
+        className="sm:max-w-lg"
       >
         {selectedSubmission && (
-          <div className="p-6 space-y-4">
+          <DialogBody>
+            <dl className="divide-y divide-border rounded-md-s border border-border">
             {form.fields.map(field => {
               const val = getSubmissionValue(selectedSubmission, field)
 
               return (
-                <div key={field}>
-                  <div className="text-xs font-medium text-muted-foreground mb-1">
-                    {FIELD_LABELS[field] || field}
-                  </div>
-                  <div className="text-sm text-foreground whitespace-pre-wrap">{val}</div>
+                <div key={field} className="grid grid-cols-[8rem_1fr] gap-3 px-3 py-2.5">
+                  <dt className="text-[13px] text-muted-foreground">{FIELD_LABELS[field] || field}</dt>
+                  <dd className="text-sm text-foreground whitespace-pre-wrap break-words">{val || <span className="text-muted-foreground">—</span>}</dd>
                 </div>
               )
             })}
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">Submitted</div>
-              <div className="text-sm text-foreground">
-                {new Date(selectedSubmission.submitted_at).toLocaleString()}
-              </div>
-            </div>
-          </div>
+            </dl>
+          </DialogBody>
         )}
       </Dialog>
     </div>

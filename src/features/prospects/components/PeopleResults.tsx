@@ -293,7 +293,7 @@ export function PeopleResults({
             <label className="touch-target flex items-center justify-center shrink-0 -m-2 p-2">
               <input
                 type="checkbox"
-                className="rounded border-border text-accent focus:ring-accent cursor-pointer"
+                className="cursor-pointer"
                 checked={selected.has(p.profileUrl)}
                 onChange={() => onToggle(p)}
               />
@@ -326,7 +326,7 @@ export function PeopleResults({
               <input
                 type="checkbox"
                 aria-label="Select all on this page"
-                className="rounded border-border text-accent focus:ring-accent cursor-pointer"
+                className="cursor-pointer"
                 checked={allSelected}
                 onChange={(e) => onToggleAll(e.target.checked)}
               />
@@ -345,7 +345,7 @@ export function PeopleResults({
               <td className="px-3 py-3 text-center">
                 <input
                   type="checkbox"
-                  className="rounded border-border text-accent focus:ring-accent cursor-pointer"
+                  className="cursor-pointer"
                   checked={selected.has(p.profileUrl)}
                   onChange={() => onToggle(p)}
                 />

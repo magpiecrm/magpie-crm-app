@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Dialog } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Field, FieldGrid } from '../../../components/ui/Field'
 import { Button } from '../../../components/ui/Button'
 import { createCompanyFn } from '../../../server/functions'
 import { queryKeys } from '../../../queryKeys'
@@ -64,59 +65,49 @@ export function CompanyForm({
   }
 
   return (
-    <Dialog isOpen={isOpen} onClose={close} title="New company" className="max-w-md">
+    <Dialog isOpen={isOpen} onClose={close} title="New company" className="sm:max-w-md">
       <form
-        className="p-6 space-y-4 overflow-y-auto"
+        className="flex min-h-0 flex-col"
         onSubmit={(e) => {
           e.preventDefault()
           if (name.trim()) create.mutate()
         }}
       >
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Name</span>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Larkspur Labs" className={FIELD_CLASS} />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Website domain</span>
-          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="larkspur.com" className={FIELD_CLASS} />
-          <span className="block text-xs text-muted-foreground">Contacts with email addresses here join the company.</span>
-        </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">Industry</span>
-            <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Software" className={FIELD_CLASS} />
-          </label>
-          <label className="block space-y-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">Staff</span>
-            <input
-              inputMode="numeric"
-              value={headcount}
-              onChange={(e) => setHeadcount(e.target.value)}
-              placeholder="50"
-              className={FIELD_CLASS}
-            />
-          </label>
-        </div>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-semibold text-muted-foreground">Owner</span>
-          <Select value={owner} onChange={(e) => setOwner(e.target.value)} className={FIELD_CLASS}>
-            <option value="">No owner</option>
-            {(sales?.owners ?? []).map((o) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </Select>
-        </label>
-        {create.error && <p className="text-xs text-destructive">{create.error.message}</p>}
-        <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" size="sm" onClick={close}>
+        <DialogBody className="space-y-4">
+          <Field label="Name">
+            <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Larkspur Labs" className={FIELD_CLASS} />
+          </Field>
+          <Field label="Website domain" hint="Contacts with email addresses here join the company.">
+            <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="e.g. larkspur.com" className={FIELD_CLASS} />
+          </Field>
+          <FieldGrid>
+            <Field label="Industry">
+              <input value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="e.g. Software" className={FIELD_CLASS} />
+            </Field>
+            <Field label="Staff">
+              <input inputMode="numeric" value={headcount} onChange={(e) => setHeadcount(e.target.value)} placeholder="e.g. 50" className={FIELD_CLASS} />
+            </Field>
+          </FieldGrid>
+          <Field label="Owner">
+            <Select value={owner} onChange={(e) => setOwner(e.target.value)} className={FIELD_CLASS}>
+              <option value="">No owner</option>
+              {(sales?.owners ?? []).map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </DialogBody>
+        <DialogFooter>
+          {create.error && <p className="text-[13px] text-destructive sm:mr-auto">{create.error.message}</p>}
+          <Button type="button" variant="secondary" onClick={close}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" isLoading={create.isPending} disabled={!name.trim()}>
+          <Button type="submit" isLoading={create.isPending}>
             Add company
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </Dialog>
   )

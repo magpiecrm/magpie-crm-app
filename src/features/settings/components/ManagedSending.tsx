@@ -16,6 +16,7 @@ import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { SettingsBlock, SettingsEmpty, SettingsInline, SettingsList, SettingsPanel, SettingsRow } from './SettingsBlock'
 import { SendingHealth } from './SendingHealth'
+import { confirmDialog } from '../../../components/ui/confirm'
 
 type Domain = Awaited<ReturnType<typeof getSendingDomainsFn>>[number]
 type Health = Awaited<ReturnType<typeof getSendingHealthFn>>
@@ -165,7 +166,7 @@ function DomainRow({ d, health, onChanged }: { d: Domain; health: Health | undef
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => confirm(`Stop sending from ${d.domain}?`) && remove.mutate()}
+              onClick={async () => (await confirmDialog({ title: `Stop sending from ${d.domain}?`, message: 'Campaigns and sequences using it will need another sending domain.', confirmLabel: 'Stop sending', tone: 'danger' })) && remove.mutate()}
               isLoading={remove.isPending}
               leftIcon={<Trash2 className="h-3.5 w-3.5" />}
               className="!text-destructive hover:!bg-destructive/10"
