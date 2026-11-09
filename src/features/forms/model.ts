@@ -14,11 +14,6 @@ import { coerceCustomValue, type ContactCustomValue, type ContactFieldDef } from
  */
 export const BUILTIN_FORM_FIELDS = ['first_name', 'last_name', 'email', 'company', 'job_title', 'message', 'consent'] as const
 export type BuiltinFormField = (typeof BUILTIN_FORM_FIELDS)[number]
-/** A built-in, or `custom:<key>` for a custom contact field (as survey mappings name them). */
-export type FormFieldKey = BuiltinFormField | `custom:${string}`
-
-/** Built-ins that are a column on the contact. */
-export const CONTACT_COLUMNS = ['first_name', 'last_name', 'company', 'job_title'] as const
 
 export const BUILTIN_LABELS: Record<BuiltinFormField, string> = {
   first_name: 'First name',
@@ -31,7 +26,7 @@ export const BUILTIN_LABELS: Record<BuiltinFormField, string> = {
 }
 
 /** The consent box's wording until it's changed. */
-export const DEFAULT_CONSENT_TEXT = 'I agree to receive emails. I can unsubscribe at any time.'
+const DEFAULT_CONSENT_TEXT = 'I agree to receive emails. I can unsubscribe at any time.'
 
 export interface FormFieldSettings {
   label?: string
@@ -117,11 +112,11 @@ export interface FormSource {
 export const DEFAULT_SUBMIT_LABEL = 'Submit'
 export const DEFAULT_SUCCESS_MESSAGE = "Thanks! We'll be in touch shortly."
 export const DEFAULT_ACCENT = '#111827'
-export const LEGACY_SAVE_FIELDS = ['first_name', 'last_name', 'company']
+const LEGACY_SAVE_FIELDS = ['first_name', 'last_name', 'company']
 
 export const FORM_LIMITS = { fields: 20, label: 80, placeholder: 120, submitLabel: 40, successMessage: 400, value: 2000 }
 
-export type FormInputType = 'text' | 'email' | 'textarea' | 'number' | 'date' | 'checkbox' | 'select' | 'multiselect'
+type FormInputType = 'text' | 'email' | 'textarea' | 'number' | 'date' | 'checkbox' | 'select' | 'multiselect'
 
 /** A field as a page draws it. */
 export interface ResolvedFormField {
@@ -143,13 +138,13 @@ export const isBuiltin = (key: string): key is BuiltinFormField => (BUILTIN_FORM
 export const customKey = (key: string) => (key.startsWith('custom:') ? key.slice(7) : null)
 
 /** Required unless changed: email always, first name and consent by default (first name as every form was before it could be changed). */
-export function isRequired(form: Pick<FormRecord, 'field_settings'>, key: string) {
+function isRequired(form: Pick<FormRecord, 'field_settings'>, key: string) {
   if (key === 'email') return true
   return form.field_settings?.[key]?.required ?? (key === 'first_name' || key === 'consent')
 }
 
 /** Custom fields that can be filled from a page's address: one value, as text. */
-export const canHide = (type: ContactFieldDef['type']) => type === 'text' || type === 'number' || type === 'select'
+const canHide = (type: ContactFieldDef['type']) => type === 'text' || type === 'number' || type === 'select'
 
 /** A hidden field's value, read from the page's address. */
 export function hiddenValues(fields: ResolvedFormField[], page: string | null | undefined): Record<string, string> {

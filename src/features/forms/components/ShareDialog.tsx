@@ -18,7 +18,7 @@ const TABS: Array<{ id: Tab; label: string; short: string; icon: typeof Code2 }>
 ]
 
 /** Something to copy, with one Copy button that says when it's done. */
-export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
+function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
