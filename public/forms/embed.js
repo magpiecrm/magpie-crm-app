@@ -23,6 +23,12 @@
         remember(id);
         return;
       }
+      // Escape pressed inside the form: a pop-up closes, as it does for Escape on the page.
+      if (e.data.type === 'magpie-form:escape') {
+        var open = document.querySelector('[data-magpie-popup-open="' + id + '"]');
+        if (open && open.__shut) open.__shut();
+        return;
+      }
       if (e.data.type !== 'magpie-form:height') return;
       var frames = document.querySelectorAll('iframe[data-magpie-form]');
       for (var i = 0; i < frames.length; i++) {
@@ -61,6 +67,8 @@
     frame.title = script.getAttribute('data-title') || 'Form';
     frame.style.cssText = 'width:100%;height:420px;border:0;display:block';
     function shut() { remember(popup); wrap.remove(); document.removeEventListener('keydown', onKey); }
+    wrap.setAttribute('data-magpie-popup-open', popup);
+    wrap.__shut = shut;
     function onKey(e) { if (e.key === 'Escape') shut(); }
     close.addEventListener('click', shut);
     wrap.addEventListener('click', function (e) { if (e.target === wrap) shut(); });

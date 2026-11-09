@@ -55,6 +55,16 @@ function HostedFormPage() {
     return () => window.removeEventListener('message', onMessage)
   }, [embed, formId])
 
+  // Inside an iframe: Escape is the page's (a pop-up closes on it).
+  useEffect(() => {
+    if (!embed || window.parent === window) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') window.parent.postMessage({ type: 'magpie-form:escape', id: formId }, '*')
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [embed, formId])
+
   // Inside an iframe: tell the page around it how tall the form is, as it changes.
   useEffect(() => {
     if (!embed || !root.current || window.parent === window) return
