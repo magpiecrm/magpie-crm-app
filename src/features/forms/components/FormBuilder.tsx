@@ -4,8 +4,8 @@ import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, 
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlignLeft, AtSign, Briefcase, Building2, Calendar, CheckSquare, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
-  Smartphone, SquareCheck, Trash2, Type, User,
+  AlignLeft, ArrowDown, ArrowUp, AtSign, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
+  Info, Smartphone, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
@@ -25,6 +25,8 @@ import {
   publicForm, resolveFields, type FormCorners, type FormRecord, type ResolvedFormField,
 } from '../model'
 import { FormView } from './FormView'
+import { textOn } from '../render'
+import { delayLabel } from '../format'
 
 export type FormDraft = Required<Pick<FormInput, 'name' | 'fields' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields' | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'>> &
   Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style'>
@@ -41,8 +43,8 @@ export const NEW_FORM: FormDraft = {
   welcome_email_body: 'Hi {{first_name}},\n\nThanks for getting in touch. Someone from our team will reply shortly.\n\nBest wishes,',
   welcome_email_delay_minutes: 5,
   sender_id: null,
-  submit_label: '',
-  success_message: '',
+  submit_label: DEFAULT_SUBMIT_LABEL,
+  success_message: DEFAULT_SUCCESS_MESSAGE,
   style: {},
 }
 
@@ -60,8 +62,8 @@ export function draftOf(form: FormRecord): FormDraft {
     welcome_email_body: form.welcome_email_body,
     welcome_email_delay_minutes: form.welcome_email_delay_minutes,
     sender_id: form.sender_id,
-    submit_label: form.submit_label ?? '',
-    success_message: form.success_message ?? '',
+    submit_label: form.submit_label || DEFAULT_SUBMIT_LABEL,
+    success_message: form.success_message || DEFAULT_SUCCESS_MESSAGE,
     style: form.style ?? {},
   }
 }
@@ -81,7 +83,14 @@ const CONTACT_TYPE_ICONS: Record<ContactFieldDef['type'], LucideIcon> = {
 const iconOf = (f: ResolvedFormField) => BUILTIN_ICONS[f.key] ?? TYPE_ICONS[f.type]
 
 const DELAYS = [0, 5, 15, 60, 1440]
-const SWATCHES = ['#111827', '#0f766e', '#2563eb', '#7c3aed', '#db2777', '#ea580c']
+const SWATCHES = [
+  { hex: '#111827', name: 'Black' },
+  { hex: '#0f766e', name: 'Teal' },
+  { hex: '#2563eb', name: 'Blue' },
+  { hex: '#7c3aed', name: 'Purple' },
+  { hex: '#db2777', name: 'Pink' },
+  { hex: '#ea580c', name: 'Orange' },
+]
 const CORNERS: Array<{ id: FormCorners; label: string }> = [
   { id: 'square', label: 'Square' },
   { id: 'rounded', label: 'Rounded' },
@@ -135,6 +144,7 @@ function FieldRow({
   onSettings,
   onSaveToContact,
   onRemove,
+  onMove,
 }: {
   field: ResolvedFormField
   open: boolean
@@ -144,6 +154,8 @@ function FieldRow({
   onSettings: (patch: { label?: string; placeholder?: string; required?: boolean }) => void
   onSaveToContact: (on: boolean) => void
   onRemove: () => void
+  /** Up or down one place, for anyone not dragging; missing at that end of the list. */
+  onMove: { up?: () => void; down?: () => void }
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.key })
   const Icon = iconOf(field)
@@ -163,16 +175,16 @@ function FieldRow({
           {...attributes}
           {...listeners}
           aria-label={`Move ${field.label}`}
-          className="shrink-0 cursor-grab touch-none rounded-md-xs p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="flex h-9 w-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-md-xs text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
         >
-          <GripVertical className="h-4 w-4" />
+          <GripVertical className="h-[18px] w-[18px]" />
         </button>
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs bg-muted text-foreground/70" title={TYPE_NAMES[field.type]}>
           <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
         <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId} className="flex min-w-0 flex-1 cursor-pointer flex-col items-start rounded-md-xs px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
           <span className="w-full truncate text-sm font-medium text-foreground">{isConsent ? 'Consent' : field.label}</span>
-          <span className="w-full truncate text-xs text-muted-foreground">
+          <span className="w-full truncate text-[13px] text-muted-foreground">
             {isConsent ? field.label : TYPE_NAMES[field.type]}
             {custom && ' · Contact field'}
           </span>
@@ -182,8 +194,8 @@ function FieldRow({
             <Lock className="h-3 w-3" aria-hidden /> Always required
           </span>
         ) : (
-          <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground max-[380px]:sr-only">
-            <span className="hidden sm:inline">Required</span>
+          <label className="flex shrink-0 cursor-pointer items-center gap-2.5 text-[13px] font-medium">
+            <span className={`hidden w-[4.25rem] text-right sm:inline ${field.required ? 'text-foreground' : 'text-muted-foreground'}`}>{field.required ? 'Required' : 'Optional'}</span>
             <Switch checked={field.required} onChange={(v) => onSettings({ required: v })} label={`${field.label} is required`} />
           </label>
         )}
@@ -233,11 +245,15 @@ function FieldRow({
                 {locked ? 'Saved as the contact’s email.' : 'Kept with the submission.'}
               </span>
             )}
-            {!locked && (
-              <Button variant="ghost" size="sm" onClick={onRemove} leftIcon={<Trash2 className="h-3.5 w-3.5" />} className="text-destructive hover:text-destructive">
-                Remove field
-              </Button>
-            )}
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={onMove.up} disabled={!onMove.up} leftIcon={<ArrowUp className="h-3.5 w-3.5" />}>Move up</Button>
+              <Button variant="ghost" size="sm" onClick={onMove.down} disabled={!onMove.down} leftIcon={<ArrowDown className="h-3.5 w-3.5" />}>Move down</Button>
+              {!locked && (
+                <Button variant="ghost" size="sm" onClick={onRemove} leftIcon={<Trash2 className="h-3.5 w-3.5" />} className="text-destructive hover:text-destructive">
+                  Remove
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -298,6 +314,12 @@ export function FormBuilder({
     if (!over || active.id === over.id) return
     setDraft((d) => ({ ...d, fields: arrayMove(d.fields, d.fields.indexOf(String(active.id)), d.fields.indexOf(String(over.id))) }))
   }
+
+  const shift = (key: string, by: -1 | 1) =>
+    setDraft((d) => {
+      const at = d.fields.indexOf(key)
+      return at < 0 ? d : { ...d, fields: arrayMove(d.fields, at, Math.max(0, Math.min(d.fields.length - 1, at + by))) }
+    })
 
   const settingsFor = (key: string, patch: { label?: string; placeholder?: string; required?: boolean }) =>
     setDraft((d) => {
@@ -367,7 +389,7 @@ export function FormBuilder({
 
   const accent = draft.style?.accent ?? DEFAULT_ACCENT
   const delays = DELAYS.includes(draft.welcome_email_delay_minutes) ? DELAYS : [...DELAYS, draft.welcome_email_delay_minutes].sort((a, b) => a - b)
-  const delayText = (m: number) => (m === 0 ? 'Straight away' : m < 60 ? `${m} minutes later` : m === 60 ? '1 hour later' : m % 1440 === 0 ? `${m / 1440 === 1 ? '1 day' : `${m / 1440} days`} later` : `${m} minutes later`)
+  const delayText = (m: number) => (m === 0 ? 'Straight away' : `${delayLabel(m)} later`)
 
   return (
     <div className="flex min-h-full flex-col">
@@ -407,7 +429,7 @@ export function FormBuilder({
 
             <Section
               title="Fields"
-              description="What people fill in, in this order. Drag to reorder; open one to change its label."
+              description="What people fill in, in this order. Drag a field to move it, or open it to change its label."
               action={
                 <ActionMenu
                   label="Add a field"
@@ -425,7 +447,7 @@ export function FormBuilder({
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
                 <SortableContext items={fields.map((f) => f.key)} strategy={verticalListSortingStrategy}>
                   <ul className="flex flex-col divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
-                    {fields.map((f) => (
+                    {fields.map((f, i) => (
                       <FieldRow
                         key={f.key}
                         field={f}
@@ -438,6 +460,10 @@ export function FormBuilder({
                           set({ save_to_list_fields: on ? [...new Set([...draft.save_to_list_fields, f.key])] : draft.save_to_list_fields.filter((k) => k !== f.key) })
                         }
                         onRemove={() => removeField(f.key)}
+                        onMove={{
+                          up: i > 0 ? () => shift(f.key, -1) : undefined,
+                          down: i < fields.length - 1 ? () => shift(f.key, 1) : undefined,
+                        }}
                       />
                     ))}
                   </ul>
@@ -491,16 +517,16 @@ export function FormBuilder({
             >
               {draft.welcome_email_enabled && (
                 <div className="flex flex-col gap-4">
+                  <Field as="div" label="From">
+                    <Select className={INPUT_CLASS} value={draft.sender_id ?? ''} onChange={(e) => set({ sender_id: e.target.value ? Number(e.target.value) : null })} aria-label="From">
+                      <option value="">Default sender</option>
+                      {senders.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.email}</option>)}
+                    </Select>
+                  </Field>
                   <FieldGrid>
-                    <Field as="div" label="Send">
-                      <Select className={INPUT_CLASS} value={draft.welcome_email_delay_minutes} onChange={(e) => set({ welcome_email_delay_minutes: Number(e.target.value) })} aria-label="When to send">
+                    <Field as="div" label="Send it">
+                      <Select className={INPUT_CLASS} value={draft.welcome_email_delay_minutes} onChange={(e) => set({ welcome_email_delay_minutes: Number(e.target.value) })} aria-label="When to send it">
                         {delays.map((m) => <option key={m} value={m}>{delayText(m)}</option>)}
-                      </Select>
-                    </Field>
-                    <Field as="div" label="From">
-                      <Select className={INPUT_CLASS} value={draft.sender_id ?? ''} onChange={(e) => set({ sender_id: e.target.value ? Number(e.target.value) : null })} aria-label="From">
-                        <option value="">Default sender</option>
-                        {senders.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.email})</option>)}
                       </Select>
                     </Field>
                   </FieldGrid>
@@ -540,14 +566,13 @@ export function FormBuilder({
             <Section title="Button and thank-you" description="What the button says, and what people see once they've sent the form.">
               <FieldGrid>
                 <Field label="Button text">
-                  <input className={INPUT_CLASS} placeholder={DEFAULT_SUBMIT_LABEL} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
+                  <input className={INPUT_CLASS} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
                 </Field>
               </FieldGrid>
               <Field label="Thank-you message">
                 <textarea
                   className={`${INPUT_CLASS} min-h-[72px] resize-y`}
                   rows={2}
-                  placeholder={DEFAULT_SUCCESS_MESSAGE}
                   value={draft.success_message ?? ''}
                   onChange={(e) => {
                     set({ success_message: e.target.value })
@@ -559,19 +584,22 @@ export function FormBuilder({
 
             <Section title="Look" description="So the form fits your website. A hidden field stops most spam bots on every form.">
               <div className="flex flex-col gap-4">
-                <Field as="div" label="Button colour">
+                <Field as="div" label="Button colour" hint="The button's text turns dark or white to stay readable.">
                   <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Button colour">
-                    {SWATCHES.map((c) => (
+                    {SWATCHES.map(({ hex, name }) => (
                       <button
-                        key={c}
+                        key={hex}
                         type="button"
                         role="radio"
-                        aria-checked={accent === c}
-                        aria-label={c}
-                        onClick={() => set({ style: { ...draft.style, accent: c } })}
-                        className={`h-8 w-8 cursor-pointer rounded-full border border-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-white/15 ${accent === c ? 'ring-2 ring-foreground ring-offset-2 ring-offset-card' : ''}`}
-                        style={{ background: c }}
-                      />
+                        aria-checked={accent === hex}
+                        aria-label={name}
+                        title={name}
+                        onClick={() => set({ style: { ...draft.style, accent: hex } })}
+                        className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-black/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-white/40 ${accent === hex ? 'ring-2 ring-foreground ring-offset-2 ring-offset-card' : ''}`}
+                        style={{ background: hex }}
+                      >
+                        {accent === hex && <Check className="h-4 w-4" style={{ color: textOn(hex) }} aria-hidden />}
+                      </button>
                     ))}
                     <label className="ml-1 inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-md-s border border-input bg-card px-2 text-[13px] font-mono text-foreground">
                       <input type="color" value={accent} onChange={(e) => set({ style: { ...draft.style, accent: e.target.value } })} className="h-6 w-6 cursor-pointer appearance-none rounded border-0 bg-transparent p-0" aria-label="Choose another colour" />
@@ -610,8 +638,8 @@ export function FormBuilder({
                 value={device}
                 onChange={setDevice}
                 options={[
-                  { id: 'desktop', label: <><Monitor className="h-3.5 w-3.5" aria-hidden /><span className="sr-only sm:not-sr-only">Desktop</span></> },
-                  { id: 'phone', label: <><Smartphone className="h-3.5 w-3.5" aria-hidden /><span className="sr-only sm:not-sr-only">Phone</span></> },
+                  { id: 'desktop', label: <><Monitor className="h-3.5 w-3.5" aria-hidden />Desktop</> },
+                  { id: 'phone', label: <><Smartphone className="h-3.5 w-3.5" aria-hidden />Phone</> },
                 ]}
               />
             </div>
@@ -622,18 +650,26 @@ export function FormBuilder({
                 <FormView key={previewKey} form={preview} preview onReset={() => setPreviewKey((k) => k + 1)} />
               </div>
             </div>
-            <p className="flex items-center gap-1.5 border-t border-border/70 px-4 py-2.5 text-xs text-muted-foreground">
-              <CheckSquare className="h-3.5 w-3.5 shrink-0" aria-hidden /> Try it: sending the preview checks the fields and shows the thank-you, but saves nothing.
+            <p className="flex items-center gap-2 border-t border-border/70 px-4 py-2.5 text-[13px] text-muted-foreground">
+              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden /> Try it: sending the preview checks the fields and shows the thank-you, but saves nothing.
             </p>
           </div>
         </aside>
       </div>
 
       {/* Save stays in reach at the bottom of the screen. */}
-      <div className="sticky bottom-0 z-20 mt-auto border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div className="sticky bottom-0 z-20 mt-auto border-t border-border bg-background shadow-[0_-1px_3px_rgb(17_19_22/0.04)]">
         <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3 lg:px-8">
-          <p className="mr-auto text-[13px] text-muted-foreground" aria-live="polite">
-            {error ? <span className="text-destructive">{error}</span> : isNew ? 'New form' : dirty ? 'Unsaved changes' : 'No changes'}
+          <p className="mr-auto flex items-center gap-2 text-[13px] text-muted-foreground" aria-live="polite">
+            {error ? (
+              <span className="text-destructive">{error}</span>
+            ) : dirty && !isNew ? (
+              <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground">Unsaved changes</span></>
+            ) : isNew ? (
+              'Not saved yet'
+            ) : (
+              'All changes saved'
+            )}
           </p>
           <Button variant="secondary" onClick={onCancel}>Cancel</Button>
           <Button onClick={save} isLoading={saving}>{isNew ? 'Create form' : 'Save changes'}</Button>

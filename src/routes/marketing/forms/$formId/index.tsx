@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, ExternalLink, Inbox, Search, Share2, Trash2, UserRound } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Inbox, Search, Share2, Trash2, UserRound } from 'lucide-react'
 import { queryKeys } from '../../../../queryKeys'
 import { deleteFormSubmissionFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn } from '../../../../server/functions'
 import { Button } from '../../../../components/ui/Button'
@@ -30,6 +30,7 @@ function SubmissionsPage() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [sort, setSort] = useState<{ by: 'received' | 'person'; dir: 'asc' | 'desc' }>({ by: 'received', dir: 'desc' })
 
   const { data: form } = useQuery({ queryKey: queryKeys.email.form(formId), queryFn: () => getFormFn({ data: { id: formId } }), retry: false })
   const { data: submissions = [], isLoading } = useQuery({ queryKey: queryKeys.email.formSubmissions(formId), queryFn: () => getFormSubmissionsFn({ data: { formId } }) })
@@ -51,7 +52,24 @@ function SubmissionsPage() {
   })
 
   const q = query.trim().toLowerCase()
-  const shown = q ? submissions.filter((s) => [nameOf(s), s.contact_email, ...fields.map((f) => submissionValue(s, f.key))].some((v) => v.toLowerCase().includes(q))) : submissions
+  const matched = q ? submissions.filter((s) => [nameOf(s), s.contact_email, ...fields.map((f) => submissionValue(s, f.key))].some((v) => v.toLowerCase().includes(q))) : submissions
+  const shown = [...matched].sort((a, b) => {
+    const d = sort.by === 'received' ? a.submitted_at.localeCompare(b.submitted_at) : (nameOf(a) || a.contact_email).localeCompare(nameOf(b) || b.contact_email, 'en-GB', { sensitivity: 'base' })
+    return sort.dir === 'asc' ? d : -d
+  })
+  const sortBy = (by: 'received' | 'person') => setSort((s) => (s.by === by ? { by, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by, dir: by === 'received' ? 'desc' : 'asc' }))
+  const SortHead = ({ by, label, className = '' }: { by: 'received' | 'person'; label: string; className?: string }) => {
+    const active = sort.by === by
+    const Arrow = sort.dir === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <th scope="col" aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`px-4 py-2.5 font-medium ${className}`}>
+        <button type="button" onClick={() => sortBy(by)} className="-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md-xs px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+          {label}
+          <Arrow className={`h-3.5 w-3.5 ${active ? 'text-foreground' : 'opacity-0'}`} aria-hidden />
+        </button>
+      </th>
+    )
+  }
   const pageRows = shown.slice((page - 1) * perPage, page * perPage)
   const openIndex = openId ? shown.findIndex((s) => s.id === openId) : -1
   const open = openIndex >= 0 ? shown[openIndex] : null
@@ -96,9 +114,9 @@ function SubmissionsPage() {
           ['This week', week.toLocaleString('en-GB')],
           ['Latest', form.last_submission_at ? ago(form.last_submission_at).replace(/^on /, '') : 'None'],
         ].map(([label, value]) => (
-          <div key={label} className="min-w-0 px-4 py-3 sm:px-5 sm:py-4">
+          <div key={label} className="min-w-0 px-3.5 py-3 sm:px-5 sm:py-4">
             <dt className="text-[13px] text-muted-foreground">{label}</dt>
-            <dd className="mt-0.5 truncate text-lg font-semibold tabular-nums text-foreground sm:text-xl">{value}</dd>
+            <dd className="mt-0.5 text-base font-semibold leading-snug tabular-nums text-foreground sm:text-xl">{value}</dd>
           </div>
         ))}
       </dl>
@@ -143,13 +161,13 @@ function SubmissionsPage() {
         </ul>
 
         <table className="hidden w-full table-fixed text-left text-sm md:table">
-          <thead className="border-b border-border bg-muted/40 text-xs text-muted-foreground">
+          <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
             <tr>
-              <th scope="col" className="w-[30%] px-5 py-2.5 font-medium">Person</th>
+              <SortHead by="person" label="Person" className="w-[30%] !pl-5" />
               {columns.map((f) => (
                 <th key={f.key} scope="col" className={`px-4 py-2.5 font-medium ${f.key === 'message' ? '' : 'w-[17%]'}`}>{f.label}</th>
               ))}
-              <th scope="col" className="w-[9.5rem] px-4 py-2.5 font-medium">Received</th>
+              <SortHead by="received" label="Received" className="w-[9.5rem]" />
               <th scope="col" className="w-10"><span className="sr-only">Open</span></th>
             </tr>
           </thead>

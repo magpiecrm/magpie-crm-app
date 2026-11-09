@@ -30,7 +30,7 @@ export function formCssVars(style: Required<FormStyle>): Record<string, string> 
 
 export const FORM_CSS = `
 .mf-wrap{container-type:inline-size}
-.mf{--mf-text:#111827;--mf-muted:#5b616e;--mf-border:#c9ccd3;--mf-bg:#fff;--mf-error:#b42318;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--mf-text);font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:18px;margin:0;text-align:left}
+.mf{--mf-text:#111827;--mf-muted:#5b616e;--mf-border:#8f949d;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235b616e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");--mf-bg:#fff;--mf-error:#b42318;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--mf-text);font-size:15px;line-height:1.5;display:flex;flex-direction:column;gap:18px;margin:0;text-align:left}
 .mf *{box-sizing:border-box}
 .mf-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @container (max-width:340px){.mf-row{grid-template-columns:1fr}}
@@ -40,7 +40,7 @@ export const FORM_CSS = `
 .mf-input{appearance:none;width:100%;margin:0;padding:10px 12px;min-height:44px;border:1px solid var(--mf-border);border-radius:var(--mf-radius);background:var(--mf-bg);color:var(--mf-text);font:inherit;font-size:15px;line-height:1.4;box-shadow:none}
 .mf-input::placeholder{color:var(--mf-muted);opacity:1}
 .mf-input:focus{outline:2px solid var(--mf-accent);outline-offset:1px;border-color:var(--mf-accent)}
-select.mf-input{background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;padding-right:36px}
+select.mf-input{background-image:var(--mf-chevron);background-position:right 12px center;background-size:16px 16px;background-repeat:no-repeat;padding-right:40px}
 textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-radius),12px)}
 .mf-choices{display:flex;flex-direction:column;gap:8px}
 .mf-check{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.45;color:var(--mf-text);cursor:pointer}
@@ -56,7 +56,7 @@ textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-ra
 .mf-done p{margin:0;white-space:pre-line}
 .mf-preview-reset{appearance:none;align-self:flex-start;background:none;border:0;padding:0;color:var(--mf-muted);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .mf-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
-.mf-dark{--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#4b4f58;--mf-bg:#1d2025;--mf-error:#f97066}
+.mf-dark{--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
 `.trim()
 
 /** Fields as the page lays them out: first and last name side by side. */
@@ -149,16 +149,13 @@ ${rows}
 </script>`
 }
 
-/** The recommended embed: the hosted page in an iframe that grows to fit. */
+/**
+ * The recommended embed: the hosted page in an iframe, and a small script
+ * (public/forms/embed.js) that grows it to fit the form.
+ */
 export function iframeSnippet(formId: string, origin: string, name: string): string {
-  const id = `magpie-form-${formId}`
-  return `<iframe id="${id}" src="${origin}/f/${formId}?embed=1" title="${esc(name)}" style="width:100%;height:420px;border:0;display:block;background:transparent" loading="lazy"></iframe>
-<script>
-  window.addEventListener('message', function (e) {
-    if (e.origin !== ${JSON.stringify(origin)} || !e.data || e.data.type !== 'magpie-form:height' || e.data.id !== ${JSON.stringify(formId)}) return;
-    document.getElementById(${JSON.stringify(id)}).style.height = e.data.height + 'px';
-  });
-</script>`
+  return `<iframe data-magpie-form="${formId}" src="${origin}/f/${formId}?embed=1" title="${esc(name)}" style="width:100%;height:420px;border:0" loading="lazy"></iframe>
+<script src="${origin}/forms/embed.js" async></script>`
 }
 
 export const hostedUrl = (formId: string, origin: string) => `${origin}/f/${formId}`

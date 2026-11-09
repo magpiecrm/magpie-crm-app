@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Check, Code2, Copy, ExternalLink, FileCode2, Link2, Webhook } from 'lucide-react'
-import { Dialog, DialogBody } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, useMoreBelow } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
 import type { PublicForm } from '../model'
@@ -18,6 +18,8 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Code2 }> = [
 /** Something to copy, with one Copy button that says when it's done. */
 export function CopyBlock({ value, label, rows = 6, mono = true }: { value: string; label: string; rows?: number; mono?: boolean }) {
   const [copied, setCopied] = useState(false)
+  const pre = useRef<HTMLPreElement>(null)
+  const more = useMoreBelow(pre)
   const copy = async () => {
     await navigator.clipboard.writeText(value).catch(() => {})
     setCopied(true)
@@ -31,14 +33,23 @@ export function CopyBlock({ value, label, rows = 6, mono = true }: { value: stri
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <pre
-        className={`custom-scrollbar overflow-auto whitespace-pre-wrap break-all rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground ${mono ? 'font-mono' : ''}`}
-        style={{ maxHeight: `${rows * 1.65 + 1.4}em` }}
-        tabIndex={0}
-        aria-label={label}
-      >
-        {value}
-      </pre>
+      <div className="relative">
+        {/* Long tokens (addresses) break only where they must, so the code stays readable on a phone. */}
+        <pre
+          ref={pre}
+          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
+          style={{ maxHeight: `${rows * 1.65 + 1.4}em` }}
+          tabIndex={0}
+          aria-label={label}
+        >
+          {value}
+        </pre>
+        {more && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-px bottom-px flex h-10 items-end justify-center rounded-b-md-s bg-gradient-to-t from-muted via-muted/80 to-transparent pb-1 text-xs font-medium text-muted-foreground">
+            Scroll for more
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -94,7 +105,7 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
                 Paste this into your page where the form should go. It fills the width it's given and grows to fit. Changes you save in the builder show up on your site
                 straight away, without pasting it again.
               </p>
-              <CopyBlock label="Embed code" value={iframeSnippet(form.id, origin, form.name)} rows={7} />
+              <CopyBlock label="Embed code" value={iframeSnippet(form.id, origin, form.name)} rows={5} />
               <p className="text-[13px] text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.</p>
             </>
           )}

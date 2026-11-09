@@ -103,7 +103,7 @@ function FormsPage() {
           )}
           <div className="overflow-hidden rounded-md-m border border-border bg-card">
             {/* Column heads, where the rows are a table. */}
-            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem] items-center gap-4 border-b border-border bg-muted/40 px-5 py-2.5 text-xs font-medium text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem] items-center gap-4 border-b border-border bg-muted/40 px-5 py-2.5 text-[13px] font-medium text-muted-foreground md:grid">
               <span>Form</span>
               <span>Status</span>
               <span className="text-right">Submissions</span>
@@ -129,12 +129,12 @@ function FormsPage() {
                           {f.welcome_email_enabled && ' · Welcome email'}
                         </p>
                         {/* On a phone the numbers go under the name. */}
-                        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[13px] text-muted-foreground md:hidden">
+                        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground md:hidden">
                           <FormStatus paused={!!f.paused} />
                           <span>
                             <span className="font-medium tabular-nums text-foreground">{f.submission_count}</span> submission{f.submission_count === 1 ? '' : 's'}
+                            {f.last_submission_at && <>, latest {ago(f.last_submission_at)}</>}
                           </span>
-                          {f.last_submission_at && <span>· last {ago(f.last_submission_at)}</span>}
                         </p>
                       </div>
                       <div className="hidden md:block">
@@ -142,7 +142,7 @@ function FormsPage() {
                       </div>
                       <div className="hidden text-right md:block">
                         <p className="text-[15px] font-semibold tabular-nums text-foreground">{f.submission_count.toLocaleString('en-GB')}</p>
-                        <p className="text-xs text-muted-foreground">{f.submissions_this_week ? `${f.submissions_this_week} this week` : 'None this week'}</p>
+                        <p className="text-[13px] text-muted-foreground">{f.submissions_this_week ? `${f.submissions_this_week} this week` : 'None this week'}</p>
                       </div>
                       <p className="hidden text-sm text-muted-foreground md:block">{f.last_submission_at ? ago(f.last_submission_at).replace(/^on /, '') : 'None yet'}</p>
                       <div className="relative z-10 flex items-center justify-end gap-1">
