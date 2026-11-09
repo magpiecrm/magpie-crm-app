@@ -253,9 +253,10 @@
   .md-state-hover {
     @apply transition-all duration-300 relative;
   }
+  /* Only paints: a card's own buttons (a list card's delete) sit under it and must still get the click. */
   .md-state-hover::after {
     content: '';
-    @apply absolute inset-0 bg-current opacity-0 transition-opacity duration-300 rounded-[inherit];
+    @apply pointer-events-none absolute inset-0 bg-current opacity-0 transition-opacity duration-300 rounded-[inherit];
   }
   .md-state-hover:hover::after {
     @apply opacity-[0.04] dark:opacity-[0.08];
