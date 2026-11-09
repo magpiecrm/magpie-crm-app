@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Copy, LayoutTemplate, Pencil, Plus, Search, Send, Trash2, Type } from 'lucide-react'
+import { ArrowLeft, Copy, LayoutTemplate, Pencil, Plus, Search, Send, TextCursorInput, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import {
   createTemplateFn,
@@ -201,7 +201,7 @@ function TemplatesPage() {
   )
 }
 
-/** A saved template: its picture opens the builder; the rest is in its "…" menu. */
+/** A saved template: its picture opens the builder; Use in campaign beside the "…" menu, which has the rest. */
 function TemplateCard({
   template,
   onOpen,
@@ -218,7 +218,7 @@ function TemplateCard({
   onDelete: () => void
 }) {
   return (
-    <article data-template-card className="group flex min-w-0 flex-col">
+    <article data-template-card className="flex min-w-0 flex-col">
       <button
         type="button"
         onClick={onOpen}
@@ -227,31 +227,32 @@ function TemplateCard({
       >
         <TemplateThumbnail html={template.html} className="aspect-[4/3]" />
       </button>
-      <div className="mt-3 flex items-start gap-1.5">
-        <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-[15px] font-medium leading-snug text-foreground" title={template.name}>
-            {template.name}
-          </h3>
-          <p className="mt-1 truncate text-[13px] text-muted-foreground">
-            Edited {editedOn(template.updated_at)}
-            {template.description && <span className="max-sm:hidden"> · {template.description}</span>}
-          </p>
-        </div>
+      <h3 className="mt-3 truncate text-[15px] font-medium leading-snug text-foreground" title={template.name}>
+        {template.name}
+      </h3>
+      {template.description && (
+        <p className="mt-0.5 truncate text-[13px] text-muted-foreground" title={template.description}>
+          {template.description}
+        </p>
+      )}
+      {/* Pinned to the bottom, so the buttons line up along a row whatever the text above. */}
+      <div className="mt-auto flex items-center gap-2 pt-2">
+        <p className="mr-auto text-[13px] text-muted-foreground">Edited {editedOn(template.updated_at)}</p>
+        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="max-sm:hidden">
+          Use in campaign
+        </Button>
         <ActionMenu
           label={`Actions for ${template.name}`}
-          className="-mr-1.5 -mt-1"
+          className="-mr-1"
           actions={[
             { label: 'Edit design', icon: Pencil, onSelect: onOpen },
             { label: 'Use in campaign', icon: Send, onSelect: onUse },
-            { label: 'Rename', icon: Type, onSelect: onRename },
+            { label: 'Edit details', icon: TextCursorInput, onSelect: onRename },
             { label: 'Duplicate', icon: Copy, onSelect: onDuplicate },
             { label: 'Delete', icon: Trash2, onSelect: onDelete, danger: true, separated: true },
           ]}
         />
       </div>
-      <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="mt-3 w-full max-sm:hidden">
-        Use in campaign
-      </Button>
     </article>
   )
 }
@@ -261,7 +262,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
   const [previewing, setPreviewing] = useState<StarterTemplate | null>(null)
   const starters = FIRST_STARTERS.map(id => STARTER_TEMPLATES.find(t => t.id === id)!).filter(Boolean)
   return (
-    <div className="rounded-md-l border border-border bg-card px-5 py-10 sm:px-10">
+    <div className="mx-auto max-w-5xl rounded-md-l border border-border bg-card px-5 py-10 sm:px-10">
       <div className="mx-auto max-w-md text-center">
         <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full bg-accent/10 text-accent">
           <LayoutTemplate aria-hidden className="h-5 w-5" />
@@ -283,11 +284,14 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
           />
         ))}
       </div>
-      <p className="mt-8 text-center text-sm text-muted-foreground">
-        <button type="button" onClick={() => onStart(undefined)} className="cursor-pointer font-medium text-accent underline-offset-2 hover:underline">
-          See all {STARTER_TEMPLATES.length} layouts, or start from blank
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+        <Button variant="secondary" onClick={() => onStart(STARTER_TEMPLATES[0].id)}>
+          Browse all layouts
+        </Button>
+        <button type="button" onClick={() => onStart(undefined)} className="cursor-pointer text-sm font-medium text-accent underline-offset-2 hover:underline">
+          Start from blank
         </button>
-      </p>
+      </div>
       {previewing && (
         <TemplatePreviewDialog
           html={starterHtml(previewing)}
@@ -364,7 +368,7 @@ function CreateTemplateView({
             <TemplateTile
               blank
               name="Blank"
-              description="An empty canvas to build on."
+              description="An empty canvas: add blocks yourself."
               selected={starterId === undefined}
               onSelect={() => setStarterId(undefined)}
               onActivate={() => create(undefined)}
@@ -386,9 +390,9 @@ function CreateTemplateView({
       </div>
 
       {/* Stays at the bottom of the screen, so the name and Create are always in reach. */}
-      <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85">
+      <div className="sticky bottom-0 z-10 border-t border-border bg-card shadow-[0_-6px_16px_-10px_rgb(17_19_22/0.18)] dark:shadow-none">
         <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-end gap-3 px-4 py-3 lg:px-8">
-          <Field label="Template name" className="w-full sm:w-80">
+          <Field label={<>Template name <span className="font-normal text-muted-foreground">(optional)</span></>} className="w-full sm:w-80">
             <input value={name} onChange={e => setName(e.target.value)} placeholder={starter?.name ?? 'Untitled template'} maxLength={200} className={INPUT_CLASS} />
           </Field>
           {error && <p className="text-[13px] text-destructive sm:self-center">{error}</p>}
@@ -436,7 +440,7 @@ function RenameTemplateDialog({
   const [name, setName] = useState(template.name)
   const [description, setDescription] = useState(template.description ?? '')
   return (
-    <Dialog isOpen onClose={onClose} title="Rename template" className="sm:max-w-md">
+    <Dialog isOpen onClose={onClose} title="Edit details" className="sm:max-w-md">
       <form
         className="flex min-h-0 flex-col"
         onSubmit={e => {

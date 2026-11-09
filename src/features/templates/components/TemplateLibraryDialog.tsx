@@ -32,7 +32,7 @@ export function SegmentedTabs<T extends string>({
   className?: string
 }) {
   return (
-    <div role="tablist" aria-label={label} className={`inline-flex max-w-full gap-1 overflow-x-auto rounded-md-s bg-muted p-1 ${className}`}>
+    <div role="tablist" aria-label={label} className={`inline-flex max-w-full flex-wrap gap-1 rounded-md-s bg-muted p-1 ${className}`}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -40,7 +40,7 @@ export function SegmentedTabs<T extends string>({
           role="tab"
           aria-selected={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`shrink-0 cursor-pointer whitespace-nowrap rounded-md-xs px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          className={`shrink-0 cursor-pointer whitespace-nowrap rounded-md-xs px-3 py-1.5 max-sm:min-h-10 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
             value === o.value ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
@@ -131,6 +131,9 @@ export function TemplateLibraryDialog({ onClose, onPick }: { onClose: () => void
           )}
         </DialogBody>
         <DialogFooter>
+          <p className="truncate text-[13px] text-muted-foreground sm:mr-auto">
+            {chosen ? <>Selected: <span className="font-medium text-foreground">{chosen.name}</span></> : 'Pick a template, then Use template.'}
+          </p>
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>

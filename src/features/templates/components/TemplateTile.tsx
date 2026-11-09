@@ -49,14 +49,14 @@ export function TemplateTile({
           }`}
         >
           {blank ? (
-            <div className={`relative bg-muted dark:bg-[#202328] ${sm ? 'aspect-[4/5]' : 'aspect-[4/5]'}`}>
-              <div className={`absolute bottom-0 flex flex-col items-center justify-center gap-2 rounded-t-[5px] border border-b-0 border-dashed border-foreground/20 bg-card/70 text-muted-foreground ${sm ? 'left-2.5 right-2.5 top-2.5' : 'left-4 right-4 top-4'}`}>
-                <Plus aria-hidden className={sm ? 'h-5 w-5' : 'h-6 w-6'} />
-                {!sm && <span className="text-[13px]">Empty canvas</span>}
-              </div>
+            <div className="flex aspect-[4/5] flex-col items-center justify-center gap-2 bg-card text-muted-foreground">
+              <span className="grid h-10 w-10 place-items-center rounded-full border border-dashed border-foreground/25">
+                <Plus aria-hidden className="h-5 w-5" />
+              </span>
+              {!sm && <span className="text-[13px]">Start from nothing</span>}
             </div>
           ) : (
-            <TemplateThumbnail html={html ?? ''} className="aspect-[4/5]" inset={sm ? 'sm' : 'md'} />
+            <TemplateThumbnail html={html ?? ''} className="aspect-[4/5]" />
           )}
           {selected && (
             <span className="absolute left-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-accent text-accent-foreground shadow-sm">
@@ -65,24 +65,25 @@ export function TemplateTile({
           )}
         </div>
         <span className={`block ${sm ? 'mt-1.5' : 'mt-2.5'}`}>
-          <span className={`block truncate font-medium text-foreground ${sm ? 'text-[13px]' : 'text-sm'}`} title={name}>
+          <span className={`block font-medium text-foreground ${sm ? 'line-clamp-2 text-[13px] leading-snug' : 'truncate text-sm'}`} title={name}>
             {name}
           </span>
           {description && !sm && <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted-foreground">{description}</span>}
         </span>
       </button>
       {onPreview && (
-        <button
-          type="button"
-          onClick={onPreview}
-          aria-label={`Preview ${name}`}
-          title="Preview"
-          className={`absolute grid place-items-center rounded-md-xs border border-border bg-popover/95 text-foreground shadow-sm transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 ${
-            sm ? 'right-1.5 top-1.5 h-7 w-7' : 'right-2.5 top-2.5 h-8 w-8'
-          }`}
-        >
-          <Eye aria-hidden className="h-4 w-4" />
-        </button>
+        // A box the picture's size and place, so the button sits in its bottom corner.
+        <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[4/5]">
+          <button
+            type="button"
+            onClick={onPreview}
+            aria-label={`Preview ${name}`}
+            className="pointer-events-auto absolute bottom-2.5 right-2.5 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs border border-border bg-popover/95 px-2.5 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Eye aria-hidden className="h-4 w-4 text-muted-foreground" />
+            Preview
+          </button>
+        </div>
       )}
     </div>
   )

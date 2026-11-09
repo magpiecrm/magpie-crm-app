@@ -252,9 +252,11 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const isSenderValid = !!(formData.name && formData.senderEmail)
   const isSubjectValid = !!formData.subject
   const isRecipientsValid = !!formData.selectedListId
-  const isDesignValid = !!formData.htmlContent
   const isCampaignSent = campaignToEdit?.status === 'sent'
-  const hasDesign = (extractDesign(formData.htmlContent)?.blocks.length ?? 0) > 0
+  const builtDesign = extractDesign(formData.htmlContent)
+  const hasDesign = (builtDesign?.blocks.length ?? 0) > 0
+  // A builder design with blocks, or HTML of its own; not the empty starting body.
+  const isDesignValid = hasDesign || (!!formData.htmlContent.trim() && !builtDesign)
 
   const isSaveDisabled = createMutation.isPending || !formData.name || isCampaignSent
 
@@ -784,9 +786,11 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           id="design"
           title="Design"
           subtitle={
-            isDesignValid 
-              ? 'HTML template configured' 
-              : 'Design and draft your email message body'
+            hasDesign
+              ? 'Designed in the builder'
+              : isDesignValid
+                ? 'Your own HTML'
+                : 'Not designed yet: choose a template or open the builder'
           }
           isValid={isDesignValid}
           isOpen={activeSection === 'design'}
@@ -797,7 +801,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
             {!isCampaignSent && (
               <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center">
                 {hasDesign ? (
-                  <TemplateThumbnail html={formData.htmlContent} inset="sm" className="aspect-[4/3] w-full shrink-0 rounded-md-s border border-border sm:w-36" />
+                  <TemplateThumbnail html={formData.htmlContent} className="aspect-[4/3] w-full shrink-0 rounded-md-s border border-border sm:w-36" />
                 ) : (
                   <div className="grid aspect-[4/3] w-full shrink-0 place-items-center rounded-md-s border border-dashed border-border bg-muted/50 text-muted-foreground sm:w-36">
                     <LayoutTemplate aria-hidden className="h-6 w-6" />

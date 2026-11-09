@@ -6,9 +6,10 @@
  * MIT, (c) Anton Reshetov) and rebuilt from scratch in this builder's block
  * model — no markup or CSS is copied.
  *
- * They share one house style (dark buttons with a 6px radius, #6b7280 for
- * small print, images cropped to one shape per row) so the set reads as a
- * family. A starter with its own footer block carries the unsubscribe link
+ * They share one house style (6px button radius, #6b7280 for small print,
+ * images cropped to one shape per row, newsletters in a serif, everything
+ * else in sans) and each has its own accent colour, so the set reads as a
+ * family without every one looking the same. A starter with its own footer block carries the unsubscribe link
  * there and hides the appended legal line (`footerText: ''`), so there is
  * only ever one.
  *
@@ -70,7 +71,6 @@ const footer = (reason: string, style: EmailBlock['style'] = {}): EmailBlock => 
   type: 'footer',
   content: `Your Company Ltd · 123 Example Street, London EC1A 1BB\n${reason}`,
   links: footerLinks(),
-  socials: [{ id: id('so'), label: 'LinkedIn', url: 'https://linkedin.com' }],
   style: { color: MUTED, paddingTop: 32, ...style },
 })
 
@@ -112,15 +112,15 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Editorial newsletter',
     description: 'Lead story with a photo, then two smaller pieces, on cards.',
     category: 'Newsletter',
-    globalStyle: { ...HOUSE, cardMode: true, paddingX: 36, paddingY: 32, cardRadius: 8, cardGap: 12 },
+    globalStyle: { ...HOUSE, cardMode: true, canvasBgColor: '#f1eee7', paddingX: 36, paddingY: 32, cardRadius: 8, cardGap: 12 },
     build: () => [
       { id: id('b'), type: 'navigation', content: BRAND, url: '#', links: [
         { id: id('nl'), label: 'Latest', url: '#' },
         { id: id('nl'), label: 'Archive', url: '#' },
         { id: id('nl'), label: 'About', url: '#' },
-      ], style: { paddingTop: 0, paddingBottom: 0 } },
+      ], style: { paddingTop: 0, paddingBottom: 0, fontFamily: SERIF, fontSize: 22 } },
       { id: id('b'), type: 'section', content: '', style: { paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 }, children: [
-        eyebrow('Issue 12 · 25 August'),
+        eyebrow('Issue 12 · 25 August', { color: '#9a3412' }),
         { id: id('b'), type: 'title', content: 'Is there a perfect time of day to focus?', style: { fontSize: 30, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 20 } },
         { id: id('b'), type: 'image', content: img('photo-1499750310107-5fef28a66643', 1056, 594), alt: 'A desk with a laptop, a notebook and coffee', style: { paddingBottom: 24 } },
         { id: id('b'), type: 'text', content: 'Open with the one idea the reader came for. Two or three sentences is plenty: the click-through is what matters, not the word count.', style: { fontSize: 16, color: BODY } },
@@ -143,8 +143,9 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Newsletter',
     globalStyle: { ...HOUSE },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
-      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 28, color: INK, paddingBottom: 12 } },
+      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, fontFamily: SERIF, fontSize: 22 } },
+      eyebrow('Issue 14 · Friday 13 November', { color: '#1d4ed8' }),
+      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 30, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A short note from the editor on why these three are worth your time this week.', style: { fontSize: 16, color: BODY, paddingBottom: 8 } },
       { id: id('b'), type: 'divider', content: '' },
       { id: id('b'), type: 'split', content: 'The case for smaller teams', subContent: 'Why the four-person unit keeps outperforming the twelve-person one, with the numbers behind it.', subImage: img('photo-1522071820081-009f0129c71c', 480, 360), url: '#', alt: 'A small team around a laptop', style: { paddingBottom: 0 } },
@@ -162,10 +163,10 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Product update',
     description: "What's new this month: what shipped, what improved, what's fixed.",
     category: 'Announcement',
-    globalStyle: { ...HOUSE },
+    globalStyle: { ...HOUSE, buttonBgColor: '#0f766e', linkColor: '#0f766e' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
-      eyebrow('Product update · November'),
+      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, color: '#0f766e' } },
+      eyebrow('Product update · November', { color: '#0f766e' }),
       { id: id('b'), type: 'title', content: 'Three things we shipped this month', style: { fontSize: 28, color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A quick round-up of what changed, so you can make the most of it. Everything below is live in your account today.', style: { fontSize: 16, color: BODY, paddingBottom: 24 } },
       { id: id('b'), type: 'image', content: img('photo-1460925895917-afdab827c52f', 1040, 520), alt: 'A laptop showing a dashboard', style: { paddingBottom: 28 } },
@@ -183,15 +184,15 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Event invite',
     description: 'A webinar or event: what, when, and one button to register.',
     category: 'Announcement',
-    globalStyle: { ...HOUSE },
+    globalStyle: { ...HOUSE, buttonBgColor: '#4338ca' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
-      eyebrow('Live webinar', { textAlign: 'center', color: '#0f766e' }),
+      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28, color: '#4338ca' } },
+      eyebrow('Live webinar', { textAlign: 'center', color: '#4338ca' }),
       { id: id('b'), type: 'title', content: 'Pipelines that fill themselves', align: 'center', style: { fontSize: 30, color: INK, textAlign: 'center', paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A 40-minute walkthrough of how B2B teams build a qualified prospect list in an afternoon, with time for your questions at the end.', style: { fontSize: 16, color: BODY, textAlign: 'center', paddingBottom: 24 } },
-      { id: id('b'), type: 'section', content: '', style: { bgColor: '#f4f4f5', borderRadius: 8, paddingTop: 20, paddingRight: 20, paddingBottom: 20, paddingLeft: 20 }, children: [
+      { id: id('b'), type: 'section', content: '', style: { bgColor: '#eef2ff', borderRadius: 8, paddingTop: 20, paddingRight: 20, paddingBottom: 20, paddingLeft: 20 }, children: [
         { id: id('b'), type: 'text', content: 'Thursday 26 November · 4pm GMT', style: { fontSize: 17, fontWeight: 'bold', color: INK, textAlign: 'center', paddingBottom: 2 } },
-        { id: id('b'), type: 'text', content: 'Online · 40 minutes · Free', style: { fontSize: 14, color: MUTED, textAlign: 'center', paddingBottom: 0 } },
+        { id: id('b'), type: 'text', content: 'Online · 40 minutes · Free', style: { fontSize: 14, color: '#4b5563', textAlign: 'center', paddingBottom: 0 } },
       ] },
       { id: id('b'), type: 'button', content: 'Save my seat', url: '#', align: 'center', style: { paddingTop: 28 } },
       { id: id('b'), type: 'text', content: "Can't make it? Register anyway and we'll send you the recording.", style: { fontSize: 13, color: MUTED, textAlign: 'center' } },
@@ -205,14 +206,16 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Announcement',
     globalStyle: { ...HOUSE },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
-      eyebrow('Customer story'),
+      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, color: '#166534' } },
+      eyebrow('Customer story', { color: '#166534' }),
       { id: id('b'), type: 'title', content: 'How Larkspur cut list-building from a week to an afternoon', style: { fontSize: 28, color: INK, paddingBottom: 24 } },
       { id: id('b'), type: 'image', content: img('photo-1552664730-d307ca884978', 1040, 520), alt: 'A team planning at a whiteboard', style: { paddingBottom: 28 } },
-      { id: id('b'), type: 'text', content: '“We used to lose Mondays to spreadsheets. Now the list is ready before the kick-off call.”', style: { fontSize: 21, fontFamily: SERIF, color: INK, paddingBottom: 8 } },
-      { id: id('b'), type: 'text', content: 'Marcus Webb, CTO at Larkspur Analytics', style: { fontSize: 14, color: MUTED, paddingBottom: 8 } },
-      { id: id('b'), type: 'divider', content: '' },
-      { id: id('b'), type: 'notice', content: '', items: [
+      { id: id('b'), type: 'section', content: '', style: { bgColor: '#f0fdf4', borderRadius: 8, paddingTop: 24, paddingRight: 24, paddingBottom: 24, paddingLeft: 24 }, children: [
+        { id: id('b'), type: 'text', content: '“We used to lose Mondays to spreadsheets. Now the list is ready before the kick-off call.”', style: { fontSize: 20, fontWeight: 'bold', color: '#14532d', paddingBottom: 8 } },
+        { id: id('b'), type: 'text', content: 'Marcus Webb, CTO at Larkspur Analytics', style: { fontSize: 14, color: '#3f6212', paddingBottom: 0 } },
+      ] },
+      { id: id('b'), type: 'spacer', content: '28' },
+      { id: id('b'), type: 'notice', content: '', style: { color: '#166534' }, items: [
         { id: id('it'), image: '', title: '6 hours → 40 minutes', text: 'to build a list of 500 decision-makers' },
         { id: id('it'), image: '', title: '3× the replies', text: 'from emails written for each person' },
       ] },
@@ -272,9 +275,9 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Welcome & onboarding',
     description: 'A greeting, three first steps and one call to action.',
     category: 'Transactional',
-    globalStyle: { ...HOUSE },
+    globalStyle: { ...HOUSE, buttonBgColor: '#6d28d9' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
+      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28, color: '#6d28d9' } },
       { id: id('b'), type: 'title', content: 'Welcome aboard, {{contact.FIRSTNAME}}', align: 'center', style: { fontSize: 28, color: INK, textAlign: 'center', paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'Your account is ready. Here are the three things worth doing first.', style: { fontSize: 16, color: BODY, textAlign: 'center', paddingBottom: 28 } },
       { id: id('b'), type: 'columns', content: '', items: [
