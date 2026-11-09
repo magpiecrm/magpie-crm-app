@@ -20,13 +20,15 @@ function NewFormPage() {
 /** Where a new form starts: one of a few common forms, or a blank one. */
 function ChooseTemplate() {
   return (
-    <div className="mx-auto w-full max-w-3xl p-4 lg:p-8">
+    <div className="w-full p-4 lg:p-8">
+      <div className="mx-auto w-full max-w-6xl">
       <Link to="/marketing/forms" className="mb-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Forms
       </Link>
       <h1 className="mb-1.5 text-2xl font-display text-foreground">New form</h1>
       <p className="mb-6 text-muted-foreground">Start from one of these and change anything, or start blank.</p>
       <TemplateTiles />
+      </div>
     </div>
   )
 }

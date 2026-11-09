@@ -39,6 +39,10 @@ export interface FormFieldSettings {
   placeholder?: string
   /** A line under the label: what to put, or why it's asked. */
   help?: string
+  /** Not shown: filled from the page's address (`?param=…`), for a custom field such as where someone came from. */
+  hidden?: boolean
+  /** The address's parameter it's filled from. Its key when not set. */
+  param?: string
 }
 
 export type FormCorners = 'square' | 'rounded' | 'pill'
@@ -72,6 +76,8 @@ export interface FormRecord {
   intro?: string
   /** The customer's privacy policy, linked under the button. */
   privacy_url?: string
+  /** Where people go once they've sent it, in place of the thank-you message. */
+  redirect_url?: string
   style?: FormStyle
   /** Paused forms refuse submissions, wherever they're embedded. */
   paused?: boolean
@@ -122,6 +128,9 @@ export interface ResolvedFormField {
   required: boolean
   placeholder: string
   help: string
+  /** Filled from the page address's `param`, not shown. */
+  hidden: boolean
+  param: string
   options?: string[]
   /** It goes onto the contact (built-in column or custom field), not just the submission. */
   contact: boolean
@@ -134,6 +143,21 @@ export const customKey = (key: string) => (key.startsWith('custom:') ? key.slice
 export function isRequired(form: Pick<FormRecord, 'field_settings'>, key: string) {
   if (key === 'email') return true
   return form.field_settings?.[key]?.required ?? (key === 'first_name' || key === 'consent')
+}
+
+/** Custom fields that can be filled from a page's address: one value, as text. */
+export const canHide = (type: ContactFieldDef['type']) => type === 'text' || type === 'number' || type === 'select'
+
+/** A hidden field's value, read from the page's address. */
+export function hiddenValues(fields: ResolvedFormField[], page: string | null | undefined): Record<string, string> {
+  if (!page) return {}
+  let params: URLSearchParams
+  try {
+    params = new URL(page).searchParams
+  } catch {
+    return {}
+  }
+  return Object.fromEntries(fields.filter((f) => f.hidden && params.get(f.param)).map((f) => [f.key, params.get(f.param)!.slice(0, 200)]))
 }
 
 const TYPE_OF: Record<ContactFieldDef['type'], FormInputType> = {
@@ -153,14 +177,16 @@ export function resolveFields(form: Pick<FormRecord, 'fields' | 'field_settings'
       const def = defs.get(custom)
       if (!def) continue
       out.push({
-        key, label: settings.label?.trim() || def.label, type: TYPE_OF[def.type], required: isRequired(form, key),
+        key, label: settings.label?.trim() || def.label, type: TYPE_OF[def.type], required: !settings.hidden && isRequired(form, key),
         placeholder: settings.placeholder ?? '', help: settings.help ?? '', options: def.options, contact: true,
+        hidden: !!settings.hidden && canHide(def.type), param: settings.param?.trim() || custom,
       })
     } else if (isBuiltin(key)) {
       const label = settings.label?.trim() || (key === 'consent' ? DEFAULT_CONSENT_TEXT : BUILTIN_LABELS[key])
       const type: FormInputType = key === 'email' ? 'email' : key === 'message' ? 'textarea' : key === 'consent' ? 'checkbox' : 'text'
       out.push({
         key, label, type, required: isRequired(form, key), placeholder: settings.placeholder ?? '', help: settings.help ?? '', contact: key !== 'message' && key !== 'consent',
+        hidden: false, param: key,
       })
     }
   }
@@ -174,6 +200,7 @@ export interface PublicForm {
   heading: string
   intro: string
   privacyUrl: string
+  redirectUrl: string
   fields: ResolvedFormField[]
   submitLabel: string
   successMessage: string
@@ -188,6 +215,7 @@ export function publicForm(form: FormRecord, contactFields: ContactFieldDef[]): 
     heading: form.heading?.trim() ?? '',
     intro: form.intro?.trim() ?? '',
     privacyUrl: safeUrl(form.privacy_url) ?? '',
+    redirectUrl: safeUrl(form.redirect_url) ?? '',
     fields: resolveFields(form, contactFields),
     submitLabel: form.submit_label?.trim() || DEFAULT_SUBMIT_LABEL,
     successMessage: form.success_message?.trim() || DEFAULT_SUCCESS_MESSAGE,

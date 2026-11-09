@@ -115,7 +115,8 @@ function fieldHtml(f: ResolvedFormField, id: string): string {
 export function plainHtmlSnippet(form: PublicForm, origin: string): string {
   const id = `mf-${form.id}`
   const vars = Object.entries(formCssVars(form.style)).map(([k, v]) => `${k}:${v}`).join(';')
-  const rows = layoutRows(form.fields)
+  const hidden = form.fields.filter((f) => f.hidden)
+  const rows = layoutRows(form.fields.filter((f) => !f.hidden))
     .map((row) => (row.length > 1 ? `  <div class="mf-row">${row.map((f) => fieldHtml(f, id)).join('')}</div>` : `  ${fieldHtml(row[0], id)}`))
     .join('\n')
   const action = `${origin}/api/form-submit/${form.id}`
@@ -126,7 +127,7 @@ ${FORM_CSS}
 <div class="mf-wrap">
 <form class="mf${form.style.theme === 'dark' ? ' mf-dark' : ''}" id="${id}" action="${esc(action)}" method="post">
 ${form.heading || form.intro ? `  <div class="mf-head">${form.heading ? `<h2 class="mf-title">${esc(form.heading)}</h2>` : ''}${form.intro ? `<p class="mf-intro">${esc(form.intro)}</p>` : ''}</div>\n` : ''}${rows}
-  <div class="mf-hp" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
+${hidden.map((f) => `  <input type="hidden" name="${esc(f.key)}" data-param="${esc(f.param)}">\n`).join('')}  <div class="mf-hp" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
   <button class="mf-button" type="submit">${esc(form.submitLabel)}</button>
 ${form.privacyUrl ? `  <p class="mf-privacy">How we use your details: <a href="${esc(form.privacyUrl)}" target="_blank" rel="noopener">privacy policy</a></p>\n` : ''}</form>
 </div>
@@ -138,10 +139,13 @@ ${form.privacyUrl ? `  <p class="mf-privacy">How we use your details: <a href="$
     var data = {};
     new FormData(f).forEach(function (v, k) { data[k] = k in data ? [].concat(data[k], v) : v; });
     data._page = location.href; data._referrer = document.referrer;
+    var q = new URLSearchParams(location.search);
+    f.querySelectorAll('input[data-param]').forEach(function (h) { if (q.get(h.getAttribute('data-param'))) data[h.name] = q.get(h.getAttribute('data-param')); });
     var b = f.querySelector('button'); b.disabled = true;
     fetch(f.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (r) {
+        if (r.ok && r.j.redirect) { location.href = r.j.redirect; return; }
         if (r.ok) { f.innerHTML = '<div class="mf-done"><span class="mf-done-mark">&#10003;</span><p></p></div>'; f.querySelector('p').textContent = r.j.message || ${JSON.stringify(form.successMessage)}; }
         else fail(r.j.error);
       })
@@ -162,13 +166,23 @@ ${form.privacyUrl ? `  <p class="mf-privacy">How we use your details: <a href="$
  * (public/forms/embed.js) that grows it to fit the form.
  */
 export function iframeSnippet(formId: string, origin: string, name: string): string {
-  return `<iframe data-magpie-form="${formId}" src="${origin}/f/${formId}?embed=1" title="${esc(name)}" style="width:100%;height:420px;border:0" loading="lazy"></iframe>
+  return `<iframe
+  data-magpie-form="${formId}"
+  src="${origin}/f/${formId}?embed=1"
+  title="${esc(name)}"
+  style="width:100%;height:420px;border:0"
+  loading="lazy"></iframe>
 <script src="${origin}/forms/embed.js" async></script>`
 }
 
 /** The form as a pop-up: the same script shows it after `delay` seconds, once per visitor. */
 export function popupSnippet(form: Pick<PublicForm, 'id' | 'name' | 'style'>, origin: string, delay: number): string {
-  return `<script src="${origin}/forms/embed.js" data-magpie-popup="${form.id}" data-delay="${delay}" data-title="${esc(form.name)}"${form.style.theme === 'dark' ? ' data-theme="dark"' : ''} async></script>`
+  return `<script
+  src="${origin}/forms/embed.js"
+  data-magpie-popup="${form.id}"
+  data-delay="${delay}"
+  data-title="${esc(form.name)}"${form.style.theme === 'dark' ? '\n  data-theme="dark"' : ''}
+  async></script>`
 }
 
 export const hostedUrl = (formId: string, origin: string) => `${origin}/f/${formId}`

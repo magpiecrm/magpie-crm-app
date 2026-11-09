@@ -2,7 +2,7 @@ import { useId, useState, type CSSProperties } from 'react'
 import { HONEYPOT, type FormValue, type PublicForm, type ResolvedFormField } from '../model'
 import { FORM_CSS, formCssVars, layoutRows } from '../render'
 
-export type FormSubmitResult = { ok: true; message?: string } | { ok: false; error?: string; problems?: Record<string, string> }
+export type FormSubmitResult = { ok: true; message?: string; redirect?: string } | { ok: false; error?: string; problems?: Record<string, string> }
 
 /**
  * A form as the people filling it in see it: the hosted page, the iframe embed
@@ -19,6 +19,7 @@ export function FormView({
   activeKey,
   onFieldPick,
   headingLevel = 2,
+  hiddenValues = {},
 }: {
   form: PublicForm
   onSubmit?: (values: Record<string, FormValue>) => Promise<FormSubmitResult>
@@ -31,6 +32,8 @@ export function FormView({
   onFieldPick?: (key: string) => void
   /** 1 on the form's own page, where the heading is the page's. */
   headingLevel?: 1 | 2
+  /** Hidden fields' values, from the page's address. */
+  hiddenValues?: Record<string, string>
 }) {
   const uid = useId().replace(/:/g, '')
   const [values, setValues] = useState<Record<string, FormValue>>({})
@@ -48,6 +51,7 @@ export function FormView({
   const check = () => {
     const out: Record<string, string> = {}
     for (const f of form.fields) {
+      if (f.hidden) continue
       const v = values[f.key]
       const empty = v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0)
       if (f.required && empty) out[f.key] = f.type === 'checkbox' ? 'Tick this to continue.' : f.type === 'select' || f.type === 'multiselect' ? 'Choose an option.' : `Enter your ${f.label.toLowerCase()}.`
@@ -66,14 +70,15 @@ export function FormView({
       return
     }
     if (!onSubmit) {
-      setDone(form.successMessage)
+      setDone(form.redirectUrl ? '' : form.successMessage)
       return
     }
     setSending(true)
     const hp = (e.currentTarget.elements.namedItem(HONEYPOT) as HTMLInputElement | null)?.value
-    const result: FormSubmitResult = await onSubmit({ ...values, ...(hp ? { [HONEYPOT]: hp } : {}) }).catch((): FormSubmitResult => ({ ok: false }))
+    const result: FormSubmitResult = await onSubmit({ ...hiddenValues, ...values, ...(hp ? { [HONEYPOT]: hp } : {}) }).catch((): FormSubmitResult => ({ ok: false }))
     setSending(false)
-    if (result.ok) setDone(result.message || form.successMessage)
+    // Going to another page: say so while it loads.
+    if (result.ok) setDone(result.redirect ? 'Thanks! One moment…' : result.message || form.successMessage)
     else {
       setProblems(result.problems ?? {})
       setError(result.problems && Object.keys(result.problems).length ? '' : result.error || 'Something went wrong. Please try again.')
@@ -92,7 +97,13 @@ export function FormView({
         <div className={`mf${dark}`} style={style} role="status">
           <div className="mf-done">
             <span className="mf-done-mark" aria-hidden="true">✓</span>
-            <p>{done}</p>
+            {done === '' && form.redirectUrl ? (
+              <p>
+                They go to <a href={form.redirectUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit', fontWeight: 600 }}>{form.redirectUrl.replace(/^https?:\/\//, '')}</a>
+              </p>
+            ) : (
+              <p>{done}</p>
+            )}
           </div>
           {preview && onReset && (
             <button type="button" onClick={() => { setDone(null); setValues({}); onReset() }} className="mf-preview-reset">
@@ -111,7 +122,7 @@ export function FormView({
               {form.intro && <p className="mf-intro">{form.intro}</p>}
             </div>
           )}
-          {layoutRows(form.fields).map((row) =>
+          {layoutRows(form.fields.filter((f) => !f.hidden)).map((row) =>
             row.length > 1 ? (
               <div key={row[0].key} className="mf-row">
                 {row.map((f) => <Field key={f.key} f={f} uid={uid} value={values[f.key]} problem={problems[f.key]} onChange={(v) => set(f.key, v)} pick={pick} />)}
@@ -119,6 +130,11 @@ export function FormView({
             ) : (
               <Field key={row[0].key} f={row[0]} uid={uid} value={values[row[0].key]} problem={problems[row[0].key]} onChange={(v) => set(row[0].key, v)} pick={pick} />
             ),
+          )}
+          {preview && form.fields.some((f) => f.hidden) && (
+            <p className="mf-help" style={{ border: '1px dashed var(--mf-border)', borderRadius: 8, padding: '8px 10px' }}>
+              Hidden: {form.fields.filter((f) => f.hidden).map((f) => `${f.label} (from ?${f.param}=)`).join(', ')}
+            </p>
           )}
           <div className="mf-hp" aria-hidden="true">
             <input name={HONEYPOT} tabIndex={-1} autoComplete="off" />

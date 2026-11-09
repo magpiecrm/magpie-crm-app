@@ -69,7 +69,8 @@ function FormsPage() {
   const shown = query.trim() ? forms.filter((f) => f.name.toLowerCase().includes(query.trim().toLowerCase())) : forms
 
   return (
-    <div className="mx-auto w-full max-w-6xl p-4 lg:p-8">
+    <div className="w-full p-4 lg:p-8">
+      <div className="mx-auto w-full max-w-6xl">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0 flex-1 basis-80">
           <h1 className="mb-1.5 text-2xl font-display text-foreground">Forms</h1>
@@ -180,6 +181,7 @@ function FormsPage() {
       )}
 
       {sharing && <ShareDialog form={publicForm(sharing as FormRecord, contactFields)} onClose={() => setSharing(null)} />}
+      </div>
     </div>
   )
 }
@@ -195,7 +197,7 @@ function EmptyForms() {
         <h2 className="text-lg font-semibold text-foreground">Make your first form</h2>
         <p className="mt-1.5 text-muted-foreground">Put it on your website or share its link. Everyone who sends it becomes a contact you can email.</p>
       </div>
-      <div className="mx-auto mt-8 max-w-3xl">
+      <div className="mx-auto mt-8 max-w-4xl">
         <TemplateTiles />
       </div>
     </div>

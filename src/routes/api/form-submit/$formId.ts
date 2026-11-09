@@ -62,7 +62,7 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
         if (typeof body[HONEYPOT] === 'string' && body[HONEYPOT]) return isHtmlForm ? back('sent=1') : json(200, { success: true })
 
         const contactFields = db.getContactFields()
-        const { fields, successMessage } = publicForm(form, contactFields)
+        const { fields, successMessage, redirectUrl } = publicForm(form, contactFields)
         const checked = checkSubmission(fields, body, contactFields)
         if (!checked.ok) {
           const first = Object.values(checked.problems)[0]
@@ -114,7 +114,8 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
           const name = `${str('first_name')} ${str('last_name')}`.trim()
           notify('form_submission', `${name || email} submitted "${form.name}"`, { contactEmail: email, url: `/marketing/forms/${params.formId}` })
 
-          return isHtmlForm ? back('sent=1') : json(200, { success: true, message: successMessage })
+          if (isHtmlForm) return redirectUrl ? new Response(null, { status: 303, headers: { Location: redirectUrl } }) : back('sent=1')
+          return json(200, { success: true, message: successMessage, ...(redirectUrl ? { redirect: redirectUrl } : {}) })
         } catch (err) {
           console.error('[form-submit] Error:', err)
           return isHtmlForm ? back('error=server') : json(500, { success: false, error: 'Internal server error' })

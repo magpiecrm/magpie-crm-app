@@ -110,4 +110,13 @@ describe('/api/form-submit', () => {
     await post({ first_name: 'H', email: 'h@site.test', company: 'Hartley' })
     expect(db.getContact('h@site.test')).toMatchObject({ first_name: 'Harriet', company: 'Hartley' })
   })
+
+  it("sends people to the form's own page once it is sent, if it has one", async () => {
+    db.data.forms![0].redirect_url = 'https://site.test/thanks'
+    const res = await post({ first_name: 'J', email: 'j@site.test' })
+    expect((await res.json()).redirect).toBe('https://site.test/thanks')
+    const plain = await post('first_name=K&email=k%40site.test', { type: 'application/x-www-form-urlencoded' })
+    expect(plain.status).toBe(303)
+    expect(plain.headers.get('location')).toBe('https://site.test/thanks')
+  })
 })

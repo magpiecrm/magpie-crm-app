@@ -1,9 +1,9 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, ListChecks, Mail, MailX, Play, Search, Share2, Trash2, UserRound, type LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, Mail, MailX, Reply, Search, Share2, Trash2, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../../../queryKeys'
-import { deleteFormSubmissionFn, deleteFormSubmissionsFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn, setFormPausedFn } from '../../../../server/functions'
+import { deleteFormSubmissionFn, deleteFormSubmissionsFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn } from '../../../../server/functions'
 import { Select } from '../../../../components/ui/Select'
 import { Button } from '../../../../components/ui/Button'
 import { INPUT_CLASS } from '../../../../components/ui/Field'
@@ -44,13 +44,6 @@ function SubmissionsPage() {
   const extra = fields.filter((f) => !['first_name', 'last_name', 'email', 'consent'].includes(f.key))
   const columns = [...extra.filter((f) => f.key !== 'message').slice(0, 2), ...extra.filter((f) => f.key === 'message')]
 
-  const resume = useMutation({
-    mutationFn: () => setFormPausedFn({ data: { id: formId, paused: false } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
-      toast.success('Taking submissions again')
-    },
-  })
   const removeMany = useMutation({
     mutationFn: (ids: string[]) => deleteFormSubmissionsFn({ data: { formId, ids } }),
     onSuccess: ({ deleted }) => {
@@ -115,17 +108,16 @@ function SubmissionsPage() {
           </span>
           <h2 className="text-lg font-semibold text-foreground">No submissions yet</h2>
           <p className="mt-1.5 max-w-sm text-muted-foreground">
-            {form.paused ? "It's paused, so it won't take any until you resume it." : 'Put the form on your website or share its link. Everything people send shows up here.'}
+            {form.paused ? 'Resume it from the bar above, and anything people send will show up here.' : 'Put the form on your website or share its link. Everything people send shows up here.'}
           </p>
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
-            {form.paused && (
-              <Button leftIcon={<Play className="h-4 w-4" />} onClick={() => resume.mutate()} isLoading={resume.isPending}>Resume</Button>
-            )}
-            <Button variant={form.paused ? 'secondary' : 'primary'} leftIcon={<Share2 className="h-4 w-4" />} onClick={() => navigate({ to: '.', search: { share: 'open' } })}>Share the form</Button>
-            <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(`/f/${formId}`, '_blank', 'noopener')}>
-              Try it yourself
-            </Button>
-          </div>
+          {!form.paused && (
+            <div className="mt-6 flex flex-wrap justify-center gap-2">
+              <Button leftIcon={<Share2 className="h-4 w-4" />} onClick={() => navigate({ to: '.', search: { share: 'open' } })}>Share the form</Button>
+              <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(`/f/${formId}`, '_blank', 'noopener')}>
+                Try it yourself
+              </Button>
+            </div>
+          )}
         </div>
       </div>
       </div>
@@ -301,6 +293,7 @@ function SubmissionsPage() {
       {open && (
         <SubmissionDialog
           submission={open}
+          formName={form.heading || form.name}
           fields={fields}
           position={`${openIndex + 1} of ${shown.length}`}
           onPrev={openIndex > 0 ? () => setOpenId(shown[openIndex - 1].id) : undefined}
@@ -327,7 +320,7 @@ function SubmissionsPage() {
 function Happened({ s }: { s: Submission }) {
   const rows: Array<[LucideIcon, React.ReactNode]> = []
   if (s.outcome) {
-    rows.push(s.outcome.list_id ? [ListChecks, <>Added to <span className="font-medium">{s.list_name ?? 'a list'}</span>{s.outcome.new_contact === false ? ', already a contact' : ', as a new contact'}</>] : [ListChecks, 'Not added to a list'])
+    rows.push(s.outcome.list_id ? [Users, <>Added to <span className="font-medium">{s.list_name ?? 'a list'}</span>{s.outcome.new_contact === false ? ', already a contact' : ', as a new contact'}</>] : [Users, 'Not added to a list'])
     if (s.welcome_email) {
       const at = s.welcome_email.at ? exactTime(s.welcome_email.at) : ''
       const text = { sent: `Welcome email sent${at ? ` ${at}` : ''}`, due: `Welcome email due ${at}`, skipped: "Welcome email not sent: they'd unsubscribed or bounced", failed: "Welcome email couldn't be sent" }[s.welcome_email.status]
@@ -362,6 +355,7 @@ function Cell({ value }: { value: string }) {
 
 function SubmissionDialog({
   submission: s,
+  formName,
   fields,
   position,
   onPrev,
@@ -371,6 +365,7 @@ function SubmissionDialog({
   deleting,
 }: {
   submission: Submission
+  formName: string
   fields: ResolvedFormField[]
   position: string
   onPrev?: () => void
@@ -415,13 +410,14 @@ function SubmissionDialog({
           <span className="min-w-[4.5rem] text-center text-[13px] tabular-nums text-muted-foreground">{position}</span>
           <Button variant="secondary" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next submission" className="disabled:!opacity-40"><ChevronRight className="h-4 w-4" /></Button>
         </div>
-        {hasContact ? (
-          <Button leftIcon={<UserRound className="h-4 w-4" />} onClick={() => navigate({ to: '/marketing/contacts', search: { contact: s.contact_email } })}>
+        {hasContact && (
+          <Button variant="secondary" leftIcon={<UserRound className="h-4 w-4" />} onClick={() => navigate({ to: '/marketing/contacts', search: { contact: s.contact_email } })}>
             Open contact
           </Button>
-        ) : (
-          <Button variant="secondary" onClick={onClose}>Close</Button>
         )}
+        <Button leftIcon={<Reply className="h-4 w-4" />} onClick={() => window.open(`mailto:${encodeURIComponent(s.contact_email)}?subject=${encodeURIComponent(`Re: ${formName}`)}`, '_self')}>
+          Reply
+        </Button>
       </DialogFooter>
     </Dialog>
   )

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkSubmission, cleanSource, contactFieldsOf, fillMergeTags, publicForm, resolveFields, submissionValue, type FormRecord } from './model'
+import { checkSubmission, cleanSource, contactFieldsOf, hiddenValues, fillMergeTags, publicForm, resolveFields, submissionValue, type FormRecord } from './model'
 import { iframeSnippet, layoutRows, plainHtmlSnippet, textOn } from './render'
 import type { ContactFieldDef } from '../contacts/contactFields'
 
@@ -109,5 +109,22 @@ describe('cleanSource', () => {
     expect(cleanSource('https://site.test/a', 'https://site.test/b')).toEqual({ page: 'site.test/a' })
     expect(cleanSource('javascript:alert(1)', 'data:text/html,hi')).toBeUndefined()
     expect(cleanSource(undefined, 42)).toBeUndefined()
+  })
+})
+
+describe('hidden fields', () => {
+  const source: ContactFieldDef = { key: 'lead_source', label: 'Lead source', type: 'text', created_at: '' }
+  const fields = resolveFields({ fields: ['email', 'custom:lead_source'], field_settings: { 'custom:lead_source': { hidden: true, param: 'utm_source', required: true } } }, [source])
+
+  it('are never required, and fill from the page address', () => {
+    expect(fields[1]).toMatchObject({ hidden: true, param: 'utm_source', required: false })
+    expect(hiddenValues(fields, 'https://site.test/a?utm_source=newsletter&x=1')).toEqual({ 'custom:lead_source': 'newsletter' })
+    expect(hiddenValues(fields, 'not a url')).toEqual({})
+    expect(checkSubmission(fields, { email: 'a@b.co' }, [source])).toMatchObject({ ok: true })
+  })
+
+  it('only for custom fields that hold one value', () => {
+    const consent = resolveFields({ fields: ['email', 'consent'], field_settings: { consent: { hidden: true } } }, [])
+    expect(consent[1].hidden).toBe(false)
   })
 })

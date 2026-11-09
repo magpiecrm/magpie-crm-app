@@ -10,15 +10,15 @@ import { INPUT_CLASS } from '../../../components/ui/Field'
 
 type Tab = 'embed' | 'link' | 'html' | 'api'
 
-const TABS: Array<{ id: Tab; label: string; icon: typeof Code2 }> = [
-  { id: 'embed', label: 'Embed code', icon: Code2 },
-  { id: 'link', label: 'Link', icon: Link2 },
-  { id: 'html', label: 'Plain HTML', icon: FileCode2 },
-  { id: 'api', label: 'API', icon: Webhook },
+const TABS: Array<{ id: Tab; label: string; short: string; icon: typeof Code2 }> = [
+  { id: 'embed', label: 'Embed code', short: 'Embed', icon: Code2 },
+  { id: 'link', label: 'Link', short: 'Link', icon: Link2 },
+  { id: 'html', label: 'Plain HTML', short: 'HTML', icon: FileCode2 },
+  { id: 'api', label: 'API', short: 'API', icon: Webhook },
 ]
 
 /** Something to copy, with one Copy button that says when it's done. */
-export function CopyBlock({ value, label, rows, mono = true }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean }) {
+export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
@@ -31,15 +31,15 @@ export function CopyBlock({ value, label, rows, mono = true }: { value: string; 
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-foreground">{label}</span>
-        <Button variant="secondary" size="sm" onClick={copy} leftIcon={copied ? <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />} aria-live="polite">
-          {copied ? 'Copied' : 'Copy'}
+        <Button variant={primary ? 'primary' : 'secondary'} size="sm" onClick={copy} leftIcon={copied ? <Check className={`h-3.5 w-3.5 ${primary ? '' : 'text-emerald-600 dark:text-emerald-400'}`} /> : <Copy className="h-3.5 w-3.5" />} aria-live="polite">
+          {copied ? 'Copied' : primary ? 'Copy code' : 'Copy'}
         </Button>
       </div>
       <div className="relative">
         {/* Long tokens (addresses) break only where they must, so the code stays readable on a phone. */}
         <pre
           ref={pre}
-          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
+          className={`custom-scrollbar overflow-auto ${wrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[13px] leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
           style={rows ? { maxHeight: `${rows * 1.65 + 1.4}em` } : undefined}
           tabIndex={0}
           aria-label={label}
@@ -91,8 +91,9 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
                 tab === t.id ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              <t.icon className="h-4 w-4 shrink-0 max-[380px]:hidden" aria-hidden />
-              {t.label}
+              <t.icon className="h-4 w-4 shrink-0 max-sm:hidden" aria-hidden />
+              <span className="sm:hidden">{t.short}</span>
+              <span className="max-sm:hidden">{t.label}</span>
             </button>
           ))}
         </div>
@@ -139,14 +140,14 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
                   : 'Paste it once into your page, anywhere. Closing or sending it stops it showing again for 30 days.'}{' '}
                 Changes you save in the builder show up on your site straight away, without pasting it again.
               </p>
-              <CopyBlock label="Embed code" value={kind === 'inline' ? iframeSnippet(form.id, origin, form.name) : popupSnippet(form, origin, delay)} />
+              <CopyBlock primary label="Embed code" value={kind === 'inline' ? iframeSnippet(form.id, origin, form.name) : popupSnippet(form, origin, delay)} />
               <p className="text-[13px] leading-relaxed text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.</p>
             </>
           )}
           {tab === 'link' && (
             <>
               <p className="text-sm leading-relaxed text-muted-foreground">The form on a page of its own. Share it in an email, a post, or anywhere you can't embed.</p>
-              <CopyBlock label="Link" value={url} />
+              <CopyBlock primary wrap label="Link" value={url} />
               <div>
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
                   <ExternalLink className="h-4 w-4" aria-hidden /> Open the form's page
@@ -160,7 +161,7 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
                 The form as plain HTML, to style with your own CSS (its look is under <code className="rounded bg-muted px-1 font-mono text-[12.5px]">.mf</code>). It's a copy of the
                 form as it is now, so paste it again if you change the fields.
               </p>
-              <CopyBlock label="HTML" value={plainHtmlSnippet(form, origin)} rows={9} />
+              <CopyBlock primary label="HTML" value={plainHtmlSnippet(form, origin)} rows={9} />
             </>
           )}
           {tab === 'api' && (
@@ -168,7 +169,7 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Send submissions from your own code: a POST of JSON (or a normal form post) to this address. {required.length > 0 && <>Required: {required.join(', ')}.</>}
               </p>
-              <CopyBlock label="Endpoint" value={`${origin}/api/form-submit/${form.id}`} />
+              <CopyBlock wrap label="Endpoint" value={`${origin}/api/form-submit/${form.id}`} />
               <CopyBlock label="Example body" value={example} rows={10} />
             </>
           )}
@@ -176,7 +177,7 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
       </DialogBody>
       <DialogFooter>
         <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(url, '_blank', 'noopener')}>Open the form</Button>
-        <Button onClick={onClose}>Done</Button>
+        <Button variant="secondary" onClick={onClose}>Done</Button>
       </DialogFooter>
     </Dialog>
   )

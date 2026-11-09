@@ -23,6 +23,11 @@
         remember(id);
         return;
       }
+      // Sent, and the form sends people to a page of the site's own: only an http(s) address.
+      if (e.data.type === 'magpie-form:redirect') {
+        if (typeof e.data.url === 'string' && /^https?:\/\//i.test(e.data.url)) location.href = e.data.url;
+        return;
+      }
       // Escape pressed inside the form: a pop-up closes, as it does for Escape on the page.
       if (e.data.type === 'magpie-form:escape') {
         var open = document.querySelector('[data-magpie-popup-open="' + id + '"]');
@@ -54,13 +59,16 @@
     wrap.setAttribute('aria-label', script.getAttribute('data-title') || 'Form');
     wrap.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(17,19,22,.45)';
     var panel = document.createElement('div');
-    panel.style.cssText = 'position:relative;width:100%;max-width:480px;max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:14px;padding:28px 24px 20px;box-shadow:0 24px 64px -12px rgba(0,0,0,.35)';
+    panel.style.cssText = 'position:relative;width:100%;max-width:480px;max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:14px;padding:44px 24px 20px;box-shadow:0 24px 64px -12px rgba(0,0,0,.35);outline:none';
+    panel.tabIndex = -1;
     if (script.getAttribute('data-theme') === 'dark') panel.style.background = '#1d2025';
     var close = document.createElement('button');
     close.type = 'button';
     close.setAttribute('aria-label', 'Close');
     close.innerHTML = '&times;';
-    close.style.cssText = 'position:absolute;top:8px;right:10px;width:36px;height:36px;border:0;border-radius:8px;background:transparent;font:24px/1 system-ui,sans-serif;color:#5b616e;cursor:pointer';
+    close.style.cssText = 'position:absolute;top:10px;right:12px;width:36px;height:36px;border:0;border-radius:999px;background:transparent;font:24px/1 system-ui,sans-serif;color:#5b616e;cursor:pointer';
+    close.addEventListener('mouseenter', function () { close.style.background = 'rgba(17,19,22,.06)'; });
+    close.addEventListener('mouseleave', function () { close.style.background = 'transparent'; });
     var frame = document.createElement('iframe');
     frame.setAttribute('data-magpie-form', popup);
     frame.src = origin + '/f/' + popup + '?embed=1';
@@ -77,6 +85,7 @@
     panel.appendChild(frame);
     wrap.appendChild(panel);
     document.body.appendChild(wrap);
-    close.focus();
+    // Focus goes to the pop-up itself, so Escape and Tab work without a ring on the close button.
+    panel.focus();
   }, delay * 1000);
 })();

@@ -4,8 +4,8 @@ import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, 
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Bell, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
-  Eye, Info, Palette, Pencil, Send, Smartphone, SquareCheck, Trash2, Type, User,
+  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Bell, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, ListChecks, Lock, Monitor, Plus, ShieldCheck,
+  Eye, Info, Palette, Pencil, Send, Smartphone, SquareChevronDown, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
@@ -18,6 +18,7 @@ import { Notice } from '../../../components/ui/Notice'
 import { ContactFieldForm } from '../../contacts/components/ContactFieldForm'
 import { invalidateContactFields } from '../../contacts/contactCache'
 import { createListFn } from '../../../server/functions'
+import { Link } from '@tanstack/react-router'
 import type { FormInput } from '../../../server/functions/forms'
 import { queryKeys } from '../../../queryKeys'
 import type { ContactFieldDef } from '../../contacts/contactFields'
@@ -30,7 +31,7 @@ import { textOn } from '../render'
 import { delayLabel } from '../format'
 
 export type FormDraft = Required<Pick<FormInput, 'name' | 'fields' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields' | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'>> &
-  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url'>
+  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url' | 'redirect_url'>
 
 export const NEW_FORM: FormDraft = {
   name: '',
@@ -49,6 +50,7 @@ export const NEW_FORM: FormDraft = {
   heading: '',
   intro: '',
   privacy_url: '',
+  redirect_url: '',
   style: {},
 }
 
@@ -71,6 +73,7 @@ export function draftOf(form: FormRecord): FormDraft {
     heading: form.heading ?? '',
     intro: form.intro ?? '',
     privacy_url: form.privacy_url ?? '',
+    redirect_url: form.redirect_url ?? '',
     style: form.style ?? {},
   }
 }
@@ -79,13 +82,13 @@ const BUILTIN_ICONS: Record<string, LucideIcon> = {
   first_name: User, last_name: User, email: AtSign, company: Building2, job_title: Briefcase, message: AlignLeft, consent: ShieldCheck,
 }
 const TYPE_ICONS: Record<ResolvedFormField['type'], LucideIcon> = {
-  text: Type, email: AtSign, textarea: AlignLeft, number: Hash, date: Calendar, checkbox: SquareCheck, select: List, multiselect: ListChecks,
+  text: Type, email: AtSign, textarea: AlignLeft, number: Hash, date: Calendar, checkbox: SquareCheck, select: SquareChevronDown, multiselect: ListChecks,
 }
 const TYPE_NAMES: Record<ResolvedFormField['type'], string> = {
   text: 'Short text', email: 'Email', textarea: 'Long text', number: 'Number', date: 'Date', checkbox: 'Tick box', select: 'Dropdown', multiselect: 'Choices',
 }
 const CONTACT_TYPE_ICONS: Record<ContactFieldDef['type'], LucideIcon> = {
-  text: Type, number: Hash, date: Calendar, boolean: SquareCheck, select: List, multiselect: ListChecks,
+  text: Type, number: Hash, date: Calendar, boolean: SquareCheck, select: SquareChevronDown, multiselect: ListChecks,
 }
 const iconOf = (f: ResolvedFormField) => BUILTIN_ICONS[f.key] ?? TYPE_ICONS[f.type]
 
@@ -126,8 +129,8 @@ function useHeight(ref: React.RefObject<HTMLElement | null>, fallback: number) {
 
 /**
  * Fits the preview to the screen on a desktop: the space under the bars, and
- * the form scaled down (not below 65%) when it's taller than that, so the
- * button stays in view. A phone shows it at full size.
+ * the form scaled down a little (not below 90%) when it's taller than that.
+ * Anything left over scrolls. A phone shows it at full size.
  */
 function usePreviewFit(barH: number, layoutKey: string) {
   const areaRef = useRef<HTMLDivElement>(null)
@@ -155,7 +158,8 @@ function usePreviewFit(barH: number, layoutKey: string) {
       card.style.zoom = was
       const z = (room - 48) / natural
       // Nearly fits: full size and a little scroll beats a form shrunk by a few per cent.
-      setZoom(z >= 0.95 ? 1 : Math.max(0.65, z))
+      // Never below 90%: smaller than that, labels are too small to read, so the rest scrolls.
+      setZoom(z >= 0.97 ? 1 : Math.max(0.9, z))
     }
     measure()
     window.addEventListener('resize', measure)
@@ -241,7 +245,7 @@ function FieldRow({
   onToggle: () => void
   saved: boolean
   canSave: boolean
-  onSettings: (patch: { label?: string; placeholder?: string; required?: boolean; help?: string }) => void
+  onSettings: (patch: { label?: string; placeholder?: string; required?: boolean; help?: string; hidden?: boolean; param?: string }) => void
   onSaveToContact: (on: boolean) => void
   onRemove: () => void
   /** Up or down one place, for anyone not dragging; missing at that end of the list. */
@@ -270,23 +274,27 @@ function FieldRow({
         >
           <GripVertical className="h-[18px] w-[18px]" />
         </button>
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs border border-border bg-background text-foreground/75" title={TYPE_NAMES[field.type]}>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs border border-border bg-background text-foreground/75 max-sm:hidden" title={TYPE_NAMES[field.type]}>
           <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
         <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId} className="flex min-w-0 flex-1 cursor-pointer flex-col items-start rounded-md-xs px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
           <span className="w-full truncate text-sm font-medium text-foreground">{isConsent ? 'Consent' : field.label}</span>
           <span className="w-full truncate text-[13px] text-muted-foreground">
-            {isConsent ? field.label : TYPE_NAMES[field.type]}
-            {custom && ' · Contact field'}
+            {field.hidden ? `Hidden, from ?${field.param}=` : isConsent ? field.label : TYPE_NAMES[field.type]}
+            {custom && !field.hidden && ' · Contact field'}
+            <span className="sm:hidden"> · {locked || field.required ? 'Required' : 'Optional'}</span>
           </span>
         </button>
         {/* The Required column: one tick box per row, under its heading; Email's is a lock, as it can't be optional. */}
         <label
-          className={`flex h-9 w-[4.5rem] shrink-0 items-center justify-center rounded-md-xs ${locked ? 'cursor-help' : 'cursor-pointer hover:bg-muted'}`}
+          className={`flex h-9 w-[4.5rem] shrink-0 items-center justify-center rounded-md-xs max-sm:hidden ${locked ? 'cursor-help' : 'cursor-pointer hover:bg-muted'} ${field.hidden ? 'invisible' : ''}`}
           title={locked ? "Always required: it's how the person is saved" : field.required ? 'Required' : 'Optional'}
         >
           {locked ? (
-            <Lock className="h-4 w-4 text-foreground/70" aria-label="Email is always required" role="img" />
+            <span role="img" aria-label="Email is always required" className="relative flex h-4 w-4 items-center justify-center rounded-[4px] bg-accent text-accent-foreground">
+              <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
+              <Lock className="absolute -bottom-1.5 -right-2 h-3 w-3 rounded-full bg-card p-px text-foreground/70" strokeWidth={2.5} aria-hidden />
+            </span>
           ) : (
             <input
               type="checkbox"
@@ -303,7 +311,7 @@ function FieldRow({
           aria-label={`${open ? 'Hide' : 'Show'} settings for ${field.label}`}
           aria-expanded={open}
           aria-controls={panelId}
-          className="shrink-0 cursor-pointer rounded-md-xs p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="shrink-0 cursor-pointer rounded-md-xs p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:hidden"
         >
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
@@ -342,6 +350,40 @@ function FieldRow({
                 </Field>
               )}
             </FieldGrid>
+          )}
+          {field.options && field.options.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px] font-medium text-foreground">Choices</span>
+              <div className="flex flex-wrap gap-1.5">
+                {field.options.map((o) => <span key={o} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[13px] text-foreground">{o}</span>)}
+              </div>
+              <span className="text-[13px] text-muted-foreground">
+                The contact field's own choices, shared with your contacts. Change them in{' '}
+                <Link to="/settings" search={{ tab: 'fields' }} className="font-medium text-accent hover:underline">Settings → Contact fields</Link>.
+              </span>
+            </div>
+          )}
+          {custom && ['text', 'number', 'select'].includes(field.type) && (
+            <div className="flex flex-col gap-2">
+              <label className="flex cursor-pointer items-start gap-2.5 text-sm text-foreground">
+                <input type="checkbox" className="mt-0.5 h-4 w-4" checked={field.hidden} onChange={(e) => onSettings({ hidden: e.target.checked })} />
+                <span>
+                  Hidden, filled from the page's address
+                  <span className="block text-[13px] text-muted-foreground">For where someone came from: a link ending <span className="font-mono">?{field.param}=newsletter</span> fills it with “newsletter”.</span>
+                </span>
+              </label>
+              {field.hidden && (
+                <Field label="Address parameter" className="sm:max-w-xs">
+                  <input className={`${INPUT_CLASS} font-mono`} value={field.param} onChange={(e) => onSettings({ param: e.target.value.replace(/[^\w.-]/g, '') })} />
+                </Field>
+              )}
+            </div>
+          )}
+          {!locked && !field.hidden && (
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-foreground sm:hidden">
+              <input type="checkbox" className="h-4 w-4" checked={field.required} onChange={(e) => onSettings({ required: e.target.checked })} />
+              Required
+            </label>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             {field.contact && !locked ? (
@@ -417,6 +459,7 @@ export function FormBuilder({
     else if (t !== 'preview') setShowing('form')
   }
   const [showing, setShowing] = useState<'form' | 'thanks' | 'email'>('form')
+  const [sendTo, setSendTo] = useState<'message' | 'page'>(initial.redirect_url ? 'page' : 'message')
   const barRef = useRef<HTMLDivElement>(null)
   const barH = useHeight(barRef, 92)
   const headingRef = useRef<HTMLInputElement>(null)
@@ -448,13 +491,15 @@ export function FormBuilder({
       return at < 0 ? d : { ...d, fields: arrayMove(d.fields, at, Math.max(0, Math.min(d.fields.length - 1, at + by))) }
     })
 
-  const settingsFor = (key: string, patch: { label?: string; placeholder?: string; required?: boolean; help?: string }) =>
+  const settingsFor = (key: string, patch: { label?: string; placeholder?: string; required?: boolean; help?: string; hidden?: boolean; param?: string }) =>
     setDraft((d) => {
       const current = { ...(d.field_settings?.[key] ?? {}) }
       if (patch.label !== undefined) current.label = patch.label
       if (patch.placeholder !== undefined) current.placeholder = patch.placeholder
       if (patch.required !== undefined) current.required = patch.required
       if (patch.help !== undefined) current.help = patch.help
+      if (patch.hidden !== undefined) current.hidden = patch.hidden
+      if (patch.param !== undefined) current.param = patch.param
       return { ...d, field_settings: { ...d.field_settings, [key]: current } }
     })
 
@@ -570,7 +615,7 @@ export function FormBuilder({
               ) : isNew ? (
                 <span className="text-muted-foreground max-sm:hidden">Not saved yet</span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-1 font-medium text-foreground/80"><Check className="h-3.5 w-3.5" aria-hidden /> Saved</span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /> Saved</span>
               )}
             </p>
             {isNew ? (
@@ -626,10 +671,9 @@ export function FormBuilder({
             </div>
             <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${settingsTab}`} className="divide-y divide-border/70">
             {settingsTab === 'fields' && (<>
-            <Section
-              title="Fields"
-              description="What people fill in, in this order. Drag to move a field; open one to change its label or help text."
-              action={
+            <section className="flex flex-col gap-3 px-5 py-5 sm:px-6" aria-label="Fields">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-[13px] leading-relaxed text-muted-foreground">What people fill in, in this order. Drag a field to move it, or open it to change it.</p>
                 <ActionMenu
                   label="Add a field"
                   items={addable}
@@ -639,17 +683,16 @@ export function FormBuilder({
                       <Plus className="h-4 w-4" aria-hidden /> Add field
                     </span>
                   }
-                  triggerClassName="inline-flex min-h-9 cursor-pointer items-center rounded-md-s border border-control bg-card px-3 text-sm font-medium text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.06)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted dark:bg-white/[0.04] dark:shadow-none"
+                  triggerClassName="inline-flex min-h-9 shrink-0 cursor-pointer items-center rounded-md-s border border-control bg-card px-3 text-sm font-medium text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.06)] transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted dark:bg-white/[0.04] dark:shadow-none"
                 />
-              }
-            >
+              </div>
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
                 <SortableContext items={fields.map((f) => f.key)} strategy={verticalListSortingStrategy}>
                   <div className="overflow-hidden rounded-md-s border border-border">
-                  <div className="flex items-center gap-2 border-b border-border bg-muted/40 py-2 pl-[5.375rem] pr-2 text-[13px] font-medium text-muted-foreground" aria-hidden>
+                  <div className="hidden items-center gap-2 border-b border-border bg-muted/40 py-2 pl-[5.375rem] pr-2 text-[13px] font-medium text-muted-foreground sm:flex" aria-hidden>
                     <span className="flex-1">Field</span>
                     <span className="w-[4.5rem] text-center">Required</span>
-                    <span className="w-[4.25rem]" />
+                    <span className="w-[2rem] sm:w-[4.25rem]" />
                   </div>
                   <ul className="flex flex-col divide-y divide-border/70">
                     {fields.map((f, i) => (
@@ -675,7 +718,7 @@ export function FormBuilder({
                   </div>
                 </SortableContext>
               </DndContext>
-            </Section>
+            </section>
 
             <Section title="Heading and intro" description="Above the fields, on the form's page and in the embed. Leave them empty if your page says it already.">
               <Field label="Heading">
@@ -688,6 +731,39 @@ export function FormBuilder({
             </>)}
 
             {settingsTab === 'after' && (<>
+            <Section title="Once it's sent" description="What people see next: a message in place of the form, or a page of your own (for a thank-you page that counts ad conversions).">
+              <Segmented
+                label="Once it's sent"
+                value={sendTo}
+                onChange={(v) => {
+                  setSendTo(v)
+                  if (v === 'message') set({ redirect_url: '' })
+                  setShowing('thanks')
+                }}
+                options={[
+                  { id: 'message', label: 'Show a message' },
+                  { id: 'page', label: 'Go to a page' },
+                ]}
+              />
+              {sendTo === 'page' ? (
+                <Field label="Page address" hint="Anyone who sends the form goes here.">
+                  <input className={INPUT_CLASS} type="url" inputMode="url" placeholder="https://yoursite.com/thanks" value={draft.redirect_url ?? ''} onFocus={() => setShowing('thanks')} onChange={(e) => set({ redirect_url: e.target.value })} />
+                </Field>
+              ) : (
+                <Field label={<span className="sr-only">Thank-you message</span>}>
+                  <textarea
+                    className={`${INPUT_CLASS} min-h-[72px] resize-y`}
+                    rows={2}
+                    value={draft.success_message ?? ''}
+                    onFocus={() => setShowing('thanks')}
+                    onChange={(e) => {
+                      set({ success_message: e.target.value })
+                      setPreviewKey((k) => k + 1)
+                    }}
+                  />
+                </Field>
+              )}
+            </Section>
             <Section
               title="Add to a list"
               description="Everyone who sends the form becomes a contact on this list, so you can email them."
@@ -730,7 +806,7 @@ export function FormBuilder({
             <Section
               title="Welcome email"
               description="Sent to each person who sends the form."
-              action={<Switch checked={draft.welcome_email_enabled} onChange={(v) => set({ welcome_email_enabled: v })} label="Send a welcome email" />}
+              action={<Switch checked={draft.welcome_email_enabled} onChange={(v) => { set({ welcome_email_enabled: v }); setShowing(v ? 'email' : 'thanks') }} label="Send a welcome email" />}
             >
               {draft.welcome_email_enabled && (
                 <div className="flex flex-col gap-4">
@@ -748,7 +824,7 @@ export function FormBuilder({
                     </Field>
                   </FieldGrid>
                   <Field label="Subject">
-                    <input className={INPUT_CLASS} value={draft.welcome_email_subject} onChange={(e) => set({ welcome_email_subject: e.target.value })} />
+                    <input className={INPUT_CLASS} value={draft.welcome_email_subject} onFocus={() => setShowing('email')} onChange={(e) => set({ welcome_email_subject: e.target.value })} />
                   </Field>
                   <Field
                     label="Message"
@@ -773,6 +849,7 @@ export function FormBuilder({
                       className={`${INPUT_CLASS} min-h-[160px] resize-y leading-relaxed`}
                       rows={Math.min(14, Math.max(6, draft.welcome_email_body.split('\n').length + 1))}
                       value={draft.welcome_email_body}
+                      onFocus={() => setShowing('email')}
                       onChange={(e) => set({ welcome_email_body: e.target.value })}
                     />
                   </Field>
@@ -780,19 +857,7 @@ export function FormBuilder({
               )}
             </Section>
 
-            <Section title="Thank-you message" description="What people see in place of the form once they've sent it.">
-              <Field label={<span className="sr-only">Thank-you message</span>}>
-                <textarea
-                  className={`${INPUT_CLASS} min-h-[72px] resize-y`}
-                  rows={2}
-                  value={draft.success_message ?? ''}
-                  onChange={(e) => {
-                    set({ success_message: e.target.value })
-                    setPreviewKey((k) => k + 1)
-                  }}
-                />
-              </Field>
-            </Section>
+
             <div className="px-5 py-4 sm:px-6">
               <Notice level="info" title="Spam protection is on">Every form has a hidden field people never see and bots fill in. Anything sent with it filled is thanked and thrown away.</Notice>
             </div>

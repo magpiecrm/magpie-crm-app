@@ -6,7 +6,7 @@ export type FormInput = Pick<
   FormRecord,
   | 'name' | 'fields' | 'field_settings' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields'
   | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'
-  | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url'
+  | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url' | 'redirect_url'
 >
 
 const CORNERS: FormCorners[] = ['square', 'rounded', 'pill']
@@ -36,6 +36,8 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
       if (typeof v.placeholder === 'string' && v.placeholder.trim()) s.placeholder = text(v.placeholder, FORM_LIMITS.placeholder).trim()
       if (typeof v.required === 'boolean' && k !== 'email') s.required = v.required
       if (typeof v.help === 'string' && v.help.trim()) s.help = text(v.help, FORM_LIMITS.placeholder).trim()
+      if (v.hidden === true && customKey(k) !== null) s.hidden = true
+      if (typeof v.param === 'string' && /^[\w.-]{1,40}$/.test(v.param.trim())) s.param = v.param.trim()
       if (Object.keys(s).length) settings[k] = s
     }
     out.field_settings = settings
@@ -52,6 +54,11 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
   if (d.success_message !== undefined) out.success_message = text(d.success_message, FORM_LIMITS.successMessage).trim()
   if (d.heading !== undefined) out.heading = text(d.heading, 120).trim()
   if (d.intro !== undefined) out.intro = text(d.intro, FORM_LIMITS.successMessage).trim()
+  if (d.redirect_url !== undefined) {
+    const { safeUrl } = await import('../../features/forms/model')
+    if (d.redirect_url && !safeUrl(d.redirect_url)) throw new Error('The page to send people to needs to be a web address, like https://example.com/thanks.')
+    out.redirect_url = safeUrl(d.redirect_url) ?? ''
+  }
   if (d.privacy_url !== undefined) {
     const { safeUrl } = await import('../../features/forms/model')
     if (d.privacy_url && !safeUrl(d.privacy_url)) throw new Error('The privacy policy link needs to be a web address, like https://example.com/privacy.')

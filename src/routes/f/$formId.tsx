@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { getPublicFormFn } from '../../server/functions'
 import { FormView } from '../../features/forms/components/FormView'
+import { hiddenValues } from '../../features/forms/model'
 
 interface FormSearch {
   /** Drawn inside the embed's iframe: no page around it, and it tells the parent its height. */
@@ -90,6 +91,7 @@ function HostedFormPage() {
       ) : (
         <FormView
           form={form}
+          hiddenValues={hiddenValues(form.fields, place?.page)}
           headingLevel={embed ? 2 : 1}
           done={sent}
           onSubmit={async (values) => {
@@ -101,7 +103,12 @@ function HostedFormPage() {
             const json = await res.json().catch(() => ({}))
             // A pop-up remembers it was sent, so it doesn't come back.
             if (res.ok && embed && window.parent !== window) window.parent.postMessage({ type: 'magpie-form:done', id: formId }, '*')
-            return res.ok ? { ok: true, message: json.message } : { ok: false, error: json.error, problems: json.problems }
+            // Off to the form's own thank-you page: the page around an embed goes, not just the iframe.
+            if (res.ok && json.redirect) {
+              if (embed && window.parent !== window) window.parent.postMessage({ type: 'magpie-form:redirect', id: formId, url: json.redirect }, '*')
+              else window.location.assign(json.redirect)
+            }
+            return res.ok ? { ok: true, message: json.message, redirect: json.redirect } : { ok: false, error: json.error, problems: json.problems }
           }}
         />
       )}
