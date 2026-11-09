@@ -191,7 +191,7 @@ function SubmissionsPage() {
                   </td>
                   {columns.map((f) => <Cell key={f.key} field={f} value={submissionValue(s, f.key)} />)}
                   <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(s.submitted_at)}>{whenShort(s.submitted_at)}</td>
-                  <td className="py-3 pr-4 align-top text-muted-foreground/70">
+                  <td className="py-3 pr-4 align-top text-muted-foreground">
                     <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
                   </td>
                 </tr>
@@ -294,7 +294,7 @@ function SubmissionDialog({
         </dl>
       </DialogBody>
       <DialogFooter>
-        <Button variant="ghost" onClick={onDelete} isLoading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} className="mr-auto text-destructive hover:text-destructive">
+        <Button variant="ghost" onClick={onDelete} isLoading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} className="mr-auto !text-destructive hover:!bg-destructive/10">
           Delete
         </Button>
         {hasContact ? (

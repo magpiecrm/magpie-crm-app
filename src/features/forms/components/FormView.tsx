@@ -16,12 +16,18 @@ export function FormView({
   preview = false,
   done: initialDone = false,
   onReset,
+  activeKey,
+  onFieldPick,
 }: {
   form: PublicForm
   onSubmit?: (values: Record<string, FormValue>) => Promise<FormSubmitResult>
   preview?: boolean
   done?: boolean
   onReset?: () => void
+  /** In the builder: the field being edited, outlined. */
+  activeKey?: string | null
+  /** In the builder: a field was clicked, to edit it. */
+  onFieldPick?: (key: string) => void
 }) {
   const uid = useId().replace(/:/g, '')
   const [values, setValues] = useState<Record<string, FormValue>>({})
@@ -72,11 +78,13 @@ export function FormView({
   }
 
   const style = formCssVars(form.style) as CSSProperties
+  const pick = onFieldPick ? { activeKey, onPick: onFieldPick } : undefined
   const dark = form.style.theme === 'dark' ? ' mf-dark' : ''
 
   return (
     <div className="mf-wrap">
       <style>{FORM_CSS}</style>
+      {pick && <style>{PICK_CSS}</style>}
       {done !== null ? (
         <div className={`mf${dark}`} style={style} role="status">
           <div className="mf-done">
@@ -94,10 +102,10 @@ export function FormView({
           {layoutRows(form.fields).map((row) =>
             row.length > 1 ? (
               <div key={row[0].key} className="mf-row">
-                {row.map((f) => <Field key={f.key} f={f} uid={uid} value={values[f.key]} problem={problems[f.key]} onChange={(v) => set(f.key, v)} />)}
+                {row.map((f) => <Field key={f.key} f={f} uid={uid} value={values[f.key]} problem={problems[f.key]} onChange={(v) => set(f.key, v)} pick={pick} />)}
               </div>
             ) : (
-              <Field key={row[0].key} f={row[0]} uid={uid} value={values[row[0].key]} problem={problems[row[0].key]} onChange={(v) => set(row[0].key, v)} />
+              <Field key={row[0].key} f={row[0]} uid={uid} value={values[row[0].key]} problem={problems[row[0].key]} onChange={(v) => set(row[0].key, v)} pick={pick} />
             ),
           )}
           <div className="mf-hp" aria-hidden="true">
@@ -113,7 +121,18 @@ export function FormView({
   )
 }
 
-function Field({ f, uid, value, problem, onChange }: { f: ResolvedFormField; uid: string; value: FormValue | undefined; problem?: string; onChange: (v: FormValue) => void }) {
+/** The builder's preview: a field shows it can be clicked, and the one being edited is outlined. */
+const PICK_CSS = `.mf-pick{cursor:pointer;border-radius:10px;outline:2px solid transparent;outline-offset:5px;transition:outline-color .12s}
+.mf-pick:hover{outline:1px dashed #8f949d}
+.mf-picked,.mf-picked:hover{outline:2px solid var(--accent,#0d7285)}`
+
+type Pick = { activeKey?: string | null; onPick: (key: string) => void }
+
+function Field({ f, uid, value, problem, onChange, pick }: { f: ResolvedFormField; uid: string; value: FormValue | undefined; problem?: string; onChange: (v: FormValue) => void; pick?: Pick }) {
+  const picking = pick
+    ? { onPointerDown: () => pick.onPick(f.key), onFocusCapture: () => pick.onPick(f.key), 'data-pick': f.key }
+    : {}
+  const pickCls = pick ? ` mf-pick${pick.activeKey === f.key ? ' mf-picked' : ''}` : ''
   const id = `${uid}-${f.key.replace(/[^a-z0-9_-]/gi, '_')}`
   const errId = `${id}-error`
   const optional = f.required ? null : <span className="mf-optional">Optional</span>
@@ -123,7 +142,7 @@ function Field({ f, uid, value, problem, onChange }: { f: ResolvedFormField; uid
 
   if (f.type === 'checkbox') {
     return (
-      <div className="mf-field">
+      <div className={`mf-field${pickCls}`} {...picking}>
         <label className="mf-check">
           <input id={id} type="checkbox" checked={value === true} onChange={(e) => onChange(e.target.checked)} {...aria} />
           <span>{f.label}{optional}</span>
@@ -135,7 +154,7 @@ function Field({ f, uid, value, problem, onChange }: { f: ResolvedFormField; uid
   if (f.type === 'multiselect') {
     const picked = Array.isArray(value) ? value : []
     return (
-      <fieldset className="mf-field" aria-describedby={problem ? errId : undefined}>
+      <fieldset className={`mf-field${pickCls}`} aria-describedby={problem ? errId : undefined} {...picking}>
         <legend className="mf-label">{f.label}{optional}</legend>
         <div className="mf-choices">
           {(f.options ?? []).map((o, i) => (
@@ -165,7 +184,7 @@ function Field({ f, uid, value, problem, onChange }: { f: ResolvedFormField; uid
     control = <input id={id} className={cls} type={type} value={text} autoComplete={auto} placeholder={f.placeholder || undefined} onChange={(e) => onChange(e.target.value)} {...aria} />
   }
   return (
-    <div className="mf-field">
+    <div className={`mf-field${pickCls}`} {...picking}>
       <label className="mf-label" htmlFor={id}>{f.label}{optional}</label>
       {control}
       {err}

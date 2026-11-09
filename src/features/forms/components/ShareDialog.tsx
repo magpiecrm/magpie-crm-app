@@ -37,7 +37,7 @@ export function CopyBlock({ value, label, rows = 6, mono = true }: { value: stri
         {/* Long tokens (addresses) break only where they must, so the code stays readable on a phone. */}
         <pre
           ref={pre}
-          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[12.5px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
+          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 pb-3 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
           style={{ maxHeight: `${rows * 1.65 + 1.4}em` }}
           tabIndex={0}
           aria-label={label}

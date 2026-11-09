@@ -96,7 +96,7 @@ export const contactTools = [
   defineTool({
     name: 'getForms',
     description:
-      'List the embeddable signup forms, the list each writes into, and how many submissions each has received.',
+      'List the embeddable signup forms, the list each writes into (null when it adds nobody to a list), whether it is paused, and how many submissions each has received.',
     input: {},
     target: 'server',
     readOnly: true,
@@ -106,8 +106,9 @@ export const contactTools = [
         id: f.id,
         name: f.name,
         fields: f.fields,
-        listId: f.list_id,
+        listId: f.save_to_list_enabled === false ? null : f.list_id,
         welcomeEmailEnabled: f.welcome_email_enabled,
+        paused: !!f.paused,
         submissions: db.getFormSubmissionCount(f.id),
         createdAt: f.created_at,
       }))

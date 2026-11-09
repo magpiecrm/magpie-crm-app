@@ -5,7 +5,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import {
   AlignLeft, ArrowDown, ArrowUp, AtSign, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
-  Info, Smartphone, SquareCheck, Trash2, Type, User,
+  Info, Palette, Send, Smartphone, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
@@ -82,6 +82,13 @@ const CONTACT_TYPE_ICONS: Record<ContactFieldDef['type'], LucideIcon> = {
 }
 const iconOf = (f: ResolvedFormField) => BUILTIN_ICONS[f.key] ?? TYPE_ICONS[f.type]
 
+type BuilderTab = 'fields' | 'after' | 'style'
+const BUILDER_TABS: Array<{ id: BuilderTab; label: string; icon: LucideIcon }> = [
+  { id: 'fields', label: 'Fields', icon: ListChecks },
+  { id: 'after', label: 'After sending', icon: Send },
+  { id: 'style', label: 'Style', icon: Palette },
+]
+
 const DELAYS = [0, 5, 15, 60, 1440]
 const SWATCHES = [
   { hex: '#111827', name: 'Black' },
@@ -103,7 +110,7 @@ function Section({ title, description, action, children }: { title: string; desc
     <section className="flex flex-col gap-4 px-5 py-6 sm:px-6">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <h2 className="text-[17px] font-semibold leading-6 text-foreground">{title}</h2>
           {description && <p className="text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
         </div>
         {action && <div className="shrink-0 pt-0.5">{action}</div>}
@@ -125,7 +132,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
           className={`inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md-xs px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-            value === o.id ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+            value === o.id ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.1)] ring-1 ring-border dark:bg-white/[0.14] dark:ring-white/15' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           {o.label}
@@ -165,6 +172,7 @@ function FieldRow({
   const panelId = `field-${field.key.replace(/[^a-z0-9_-]/gi, '_')}-settings`
   return (
     <li
+      id={`field-row-${field.key.replace(/[^a-z0-9_-]/gi, '_')}`}
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={`bg-card ${isDragging ? 'relative z-10 rounded-md-s shadow-md ring-1 ring-border' : ''}`}
@@ -189,16 +197,22 @@ function FieldRow({
             {custom && ' · Contact field'}
           </span>
         </button>
-        {locked ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-2.5 py-1 text-xs font-medium text-foreground/80" title="Every form asks for an email: it's how the person is saved">
-            <Lock className="h-3 w-3" aria-hidden /> Always required
-          </span>
-        ) : (
-          <label className="flex shrink-0 cursor-pointer items-center gap-2.5 text-[13px] font-medium">
-            <span className={`hidden w-[4.25rem] text-right sm:inline ${field.required ? 'text-foreground' : 'text-muted-foreground'}`}>{field.required ? 'Required' : 'Optional'}</span>
-            <Switch checked={field.required} onChange={(v) => onSettings({ required: v })} label={`${field.label} is required`} />
-          </label>
-        )}
+        {/* One tick box in the same place on every row; Email's is ticked for good. */}
+        <label
+          className={`flex min-h-9 shrink-0 items-center gap-2 rounded-md-xs px-2 text-[13px] font-medium text-foreground ${locked ? 'cursor-default' : 'cursor-pointer hover:bg-muted'}`}
+          title={locked ? "Every form asks for an email: it's how the person is saved" : undefined}
+        >
+          {locked ? <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden /> : null}
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={field.required}
+            disabled={locked}
+            onChange={(e) => onSettings({ required: e.target.checked })}
+            aria-label={locked ? 'Email is always required' : `${field.label} is required`}
+          />
+          <span aria-hidden className={locked ? 'text-muted-foreground' : ''}>Required</span>
+        </label>
         <button
           type="button"
           onClick={onToggle}
@@ -249,7 +263,7 @@ function FieldRow({
               <Button variant="ghost" size="sm" onClick={onMove.up} disabled={!onMove.up} leftIcon={<ArrowUp className="h-3.5 w-3.5" />}>Move up</Button>
               <Button variant="ghost" size="sm" onClick={onMove.down} disabled={!onMove.down} leftIcon={<ArrowDown className="h-3.5 w-3.5" />}>Move down</Button>
               {!locked && (
-                <Button variant="ghost" size="sm" onClick={onRemove} leftIcon={<Trash2 className="h-3.5 w-3.5" />} className="text-destructive hover:text-destructive">
+                <Button variant="ghost" size="sm" onClick={onRemove} leftIcon={<Trash2 className="h-3.5 w-3.5" />} className="!text-destructive hover:!bg-destructive/10">
                   Remove
                 </Button>
               )}
@@ -294,6 +308,7 @@ export function FormBuilder({
   const [addingField, setAddingField] = useState(false)
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop')
   const [pane, setPane] = useState<'edit' | 'preview'>('edit')
+  const [tab, setTab] = useState<BuilderTab>('fields')
   const [previewKey, setPreviewKey] = useState(0)
   const [nameError, setNameError] = useState('')
   const bodyRef = useRef<HTMLTextAreaElement>(null)
@@ -381,6 +396,7 @@ export function FormBuilder({
     if (!draft.name.trim()) {
       setNameError('Give the form a name.')
       setPane('edit')
+      setTab('fields')
       nameRef.current?.focus()
       return
     }
@@ -408,7 +424,29 @@ export function FormBuilder({
 
       <div className="grid flex-1 items-start gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:gap-8 lg:p-8 lg:pt-6">
         <div className={`min-w-0 flex-col gap-6 ${pane === 'edit' ? 'flex' : 'hidden lg:flex'}`}>
-          <div className="divide-y divide-border/70 rounded-md-m border border-border bg-card">
+          <div className="rounded-md-m border border-border bg-card">
+            <div role="tablist" aria-label="Form settings" className="flex gap-6 overflow-x-auto border-b border-border px-5 sm:px-6">
+              {BUILDER_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  id={`builder-tab-${t.id}`}
+                  aria-selected={tab === t.id}
+                  aria-controls="builder-panel"
+                  onClick={() => setTab(t.id)}
+                  className={`relative inline-flex min-h-12 shrink-0 cursor-pointer items-center gap-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                    tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <t.icon className="h-4 w-4" aria-hidden />
+                  {t.label}
+                  {t.id === 'fields' && <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">{fields.length}</span>}
+                </button>
+              ))}
+            </div>
+            <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${tab}`} className="divide-y divide-border/70">
+            {tab === 'fields' && (<>
             <Section title="Name" description="For you, and the heading on the form's own page.">
               <Field label={<span className="sr-only">Form name</span>} error={nameError}>
                 <input
@@ -471,6 +509,9 @@ export function FormBuilder({
               </DndContext>
             </Section>
 
+            </>)}
+
+            {tab === 'after' && (<>
             <Section
               title="Add to a list"
               description="Everyone who sends the form becomes a contact on this list, so you can email them."
@@ -563,13 +604,8 @@ export function FormBuilder({
               )}
             </Section>
 
-            <Section title="Button and thank-you" description="What the button says, and what people see once they've sent the form.">
-              <FieldGrid>
-                <Field label="Button text">
-                  <input className={INPUT_CLASS} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
-                </Field>
-              </FieldGrid>
-              <Field label="Thank-you message">
+            <Section title="Thank-you message" description="What people see in place of the form once they've sent it.">
+              <Field label={<span className="sr-only">Thank-you message</span>}>
                 <textarea
                   className={`${INPUT_CLASS} min-h-[72px] resize-y`}
                   rows={2}
@@ -582,7 +618,17 @@ export function FormBuilder({
               </Field>
             </Section>
 
-            <Section title="Look" description="So the form fits your website. A hidden field stops most spam bots on every form.">
+            </>)}
+
+            {tab === 'style' && (<>
+            <Section title="Button" description="What it says. People press it to send the form.">
+              <FieldGrid>
+                <Field label="Button text">
+                  <input className={INPUT_CLASS} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
+                </Field>
+              </FieldGrid>
+            </Section>
+            <Section title="Look" description="So the form fits in on your website.">
               <div className="flex flex-col gap-4">
                 <Field as="div" label="Button colour" hint="The button's text turns dark or white to stay readable.">
                   <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Button colour">
@@ -625,6 +671,9 @@ export function FormBuilder({
                 </div>
               </div>
             </Section>
+            <Section title="Spam" description="Every form has a hidden field that people never see and bots fill in. Anything sent with it filled is thanked and thrown away." />
+            </>)}
+            </div>
           </div>
         </div>
 
@@ -643,15 +692,27 @@ export function FormBuilder({
                 ]}
               />
             </div>
-            <div className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 lg:max-h-[calc(100dvh-17rem)] ${draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#e9eaed]'}`}>
+            <div className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 lg:max-h-[calc(100dvh-17rem)] ${draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#2a2d33]'}`}>
               <div
                 className={`h-fit w-full rounded-[10px] border p-5 transition-[max-width] ${device === 'phone' ? 'max-w-[340px]' : 'max-w-full'} ${draft.style?.theme === 'dark' ? 'border-[#2d3139] bg-[#1d2025]' : 'border-[#e5e7eb] bg-white'}`}
               >
-                <FormView key={previewKey} form={preview} preview onReset={() => setPreviewKey((k) => k + 1)} />
+                <FormView
+                  key={previewKey}
+                  form={preview}
+                  preview
+                  onReset={() => setPreviewKey((k) => k + 1)}
+                  activeKey={tab === 'fields' ? openField : null}
+                  onFieldPick={(key) => {
+                    setTab('fields')
+                    setPane('edit')
+                    setOpenField(key)
+                    requestAnimationFrame(() => document.getElementById(`field-row-${key.replace(/[^a-z0-9_-]/gi, '_')}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+                  }}
+                />
               </div>
             </div>
             <p className="flex items-center gap-2 border-t border-border/70 px-4 py-2.5 text-[13px] text-muted-foreground">
-              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden /> Try it: sending the preview checks the fields and shows the thank-you, but saves nothing.
+              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden /> Click a field to change it. Sending the preview checks the fields and shows the thank-you, but saves nothing.
             </p>
           </div>
         </aside>

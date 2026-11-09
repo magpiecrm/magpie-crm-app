@@ -124,7 +124,7 @@ function FormsPage() {
                         >
                           {f.name}
                         </Link>
-                        <p className="mt-0.5 truncate text-[13px] text-muted-foreground">
+                        <p className="mt-0.5 text-[13px] text-muted-foreground md:truncate">
                           {f.fields.length} field{f.fields.length === 1 ? '' : 's'} · {list ? <>Adds people to {list}</> : 'Not added to a list'}
                           {f.welcome_email_enabled && ' · Welcome email'}
                         </p>
@@ -146,8 +146,11 @@ function FormsPage() {
                       </div>
                       <p className="hidden text-sm text-muted-foreground md:block">{f.last_submission_at ? ago(f.last_submission_at).replace(/^on /, '') : 'None yet'}</p>
                       <div className="relative z-10 flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => setSharing(f)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden text-foreground/80">
+                        <Button variant="ghost" size="sm" onClick={() => setSharing(f)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
                           Share
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => setSharing(f)} aria-label={`Share ${f.name}`} className="md:hidden">
+                          <Share2 className="h-4 w-4" />
                         </Button>
                         <ActionMenu
                           label={`Actions for ${f.name}`}
