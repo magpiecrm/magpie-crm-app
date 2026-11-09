@@ -71,7 +71,7 @@ export function SidebarPanel({
               <button
                 key={tab.id}
                 onClick={() => setContentTab(tab.id)}
-                className={`flex-1 py-2.5 text-xs font-semibold border-b-2 transition-colors ${
+                className={`flex-1 py-2.5 text-[13px] font-semibold border-b-2 transition-colors ${
                   contentTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >

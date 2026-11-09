@@ -34,6 +34,7 @@ export function TemplateTile({
   blank?: boolean
 }) {
   const sm = size === 'sm'
+  const edge = selected ? 'border-accent ring-2 ring-accent' : blank ? 'border-dashed border-foreground/25 group-hover:border-foreground/40' : 'border-border group-hover:border-foreground/25'
   return (
     <div className="group relative min-w-0">
       <button
@@ -43,14 +44,10 @@ export function TemplateTile({
         aria-pressed={selected === undefined ? undefined : selected}
         className="block w-full cursor-pointer rounded-md-m text-left focus-visible:outline-none focus-visible:[&>div:first-child]:ring-2 focus-visible:[&>div:first-child]:ring-ring/50"
       >
-        <div
-          className={`relative overflow-hidden rounded-md-m border transition-[border-color,box-shadow] ${
-            selected ? 'border-accent ring-2 ring-accent' : 'border-border group-hover:border-foreground/25'
-          }`}
-        >
+        <div className={`relative overflow-hidden rounded-md-m border transition-[border-color,box-shadow] ${edge}`}>
           {blank ? (
             <div className="flex aspect-[4/5] flex-col items-center justify-center gap-2 bg-card text-muted-foreground">
-              <span className="grid h-10 w-10 place-items-center rounded-full border border-dashed border-foreground/25">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-muted">
                 <Plus aria-hidden className="h-5 w-5" />
               </span>
               {!sm && <span className="text-[13px]">Start from nothing</span>}
@@ -64,21 +61,23 @@ export function TemplateTile({
             </span>
           )}
         </div>
-        <span className={`block ${sm ? 'mt-1.5' : 'mt-2.5'}`}>
-          <span className={`block font-medium text-foreground ${sm ? 'line-clamp-2 text-[13px] leading-snug' : 'truncate text-sm'}`} title={name}>
+        {/* The name leaves room on its right for Preview, which sits over that line. */}
+        <div className={sm ? 'mt-1.5' : 'mt-2.5'}>
+          <p className={`font-medium text-foreground ${sm ? 'line-clamp-2 text-[13px] leading-snug' : 'truncate text-sm'} ${onPreview ? 'pr-[84px]' : ''}`} title={name}>
             {name}
-          </span>
-          {description && !sm && <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted-foreground">{description}</span>}
-        </span>
+          </p>
+          {description && !sm && <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground">{description}</p>}
+        </div>
       </button>
       {onPreview && (
-        // A box the picture's size and place, so the button sits in its bottom corner.
-        <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[4/5]">
+        // A box the picture's size, so Preview lines up with the name just under it.
+        <div className="pointer-events-none absolute inset-x-0 top-0">
+          <div className="aspect-[4/5]" />
           <button
             type="button"
             onClick={onPreview}
             aria-label={`Preview ${name}`}
-            className="pointer-events-auto absolute bottom-2.5 right-2.5 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs border border-border bg-popover/95 px-2.5 text-[13px] font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="pointer-events-auto absolute right-0 mt-1.5 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           >
             <Eye aria-hidden className="h-4 w-4 text-muted-foreground" />
             Preview

@@ -528,6 +528,15 @@ const headStyles = (globalStyle: GlobalStyle): string => `
       .xs-hide { display: none !important; }
     }`
 
+/** Whether a #rgb or #rrggbb colour is dark enough to need light text on it. */
+const isDarkColour = (hex: string | undefined): boolean => {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex?.trim() ?? '')
+  if (!m) return false
+  const h = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1]
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.45
+}
+
 const DEFAULT_FOOTER_TEXT =
   'This email was sent to you because you are subscribed to our newsletter.'
 
@@ -556,8 +565,13 @@ export const compileHTML = (currentBlocks: EmailBlock[], globalStyle: GlobalStyl
     : `<tr><td style="background-color: ${globalStyle.bodyBgColor}; padding: ${globalStyle.paddingY}px ${globalStyle.paddingX}px;">${rendered.join('\n')}</td></tr>`
 
   const footerText = globalStyle.footerText ?? DEFAULT_FOOTER_TEXT
+  // The legal line sits on the canvas, so it takes its colour from it: readable (4.5:1 or
+  // more) on a light canvas, and light on a dark one, where the link colour may not show.
+  const darkCanvas = isDarkColour(globalStyle.canvasBgColor)
+  const legalText = darkCanvas ? '#a1a1aa' : '#6b7280'
+  const legalLink = darkCanvas ? '#e4e4e7' : (globalStyle.linkColor ?? '#2563eb')
   const legalFooter = footerText
-    ? `<tr><td align="center" style="font-family: ${bodyFont}; font-size: 12px; line-height: 1.6; color: #9ca3af; padding: 24px 20px 0 20px;">${escapeHtml(footerText).replace(/\n/g, '<br />')}<br /><a href="{{ unsubscribe }}" style="color: ${globalStyle.linkColor ?? '#2563eb'}; text-decoration: underline;">Unsubscribe from this list</a></td></tr>`
+    ? `<tr><td align="center" style="font-family: ${bodyFont}; font-size: 12px; line-height: 1.6; color: ${legalText}; padding: 24px 20px 0 20px;">${escapeHtml(footerText).replace(/\n/g, '<br />')}<br /><a href="{{ unsubscribe }}" style="color: ${legalLink}; text-decoration: underline;">Unsubscribe from this list</a></td></tr>`
     : ''
 
   const bgImage = globalStyle.bodyBgImage

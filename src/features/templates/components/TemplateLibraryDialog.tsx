@@ -40,7 +40,7 @@ export function SegmentedTabs<T extends string>({
           role="tab"
           aria-selected={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`shrink-0 cursor-pointer whitespace-nowrap rounded-md-xs px-3 py-1.5 max-sm:min-h-10 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          className={`shrink-0 cursor-pointer whitespace-nowrap rounded-md-xs px-3 py-2 max-sm:min-h-10 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
             value === o.value ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
           }`}
         >

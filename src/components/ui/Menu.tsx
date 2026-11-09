@@ -20,7 +20,18 @@ const WIDTH = 208
  * takes focus, moves with the arrow keys, and closes on Escape, a click
  * elsewhere or a scroll. `label` names it for screen readers.
  */
-export function ActionMenu({ label, actions, className = '' }: { label: string; actions: MenuAction[]; className?: string }) {
+export function ActionMenu({
+  label,
+  actions,
+  className = '',
+  bordered,
+}: {
+  label: string
+  actions: MenuAction[]
+  className?: string
+  /** Drawn as a small secondary button, to sit beside one. */
+  bordered?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const [place, setPlace] = useState<{ top: number; left: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -81,7 +92,11 @@ export function ActionMenu({ label, actions, className = '' }: { label: string; 
           e.stopPropagation()
           setOpen((o) => !o)
         }}
-        className={`relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-colors after:absolute after:-inset-1.5 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground ${className}`}
+        className={`relative flex shrink-0 cursor-pointer items-center justify-center rounded-md-xs transition-colors after:absolute after:content-[''] hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground ${
+          bordered
+            ? 'h-[30px] w-[30px] border border-control bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.06)] after:-inset-[7px] max-sm:h-9 max-sm:w-9 dark:bg-white/[0.04] dark:shadow-none'
+            : 'h-8 w-8 text-muted-foreground after:-inset-1.5'
+        } ${className}`}
       >
         <MoreHorizontal aria-hidden className="h-[18px] w-[18px]" />
       </button>

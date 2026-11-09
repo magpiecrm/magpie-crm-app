@@ -39,7 +39,9 @@ export interface StarterTemplate {
 let seq = 0
 const id = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(seq++).toString(36)}`
 
-const BRAND = 'Your brand'
+/** A logo-shaped placeholder image, drawn at half size so it's sharp on high-density screens. */
+const LOGO = 'https://placehold.co/280x80/f4f4f5/52525b/png?text=Your+logo&font=roboto'
+const LOGO_ON_DARK = 'https://placehold.co/280x80/27272a/a1a1aa/png?text=Your+logo&font=roboto'
 const INK = '#111827'
 const BODY = '#374151'
 const MUTED = '#6b7280'
@@ -81,6 +83,9 @@ const eyebrow = (content: string, style: EmailBlock['style'] = {}): EmailBlock =
   style: { fontSize: 13, fontWeight: 'bold', color: MUTED, paddingBottom: 8, ...style },
 })
 
+/** A digest story's Read more: quiet, so the email's own button is the one main action. */
+const STORY: EmailBlock['style'] = { paddingBottom: 0, btnBgColor: '#eff6ff', btnTextColor: '#1d4ed8' }
+
 const NEWSLETTER_REASON = "You're receiving this because you subscribed to updates from Your Company."
 const CUSTOMER_REASON = "You're receiving this because you have an account with Your Company."
 
@@ -114,14 +119,14 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Newsletter',
     globalStyle: { ...HOUSE, cardMode: true, canvasBgColor: '#f1eee7', paddingX: 36, paddingY: 32, cardRadius: 8, cardGap: 12 },
     build: () => [
-      { id: id('b'), type: 'navigation', content: BRAND, url: '#', links: [
+      { id: id('b'), type: 'navigation', content: LOGO, alt: 'Your logo', url: '#', links: [
         { id: id('nl'), label: 'Latest', url: '#' },
         { id: id('nl'), label: 'Archive', url: '#' },
         { id: id('nl'), label: 'About', url: '#' },
       ], style: { paddingTop: 0, paddingBottom: 0, fontFamily: SERIF, fontSize: 22 } },
       { id: id('b'), type: 'section', content: '', style: { paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 }, children: [
         eyebrow('Issue 12 · 25 August', { color: '#9a3412' }),
-        { id: id('b'), type: 'title', content: 'Is there a perfect time of day to focus?', style: { fontSize: 30, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 20 } },
+        { id: id('b'), type: 'title', content: 'Is there a perfect time of day to focus?', style: { fontSize: 28, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 20 } },
         { id: id('b'), type: 'image', content: img('photo-1499750310107-5fef28a66643', 1056, 594), alt: 'A desk with a laptop, a notebook and coffee', style: { paddingBottom: 24 } },
         { id: id('b'), type: 'text', content: 'Open with the one idea the reader came for. Two or three sentences is plenty: the click-through is what matters, not the word count.', style: { fontSize: 16, color: BODY } },
         { id: id('b'), type: 'button', content: 'Read the full story', url: '#', align: 'left', style: { paddingTop: 8, paddingBottom: 0 } },
@@ -143,16 +148,16 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Newsletter',
     globalStyle: { ...HOUSE },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, fontFamily: SERIF, fontSize: 22 } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
       eyebrow('Issue 14 · Friday 13 November', { color: '#1d4ed8' }),
-      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 30, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 12 } },
+      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 28, fontFamily: SERIF, fontWeight: 'normal', color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A short note from the editor on why these three are worth your time this week.', style: { fontSize: 16, color: BODY, paddingBottom: 8 } },
       { id: id('b'), type: 'divider', content: '' },
-      { id: id('b'), type: 'split', content: 'The case for smaller teams', subContent: 'Why the four-person unit keeps outperforming the twelve-person one, with the numbers behind it.', subImage: img('photo-1522071820081-009f0129c71c', 480, 360), url: '#', alt: 'A small team around a laptop', style: { paddingBottom: 0 } },
+      { id: id('b'), type: 'split', content: 'The case for smaller teams', subContent: 'Why the four-person unit keeps outperforming the twelve-person one, with the numbers behind it.', subImage: img('photo-1522071820081-009f0129c71c', 480, 360), url: '#', alt: 'A small team around a laptop', style: STORY },
       { id: id('b'), type: 'divider', content: '' },
-      { id: id('b'), type: 'split', content: 'What we got wrong about onboarding', subContent: 'Six months of session recordings, and the one step everybody skipped.', subImage: img('photo-1531482615713-2afd69097998', 480, 360), url: '#', alt: 'Two people in a meeting', style: { paddingBottom: 0 } },
+      { id: id('b'), type: 'split', content: 'What we got wrong about onboarding', subContent: 'Six months of session recordings, and the one step everybody skipped.', subImage: img('photo-1531482615713-2afd69097998', 480, 360), url: '#', alt: 'Two people in a meeting', style: STORY },
       { id: id('b'), type: 'divider', content: '' },
-      { id: id('b'), type: 'split', content: 'A dashboard nobody opens', subContent: 'How one team cut its reporting to a single number, and what happened next.', subImage: img('photo-1460925895917-afdab827c52f', 480, 360), url: '#', alt: 'A laptop showing charts', style: { paddingBottom: 0 } },
+      { id: id('b'), type: 'split', content: 'A dashboard nobody opens', subContent: 'How one team cut its reporting to a single number, and what happened next.', subImage: img('photo-1460925895917-afdab827c52f', 480, 360), url: '#', alt: 'A laptop showing charts', style: STORY },
       { id: id('b'), type: 'divider', content: '' },
       { id: id('b'), type: 'button', content: 'Browse the archive', url: '#', align: 'left', style: { paddingTop: 8 } },
       footer(NEWSLETTER_REASON),
@@ -165,7 +170,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Announcement',
     globalStyle: { ...HOUSE, buttonBgColor: '#0f766e', linkColor: '#0f766e' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, color: '#0f766e' } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
       eyebrow('Product update · November', { color: '#0f766e' }),
       { id: id('b'), type: 'title', content: 'Three things we shipped this month', style: { fontSize: 28, color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A quick round-up of what changed, so you can make the most of it. Everything below is live in your account today.', style: { fontSize: 16, color: BODY, paddingBottom: 24 } },
@@ -186,9 +191,9 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Announcement',
     globalStyle: { ...HOUSE, buttonBgColor: '#4338ca' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28, color: '#4338ca' } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
       eyebrow('Live webinar', { textAlign: 'center', color: '#4338ca' }),
-      { id: id('b'), type: 'title', content: 'Pipelines that fill themselves', align: 'center', style: { fontSize: 30, color: INK, textAlign: 'center', paddingBottom: 12 } },
+      { id: id('b'), type: 'title', content: 'Pipelines that fill themselves', align: 'center', style: { fontSize: 28, color: INK, textAlign: 'center', paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A 40-minute walkthrough of how B2B teams build a qualified prospect list in an afternoon, with time for your questions at the end.', style: { fontSize: 16, color: BODY, textAlign: 'center', paddingBottom: 24 } },
       { id: id('b'), type: 'section', content: '', style: { bgColor: '#eef2ff', borderRadius: 8, paddingTop: 20, paddingRight: 20, paddingBottom: 20, paddingLeft: 20 }, children: [
         { id: id('b'), type: 'text', content: 'Thursday 26 November · 4pm GMT', style: { fontSize: 17, fontWeight: 'bold', color: INK, textAlign: 'center', paddingBottom: 2 } },
@@ -204,9 +209,9 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Case study',
     description: 'A customer story: the result, a quote and the numbers.',
     category: 'Announcement',
-    globalStyle: { ...HOUSE },
+    globalStyle: { ...HOUSE, buttonBgColor: '#166534' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'left', style: { paddingTop: 0, paddingBottom: 28, color: '#166534' } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'left', style: { paddingTop: 0, paddingBottom: 28 } },
       eyebrow('Customer story', { color: '#166534' }),
       { id: id('b'), type: 'title', content: 'How Larkspur cut list-building from a week to an afternoon', style: { fontSize: 28, color: INK, paddingBottom: 24 } },
       { id: id('b'), type: 'image', content: img('photo-1552664730-d307ca884978', 1040, 520), alt: 'A team planning at a whiteboard', style: { paddingBottom: 28 } },
@@ -230,7 +235,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'E-commerce',
     globalStyle: { ...HOUSE, paddingX: 32, paddingY: 32 },
     build: () => [
-      { id: id('b'), type: 'navigation', content: BRAND, url: '#', links: [
+      { id: id('b'), type: 'navigation', content: LOGO, alt: 'Your logo', url: '#', links: [
         { id: id('nl'), label: 'New in', url: '#' },
         { id: id('nl'), label: 'Sale', url: '#' },
       ], style: { paddingTop: 0, paddingBottom: 20 } },
@@ -254,7 +259,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     globalStyle: { ...HOUSE, canvasBgColor: '#18181b', paddingX: 0, paddingY: 0, buttonBgColor: '#dc2626' },
     build: () => [
       { id: id('b'), type: 'section', content: '', style: { bgColor: '#18181b', paddingTop: 48, paddingBottom: 48, paddingLeft: 32, paddingRight: 32 }, children: [
-        { id: id('c'), type: 'logo', content: BRAND, align: 'center', style: { color: '#ffffff', paddingTop: 0, paddingBottom: 20 } },
+        { id: id('c'), type: 'logo', content: LOGO_ON_DARK, alt: 'Your logo', align: 'center', style: { paddingTop: 0, paddingBottom: 20 } },
         { id: id('c'), type: 'title', content: '30% off everything', align: 'center', style: { color: '#ffffff', fontSize: 36, textAlign: 'center', paddingBottom: 8 } },
         { id: id('c'), type: 'text', content: 'Three days only, ending Sunday at midnight.', style: { color: '#d4d4d8', fontSize: 16, textAlign: 'center', paddingBottom: 4 } },
         { id: id('c'), type: 'text', content: 'Use code AUTUMN30 at checkout', style: { color: '#ffffff', fontSize: 15, fontWeight: 'bold', textAlign: 'center', paddingBottom: 0 } },
@@ -277,7 +282,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Transactional',
     globalStyle: { ...HOUSE, buttonBgColor: '#6d28d9' },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28, color: '#6d28d9' } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
       { id: id('b'), type: 'title', content: 'Welcome aboard, {{contact.FIRSTNAME}}', align: 'center', style: { fontSize: 28, color: INK, textAlign: 'center', paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'Your account is ready. Here are the three things worth doing first.', style: { fontSize: 16, color: BODY, textAlign: 'center', paddingBottom: 28 } },
       { id: id('b'), type: 'columns', content: '', items: [
@@ -296,7 +301,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     category: 'Transactional',
     globalStyle: { ...HOUSE, bodyWidth: 520 },
     build: () => [
-      { id: id('b'), type: 'logo', content: BRAND, align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
+      { id: id('b'), type: 'logo', content: LOGO, alt: 'Your logo', align: 'center', style: { paddingTop: 0, paddingBottom: 28 } },
       { id: id('b'), type: 'title', content: 'Reset your password', align: 'center', style: { fontSize: 24, color: INK, textAlign: 'center', paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'We received a request to reset the password for your account. Choose a new one with the button below. The link expires in 60 minutes.', style: { fontSize: 15, color: BODY, textAlign: 'center', paddingBottom: 8 } },
       { id: id('b'), type: 'button', content: 'Choose a new password', url: '#', align: 'center' },

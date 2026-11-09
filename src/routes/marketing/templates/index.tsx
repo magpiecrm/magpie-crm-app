@@ -133,9 +133,12 @@ function TemplatesPage() {
           <h1 className="text-2xl font-display text-foreground">Templates</h1>
           <p className="mt-1 text-muted-foreground max-sm:text-[15px]">Reusable email designs to start campaigns from.</p>
         </div>
-        <Button onClick={() => setCreating({})} leftIcon={<Plus className="h-4 w-4" />} className="shrink-0">
-          New template
-        </Button>
+        {/* The empty page has its own way in. */}
+        {(isLoading || templates.length > 0) && (
+          <Button onClick={() => setCreating({})} leftIcon={<Plus className="h-4 w-4" />} className="shrink-0">
+            New template
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -227,23 +230,23 @@ function TemplateCard({
       >
         <TemplateThumbnail html={template.html} className="aspect-[4/3]" />
       </button>
-      <h3 className="mt-3 truncate text-[15px] font-medium leading-snug text-foreground" title={template.name}>
+      <h3 className="mt-3 truncate text-[15px] font-semibold leading-snug text-foreground" title={template.name}>
         {template.name}
       </h3>
       {template.description && (
-        <p className="mt-0.5 truncate text-[13px] text-muted-foreground" title={template.description}>
+        <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground" title={template.description}>
           {template.description}
         </p>
       )}
       {/* Pinned to the bottom, so the buttons line up along a row whatever the text above. */}
       <div className="mt-auto flex items-center gap-2 pt-2">
         <p className="mr-auto text-[13px] text-muted-foreground">Edited {editedOn(template.updated_at)}</p>
-        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="max-sm:hidden">
-          Use in campaign
+        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} aria-label="Use in campaign" className="max-sm:px-2.5">
+          <span className="max-sm:hidden">Use in campaign</span>
         </Button>
         <ActionMenu
           label={`Actions for ${template.name}`}
-          className="-mr-1"
+          bordered
           actions={[
             { label: 'Edit design', icon: Pencil, onSelect: onOpen },
             { label: 'Use in campaign', icon: Send, onSelect: onUse },
@@ -262,7 +265,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
   const [previewing, setPreviewing] = useState<StarterTemplate | null>(null)
   const starters = FIRST_STARTERS.map(id => STARTER_TEMPLATES.find(t => t.id === id)!).filter(Boolean)
   return (
-    <div className="mx-auto max-w-5xl rounded-md-l border border-border bg-card px-5 py-10 sm:px-10">
+    <div className="mx-auto max-w-5xl rounded-md-xl border border-border bg-card px-5 py-10 sm:px-10">
       <div className="mx-auto max-w-md text-center">
         <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full bg-accent/10 text-accent">
           <LayoutTemplate aria-hidden className="h-5 w-5" />
@@ -284,13 +287,13 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
           />
         ))}
       </div>
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-        <Button variant="secondary" onClick={() => onStart(STARTER_TEMPLATES[0].id)}>
-          Browse all layouts
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
+        <Button onClick={() => onStart(STARTER_TEMPLATES[0].id)} leftIcon={<LayoutTemplate className="h-4 w-4" />}>
+          Browse all {STARTER_TEMPLATES.length} layouts
         </Button>
-        <button type="button" onClick={() => onStart(undefined)} className="cursor-pointer text-sm font-medium text-accent underline-offset-2 hover:underline">
+        <Button variant="secondary" onClick={() => onStart(undefined)} leftIcon={<Plus className="h-4 w-4" />}>
           Start from blank
-        </button>
+        </Button>
       </div>
       {previewing && (
         <TemplatePreviewDialog

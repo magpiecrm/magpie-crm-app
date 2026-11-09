@@ -118,8 +118,9 @@ export function BlockRenderer({
 
       {/* Core Block rendering engine */}
       {block.type === 'logo' && (
+        // Bold and as typed, as the compiled email sets it (compiler.ts renderLogo).
         <div
-          className="font-extrabold uppercase tracking-tight select-text"
+          className="font-bold tracking-tight select-text"
           style={{
             fontFamily: block.style?.fontFamily ?? globalStyle.fontFamily,
             textAlign: (block.align as any) || 'center',
