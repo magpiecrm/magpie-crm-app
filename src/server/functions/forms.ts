@@ -6,7 +6,7 @@ export type FormInput = Pick<
   FormRecord,
   | 'name' | 'fields' | 'field_settings' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields'
   | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'
-  | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro'
+  | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url'
 >
 
 const CORNERS: FormCorners[] = ['square', 'rounded', 'pill']
@@ -52,6 +52,11 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
   if (d.success_message !== undefined) out.success_message = text(d.success_message, FORM_LIMITS.successMessage).trim()
   if (d.heading !== undefined) out.heading = text(d.heading, 120).trim()
   if (d.intro !== undefined) out.intro = text(d.intro, FORM_LIMITS.successMessage).trim()
+  if (d.privacy_url !== undefined) {
+    const { safeUrl } = await import('../../features/forms/model')
+    if (d.privacy_url && !safeUrl(d.privacy_url)) throw new Error('The privacy policy link needs to be a web address, like https://example.com/privacy.')
+    out.privacy_url = safeUrl(d.privacy_url) ?? ''
+  }
   if (d.style !== undefined) {
     out.style = {
       ...(validAccent(d.style?.accent) ? { accent: validAccent(d.style?.accent)! } : {}),
@@ -190,6 +195,16 @@ export const deleteFormFn = createServerFn({ method: 'POST' })
     await requireAuth()
     db.deleteForm(data.id)
     return { success: true }
+  })
+
+/** Deletes several submissions at once. Their contacts stay. */
+export const deleteFormSubmissionsFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { formId: string; ids: string[] }) => ({ formId: String(d.formId), ids: Array.isArray(d.ids) ? d.ids.map(String).slice(0, 5000) : [] }))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const { db } = await import('../db')
+    await requireAuth()
+    return { deleted: db.deleteFormSubmissions(data.formId, data.ids) }
   })
 
 /** Deletes one submission, as asked by the person who sent it. Their contact, if one was made, stays. */

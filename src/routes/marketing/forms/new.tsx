@@ -58,6 +58,7 @@ function NewFormBuilder({ template }: { template: string }) {
       <FormBuilder
         isNew
         backLabel="Templates"
+        onBack={() => navigate({ to: '/marketing/forms/new' })}
         subtitle={from ? `New, from the ${from} template. Change anything you like.` : 'New, from a blank form.'}
         initial={{ ...initial, list_id: lists.some((l) => l.id === initial.list_id) ? initial.list_id : (lists[0]?.id ?? initial.list_id) }}
         lists={lists}

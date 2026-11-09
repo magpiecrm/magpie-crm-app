@@ -58,6 +58,8 @@ textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-ra
 .mf-title{margin:0;font-size:22px;line-height:1.25;font-weight:700;letter-spacing:-.01em;color:var(--mf-text)}
 .mf-intro{margin:0;font-size:15px;line-height:1.55;color:var(--mf-muted);white-space:pre-line}
 .mf-help{margin:-2px 0 0;font-size:13px;line-height:1.45;color:var(--mf-muted)}
+.mf-privacy{margin:-4px 0 0;font-size:13px;line-height:1.45;color:var(--mf-muted)}
+.mf-privacy a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .mf-preview-reset{appearance:none;align-self:flex-start;background:none;border:0;padding:0;color:var(--mf-muted);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .mf-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
 .mf-dark{color-scheme:dark;--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
@@ -126,7 +128,7 @@ ${FORM_CSS}
 ${form.heading || form.intro ? `  <div class="mf-head">${form.heading ? `<h2 class="mf-title">${esc(form.heading)}</h2>` : ''}${form.intro ? `<p class="mf-intro">${esc(form.intro)}</p>` : ''}</div>\n` : ''}${rows}
   <div class="mf-hp" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
   <button class="mf-button" type="submit">${esc(form.submitLabel)}</button>
-</form>
+${form.privacyUrl ? `  <p class="mf-privacy">How we use your details: <a href="${esc(form.privacyUrl)}" target="_blank" rel="noopener">privacy policy</a></p>\n` : ''}</form>
 </div>
 <script>
 (function () {
@@ -162,6 +164,11 @@ ${form.heading || form.intro ? `  <div class="mf-head">${form.heading ? `<h2 cla
 export function iframeSnippet(formId: string, origin: string, name: string): string {
   return `<iframe data-magpie-form="${formId}" src="${origin}/f/${formId}?embed=1" title="${esc(name)}" style="width:100%;height:420px;border:0" loading="lazy"></iframe>
 <script src="${origin}/forms/embed.js" async></script>`
+}
+
+/** The form as a pop-up: the same script shows it after `delay` seconds, once per visitor. */
+export function popupSnippet(form: Pick<PublicForm, 'id' | 'name' | 'style'>, origin: string, delay: number): string {
+  return `<script src="${origin}/forms/embed.js" data-magpie-popup="${form.id}" data-delay="${delay}" data-title="${esc(form.name)}"${form.style.theme === 'dark' ? ' data-theme="dark"' : ''} async></script>`
 }
 
 export const hostedUrl = (formId: string, origin: string) => `${origin}/f/${formId}`

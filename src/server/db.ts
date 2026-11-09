@@ -1906,6 +1906,16 @@ class JsonDb {
     return true
   }
 
+  /** Removes several submissions (`submissionId`s) in one save; how many went. */
+  deleteFormSubmissions(formId: string, ids: string[]) {
+    const drop = new Set(ids)
+    const before = this.data.form_submissions?.length ?? 0
+    this.data.form_submissions = (this.data.form_submissions ?? []).filter(s => !(s.form_id === formId && drop.has(submissionId(s))))
+    const deleted = before - this.data.form_submissions.length
+    if (deleted) this.save()
+    return deleted
+  }
+
   /** Each form's count, how many in the last 7 days and when the latest came. */
   getFormStats() {
     const week = Date.now() - 7 * 24 * 3600e3

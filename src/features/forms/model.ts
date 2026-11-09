@@ -70,6 +70,8 @@ export interface FormRecord {
   /** Shown above the fields, on its own page and in the embed. Empty: none. */
   heading?: string
   intro?: string
+  /** The customer's privacy policy, linked under the button. */
+  privacy_url?: string
   style?: FormStyle
   /** Paused forms refuse submissions, wherever they're embedded. */
   paused?: boolean
@@ -171,6 +173,7 @@ export interface PublicForm {
   name: string
   heading: string
   intro: string
+  privacyUrl: string
   fields: ResolvedFormField[]
   submitLabel: string
   successMessage: string
@@ -184,11 +187,23 @@ export function publicForm(form: FormRecord, contactFields: ContactFieldDef[]): 
     name: form.name,
     heading: form.heading?.trim() ?? '',
     intro: form.intro?.trim() ?? '',
+    privacyUrl: safeUrl(form.privacy_url) ?? '',
     fields: resolveFields(form, contactFields),
     submitLabel: form.submit_label?.trim() || DEFAULT_SUBMIT_LABEL,
     successMessage: form.success_message?.trim() || DEFAULT_SUCCESS_MESSAGE,
     style: { accent: validAccent(form.style?.accent) ?? DEFAULT_ACCENT, corners: form.style?.corners ?? 'rounded', theme: form.style?.theme === 'dark' ? 'dark' : 'light' },
     paused: !!form.paused,
+  }
+}
+
+/** An http(s) address, or null: nothing else is linked from a form. */
+export function safeUrl(v: unknown): string | null {
+  if (typeof v !== 'string' || !v.trim() || v.length > 500) return null
+  try {
+    const u = new URL(v.trim())
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.toString() : null
+  } catch {
+    return null
   }
 }
 

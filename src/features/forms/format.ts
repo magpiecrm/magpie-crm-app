@@ -4,19 +4,17 @@ const exactFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'shor
 const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
 const dayYearFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 const timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' })
-const weekdayFmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short' })
 
 export const exactTime = (iso: string) => exactFmt.format(new Date(iso))
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
-/** For a table column: "Today 08:06", "Yesterday 10:18", "Fri 6 Nov", "22 Oct", "3 Mar 2025". */
+/** For a table column, one rule: "Today 08:06", "Yesterday 10:18", then "22 Oct", or "3 Mar 2025" before this year. */
 export function whenShort(iso: string, now = new Date()) {
   const d = new Date(iso)
   const days = Math.round((startOfDay(now) - startOfDay(d)) / 86400e3)
   if (days === 0) return `Today ${timeFmt.format(d)}`
   if (days === 1) return `Yesterday ${timeFmt.format(d)}`
-  if (days > 1 && days < 7) return `${weekdayFmt.format(d)} ${dayFmt.format(d)}`
   return d.getFullYear() === now.getFullYear() ? dayFmt.format(d) : dayYearFmt.format(d)
 }
 

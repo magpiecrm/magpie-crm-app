@@ -115,8 +115,8 @@ export function ExportMenu<T>({
         )}
         <span>{label}</span>
         {!isEmpty && (
-          <span className="text-xs font-normal text-muted-foreground tabular-nums">
-            ({rows.length})
+          <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">
+            {rows.length}
           </span>
         )}
         <ChevronDown

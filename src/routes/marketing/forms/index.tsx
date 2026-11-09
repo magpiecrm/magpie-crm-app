@@ -103,12 +103,12 @@ function FormsPage() {
           )}
           <div className="overflow-hidden rounded-md-m border border-border bg-card">
             {/* Column heads, where the rows are a table. */}
-            <div className="hidden grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem] items-center gap-4 border-b border-border bg-muted/40 px-5 py-2.5 text-[13px] font-medium text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_6.5rem_8rem_7.5rem_9rem_6.5rem] items-center gap-x-4 border-b border-border bg-muted/40 px-5 py-2.5 text-[13px] font-medium text-muted-foreground md:grid">
               <span>Form</span>
               <span>Status</span>
               <span className="text-right">Submissions</span>
               <span className="text-right">Conversion</span>
-              <span className="pl-4">Last submission</span>
+              <span className="whitespace-nowrap pl-4">Latest</span>
               <span className="sr-only">Actions</span>
             </div>
             <ul className="divide-y divide-border/70">

@@ -103,7 +103,10 @@ export function FormView({
       ) : (
         <form className={`mf${dark}`} style={style} onSubmit={submit} noValidate aria-label={form.heading || form.name}>
           {(form.heading || form.intro) && (
-            <div className="mf-head">
+            <div
+              className={`mf-head${pick ? ' mf-pick' : ''}`}
+              {...(pick ? { onPointerDown: () => pick.onPick(HEADING_PICK), 'data-pick': HEADING_PICK } : {})}
+            >
               {form.heading && (headingLevel === 1 ? <h1 className="mf-title">{form.heading}</h1> : <h2 className="mf-title">{form.heading}</h2>)}
               {form.intro && <p className="mf-intro">{form.intro}</p>}
             </div>
@@ -124,11 +127,19 @@ export function FormView({
           <button className="mf-button" type="submit" disabled={sending || form.paused}>
             {sending ? 'Sending…' : form.submitLabel}
           </button>
+          {form.privacyUrl && (
+            <p className="mf-privacy">
+              How we use your details: <a href={form.privacyUrl} target="_blank" rel="noopener noreferrer">privacy policy</a>
+            </p>
+          )}
         </form>
       )}
     </div>
   )
 }
+
+/** What `onFieldPick` is given when the heading or intro is clicked. */
+export const HEADING_PICK = '__heading'
 
 /** The builder's preview: a field shows it can be clicked, and the one being edited is outlined. */
 const PICK_CSS = `.mf-pick{cursor:pointer;border-radius:10px;outline:2px solid transparent;outline-offset:5px;transition:outline-color .12s}

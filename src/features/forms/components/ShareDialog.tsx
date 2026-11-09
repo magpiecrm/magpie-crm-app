@@ -1,17 +1,19 @@
 import { useRef, useState } from 'react'
 import { Check, Code2, Copy, ExternalLink, FileCode2, Link2, Webhook } from 'lucide-react'
-import { Dialog, DialogBody, useMoreBelow } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter, useMoreBelow } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
 import type { PublicForm } from '../model'
-import { hostedUrl, iframeSnippet, plainHtmlSnippet } from '../render'
+import { hostedUrl, iframeSnippet, plainHtmlSnippet, popupSnippet } from '../render'
+import { Select } from '../../../components/ui/Select'
+import { INPUT_CLASS } from '../../../components/ui/Field'
 
 type Tab = 'embed' | 'link' | 'html' | 'api'
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof Code2 }> = [
-  { id: 'embed', label: 'Embed', icon: Code2 },
+  { id: 'embed', label: 'Embed code', icon: Code2 },
   { id: 'link', label: 'Link', icon: Link2 },
-  { id: 'html', label: 'HTML', icon: FileCode2 },
+  { id: 'html', label: 'Plain HTML', icon: FileCode2 },
   { id: 'api', label: 'API', icon: Webhook },
 ]
 
@@ -59,6 +61,8 @@ export function CopyBlock({ value, label, rows, mono = true }: { value: string; 
  */
 export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm; onClose: () => void; ready?: boolean }) {
   const [tab, setTab] = useState<Tab>('embed')
+  const [kind, setKind] = useState<'inline' | 'popup'>('inline')
+  const [delay, setDelay] = useState(8)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const url = hostedUrl(form.id, origin)
   const example = JSON.stringify(Object.fromEntries(form.fields.map((f) => [f.key, f.type === 'email' ? 'priya@example.com' : f.type === 'checkbox' ? true : f.type === 'multiselect' ? [f.options?.[0] ?? ''] : f.type === 'select' ? f.options?.[0] ?? '' : f.key === 'first_name' ? 'Priya' : f.key === 'last_name' ? 'Raman' : '…'])), null, 2)
@@ -98,17 +102,45 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
         <div role="tabpanel" id={`share-panel-${tab}`} aria-labelledby={`share-tab-${tab}`} className="flex flex-col gap-4">
           {tab === 'embed' && (
             <>
+              <div role="radiogroup" aria-label="How it shows" className="grid gap-2 sm:grid-cols-2">
+                {([
+                  ['inline', 'In the page', 'Where you paste it, as wide as the space it’s in.'],
+                  ['popup', 'As a pop-up', 'Over the page after a few seconds, once per visitor.'],
+                ] as const).map(([id, title, detail]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={kind === id}
+                    onClick={() => setKind(id)}
+                    className={`flex cursor-pointer items-start gap-2.5 rounded-md-s border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${kind === id ? 'border-accent bg-accent/5' : 'border-border hover:bg-muted'}`}
+                  >
+                    <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${kind === id ? 'border-accent' : 'border-muted-foreground/50'}`}>
+                      {kind === id && <span className="h-2 w-2 rounded-full bg-accent" />}
+                    </span>
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-foreground">{title}</span>
+                      <span className="text-[13px] leading-snug text-muted-foreground">{detail}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {kind === 'popup' && (
+                <label className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                  Show it
+                  <Select className={`${INPUT_CLASS} !w-auto`} value={delay} onChange={(e) => setDelay(Number(e.target.value))} aria-label="When the pop-up shows">
+                    {[3, 8, 15, 30, 60].map((n) => <option key={n} value={n}>{n} seconds after the page opens</option>)}
+                  </Select>
+                </label>
+              )}
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Paste this into your page where the form should go. It fills the width it's given and grows to fit. Changes you save in the builder show up on your site
-                straight away, without pasting it again.
+                {kind === 'inline'
+                  ? 'Paste it into your page where the form should go. It grows to fit the form.'
+                  : 'Paste it once into your page, anywhere. Closing or sending it stops it showing again for 30 days.'}{' '}
+                Changes you save in the builder show up on your site straight away, without pasting it again.
               </p>
-              <CopyBlock label="Embed code" value={iframeSnippet(form.id, origin, form.name)} />
-              <p className="text-[13px] leading-relaxed text-muted-foreground">
-                Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.{' '}
-                <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
-                  See it live <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-                </a>
-              </p>
+              <CopyBlock label="Embed code" value={kind === 'inline' ? iframeSnippet(form.id, origin, form.name) : popupSnippet(form, origin, delay)} />
+              <p className="text-[13px] leading-relaxed text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.</p>
             </>
           )}
           {tab === 'link' && (
@@ -142,6 +174,10 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
           )}
         </div>
       </DialogBody>
+      <DialogFooter>
+        <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(url, '_blank', 'noopener')}>Open the form</Button>
+        <Button onClick={onClose}>Done</Button>
+      </DialogFooter>
     </Dialog>
   )
 }

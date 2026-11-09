@@ -256,7 +256,7 @@ function RootDocument() {
                   marginRight: contentOffset,
                   transition: isResizing ? 'none' : 'margin-right 300ms cubic-bezier(0.2, 0, 0, 1)',
                 }}
-                className="app-header border-b border-border bg-card/85 backdrop-blur-md px-4 lg:px-8 flex items-center justify-between gap-2 fixed top-0 left-0 lg:left-64 right-0 z-30"
+                className="app-header border-b border-border bg-card px-4 lg:px-8 flex items-center justify-between gap-2 fixed top-0 left-0 lg:left-64 right-0 z-30"
               >
                 <button
                   onClick={() => setIsSidebarOpen(true)}

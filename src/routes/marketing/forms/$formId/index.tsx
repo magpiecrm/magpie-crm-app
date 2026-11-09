@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, ListChecks, Mail, MailX, Search, Share2, Trash2, UserRound, type LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, ListChecks, Mail, MailX, Play, Search, Share2, Trash2, UserRound, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../../../queryKeys'
-import { deleteFormSubmissionFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn } from '../../../../server/functions'
+import { deleteFormSubmissionFn, deleteFormSubmissionsFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn, setFormPausedFn } from '../../../../server/functions'
+import { Select } from '../../../../components/ui/Select'
 import { Button } from '../../../../components/ui/Button'
 import { INPUT_CLASS } from '../../../../components/ui/Field'
 import { Dialog, DialogBody, DialogFooter } from '../../../../components/ui/Dialog'
@@ -31,6 +32,8 @@ function SubmissionsPage() {
   const [perPage, setPerPage] = useState(25)
   const [openId, setOpenId] = useState<string | null>(null)
   const [sort, setSort] = useState<{ by: 'received' | 'person'; dir: 'asc' | 'desc' }>({ by: 'received', dir: 'desc' })
+  const [range, setRange] = useState<'all' | '7' | '30' | '90'>('all')
+  const [picked, setPicked] = useState<Set<string>>(new Set())
 
   const { data: form } = useQuery({ queryKey: queryKeys.email.form(formId), queryFn: () => getFormFn({ data: { id: formId } }), retry: false })
   const { data: submissions = [], isLoading } = useQuery({ queryKey: queryKeys.email.formSubmissions(formId), queryFn: () => getFormSubmissionsFn({ data: { formId } }) })
@@ -41,6 +44,22 @@ function SubmissionsPage() {
   const extra = fields.filter((f) => !['first_name', 'last_name', 'email', 'consent'].includes(f.key))
   const columns = [...extra.filter((f) => f.key !== 'message').slice(0, 2), ...extra.filter((f) => f.key === 'message')]
 
+  const resume = useMutation({
+    mutationFn: () => setFormPausedFn({ data: { id: formId, paused: false } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
+      toast.success('Taking submissions again')
+    },
+  })
+  const removeMany = useMutation({
+    mutationFn: (ids: string[]) => deleteFormSubmissionsFn({ data: { formId, ids } }),
+    onSuccess: ({ deleted }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.email.formSubmissions(formId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.email.forms() })
+      setPicked(new Set())
+      toast.success(`Deleted ${deleted} submission${deleted === 1 ? '' : 's'}`)
+    },
+  })
   const remove = useMutation({
     mutationFn: (id: string) => deleteFormSubmissionFn({ data: { formId, id } }),
     onSuccess: () => {
@@ -52,7 +71,9 @@ function SubmissionsPage() {
   })
 
   const q = query.trim().toLowerCase()
-  const matched = q ? submissions.filter((s) => [nameOf(s), s.contact_email, ...fields.map((f) => submissionValue(s, f.key))].some((v) => v.toLowerCase().includes(q))) : submissions
+  const since = range === 'all' ? '' : new Date(Date.now() - Number(range) * 86400e3).toISOString()
+  const inRange = since ? submissions.filter((s) => s.submitted_at >= since) : submissions
+  const matched = q ? inRange.filter((s) => [nameOf(s), s.contact_email, ...fields.map((f) => submissionValue(s, f.key))].some((v) => v.toLowerCase().includes(q))) : inRange
   const shown = [...matched].sort((a, b) => {
     const d = sort.by === 'received' ? a.submitted_at.localeCompare(b.submitted_at) : (nameOf(a) || a.contact_email).localeCompare(nameOf(b) || b.contact_email, 'en-GB', { sensitivity: 'base' })
     return sort.dir === 'asc' ? d : -d
@@ -93,9 +114,14 @@ function SubmissionsPage() {
             <Inbox className="h-6 w-6" aria-hidden />
           </span>
           <h2 className="text-lg font-semibold text-foreground">No submissions yet</h2>
-          <p className="mt-1.5 max-w-sm text-muted-foreground">Put the form on your website or share its link. Everything people send shows up here.</p>
+          <p className="mt-1.5 max-w-sm text-muted-foreground">
+            {form.paused ? "It's paused, so it won't take any until you resume it." : 'Put the form on your website or share its link. Everything people send shows up here.'}
+          </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
-            <Button leftIcon={<Share2 className="h-4 w-4" />} onClick={() => navigate({ to: '.', search: { share: 'open' } })}>Share the form</Button>
+            {form.paused && (
+              <Button leftIcon={<Play className="h-4 w-4" />} onClick={() => resume.mutate()} isLoading={resume.isPending}>Resume</Button>
+            )}
+            <Button variant={form.paused ? 'secondary' : 'primary'} leftIcon={<Share2 className="h-4 w-4" />} onClick={() => navigate({ to: '.', search: { share: 'open' } })}>Share the form</Button>
             <Button variant="secondary" leftIcon={<ExternalLink className="h-4 w-4" />} onClick={() => window.open(`/f/${formId}`, '_blank', 'noopener')}>
               Try it yourself
             </Button>
@@ -123,6 +149,28 @@ function SubmissionsPage() {
         ))}
       </dl>
 
+      {picked.size > 0 ? (
+        <div className="mb-3 flex min-h-[38px] flex-wrap items-center gap-2 rounded-md-s border border-accent/40 bg-accent/[0.06] px-3 py-1.5" role="region" aria-label="Selected submissions">
+          <span className="text-sm font-medium text-foreground">{picked.size} selected</span>
+          <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
+          <div className="ml-auto flex items-center gap-2">
+            <ExportMenu filename={`${form.name} (selected)`} rows={shown.filter((s) => picked.has(s.id))} columns={exportColumns} sheetName="Submissions" label="Export selected" />
+            <Button
+              variant="secondary"
+              leftIcon={<Trash2 className="h-4 w-4" />}
+              className="!text-destructive"
+              isLoading={removeMany.isPending}
+              onClick={async () => {
+                const n = picked.size
+                const ok = await confirmDialog({ title: `Delete ${n} submission${n === 1 ? '' : 's'}?`, message: "What they sent is removed from this form. Their contacts stay. This can't be undone.", confirmLabel: `Delete ${n}`, tone: 'danger' })
+                if (ok) removeMany.mutate([...picked])
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      ) : (
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 basis-64 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
@@ -137,8 +185,23 @@ function SubmissionsPage() {
             }}
           />
         </div>
+        <Select
+          className={`${INPUT_CLASS} !w-auto min-w-[9.5rem]`}
+          value={range}
+          onChange={(e) => {
+            setRange(e.target.value as typeof range)
+            setPage(1)
+          }}
+          aria-label="When"
+        >
+          <option value="all">All time</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </Select>
         <ExportMenu filename={form.name} rows={shown} columns={exportColumns} sheetName="Submissions" className="ml-auto" />
       </div>
+      )}
 
       <div className="overflow-hidden rounded-md-m border border-border bg-card">
         {/* A phone gets one card per submission. */}
@@ -152,7 +215,10 @@ function SubmissionsPage() {
                 <button type="button" onClick={() => setOpenId(s.id)} className="flex w-full cursor-pointer flex-col gap-0.5 px-4 py-3.5 text-left active:bg-muted/50">
                   <span className="flex w-full items-baseline justify-between gap-3">
                     <span className="min-w-0 truncate font-semibold text-foreground">{name || s.contact_email}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{whenShort(s.submitted_at)}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-[13px] tabular-nums text-muted-foreground">
+                      {whenShort(s.submitted_at)}
+                      <ChevronRight className="h-4 w-4 self-center" aria-hidden />
+                    </span>
                   </span>
                   {name && <span className="break-all text-[13px] text-muted-foreground">{s.contact_email}{company && <> · {company}</>}</span>}
                   {message && <span className="mt-1 line-clamp-2 text-[13px] text-foreground/80">{message}</span>}
@@ -165,7 +231,17 @@ function SubmissionsPage() {
         <table className="hidden w-full table-fixed text-left text-sm md:table">
           <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
             <tr>
-              <SortHead by="person" label="Person" className="w-[15.5rem] !pl-5" />
+              <th scope="col" className="w-11 py-2.5 pl-4">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  aria-label="Select all on this page"
+                  checked={pageRows.length > 0 && pageRows.every((s) => picked.has(s.id))}
+                  ref={(el) => { if (el) el.indeterminate = pageRows.some((s) => picked.has(s.id)) && !pageRows.every((s) => picked.has(s.id)) }}
+                  onChange={(e) => setPicked((p) => { const n = new Set(p); for (const s of pageRows) e.target.checked ? n.add(s.id) : n.delete(s.id); return n })}
+                />
+              </th>
+              <SortHead by="person" label="Person" className="w-[15.5rem] !pl-2" />
               {columns.map((f) => (
                 <th key={f.key} scope="col" className={`px-4 py-2.5 font-medium ${f.key === 'message' ? '' : 'w-[17%]'}`}>{f.label}</th>
               ))}
@@ -177,8 +253,17 @@ function SubmissionsPage() {
             {pageRows.map((s) => {
               const name = nameOf(s)
               return (
-                <tr key={s.id} onClick={() => setOpenId(s.id)} className="group cursor-pointer transition-colors hover:bg-muted/40">
-                  <td className="px-5 py-3 align-top">
+                <tr key={s.id} onClick={() => setOpenId(s.id)} className={`group cursor-pointer transition-colors hover:bg-muted/40 ${picked.has(s.id) ? 'bg-accent/[0.05]' : ''}`}>
+                  <td className="py-3 pl-4 align-top" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4"
+                      aria-label={`Select ${name || s.contact_email}`}
+                      checked={picked.has(s.id)}
+                      onChange={(e) => setPicked((p) => { const n = new Set(p); e.target.checked ? n.add(s.id) : n.delete(s.id); return n })}
+                    />
+                  </td>
+                  <td className="py-3 pl-2 pr-4 align-top">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -201,7 +286,11 @@ function SubmissionsPage() {
             })}
           </tbody>
         </table>
-        {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-muted-foreground">Nothing matches “{query.trim()}”.</p>}
+        {shown.length === 0 && (
+          <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+            {q ? <>Nothing matches “{query.trim()}”{range !== 'all' && ` in the last ${range} days`}.</> : `None in the last ${range} days.`}
+          </p>
+        )}
         {shown.length > 25 && (
           <div className="border-t border-border/70 px-4 py-2">
             <Pagination totalItems={shown.length} itemsPerPage={perPage} onItemsPerPageChange={(n) => { setPerPage(n); setPage(1) }} currentPage={page} onPageChange={setPage} itemsPerPageOptions={[25, 50, 100]} />

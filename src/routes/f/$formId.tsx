@@ -89,6 +89,8 @@ function HostedFormPage() {
               body: JSON.stringify({ ...values, ...(place ? { _page: place.page, _referrer: place.referrer } : {}) }),
             })
             const json = await res.json().catch(() => ({}))
+            // A pop-up remembers it was sent, so it doesn't come back.
+            if (res.ok && embed && window.parent !== window) window.parent.postMessage({ type: 'magpie-form:done', id: formId }, '*')
             return res.ok ? { ok: true, message: json.message } : { ok: false, error: json.error, problems: json.problems }
           }}
         />
@@ -102,11 +104,11 @@ function HostedFormPage() {
       {embed ? (
         <div ref={root} style={{ padding: 2 }}>{body}</div>
       ) : (
-        <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '48px 16px' }}>
+        <main style={{ minHeight: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 'max(40px, 11vh) 16px 48px' }}>
           <div
             ref={root}
             style={{
-              width: '100%', maxWidth: 560, background: dark ? '#1d2025' : '#fff', borderRadius: 14, padding: '32px 28px',
+              width: '100%', maxWidth: 600, background: dark ? '#1d2025' : '#fff', borderRadius: 14, padding: '32px 28px',
               boxShadow: dark ? 'none' : '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1)', border: dark ? '1px solid #2d3139' : '1px solid #e5e7eb',
             }}
           >

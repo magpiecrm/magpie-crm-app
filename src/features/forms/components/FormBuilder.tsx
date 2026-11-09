@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
-  Info, Palette, Send, Smartphone, SquareCheck, Trash2, Type, User,
+  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Bell, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
+  Eye, Info, Palette, Pencil, Send, Smartphone, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
@@ -22,15 +22,15 @@ import type { FormInput } from '../../../server/functions/forms'
 import { queryKeys } from '../../../queryKeys'
 import type { ContactFieldDef } from '../../contacts/contactFields'
 import {
-  BUILTIN_FORM_FIELDS, BUILTIN_LABELS, DEFAULT_ACCENT, DEFAULT_SUBMIT_LABEL, DEFAULT_SUCCESS_MESSAGE, customKey,
+  BUILTIN_FORM_FIELDS, BUILTIN_LABELS, DEFAULT_ACCENT, DEFAULT_SUBMIT_LABEL, DEFAULT_SUCCESS_MESSAGE, customKey, fillMergeTags,
   publicForm, resolveFields, type FormCorners, type FormRecord, type ResolvedFormField,
 } from '../model'
-import { FormView } from './FormView'
+import { FormView, HEADING_PICK } from './FormView'
 import { textOn } from '../render'
 import { delayLabel } from '../format'
 
 export type FormDraft = Required<Pick<FormInput, 'name' | 'fields' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields' | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'>> &
-  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro'>
+  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url'>
 
 export const NEW_FORM: FormDraft = {
   name: '',
@@ -48,6 +48,7 @@ export const NEW_FORM: FormDraft = {
   success_message: DEFAULT_SUCCESS_MESSAGE,
   heading: '',
   intro: '',
+  privacy_url: '',
   style: {},
 }
 
@@ -69,6 +70,7 @@ export function draftOf(form: FormRecord): FormDraft {
     success_message: form.success_message || DEFAULT_SUCCESS_MESSAGE,
     heading: form.heading ?? '',
     intro: form.intro ?? '',
+    privacy_url: form.privacy_url ?? '',
     style: form.style ?? {},
   }
 }
@@ -108,6 +110,82 @@ const CORNERS: Array<{ id: FormCorners; label: string }> = [
   { id: 'rounded', label: 'Rounded' },
   { id: 'pill', label: 'Pill' },
 ]
+
+/** The height of an element, kept up to date. */
+function useHeight(ref: React.RefObject<HTMLElement | null>, fallback: number) {
+  const [h, setH] = useState(fallback)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setH(Math.round(el.getBoundingClientRect().height)))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return h
+}
+
+/**
+ * Fits the preview to the screen on a desktop: the space under the bars, and
+ * the form scaled down (not below 65%) when it's taller than that, so the
+ * button stays in view. A phone shows it at full size.
+ */
+function usePreviewFit(barH: number, layoutKey: string) {
+  const areaRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(1)
+  const [maxHeight, setMaxHeight] = useState<number | null>(null)
+  // Measured when the form's layout changes (fields, heading, width) and on resize, not as messages come and go
+  // while someone tries it, so the form doesn't change size under the pointer.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const area = areaRef.current
+      const card = cardRef.current
+      if (!area || window.innerWidth < 1024) {
+        setMaxHeight(null)
+        setZoom(1)
+        return
+      }
+      // Under the bars and the preview's own header; above its note and a margin.
+      const room = Math.max(280, window.innerHeight - area.getBoundingClientRect().top - 70)
+      setMaxHeight(room)
+      if (!card) return
+      const was = card.style.zoom
+      card.style.zoom = '1'
+      const natural = card.offsetHeight
+      card.style.zoom = was
+      const z = (room - 48) / natural
+      // Nearly fits: full size and a little scroll beats a form shrunk by a few per cent.
+      setZoom(z >= 0.95 ? 1 : Math.max(0.65, z))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [barH, layoutKey])
+  return { areaRef, cardRef, zoom, maxHeight }
+}
+
+/** The welcome email as it arrives: who it's from, the subject, the message with sample details. */
+function EmailPreview({ from, to, subject, body, when }: { from?: { name: string; email: string }; to: string; subject: string; body: string; when: number }) {
+  return (
+    <div className="h-fit w-full max-w-[460px] overflow-hidden rounded-[10px] border border-border bg-card text-left shadow-[0_1px_2px_rgb(17_19_22/0.05)]">
+      <dl className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-2 gap-y-1 border-b border-border/70 px-4 py-3 text-[13px]">
+        <dt className="text-muted-foreground">From</dt>
+        <dd className="truncate text-foreground">{from ? `${from.name} <${from.email}>` : 'Your default sender'}</dd>
+        <dt className="text-muted-foreground">To</dt>
+        <dd className="truncate text-foreground">{to}</dd>
+        <dt className="text-muted-foreground">When</dt>
+        <dd className="text-foreground">{when ? `${delayLabel(when)} after they send the form` : 'Straight after they send the form'}</dd>
+      </dl>
+      <div className="px-4 py-4">
+        <p className="mb-3 text-[15px] font-semibold text-foreground">{subject || <span className="text-muted-foreground">No subject yet</span>}</p>
+        <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">{body || <span className="text-muted-foreground">No message yet</span>}</p>
+      </div>
+    </div>
+  )
+}
+
+/** "Optional", inline after a label, as the form itself shows it. */
+const Opt = () => <span className="ml-1 font-normal text-muted-foreground">Optional</span>
 
 /** A section of the builder: a heading, a line on what it's for, then its controls. */
 function Section({ title, description, action, children }: { title: string; description?: ReactNode; action?: ReactNode; children?: ReactNode }) {
@@ -229,6 +307,15 @@ function FieldRow({
         >
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
+        <ActionMenu
+          label={`Actions for ${field.label}`}
+          width={196}
+          items={[
+            { label: 'Move up', icon: ArrowUp, onSelect: () => onMove.up?.(), disabled: !onMove.up },
+            { label: 'Move down', icon: ArrowDown, onSelect: () => onMove.down?.(), disabled: !onMove.down },
+            ...(locked ? [] : (['separator', { label: 'Remove field', icon: Trash2, tone: 'danger', onSelect: onRemove }] as ActionMenuItem[])),
+          ]}
+        />
       </div>
       {open && (
         <div id={panelId} className="flex flex-col gap-4 border-t border-border/70 bg-background/60 px-4 py-4">
@@ -246,14 +333,14 @@ function FieldRow({
               <Field label="Label">
                 <input className={INPUT_CLASS} value={field.label} onChange={(e) => onSettings({ label: e.target.value })} />
               </Field>
+              <Field label={<>Help text <Opt /></>} hint="A line under the label.">
+                <input className={INPUT_CLASS} value={field.help} onChange={(e) => onSettings({ help: e.target.value })} placeholder={field.key === 'email' ? "We'll only use it to reply" : ''} />
+              </Field>
               {field.type !== 'checkbox' && field.type !== 'multiselect' && field.type !== 'select' && field.type !== 'date' && (
-                <Field label="Placeholder" hint="Optional">
+                <Field label={<>Placeholder <Opt /></>} hint="Shown in the empty box.">
                   <input className={INPUT_CLASS} value={field.placeholder} placeholder={field.type === 'email' ? 'name@company.com' : ''} onChange={(e) => onSettings({ placeholder: e.target.value })} />
                 </Field>
               )}
-              <Field label="Help text" hint="Optional: a line under the label" className="sm:col-span-2">
-                <input className={INPUT_CLASS} value={field.help} onChange={(e) => onSettings({ help: e.target.value })} placeholder={field.key === 'email' ? "We'll only use it to reply" : ''} />
-              </Field>
             </FieldGrid>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -268,15 +355,6 @@ function FieldRow({
                 {locked ? 'Saved as the contact’s email.' : 'Kept with the submission.'}
               </span>
             )}
-            <div className="ml-auto flex flex-wrap items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={onMove.up} disabled={!onMove.up} leftIcon={<ArrowUp className="h-3.5 w-3.5" />}>Move up</Button>
-              <Button variant="ghost" size="sm" onClick={onMove.down} disabled={!onMove.down} leftIcon={<ArrowDown className="h-3.5 w-3.5" />}>Move down</Button>
-              {!locked && (
-                <Button variant="ghost" size="sm" onClick={onRemove} leftIcon={<Trash2 className="h-3.5 w-3.5" />} className="!text-destructive hover:!bg-destructive/10">
-                  Remove
-                </Button>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -300,13 +378,18 @@ export function FormBuilder({
   onSave,
   onCancel,
   backLabel,
+  onBack,
+  barExtra,
   status,
   subtitle,
 }: {
   initial: FormDraft
   isNew: boolean
-  /** Where the top bar's back link goes ("Contact page", "Templates"): `onCancel`. */
+  /** The top bar's back link ("Forms", "Templates"). */
   backLabel: string
+  onBack: () => void
+  /** More in the top bar, before saving (a link to the submissions). */
+  barExtra?: ReactNode
   /** Beside the name: whether it's live. */
   status?: ReactNode
   /** Under the name: a line about the form. */
@@ -325,8 +408,18 @@ export function FormBuilder({
   const [newList, setNewList] = useState<string | null>(null)
   const [addingField, setAddingField] = useState(false)
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop')
-  const [pane, setPane] = useState<'edit' | 'preview'>('edit')
-  const [tab, setTab] = useState<BuilderTab>('fields')
+  // On a phone the preview is a tab of its own; on a desktop it's always beside the settings.
+  const [tab, setTabState] = useState<BuilderTab | 'preview'>('fields')
+  const settingsTab: BuilderTab = tab === 'preview' ? 'fields' : tab
+  const setTab = (t: BuilderTab | 'preview') => {
+    setTabState(t)
+    if (t === 'after') setShowing(draft.welcome_email_enabled ? 'email' : 'thanks')
+    else if (t !== 'preview') setShowing('form')
+  }
+  const [showing, setShowing] = useState<'form' | 'thanks' | 'email'>('form')
+  const barRef = useRef<HTMLDivElement>(null)
+  const barH = useHeight(barRef, 92)
+  const headingRef = useRef<HTMLInputElement>(null)
   const [previewKey, setPreviewKey] = useState(0)
   const [nameError, setNameError] = useState('')
   const bodyRef = useRef<HTMLTextAreaElement>(null)
@@ -337,6 +430,7 @@ export function FormBuilder({
   const record = { ...draft, id: 'preview', created_at: '' } as FormRecord
   const fields = resolveFields(record, contactFields)
   const preview = publicForm(record, contactFields)
+  const fit = usePreviewFit(barH, JSON.stringify([preview.fields.map((f) => [f.key, f.label, f.help, f.type]), preview.heading, preview.intro, preview.privacyUrl, device, showing, tab]))
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -409,12 +503,12 @@ export function FormBuilder({
       el?.setSelectionRange(at + tag.length, at + tag.length)
     })
   }
+  const sample: Record<string, string> = { first_name: 'Priya', last_name: 'Raman', email: 'priya@example.com', company: 'Northwind Freight', job_title: 'Head of Operations' }
   const tagFields = fields.filter((f) => f.key !== 'message' && f.key !== 'consent' && f.type !== 'checkbox')
 
   const save = () => {
     if (!draft.name.trim()) {
       setNameError('Give the form a name.')
-      setPane('edit')
       setTab('fields')
       nameRef.current?.focus()
       return
@@ -429,88 +523,99 @@ export function FormBuilder({
   return (
     <div className="flex min-h-full flex-col">
       {/* The editor's own bar, under the app's: the form's name, and saving it. It stays in view. */}
-      <div className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-20 border-b border-border bg-background">
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 px-4 py-3 lg:min-h-[5.75rem] lg:px-8">
-          <div className="min-w-0 flex-1 basis-72">
-            <button type="button" onClick={onCancel} className="mb-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md-xs text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <div ref={barRef} className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-20 border-b border-border bg-background">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 sm:items-end sm:py-3 lg:min-h-[5.75rem] lg:px-8">
+          <div className="min-w-0 flex-1 basis-48">
+            <button type="button" onClick={onBack} className="mb-0.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md-xs text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:hidden">
               <ArrowLeft className="h-4 w-4" aria-hidden /> {backLabel}
             </button>
-            <div className="flex min-w-0 items-center gap-3">
-              <input
-                ref={nameRef}
-                aria-label="Form name"
-                title="Only you see the name. It's what the form is called in this app."
-                placeholder="Untitled form"
-                value={draft.name}
-                required
-                autoFocus={isNew}
-                aria-invalid={!!nameError || undefined}
-                aria-describedby={nameError ? 'form-name-error' : undefined}
-                onChange={(e) => {
-                  set({ name: e.target.value })
-                  if (nameError) setNameError('')
-                }}
-                size={Math.max(12, Math.min(40, draft.name.length + 2))}
-                className={`-mx-1.5 min-w-[8ch] max-w-full rounded-md-xs [field-sizing:content] border border-transparent bg-transparent px-1.5 py-0.5 text-2xl font-display text-foreground placeholder:text-muted-foreground/70 transition-colors hover:border-input focus:border-accent focus:bg-card focus:outline-none focus:ring-[3px] focus:ring-accent/20 ${nameError ? '!border-destructive' : ''}`}
-              />
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <button type="button" onClick={onBack} aria-label={`Back to ${backLabel}`} className="-ml-1.5 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden">
+                <ArrowLeft className="h-5 w-5" aria-hidden />
+              </button>
+              <label className="group/name relative flex min-w-0 items-center">
+                <input
+                  ref={nameRef}
+                  aria-label="Form name"
+                  title="Rename the form. Only you see its name."
+                  placeholder="Untitled form"
+                  value={draft.name}
+                  required
+                  aria-invalid={!!nameError || undefined}
+                  aria-describedby={nameError ? 'form-name-error' : undefined}
+                  onChange={(e) => {
+                    set({ name: e.target.value })
+                    if (nameError) setNameError('')
+                  }}
+                  size={Math.max(10, Math.min(40, draft.name.length + 1))}
+                  className={`peer -mx-1.5 min-w-[6ch] max-w-full truncate rounded-md-xs border border-transparent bg-transparent px-1.5 py-0.5 text-xl font-display text-foreground [field-sizing:content] placeholder:text-muted-foreground/70 transition-colors hover:border-input focus:border-accent focus:bg-card focus:outline-none focus:ring-[3px] focus:ring-accent/20 sm:text-2xl ${nameError ? '!border-destructive' : ''}`}
+                />
+                <Pencil className="ml-2 h-4 w-4 shrink-0 text-muted-foreground/70 transition-opacity peer-focus:opacity-0 max-sm:hidden" aria-hidden />
+              </label>
               {status}
             </div>
             {nameError ? (
               <p id="form-name-error" className="mt-0.5 text-[13px] text-destructive">{nameError}</p>
             ) : (
-              subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>
+              subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground max-sm:hidden">{subtitle}</p>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="mr-1 flex items-center gap-2 text-[13px] text-muted-foreground" aria-live="polite">
+          <div className="flex items-center gap-2 max-sm:ml-auto">
+            {barExtra && !dirty && <div className="max-md:hidden">{barExtra}</div>}
+            <p className={`flex items-center gap-1.5 text-[13px] ${dirty ? 'max-sm:hidden' : ''}`} aria-live="polite">
               {error ? (
                 <span className="text-destructive">{error}</span>
               ) : dirty && !isNew ? (
                 <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground">Unsaved changes</span></>
               ) : isNew ? (
-                'Not saved yet'
+                <span className="text-muted-foreground max-sm:hidden">Not saved yet</span>
               ) : (
-                <><Check className="h-3.5 w-3.5" aria-hidden /> Saved</>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-1 font-medium text-foreground/80"><Check className="h-3.5 w-3.5" aria-hidden /> Saved</span>
               )}
             </p>
             {isNew ? (
-              <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+              <Button variant="secondary" onClick={onCancel} className="max-sm:hidden">Cancel</Button>
             ) : (
               dirty && <Button variant="secondary" onClick={() => setDraft(initial)}>Discard</Button>
             )}
-            <Button onClick={save} isLoading={saving} disabled={!isNew && !dirty}>{isNew ? 'Create form' : 'Save changes'}</Button>
+            {/* Nothing to save: no Save button at all, just "Saved". */}
+            {(isNew || dirty) && <Button onClick={save} isLoading={saving}>{isNew ? 'Create form' : 'Save changes'}</Button>}
           </div>
         </div>
       </div>
 
-      {/* On a phone the preview is a tab of its own. */}
-      <div className="px-4 pt-4 lg:hidden">
-        <Segmented
-          label="Show"
-          value={pane}
-          onChange={setPane}
-          options={[
-            { id: 'edit', label: 'Edit' },
-            { id: 'preview', label: 'Preview' },
-          ]}
-        />
+      {/* A phone has one row of tabs, the preview among them. */}
+      <div role="tablist" aria-label="Form settings" className="sticky z-10 flex gap-5 overflow-x-auto border-b border-border bg-background px-4 lg:hidden" style={{ top: `calc(4rem + env(safe-area-inset-top, 0px) + ${barH}px)` }}>
+        {[...BUILDER_TABS, { id: 'preview' as const, label: 'Preview', icon: Eye }].map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={`relative inline-flex min-h-11 shrink-0 cursor-pointer items-center text-sm font-medium ${tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground'}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="grid flex-1 items-start gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:gap-8 lg:p-8 lg:pt-6">
-        <div className={`min-w-0 flex-col gap-6 ${pane === 'edit' ? 'flex' : 'hidden lg:flex'}`}>
+        <div className={`min-w-0 flex-col gap-6 ${tab !== 'preview' ? 'flex' : 'hidden lg:flex'}`}>
           <div className="rounded-md-m border border-border bg-card">
-            <div role="tablist" aria-label="Form settings" className="flex gap-6 overflow-x-auto border-b border-border px-5 sm:px-6">
+            {/* Pinned under the editor bar, so the tabs stay in reach down a long tab. */}
+            <div role="tablist" aria-label="Form settings" className="sticky z-10 flex gap-6 overflow-x-auto rounded-t-md-m border-b border-border bg-card px-5 max-lg:hidden sm:px-6" style={{ top: `calc(4rem + env(safe-area-inset-top, 0px) + ${barH}px)` }}>
               {BUILDER_TABS.map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   role="tab"
                   id={`builder-tab-${t.id}`}
-                  aria-selected={tab === t.id}
+                  aria-selected={settingsTab === t.id}
                   aria-controls="builder-panel"
                   onClick={() => setTab(t.id)}
                   className={`relative inline-flex min-h-12 shrink-0 cursor-pointer items-center gap-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                    tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
+                    settingsTab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
                   <t.icon className="h-4 w-4 max-sm:hidden" aria-hidden />
@@ -519,17 +624,8 @@ export function FormBuilder({
                 </button>
               ))}
             </div>
-            <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${tab}`} className="divide-y divide-border/70">
-            {tab === 'fields' && (<>
-            <Section title="Heading and intro" description="Shown above the fields, on the form's own page and in the embed. Leave them empty if your page already says what the form is for.">
-              <Field label="Heading">
-                <input className={INPUT_CLASS} value={draft.heading ?? ''} maxLength={120} placeholder="Get in touch" onChange={(e) => set({ heading: e.target.value })} />
-              </Field>
-              <Field label="Intro" hint="Optional">
-                <textarea className={`${INPUT_CLASS} min-h-[64px] resize-y`} rows={2} value={draft.intro ?? ''} placeholder="Tell us a little about what you need and we'll reply within a day." onChange={(e) => set({ intro: e.target.value })} />
-              </Field>
-            </Section>
-
+            <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${settingsTab}`} className="divide-y divide-border/70">
+            {settingsTab === 'fields' && (<>
             <Section
               title="Fields"
               description="What people fill in, in this order. Drag to move a field; open one to change its label or help text."
@@ -550,9 +646,10 @@ export function FormBuilder({
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
                 <SortableContext items={fields.map((f) => f.key)} strategy={verticalListSortingStrategy}>
                   <div className="overflow-hidden rounded-md-s border border-border">
-                  <div className="flex items-center justify-between border-b border-border bg-muted/40 py-2 pl-[4.75rem] pr-[3.25rem] text-[13px] font-medium text-muted-foreground" aria-hidden>
-                    <span>Field</span>
-                    <span>Required</span>
+                  <div className="flex items-center gap-2 border-b border-border bg-muted/40 py-2 pl-[5.375rem] pr-2 text-[13px] font-medium text-muted-foreground" aria-hidden>
+                    <span className="flex-1">Field</span>
+                    <span className="w-[4.5rem] text-center">Required</span>
+                    <span className="w-[4.25rem]" />
                   </div>
                   <ul className="flex flex-col divide-y divide-border/70">
                     {fields.map((f, i) => (
@@ -580,9 +677,17 @@ export function FormBuilder({
               </DndContext>
             </Section>
 
+            <Section title="Heading and intro" description="Above the fields, on the form's page and in the embed. Leave them empty if your page says it already.">
+              <Field label="Heading">
+                <input ref={headingRef} className={INPUT_CLASS} value={draft.heading ?? ''} maxLength={120} placeholder="Get in touch" onChange={(e) => set({ heading: e.target.value })} />
+              </Field>
+              <Field label={<>Intro <Opt /></>}>
+                <textarea className={`${INPUT_CLASS} min-h-[64px] resize-y`} rows={2} value={draft.intro ?? ''} placeholder="Tell us a little about what you need and we'll reply within a day." onChange={(e) => set({ intro: e.target.value })} />
+              </Field>
+            </Section>
             </>)}
 
-            {tab === 'after' && (<>
+            {settingsTab === 'after' && (<>
             <Section
               title="Add to a list"
               description="Everyone who sends the form becomes a contact on this list, so you can email them."
@@ -688,14 +793,24 @@ export function FormBuilder({
                 />
               </Field>
             </Section>
+            <div className="px-5 py-4 sm:px-6">
+              <Notice level="info" title="Spam protection is on">Every form has a hidden field people never see and bots fill in. Anything sent with it filled is thanked and thrown away.</Notice>
+            </div>
+            <p className="flex items-start gap-2 px-5 py-4 text-[13px] leading-relaxed text-muted-foreground sm:px-6">
+              <Bell className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>You hear about each submission in your notifications, the bell at the top, and on your phone if you've turned that on there.</span>
+            </p>
 
             </>)}
 
-            {tab === 'style' && (<>
-            <Section title="Button" description="What it says. People press it to send the form.">
+            {settingsTab === 'style' && (<>
+            <Section title="Button and privacy" description="What the button says, and a link to your privacy policy under it.">
               <FieldGrid>
                 <Field label="Button text">
                   <input className={INPUT_CLASS} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
+                </Field>
+                <Field label={<>Privacy policy link <Opt /></>} hint="Shown under the button as “How we use your details”.">
+                  <input className={INPUT_CLASS} type="url" inputMode="url" placeholder="https://yoursite.com/privacy" value={draft.privacy_url ?? ''} onChange={(e) => set({ privacy_url: e.target.value })} />
                 </Field>
               </FieldGrid>
             </Section>
@@ -742,52 +857,98 @@ export function FormBuilder({
                 </div>
               </div>
             </Section>
-            <div className="px-5 py-4 sm:px-6">
-              <Notice level="info" title="Spam protection is on">Every form has a hidden field people never see and bots fill in. Anything sent with it filled is thanked and thrown away.</Notice>
-            </div>
+
             </>)}
             </div>
           </div>
         </div>
 
-        {/* The preview stays in view while the settings scroll. */}
-        <aside className={`min-w-0 lg:sticky lg:top-[calc(4rem+5.75rem+1.5rem)] ${pane === 'preview' ? 'block' : 'hidden lg:block'}`} aria-label="Preview">
+        {/* The preview stays in view while the settings scroll, shrunk to fit the screen when the form is long. */}
+        <aside
+          className={`min-w-0 lg:sticky ${tab === 'preview' ? 'block' : 'hidden lg:block'}`}
+          style={{ top: `calc(4rem + env(safe-area-inset-top, 0px) + ${barH}px + 1.5rem)` }}
+          aria-label="Preview"
+        >
           <div className="overflow-hidden rounded-md-m border border-border bg-card">
-            <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2.5">
-              <span className="text-sm font-semibold text-foreground">Preview</span>
-              <div className="max-lg:hidden">
-              <Segmented
-                label="Preview size"
-                value={device}
-                onChange={setDevice}
-                options={[
-                  { id: 'desktop', label: <><Monitor className="h-3.5 w-3.5" aria-hidden />Desktop</> },
-                  { id: 'phone', label: <><Smartphone className="h-3.5 w-3.5" aria-hidden />Phone</> },
-                ]}
-              />
-              </div>
-            </div>
-            <div className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 lg:max-h-[calc(100dvh-4rem-5.75rem-11rem)] ${draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#2a2d33]'}`}>
-              <div
-                className={`h-fit w-full rounded-[10px] border p-5 transition-[max-width] ${device === 'phone' ? 'max-w-[340px]' : 'max-w-full'} ${draft.style?.theme === 'dark' ? 'border-[#2d3139] bg-[#1d2025]' : 'border-[#e5e7eb] bg-white'}`}
-              >
-                <FormView
-                  key={previewKey}
-                  form={preview}
-                  preview
-                  onReset={() => setPreviewKey((k) => k + 1)}
-                  activeKey={tab === 'fields' ? openField : null}
-                  onFieldPick={(key) => {
-                    setTab('fields')
-                    setPane('edit')
-                    setOpenField(key)
-                    requestAnimationFrame(() => document.getElementById(`field-row-${key.replace(/[^a-z0-9_-]/gi, '_')}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
-                  }}
+            <div className="flex min-h-[52px] items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
+              <span className="flex items-baseline gap-2 text-sm font-semibold text-foreground">
+                Preview
+                {fit.zoom < 0.99 && showing === 'form' && <span className="text-xs font-normal tabular-nums text-muted-foreground">at {Math.round(fit.zoom * 100)}%</span>}
+              </span>
+              {settingsTab === 'after' ? (
+                <Segmented
+                  label="Preview of"
+                  value={showing === 'form' ? 'thanks' : showing}
+                  onChange={(v) => setShowing(v)}
+                  options={[
+                    { id: 'thanks', label: 'Thank-you' },
+                    ...(draft.welcome_email_enabled ? [{ id: 'email' as const, label: 'Welcome email' }] : []),
+                  ]}
                 />
-              </div>
+              ) : (
+                <div className="max-lg:hidden">
+                  <Segmented
+                    label="Preview size"
+                    value={device}
+                    onChange={setDevice}
+                    options={[
+                      { id: 'desktop', label: <><Monitor className="h-3.5 w-3.5" aria-hidden />Desktop</> },
+                      { id: 'phone', label: <><Smartphone className="h-3.5 w-3.5" aria-hidden />Phone</> },
+                    ]}
+                  />
+                </div>
+              )}
+            </div>
+            <div
+              ref={fit.areaRef}
+              className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 ${showing === 'email' ? 'bg-muted/40' : draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#2a2d33]'}`}
+              style={fit.maxHeight ? { maxHeight: fit.maxHeight } : undefined}
+            >
+              {showing === 'email' ? (
+                <EmailPreview
+                  from={senders.find((x) => x.id === draft.sender_id)}
+                  to={sample.email}
+                  subject={fillMergeTags(draft.welcome_email_subject, sample)}
+                  body={fillMergeTags(draft.welcome_email_body, sample)}
+                  when={draft.welcome_email_delay_minutes}
+                />
+              ) : (
+                <div
+                  ref={fit.cardRef}
+                  className={`h-fit w-full origin-top rounded-[10px] border p-5 transition-[max-width] ${device === 'phone' ? 'max-w-[340px]' : 'max-w-full'} ${draft.style?.theme === 'dark' ? 'border-[#2d3139] bg-[#1d2025]' : 'border-[#e5e7eb] bg-white'}`}
+                  style={showing === 'form' && fit.zoom < 0.99 ? { zoom: fit.zoom } : undefined}
+                >
+                  <FormView
+                    key={`${previewKey}-${showing}`}
+                    form={preview}
+                    preview
+                    done={showing === 'thanks'}
+                    onReset={() => {
+                      setShowing('form')
+                      setPreviewKey((k) => k + 1)
+                    }}
+                    activeKey={settingsTab === 'fields' ? openField : null}
+                    onFieldPick={(key) => {
+                      if (key === HEADING_PICK) {
+                        setTab('fields')
+                        requestAnimationFrame(() => headingRef.current?.focus())
+                        return
+                      }
+                      setTab('fields')
+                      setOpenField(key)
+                      requestAnimationFrame(() => document.getElementById(`field-row-${key.replace(/[^a-z0-9_-]/gi, '_')}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <p className="flex items-center gap-2 border-t border-border/70 px-4 py-2.5 text-[13px] text-muted-foreground">
-              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden /> Click a field to change it. Sending the preview checks the fields and shows the thank-you, but saves nothing.
+              <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {showing === 'email'
+                ? `How the email reads, with sample details. It's sent ${draft.welcome_email_delay_minutes ? `${delayLabel(draft.welcome_email_delay_minutes)} after` : 'as soon as'} someone sends the form.`
+                : showing === 'thanks'
+                  ? 'What people see once they have sent the form.'
+                  : 'Click a field to change it. Sending the preview checks the fields and shows the thank-you, but saves nothing.'}
             </p>
           </div>
         </aside>
