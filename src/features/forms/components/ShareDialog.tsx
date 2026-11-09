@@ -11,9 +11,9 @@ import { INPUT_CLASS } from '../../../components/ui/Field'
 type Tab = 'embed' | 'link' | 'html' | 'api'
 
 const TABS: Array<{ id: Tab; label: string; short: string; icon: typeof Code2 }> = [
-  { id: 'embed', label: 'Embed code', short: 'Embed', icon: Code2 },
+  { id: 'embed', label: 'Embed', short: 'Embed', icon: Code2 },
   { id: 'link', label: 'Link', short: 'Link', icon: Link2 },
-  { id: 'html', label: 'Plain HTML', short: 'HTML', icon: FileCode2 },
+  { id: 'html', label: 'HTML', short: 'HTML', icon: FileCode2 },
   { id: 'api', label: 'API', short: 'API', icon: Webhook },
 ]
 

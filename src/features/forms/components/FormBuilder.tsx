@@ -151,8 +151,12 @@ function usePreviewFit(barH: number, layoutKey: string) {
         setZoom(1)
         return
       }
-      // Under the bars and the preview's own header; above its note and a margin.
-      const room = Math.max(280, window.innerHeight - area.getBoundingClientRect().top - 70)
+      // Where it sits once it's stuck under the bars (not where it starts, lower down the page),
+      // under its own header, above its note and a margin.
+      const stuckTop = 64 + barH + 24
+      const head = area.previousElementSibling?.getBoundingClientRect().height ?? 52
+      const note = area.nextElementSibling?.getBoundingClientRect().height ?? 58
+      const room = Math.max(280, window.innerHeight - stuckTop - head - note - 16)
       setMaxHeight(room)
       if (!card) return
       const was = card.style.zoom
@@ -291,7 +295,7 @@ function FieldRow({
           <span className="w-full truncate text-sm font-medium text-foreground">{isConsent ? 'Consent' : field.label}</span>
           <span className="w-full truncate text-[13px] text-muted-foreground">
             {locked ? (
-              <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" aria-hidden /> Always required: it's how the person is saved</span>
+              <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" aria-hidden /> Always required<span className="max-sm:hidden">: it's how the person is saved</span></span>
             ) : field.hidden ? `Hidden, from ?${field.param}=` : isConsent ? field.label : TYPE_NAMES[field.type]}
             {custom && !field.hidden && ' · Contact field'}
             {!locked && <span className="sm:hidden"> · {field.required ? 'Required' : 'Optional'}</span>}
@@ -642,7 +646,7 @@ export function FormBuilder({
               ) : isNew ? (
                 <span className="text-muted-foreground max-md:hidden">Not saved yet</span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /><span className="max-sm:sr-only">Saved</span></span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />Saved</span>
               )}
             </p>
             {isNew ? (
