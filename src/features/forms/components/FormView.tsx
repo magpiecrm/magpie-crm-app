@@ -1,6 +1,6 @@
 import { useId, useState, type CSSProperties } from 'react'
 import { HONEYPOT, type FormValue, type PublicForm, type ResolvedFormField } from '../model'
-import { FORM_CSS, formCssVars, layoutRows } from '../render'
+import { FORM_CSS, formClass, formCssVars, layoutRows } from '../render'
 
 export type FormSubmitResult = { ok: true; message?: string; redirect?: string } | { ok: false; error?: string; problems?: Record<string, string> }
 
@@ -87,14 +87,14 @@ export function FormView({
 
   const style = formCssVars(form.style) as CSSProperties
   const pick = onFieldPick ? { activeKey, onPick: onFieldPick } : undefined
-  const dark = form.style.theme === 'dark' ? ' mf-dark' : ''
+  const cls = formClass(form.style)
 
   return (
     <div className="mf-wrap">
       <style>{FORM_CSS}</style>
       {pick && <style>{PICK_CSS}</style>}
       {done !== null ? (
-        <div className={`mf${dark}`} style={style} role="status">
+        <div className={cls} style={style} role="status">
           <div className="mf-done">
             <span className="mf-done-mark" aria-hidden="true">✓</span>
             {done === '' && form.redirectUrl ? (
@@ -112,7 +112,7 @@ export function FormView({
           )}
         </div>
       ) : (
-        <form className={`mf${dark}`} style={style} onSubmit={submit} noValidate aria-label={form.heading || form.name}>
+        <form className={cls} style={style} onSubmit={submit} noValidate aria-label={form.heading || form.name}>
           {(form.heading || form.intro) && (
             <div
               className={`mf-head${pick ? ' mf-pick' : ''}`}

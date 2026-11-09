@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, Mail, MailX, Reply, Search, Share2, Trash2, UserRound, Users, type LucideIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronLeft, Columns3, ChevronRight, ExternalLink, Globe, Inbox, Mail, MailX, Reply, Search, Share2, Trash2, UserRound, Users, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../../../queryKeys'
 import { deleteFormSubmissionFn, deleteFormSubmissionsFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn } from '../../../../server/functions'
 import { Select } from '../../../../components/ui/Select'
@@ -10,6 +10,7 @@ import { INPUT_CLASS } from '../../../../components/ui/Field'
 import { Dialog, DialogBody, DialogFooter } from '../../../../components/ui/Dialog'
 import { ExportMenu } from '../../../../components/ui/ExportMenu'
 import { Pagination } from '../../../../components/ui/Pagination'
+import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { confirmDialog } from '../../../../components/ui/confirm'
 import { toast } from '../../../../components/ui/toast'
 import { resolveFields, submissionValue, type ResolvedFormField } from '../../../../features/forms/model'
@@ -42,7 +43,11 @@ function SubmissionsPage() {
   const fields = useMemo(() => (form ? resolveFields(form, contactFields) : []), [form, contactFields])
   // The table's columns after the person: what else the form asks, the message last as it's the widest.
   const extra = fields.filter((f) => !['first_name', 'last_name', 'email', 'consent'].includes(f.key))
-  const columns = [...extra.filter((f) => f.key !== 'message').slice(0, 2), ...extra.filter((f) => f.key === 'message')]
+  // Columns: what else the form asks, and where it came from. Which show is remembered per form, in this browser.
+  const choosable: Array<{ key: string; label: string }> = [...extra.map((f) => ({ key: f.key, label: f.label })), { key: SOURCE_COLUMN, label: 'Came from' }]
+  const defaults = [...extra.filter((f) => f.key !== 'message').slice(0, 2), ...extra.filter((f) => f.key === 'message')].map((f) => f.key)
+  const [chosen, setChosen] = useStoredColumns(formId, defaults)
+  const columns = choosable.filter((c) => chosen.includes(c.key))
 
   const removeMany = useMutation({
     mutationFn: (ids: string[]) => deleteFormSubmissionsFn({ data: { formId, ids } }),
@@ -191,7 +196,10 @@ function SubmissionsPage() {
           <option value="30">Last 30 days</option>
           <option value="90">Last 90 days</option>
         </Select>
-        <ExportMenu filename={form.name} rows={shown} columns={exportColumns} sheetName="Submissions" className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ColumnsMenu options={choosable} chosen={chosen} onChange={setChosen} />
+          <ExportMenu filename={form.name} rows={shown} columns={exportColumns} sheetName="Submissions" />
+        </div>
       </div>
       )}
 
@@ -237,6 +245,7 @@ function SubmissionsPage() {
               {columns.map((f) => (
                 <th key={f.key} scope="col" className={`px-4 py-2.5 font-medium ${f.key === 'message' ? '' : 'w-[17%]'}`}>{f.label}</th>
               ))}
+              {columns.length === 0 && <th scope="col" />}
               <SortHead by="received" label="Received" className="w-[9.5rem]" />
               <th scope="col" className="w-10"><span className="sr-only">Open</span></th>
             </tr>
@@ -268,7 +277,8 @@ function SubmissionsPage() {
                     </button>
                     {name && <span className="block truncate text-[13px] text-muted-foreground">{s.contact_email}</span>}
                   </td>
-                  {columns.map((f) => <Cell key={f.key} value={submissionValue(s, f.key)} />)}
+                  {columns.map((f) => <Cell key={f.key} value={f.key === SOURCE_COLUMN ? sourceText(s) : submissionValue(s, f.key)} />)}
+                  {columns.length === 0 && <td />}
                   <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(s.submitted_at)}>{whenShort(s.submitted_at)}</td>
                   <td className="py-3 pr-4 align-top text-muted-foreground">
                     <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
@@ -312,6 +322,68 @@ function SubmissionsPage() {
         />
       )}
       </div>
+    </div>
+  )
+}
+
+const SOURCE_COLUMN = '__source'
+const sourceText = (s: Submission) => (s.source?.page ? [s.source.page, s.source.utm?.utm_source && `(${s.source.utm.utm_source})`].filter(Boolean).join(' ') : '')
+
+/** Which columns show, kept per form in this browser (a convenience: it can be lost, and then the defaults come back). */
+function useStoredColumns(formId: string, defaults: string[]): [string[], (keys: string[]) => void] {
+  const key = `magpie-forms-columns:${formId}`
+  const [chosen, setState] = useState<string[] | null>(null)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key)
+      setState(raw ? (JSON.parse(raw) as string[]) : null)
+    } catch {
+      setState(null)
+    }
+  }, [key])
+  const set = (keys: string[]) => {
+    setState(keys)
+    try {
+      localStorage.setItem(key, JSON.stringify(keys))
+    } catch {
+      // Storage can be blocked; the choice lasts until the page is left.
+    }
+  }
+  return [chosen ?? defaults, set]
+}
+
+/** A button and a list of tick boxes for the table's columns. */
+function ColumnsMenu({ options, chosen, onChange }: { options: Array<{ key: string; label: string }>; chosen: string[]; onChange: (keys: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', close)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', close)
+    }
+  }, [open])
+  return (
+    <div ref={ref} className="relative max-md:hidden">
+      <Button variant="secondary" leftIcon={<Columns3 className="h-4 w-4" />} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="true">
+        Columns
+      </Button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-2 w-60 rounded-md-s border border-border bg-popover p-1 shadow-lg" role="group" aria-label="Columns">
+          <p className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted-foreground">Show in the table</p>
+          {options.map((o) => (
+            <label key={o.key} className="flex cursor-pointer items-center gap-2.5 rounded-md-xs px-2.5 py-2 text-sm text-foreground hover:bg-muted">
+              <input type="checkbox" className="h-4 w-4" checked={chosen.includes(o.key)} onChange={(e) => onChange(e.target.checked ? [...chosen, o.key] : chosen.filter((k) => k !== o.key))} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -384,6 +456,13 @@ function SubmissionDialog({
       title={name || s.contact_email}
       description={`Received ${exactTime(s.submitted_at)}`}
       className="sm:max-w-lg"
+      headerActions={
+        <div className="mr-8 flex items-center gap-0.5" role="group" aria-label={`Submission ${position}`}>
+          <Button variant="ghost" size="icon" onClick={onPrev} disabled={!onPrev} aria-label="Previous submission" className="disabled:!opacity-35"><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="min-w-[3.75rem] text-center text-[13px] tabular-nums text-muted-foreground">{position}</span>
+          <Button variant="ghost" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next submission" className="disabled:!opacity-35"><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+      }
     >
       <DialogBody className="flex flex-col gap-4">
         <Happened s={s} />
@@ -402,13 +481,12 @@ function SubmissionDialog({
         </dl>
       </DialogBody>
       <DialogFooter>
-        <Button variant="ghost" onClick={onDelete} isLoading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} className="!text-destructive hover:!bg-destructive/10">
-          Delete
-        </Button>
-        <div className="mx-auto flex items-center gap-1 max-sm:order-first max-sm:basis-full max-sm:justify-center" role="group" aria-label={`Submission ${position}`}>
-          <Button variant="secondary" size="icon" onClick={onPrev} disabled={!onPrev} aria-label="Previous submission" className="disabled:!opacity-40"><ChevronLeft className="h-4 w-4" /></Button>
-          <span className="min-w-[4.5rem] text-center text-[13px] tabular-nums text-muted-foreground">{position}</span>
-          <Button variant="secondary" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next submission" className="disabled:!opacity-40"><ChevronRight className="h-4 w-4" /></Button>
+        <div className="mr-auto">
+          <ActionMenu
+            label="More for this submission"
+            items={[{ label: deleting ? 'Deleting…' : 'Delete submission', icon: Trash2, tone: 'danger', onSelect: onDelete, disabled: deleting }]}
+            triggerClassName="inline-flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-md-s border border-control bg-card text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted dark:bg-white/[0.04]"
+          />
         </div>
         {hasContact && (
           <Button variant="secondary" leftIcon={<UserRound className="h-4 w-4" />} onClick={() => navigate({ to: '/marketing/contacts', search: { contact: s.contact_email } })}>

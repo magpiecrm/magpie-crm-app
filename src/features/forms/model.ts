@@ -53,6 +53,9 @@ export interface FormStyle {
   corners?: FormCorners
   /** For a light or a dark website. */
   theme?: 'light' | 'dark'
+  font?: 'sans' | 'serif' | 'rounded'
+  /** Outlined boxes, or filled ones with a line under. */
+  fields?: 'outline' | 'filled'
 }
 
 export interface FormRecord {
@@ -219,7 +222,13 @@ export function publicForm(form: FormRecord, contactFields: ContactFieldDef[]): 
     fields: resolveFields(form, contactFields),
     submitLabel: form.submit_label?.trim() || DEFAULT_SUBMIT_LABEL,
     successMessage: form.success_message?.trim() || DEFAULT_SUCCESS_MESSAGE,
-    style: { accent: validAccent(form.style?.accent) ?? DEFAULT_ACCENT, corners: form.style?.corners ?? 'rounded', theme: form.style?.theme === 'dark' ? 'dark' : 'light' },
+    style: {
+      accent: validAccent(form.style?.accent) ?? DEFAULT_ACCENT,
+      corners: form.style?.corners ?? 'rounded',
+      theme: form.style?.theme === 'dark' ? 'dark' : 'light',
+      font: form.style?.font === 'serif' || form.style?.font === 'rounded' ? form.style.font : 'sans',
+      fields: form.style?.fields === 'filled' ? 'filled' : 'outline',
+    },
     paused: !!form.paused,
   }
 }

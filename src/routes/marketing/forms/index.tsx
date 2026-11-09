@@ -117,7 +117,7 @@ function FormsPage() {
                 const list = listName(f)
                 return (
                   <li key={f.id} data-form-card className="group/row relative">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_6.5rem_8rem_7.5rem_9rem_6.5rem]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_6.5rem_8rem_7.5rem_9rem_6.5rem] md:items-center">
                       <div className="min-w-0">
                         <Link
                           to="/marketing/forms/$formId"
@@ -131,11 +131,11 @@ function FormsPage() {
                           {f.welcome_email_enabled && ' · Welcome email'}
                         </p>
                         {/* On a phone the numbers go under the name. */}
-                        <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground md:hidden">
+                        <p className="mt-2 flex items-center justify-between gap-3 text-[13px] text-muted-foreground md:hidden">
                           <FormStatus paused={!!f.paused} />
-                          <span>
+                          <span className="truncate text-right">
                             <span className="font-medium tabular-nums text-foreground">{f.submission_count}</span> submission{f.submission_count === 1 ? '' : 's'}
-                            {f.last_submission_at && <>, latest {ago(f.last_submission_at)}</>}
+                            {f.last_submission_at && <> · {ago(f.last_submission_at).replace(/^on /, '')}</>}
                           </span>
                         </p>
                       </div>

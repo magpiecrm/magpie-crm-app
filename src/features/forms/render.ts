@@ -61,9 +61,19 @@ textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-ra
 .mf-privacy{margin:-4px 0 0;font-size:13px;line-height:1.45;color:var(--mf-muted)}
 .mf-privacy a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .mf-preview-reset{appearance:none;align-self:flex-start;background:none;border:0;padding:0;color:var(--mf-muted);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.mf-serif{font-family:Charter,"Bitstream Charter","Sitka Text",Cambria,Georgia,serif}
+.mf-rounded{font-family:ui-rounded,"SF Pro Rounded","Nunito","Varela Round",-apple-system,"Segoe UI",sans-serif}
+.mf-filled .mf-input{background:#eef0f3;border-color:transparent;border-bottom:2px solid var(--mf-border);border-radius:min(var(--mf-radius),8px) min(var(--mf-radius),8px) 0 0}
+.mf-filled .mf-input:focus{border-bottom-color:var(--mf-accent)}
+.mf-dark.mf-filled .mf-input,.mf-dark .mf-filled .mf-input{background:#2a2e35}
 .mf-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
 .mf-dark{color-scheme:dark;--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
 `.trim()
+
+/** The form's classes for its look: theme, font and field style. */
+export function formClass(style: Required<FormStyle>) {
+  return ['mf', style.theme === 'dark' && 'mf-dark', style.font !== 'sans' && `mf-${style.font}`, style.fields === 'filled' && 'mf-filled'].filter(Boolean).join(' ')
+}
 
 /** Fields as the page lays them out: first and last name side by side. */
 export function layoutRows(fields: ResolvedFormField[]): ResolvedFormField[][] {
@@ -125,7 +135,7 @@ ${FORM_CSS}
 #${id}{${vars}}
 </style>
 <div class="mf-wrap">
-<form class="mf${form.style.theme === 'dark' ? ' mf-dark' : ''}" id="${id}" action="${esc(action)}" method="post">
+<form class="${formClass(form.style)}" id="${id}" action="${esc(action)}" method="post">
 ${form.heading || form.intro ? `  <div class="mf-head">${form.heading ? `<h2 class="mf-title">${esc(form.heading)}</h2>` : ''}${form.intro ? `<p class="mf-intro">${esc(form.intro)}</p>` : ''}</div>\n` : ''}${rows}
 ${hidden.map((f) => `  <input type="hidden" name="${esc(f.key)}" data-param="${esc(f.param)}">\n`).join('')}  <div class="mf-hp" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
   <button class="mf-button" type="submit">${esc(form.submitLabel)}</button>

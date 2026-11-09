@@ -1,10 +1,11 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Bell, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, ListChecks, Lock, Monitor, Plus, ShieldCheck,
+  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Bell, Briefcase, Building2, Calendar, Check, GripVertical, Hash, ListChecks, Lock, Monitor, Plus, ShieldCheck,
   Eye, Info, Palette, Pencil, Send, Smartphone, SquareChevronDown, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
@@ -14,7 +15,6 @@ import { Select } from '../../../components/ui/Select'
 import { Switch } from '../../../components/ui/Switch'
 import { ActionMenu, type ActionMenuItem } from '../../../components/ui/ActionMenu'
 import { Dialog } from '../../../components/ui/Dialog'
-import { Notice } from '../../../components/ui/Notice'
 import { ContactFieldForm } from '../../contacts/components/ContactFieldForm'
 import { invalidateContactFields } from '../../contacts/contactCache'
 import { createListFn } from '../../../server/functions'
@@ -29,6 +29,9 @@ import {
 import { FormView, HEADING_PICK } from './FormView'
 import { textOn } from '../render'
 import { delayLabel } from '../format'
+
+/** Where an existing form's page header leaves room for the builder's name box. */
+export const FORM_TITLE_SLOT = 'form-title-slot'
 
 export type FormDraft = Required<Pick<FormInput, 'name' | 'fields' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields' | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'>> &
   Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro' | 'privacy_url' | 'redirect_url'>
@@ -262,7 +265,7 @@ function FieldRow({
       id={`field-row-${field.key.replace(/[^a-z0-9_-]/gi, '_')}`}
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`${open ? 'bg-accent/[0.045] shadow-[inset_3px_0_0_var(--accent)] dark:bg-accent/[0.07]' : 'bg-card'} ${isDragging ? 'relative z-10 rounded-md-s shadow-md ring-1 ring-border' : ''}`}
+      className={`${open ? 'relative z-[1] bg-card shadow-[inset_0_0_0_1.5px_var(--accent)] rounded-md-s' : 'bg-card'} ${isDragging ? 'relative z-10 rounded-md-s shadow-md ring-1 ring-border' : ''}`}
     >
       <div className="flex min-h-[52px] items-center gap-2 py-1.5 pl-1.5 pr-2">
         <button
@@ -277,12 +280,21 @@ function FieldRow({
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs border border-border bg-background text-foreground/75 max-sm:hidden" title={TYPE_NAMES[field.type]}>
           <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
-        <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId} className="flex min-w-0 flex-1 cursor-pointer flex-col items-start rounded-md-xs px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={`${field.label}: ${open ? 'hide' : 'show'} its settings`}
+          className="flex min-h-11 min-w-0 flex-1 cursor-pointer flex-col items-start justify-center rounded-md-xs px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
           <span className="w-full truncate text-sm font-medium text-foreground">{isConsent ? 'Consent' : field.label}</span>
           <span className="w-full truncate text-[13px] text-muted-foreground">
-            {field.hidden ? `Hidden, from ?${field.param}=` : isConsent ? field.label : TYPE_NAMES[field.type]}
+            {locked ? (
+              <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" aria-hidden /> Always required: it's how the person is saved</span>
+            ) : field.hidden ? `Hidden, from ?${field.param}=` : isConsent ? field.label : TYPE_NAMES[field.type]}
             {custom && !field.hidden && ' · Contact field'}
-            <span className="sm:hidden"> · {locked || field.required ? 'Required' : 'Optional'}</span>
+            {!locked && <span className="sm:hidden"> · {field.required ? 'Required' : 'Optional'}</span>}
           </span>
         </button>
         {/* The Required column: one tick box per row, under its heading; Email's is a lock, as it can't be optional. */}
@@ -291,9 +303,8 @@ function FieldRow({
           title={locked ? "Always required: it's how the person is saved" : field.required ? 'Required' : 'Optional'}
         >
           {locked ? (
-            <span role="img" aria-label="Email is always required" className="relative flex h-4 w-4 items-center justify-center rounded-[4px] bg-accent text-accent-foreground">
+            <span role="img" aria-label="Email is always required" className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-accent/70 text-accent-foreground">
               <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
-              <Lock className="absolute -bottom-1.5 -right-2 h-3 w-3 rounded-full bg-card p-px text-foreground/70" strokeWidth={2.5} aria-hidden />
             </span>
           ) : (
             <input
@@ -305,16 +316,7 @@ function FieldRow({
             />
           )}
         </label>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={`${open ? 'Hide' : 'Show'} settings for ${field.label}`}
-          aria-expanded={open}
-          aria-controls={panelId}
-          className="shrink-0 cursor-pointer rounded-md-xs p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:hidden"
-        >
-          <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-        </button>
+
         <ActionMenu
           label={`Actions for ${field.label}`}
           width={196}
@@ -326,7 +328,7 @@ function FieldRow({
         />
       </div>
       {open && (
-        <div id={panelId} className="flex flex-col gap-4 border-t border-border/70 bg-background/60 px-4 py-4">
+        <div id={panelId} className="mx-1.5 mb-1.5 flex flex-col gap-4 rounded-md-xs bg-muted/40 px-4 py-4">
           {isConsent ? (
             <Field label="Wording" hint="What they agree to. It's kept with each submission.">
               <textarea
@@ -354,9 +356,7 @@ function FieldRow({
           {field.options && field.options.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <span className="text-[13px] font-medium text-foreground">Choices</span>
-              <div className="flex flex-wrap gap-1.5">
-                {field.options.map((o) => <span key={o} className="rounded-full border border-border bg-card px-2.5 py-0.5 text-[13px] text-foreground">{o}</span>)}
-              </div>
+              <p className="text-sm text-foreground">{field.options.join(' · ')}</p>
               <span className="text-[13px] text-muted-foreground">
                 The contact field's own choices, shared with your contacts. Change them in{' '}
                 <Link to="/settings" search={{ tab: 'fields' }} className="font-medium text-accent hover:underline">Settings → Contact fields</Link>.
@@ -421,7 +421,6 @@ export function FormBuilder({
   onCancel,
   backLabel,
   onBack,
-  barExtra,
   status,
   subtitle,
 }: {
@@ -430,8 +429,6 @@ export function FormBuilder({
   /** The top bar's back link ("Forms", "Templates"). */
   backLabel: string
   onBack: () => void
-  /** More in the top bar, before saving (a link to the submissions). */
-  barExtra?: ReactNode
   /** Beside the name: whether it's live. */
   status?: ReactNode
   /** Under the name: a line about the form. */
@@ -463,6 +460,10 @@ export function FormBuilder({
   const barRef = useRef<HTMLDivElement>(null)
   const barH = useHeight(barRef, 92)
   const headingRef = useRef<HTMLInputElement>(null)
+  const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    if (!isNew) setTitleSlot(document.getElementById(FORM_TITLE_SLOT))
+  }, [isNew])
   const [previewKey, setPreviewKey] = useState(0)
   const [nameError, setNameError] = useState('')
   const bodyRef = useRef<HTMLTextAreaElement>(null)
@@ -561,114 +562,103 @@ export function FormBuilder({
     onSave(draft)
   }
 
+  // The form's name, edited where its title is: the new form's header, or the form page's.
+  const nameInput = (
+    <label className="group/name relative flex min-w-0 items-center">
+      <input
+        ref={nameRef}
+        aria-label="Form name"
+        title="Rename the form. Only you see its name."
+        placeholder="Untitled form"
+        value={draft.name}
+        required
+        aria-invalid={!!nameError || undefined}
+        aria-describedby={nameError ? 'form-name-error' : undefined}
+        onChange={(e) => {
+          set({ name: e.target.value })
+          if (nameError) setNameError('')
+        }}
+        size={Math.max(10, Math.min(40, draft.name.length + 1))}
+        className={`peer -mx-1.5 min-w-[6ch] max-w-full truncate rounded-md-xs border border-transparent bg-transparent px-1.5 py-0.5 text-2xl font-display text-foreground [field-sizing:content] placeholder:text-muted-foreground/70 transition-colors hover:border-input focus:border-accent focus:bg-card focus:outline-none focus:ring-[3px] focus:ring-accent/20 ${nameError ? '!border-destructive' : ''}`}
+      />
+      <Pencil className="ml-2 h-4 w-4 shrink-0 text-muted-foreground/70 transition-opacity peer-focus:opacity-0" aria-hidden />
+    </label>
+  )
+
   const accent = draft.style?.accent ?? DEFAULT_ACCENT
   const delays = DELAYS.includes(draft.welcome_email_delay_minutes) ? DELAYS : [...DELAYS, draft.welcome_email_delay_minutes].sort((a, b) => a - b)
   const delayText = (m: number) => (m === 0 ? 'Straight away' : `${delayLabel(m)} later`)
 
   return (
     <div className="flex min-h-full flex-col">
-      {/* The editor's own bar, under the app's: the form's name, and saving it. It stays in view. */}
-      <div ref={barRef} className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-20 border-b border-border bg-background">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2.5 sm:items-end sm:py-3 lg:min-h-[5.75rem] lg:px-8">
-          <div className="min-w-0 flex-1 basis-48">
-            <button type="button" onClick={onBack} className="mb-0.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md-xs text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:hidden">
-              <ArrowLeft className="h-4 w-4" aria-hidden /> {backLabel}
-            </button>
-            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-              <button type="button" onClick={onBack} aria-label={`Back to ${backLabel}`} className="-ml-1.5 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden">
-                <ArrowLeft className="h-5 w-5" aria-hidden />
+      {/* A new form has a header of its own; an existing one puts its name in the form page's header. */}
+      {isNew ? (
+        <div className="px-4 pt-4 lg:px-8 lg:pt-6">
+          <button type="button" onClick={onBack} className="mb-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md-xs text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+            <ArrowLeft className="h-4 w-4" aria-hidden /> {backLabel}
+          </button>
+          <div className="flex min-w-0 items-center gap-3">{nameInput}{status}</div>
+          {nameError ? <p id="form-name-error" className="mt-0.5 text-[13px] text-destructive">{nameError}</p> : subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
+        </div>
+      ) : (
+        titleSlot && createPortal(
+          <div className="min-w-0">
+            {nameInput}
+            {nameError && <p id="form-name-error" className="mt-0.5 text-[13px] text-destructive">{nameError}</p>}
+          </div>,
+          titleSlot,
+        )
+      )}
+
+      {/* One bar, pinned under the app's: the builder's tabs (with Preview on a phone) and saving. */}
+      <div ref={barRef} className={`sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-20 border-b border-border bg-card ${isNew ? 'mt-4 border-t' : ''}`}>
+        <div className="flex items-center gap-x-4 px-4 lg:px-8">
+          <div role="tablist" aria-label="Form settings" className="-mb-px flex min-w-0 flex-1 gap-5 overflow-x-auto sm:gap-6">
+            {[...BUILDER_TABS, { id: 'preview' as const, label: 'Preview', icon: Eye }].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`builder-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls="builder-panel"
+                onClick={() => setTab(t.id)}
+                className={`relative inline-flex min-h-12 shrink-0 cursor-pointer items-center gap-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.id === 'preview' ? 'lg:hidden' : ''} ${
+                  tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <t.icon className="h-4 w-4 max-sm:hidden" aria-hidden />
+                {t.label}
+                {t.id === 'fields' && <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80 max-sm:hidden">{fields.length}</span>}
               </button>
-              <label className="group/name relative flex min-w-0 items-center">
-                <input
-                  ref={nameRef}
-                  aria-label="Form name"
-                  title="Rename the form. Only you see its name."
-                  placeholder="Untitled form"
-                  value={draft.name}
-                  required
-                  aria-invalid={!!nameError || undefined}
-                  aria-describedby={nameError ? 'form-name-error' : undefined}
-                  onChange={(e) => {
-                    set({ name: e.target.value })
-                    if (nameError) setNameError('')
-                  }}
-                  size={Math.max(10, Math.min(40, draft.name.length + 1))}
-                  className={`peer -mx-1.5 min-w-[6ch] max-w-full truncate rounded-md-xs border border-transparent bg-transparent px-1.5 py-0.5 text-xl font-display text-foreground [field-sizing:content] placeholder:text-muted-foreground/70 transition-colors hover:border-input focus:border-accent focus:bg-card focus:outline-none focus:ring-[3px] focus:ring-accent/20 sm:text-2xl ${nameError ? '!border-destructive' : ''}`}
-                />
-                <Pencil className="ml-2 h-4 w-4 shrink-0 text-muted-foreground/70 transition-opacity peer-focus:opacity-0 max-sm:hidden" aria-hidden />
-              </label>
-              {status}
-            </div>
-            {nameError ? (
-              <p id="form-name-error" className="mt-0.5 text-[13px] text-destructive">{nameError}</p>
-            ) : (
-              subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground max-sm:hidden">{subtitle}</p>
-            )}
+            ))}
           </div>
-          <div className="flex items-center gap-2 max-sm:ml-auto">
-            {barExtra && !dirty && <div className="max-md:hidden">{barExtra}</div>}
-            <p className={`flex items-center gap-1.5 text-[13px] ${dirty ? 'max-sm:hidden' : ''}`} aria-live="polite">
+          <div className="flex shrink-0 items-center gap-2 py-1.5">
+            <p className="flex items-center gap-1.5 text-[13px]" aria-live="polite">
               {error ? (
                 <span className="text-destructive">{error}</span>
               ) : dirty && !isNew ? (
-                <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground">Unsaved changes</span></>
+                <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground max-sm:sr-only">Unsaved changes</span></>
               ) : isNew ? (
-                <span className="text-muted-foreground max-sm:hidden">Not saved yet</span>
+                <span className="text-muted-foreground max-md:hidden">Not saved yet</span>
               ) : (
-                <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /> Saved</span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground"><Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden /><span className="max-sm:sr-only">Saved</span></span>
               )}
             </p>
             {isNew ? (
-              <Button variant="secondary" onClick={onCancel} className="max-sm:hidden">Cancel</Button>
+              <Button variant="secondary" size="sm" onClick={onCancel} className="max-sm:hidden">Cancel</Button>
             ) : (
-              dirty && <Button variant="secondary" onClick={() => setDraft(initial)}>Discard</Button>
+              dirty && <Button variant="secondary" size="sm" onClick={() => setDraft(initial)}>Discard</Button>
             )}
             {/* Nothing to save: no Save button at all, just "Saved". */}
-            {(isNew || dirty) && <Button onClick={save} isLoading={saving}>{isNew ? 'Create form' : 'Save changes'}</Button>}
+            {(isNew || dirty) && <Button size="sm" onClick={save} isLoading={saving}>{isNew ? 'Create form' : 'Save'}</Button>}
           </div>
         </div>
-      </div>
-
-      {/* A phone has one row of tabs, the preview among them. */}
-      <div role="tablist" aria-label="Form settings" className="sticky z-10 flex gap-5 overflow-x-auto border-b border-border bg-background px-4 lg:hidden" style={{ top: `calc(4rem + env(safe-area-inset-top, 0px) + ${barH}px)` }}>
-        {[...BUILDER_TABS, { id: 'preview' as const, label: 'Preview', icon: Eye }].map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className={`relative inline-flex min-h-11 shrink-0 cursor-pointer items-center text-sm font-medium ${tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground'}`}
-          >
-            {t.label}
-          </button>
-        ))}
       </div>
 
       <div className="grid flex-1 items-start gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)] lg:gap-8 lg:p-8 lg:pt-6">
         <div className={`min-w-0 flex-col gap-6 ${tab !== 'preview' ? 'flex' : 'hidden lg:flex'}`}>
           <div className="rounded-md-m border border-border bg-card">
-            {/* Pinned under the editor bar, so the tabs stay in reach down a long tab. */}
-            <div role="tablist" aria-label="Form settings" className="sticky z-10 flex gap-6 overflow-x-auto rounded-t-md-m border-b border-border bg-card px-5 max-lg:hidden sm:px-6" style={{ top: `calc(4rem + env(safe-area-inset-top, 0px) + ${barH}px)` }}>
-              {BUILDER_TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  id={`builder-tab-${t.id}`}
-                  aria-selected={settingsTab === t.id}
-                  aria-controls="builder-panel"
-                  onClick={() => setTab(t.id)}
-                  className={`relative inline-flex min-h-12 shrink-0 cursor-pointer items-center gap-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                    settingsTab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <t.icon className="h-4 w-4 max-sm:hidden" aria-hidden />
-                  {t.label}
-                  {t.id === 'fields' && <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">{fields.length}</span>}
-                </button>
-              ))}
-            </div>
             <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${settingsTab}`} className="divide-y divide-border/70">
             {settingsTab === 'fields' && (<>
             <section className="flex flex-col gap-3 px-5 py-5 sm:px-6" aria-label="Fields">
@@ -692,7 +682,7 @@ export function FormBuilder({
                   <div className="hidden items-center gap-2 border-b border-border bg-muted/40 py-2 pl-[5.375rem] pr-2 text-[13px] font-medium text-muted-foreground sm:flex" aria-hidden>
                     <span className="flex-1">Field</span>
                     <span className="w-[4.5rem] text-center">Required</span>
-                    <span className="w-[2rem] sm:w-[4.25rem]" />
+                    <span className="w-[2rem]" />
                   </div>
                   <ul className="flex flex-col divide-y divide-border/70">
                     {fields.map((f, i) => (
@@ -858,13 +848,16 @@ export function FormBuilder({
             </Section>
 
 
-            <div className="px-5 py-4 sm:px-6">
-              <Notice level="info" title="Spam protection is on">Every form has a hidden field people never see and bots fill in. Anything sent with it filled is thanked and thrown away.</Notice>
+            <div className="flex flex-col gap-2 px-5 py-4 text-[13px] leading-relaxed text-muted-foreground sm:px-6">
+              <p className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>Spam protection is on: a hidden field bots fill in and people never see.</span>
+              </p>
+              <p className="flex items-start gap-2">
+                <Bell className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                <span>Each submission shows in your notifications (the bell), and on your phone if you've turned that on.</span>
+              </p>
             </div>
-            <p className="flex items-start gap-2 px-5 py-4 text-[13px] leading-relaxed text-muted-foreground sm:px-6">
-              <Bell className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              <span>You hear about each submission in your notifications, the bell at the top, and on your phone if you've turned that on there.</span>
-            </p>
 
             </>)}
 
@@ -874,7 +867,9 @@ export function FormBuilder({
                 <Field label="Button text">
                   <input className={INPUT_CLASS} value={draft.submit_label ?? ''} maxLength={40} onChange={(e) => set({ submit_label: e.target.value })} />
                 </Field>
-                <Field label={<>Privacy policy link <Opt /></>} hint="Shown under the button as “How we use your details”.">
+              </FieldGrid>
+              <FieldGrid>
+                <Field label={<>Privacy policy link <Opt /></>} hint="Shown under the button as “How we use your details”." className="sm:col-span-2">
                   <input className={INPUT_CLASS} type="url" inputMode="url" placeholder="https://yoursite.com/privacy" value={draft.privacy_url ?? ''} onChange={(e) => set({ privacy_url: e.target.value })} />
                 </Field>
               </FieldGrid>
@@ -905,6 +900,29 @@ export function FormBuilder({
                   </div>
                 </Field>
                 <div className="flex flex-wrap gap-x-8 gap-y-4">
+                  <Field as="div" label="Font">
+                    <Segmented
+                      label="Font"
+                      value={draft.style?.font ?? 'sans'}
+                      onChange={(v) => set({ style: { ...draft.style, font: v } })}
+                      options={[
+                        { id: 'sans', label: <span style={{ fontFamily: 'system-ui, sans-serif' }}>Sans</span> },
+                        { id: 'serif', label: <span style={{ fontFamily: 'Charter, Cambria, Georgia, serif' }}>Serif</span> },
+                        { id: 'rounded', label: <span style={{ fontFamily: 'ui-rounded, Nunito, system-ui, sans-serif' }}>Rounded</span> },
+                      ]}
+                    />
+                  </Field>
+                  <Field as="div" label="Boxes">
+                    <Segmented
+                      label="Boxes"
+                      value={draft.style?.fields ?? 'outline'}
+                      onChange={(v) => set({ style: { ...draft.style, fields: v } })}
+                      options={[
+                        { id: 'outline', label: 'Outlined' },
+                        { id: 'filled', label: 'Filled' },
+                      ]}
+                    />
+                  </Field>
                   <Field as="div" label="Corners">
                     <Segmented label="Corners" value={draft.style?.corners ?? 'rounded'} onChange={(v) => set({ style: { ...draft.style, corners: v } })} options={CORNERS} />
                   </Field>
@@ -938,7 +956,6 @@ export function FormBuilder({
             <div className="flex min-h-[52px] items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
               <span className="flex items-baseline gap-2 text-sm font-semibold text-foreground">
                 Preview
-                {fit.zoom < 0.99 && showing === 'form' && <span className="text-xs font-normal tabular-nums text-muted-foreground">at {Math.round(fit.zoom * 100)}%</span>}
               </span>
               {settingsTab === 'after' ? (
                 <Segmented

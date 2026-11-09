@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Code2, Copy, ExternalLink, FileCode2, Link2, Webhook } from 'lucide-react'
 import { Dialog, DialogBody, DialogFooter, useMoreBelow } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
@@ -22,6 +22,20 @@ export function CopyBlock({ value, label, rows, mono = true, primary = false, wr
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    const el = pre.current
+    if (!el) return
+    const measure = () => setWide(el.scrollWidth - el.scrollLeft - el.clientWidth > 4)
+    measure()
+    el.addEventListener('scroll', measure, { passive: true })
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', measure)
+      ro.disconnect()
+    }
+  }, [value])
   const copy = async () => {
     await navigator.clipboard.writeText(value).catch(() => {})
     setCopied(true)
@@ -47,8 +61,9 @@ export function CopyBlock({ value, label, rows, mono = true, primary = false, wr
           {value}
         </pre>
         {more && <div aria-hidden="true" className="pointer-events-none absolute inset-x-px bottom-px h-6 rounded-b-md-s bg-gradient-to-t from-muted to-transparent" />}
+        {wide && <div aria-hidden="true" className="pointer-events-none absolute inset-y-px right-px w-10 rounded-r-md-s bg-gradient-to-l from-muted to-transparent" />}
       </div>
-      {more && <p className="text-xs text-muted-foreground">Scroll the box to see all of it, or copy it whole.</p>}
+      {(more || wide) && <p className="text-xs text-muted-foreground">{wide ? 'Scroll sideways to see the whole lines' : 'Scroll the box to see all of it'}, or copy it whole.</p>}
     </div>
   )
 }

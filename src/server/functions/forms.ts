@@ -69,6 +69,8 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
       ...(validAccent(d.style?.accent) ? { accent: validAccent(d.style?.accent)! } : {}),
       ...(d.style?.corners && CORNERS.includes(d.style.corners) ? { corners: d.style.corners } : {}),
       ...(d.style?.theme === 'dark' ? { theme: 'dark' as const } : {}),
+      ...(d.style?.font === 'serif' || d.style?.font === 'rounded' ? { font: d.style.font } : {}),
+      ...(d.style?.fields === 'filled' ? { fields: 'filled' as const } : {}),
     }
   }
   if (out.save_to_list_enabled && out.list_id !== undefined && !db.data.lists.some((l) => l.id === out.list_id)) throw new Error('Choose a list.')

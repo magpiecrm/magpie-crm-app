@@ -12,6 +12,7 @@ import { ShareDialog } from '../../../features/forms/components/ShareDialog'
 import { FormStatus } from '../../../features/forms/components/FormStatus'
 import { publicForm } from '../../../features/forms/model'
 import { delayLabel } from '../../../features/forms/format'
+import { FORM_TITLE_SLOT } from '../../../features/forms/components/FormBuilder'
 
 export const Route = createFileRoute('/marketing/forms/$formId')({
   // `share=new` straight after a form is made, to show how to put it on a website.
@@ -112,16 +113,6 @@ function FormPage() {
     )
   }
 
-  // The editor brings its own bar (name, status, save), so the page's header and tabs step aside.
-  if (editing) {
-    return (
-      <div className="flex min-h-full flex-col">
-        <Outlet />
-        {(sharing || share) && <ShareDialog form={publicForm(form, contactFields)} ready={share === 'new'} onClose={closeShare} />}
-      </div>
-    )
-  }
-
   return (
     <div className="flex min-h-full flex-col">
       {form.paused && (
@@ -138,14 +129,15 @@ function FormPage() {
         </div>
       )}
       <header className="border-b border-border px-4 pt-4 lg:px-8 lg:pt-6">
-        <div className="mx-auto w-full max-w-6xl">
+        <div className={`mx-auto w-full ${editing ? '' : 'max-w-6xl'}`}>
           <Link to="/marketing/forms" className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
             <ArrowLeft className="h-4 w-4" aria-hidden /> Forms
           </Link>
           <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
             <div className="min-w-0 flex-1 basis-72">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h1 className="min-w-0 break-words text-2xl font-display text-foreground">{form.name}</h1>
+                {/* Editing, the builder puts its name box here, so the name is changed where it's shown. */}
+                {editing ? <div id={FORM_TITLE_SLOT} className="min-w-0" /> : <h1 className="min-w-0 break-words text-2xl font-display text-foreground">{form.name}</h1>}
                 <FormStatus paused={!!form.paused} />
               </div>
               <p className="mt-1.5 text-sm text-muted-foreground">
