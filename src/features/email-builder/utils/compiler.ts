@@ -288,7 +288,7 @@ const renderProduct: BlockRenderer = (block, globalStyle) =>
     `<a href="${escapeHref(item.url || '#')}" target="_blank" style="text-decoration: none;">${emailImage({ src: item.image, alt: item.alt || item.title, radius: block.style?.borderRadius ?? 6 })}</a>
      <div style="font-family: ${f}; font-size: 15px; font-weight: bold; color: #111827; padding: 12px 0 4px 0; text-align: center;">${escapeHtml(item.title)}</div>
      ${item.text ? `<div style="font-family: ${f}; font-size: 13px; color: #6b7280; text-align: center; padding-bottom: 6px;">${escapeHtml(item.text)}</div>` : ''}
-     <div style="font-family: ${f}; font-size: 15px; font-weight: bold; color: ${block.style?.color ?? '#111827'}; text-align: center; padding-bottom: 12px;">${escapeHtml(item.price || '')}${item.comparePrice ? ` <span style="color: #9ca3af; font-weight: normal; text-decoration: line-through;">${escapeHtml(item.comparePrice)}</span>` : ''}</div>
+     <div style="font-family: ${f}; font-size: 15px; font-weight: bold; color: ${block.style?.color ?? '#111827'}; text-align: center; padding-bottom: 12px;">${escapeHtml(item.price || '')}${item.comparePrice ? ` <span style="color: #6b7280; font-weight: normal; text-decoration: line-through;">${escapeHtml(item.comparePrice)}</span>` : ''}</div>
      <div style="text-align: center;">${bulletproofButton({
        label: block.content || 'Buy now',
        href: item.url || '#',

@@ -184,7 +184,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
       eyebrow('Product update · November', '#0f766e'),
       { id: id('b'), type: 'title', content: 'Three things we shipped this month', style: { fontSize: 28, color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A quick round-up of what changed, so you can make the most of it. Everything below is live in your account today.', style: { fontSize: 16, color: BODY, paddingBottom: 24 } },
-      { id: id('b'), type: 'image', content: img('photo-1551288049-bebda4e38f71', 1040, 520), alt: 'A laptop showing charts', style: { paddingBottom: 28 } },
+      { id: id('b'), type: 'image', content: img('photo-1460925895917-afdab827c52f', 1040, 520), alt: 'A laptop showing charts', style: { paddingBottom: 28 } },
       { id: id('b'), type: 'notice', content: 'Learn more', items: [
         { id: id('it'), image: '', badge: 'New', badgeColor: '#0f766e', title: 'Saved views', text: 'Keep the filters you use every day one click away, and share them with your team.', url: '#' },
         { id: id('it'), image: '', badge: 'Improved', badgeColor: '#1d4ed8', title: 'Faster imports', text: 'Lists of 50,000 rows now import in under a minute, with a clear report of anything skipped.', url: '#' },
