@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
 import { Save, Layout, LayoutTemplate, Check, AlertCircle, Edit2, ArrowLeft, Eye, Smile, HelpCircle, ChevronRight, Search, Clock } from 'lucide-react'
-import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getEmailSettingsFn, getContactFieldsFn } from '../../../server/functions'
+import { listsFn, createCampaignFn, getSendersFn, getCampaignFn, updateCampaignFn, getTemplateFn, getTemplatesFn, getEmailSettingsFn, getContactFieldsFn } from '../../../server/functions'
 import { EmailBuilder } from '../../email-builder/EmailBuilderContainer'
 import { PreviewTestModal } from '../../../components/PreviewTestModal'
 import { SenderWarmupNote } from './SenderWarmupNote'
@@ -16,6 +16,9 @@ import { Accordion, AccordionItem } from '../../../components/ui/Accordion'
 import { Switch } from '../../../components/ui/Switch'
 import { TemplateLibraryDialog } from '../../templates/components/TemplateLibraryDialog'
 import { TemplateThumbnail } from '../../templates/components/TemplateThumbnail'
+import { TemplateTile } from '../../templates/components/TemplateTile'
+import { STARTER_TEMPLATES } from '../../email-builder/templates/starters'
+import { starterHtml } from '../../templates/preview'
 import { extractDesign } from '../../email-builder/utils/design'
 import { Select } from '../../../components/ui/Select'
 import { mergeTagOptions, mergeTagText } from '../../contacts/mergeTagOptions'
@@ -78,6 +81,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   // When the host runs sending, every campaign carries an unsubscribe link.
   const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const { data: sendingSettings } = useQuery({ queryKey: queryKeys.settings.sending(), queryFn: () => getEmailSettingsFn() })
+  const { data: savedTemplates = [] } = useQuery({ queryKey: queryKeys.templates.list(), queryFn: () => getTemplatesFn() })
   const unsubscribeLocked = Boolean(sendingSettings?.success && sendingSettings.managed)
   const spamDraft = {
     subject: formData.subject,
@@ -790,7 +794,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
               ? 'Designed in the builder'
               : isDesignValid
                 ? 'Your own HTML'
-                : 'Not designed yet: choose a template or open the builder'
+                : 'Not designed yet: start from a template, or from scratch'
           }
           isValid={isDesignValid}
           isOpen={activeSection === 'design'}
@@ -798,31 +802,50 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
           triggerLabel="Edit design"
         >
           <div className="space-y-4 pt-1">
-            {!isCampaignSent && (
-              <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center">
-                {hasDesign ? (
-                  <TemplateThumbnail html={formData.htmlContent} className="aspect-[4/3] w-full shrink-0 rounded-md-s border border-border sm:w-36" />
-                ) : (
-                  <div className="grid aspect-[4/3] w-full shrink-0 place-items-center rounded-md-s border border-dashed border-border bg-muted/50 text-muted-foreground sm:w-36">
-                    <LayoutTemplate aria-hidden className="h-6 w-6" />
-                  </div>
-                )}
+            {!isCampaignSent && (hasDesign ? (
+              <div className="flex flex-col gap-4 pb-2 sm:flex-row sm:items-center">
+                <TemplateThumbnail html={formData.htmlContent} inset={6} className="aspect-[4/3] w-full shrink-0 rounded-md-s border border-border sm:w-36" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-foreground">{hasDesign ? 'Email design' : 'No design yet'}</p>
-                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
-                    {hasDesign ? 'Edit it in the builder, or start again from a template.' : 'Start from one of your templates or a starter layout, or design it from scratch in the builder.'}
-                  </p>
+                  <p className="text-sm font-semibold text-foreground">Email design</p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">Edit it in the builder, or start again from a template.</p>
                 </div>
                 <div className="flex shrink-0 gap-2 max-sm:[&>button]:flex-1">
                   <Button variant="secondary" size="sm" onClick={() => setShowTemplates(true)} leftIcon={<LayoutTemplate className="h-3.5 w-3.5" />}>
                     Choose a template
                   </Button>
                   <Button size="sm" onClick={() => setShowBuilder(true)}>
-                    {hasDesign ? 'Edit design' : 'Open builder'}
+                    Edit design
                   </Button>
                 </div>
               </div>
-            )}
+            ) : (
+              <div className="pb-2">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Start from a template</p>
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">
+                      {savedTemplates.length > 0 ? 'Your most recent templates. Pick one, or see them all.' : 'A few starters. Pick one, or see them all.'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
+                    <Button variant="secondary" size="sm" onClick={() => setShowBuilder(true)}>
+                      Design from scratch
+                    </Button>
+                    <Button size="sm" onClick={() => setShowTemplates(true)} leftIcon={<LayoutTemplate className="h-3.5 w-3.5" />}>
+                      Choose a template
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-5 sm:grid-cols-4">
+                  {(savedTemplates.length > 0
+                    ? savedTemplates.slice(0, 4).map(t => ({ key: t.id, name: t.name, html: t.html }))
+                    : STARTER_TEMPLATES.slice(0, 4).map(t => ({ key: t.id, name: t.name, html: starterHtml(t) }))
+                  ).map(t => (
+                    <TemplateTile key={t.key} html={t.html} name={t.name} onSelect={() => applyTemplateHtml(t.html, t.name)} />
+                  ))}
+                </div>
+              </div>
+            ))}
             <CampaignSetting
               title="Include Unsubscribe Link"
               description={

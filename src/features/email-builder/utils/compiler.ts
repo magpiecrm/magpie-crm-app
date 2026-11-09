@@ -390,10 +390,15 @@ const renderNavigation: BlockRenderer = (block, globalStyle) => {
 
   const bodyWidth = globalStyle.bodyWidth - globalStyle.paddingX * 2
   const left = column(45, brand, 'xs-center xs-mb-16')
+  // The two sides float, so they can't be middle-aligned: drop the links by half the
+  // difference in line height, so they sit on a text logo's centre line.
+  const linksDrop = isImageLogo ? 0 : Math.max(0, Math.round(((block.style?.fontSize ?? 18) - 14) * 0.625))
   const right = column(
     55,
     `<table cellpadding="0" cellspacing="0" border="0" role="presentation" align="right" class="xs-table-center" style="border-collapse: collapse;"><tbody><tr>${linkCells}</tr></tbody></table>`,
     'xs-center',
+    '',
+    linksDrop ? `padding-top: ${linksDrop}px;` : '',
   )
   const cellStyle = `${paddingCss(block.style, BLOCK_PADDING_DEFAULTS[block.type])} ${block.style?.bgColor ? `background-color: ${block.style.bgColor};` : ''}`
   return blockTable(

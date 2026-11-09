@@ -131,9 +131,11 @@ export function TemplateLibraryDialog({ onClose, onPick }: { onClose: () => void
           )}
         </DialogBody>
         <DialogFooter>
-          <p className="truncate text-[13px] text-muted-foreground sm:mr-auto">
-            {chosen ? <>Selected: <span className="font-medium text-foreground">{chosen.name}</span></> : 'Pick a template, then Use template.'}
-          </p>
+          {chosen && (
+            <p className="truncate text-[13px] text-muted-foreground sm:mr-auto">
+              Selected: <span className="font-medium text-foreground">{chosen.name}</span>
+            </p>
+          )}
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>

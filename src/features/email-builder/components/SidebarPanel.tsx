@@ -3,16 +3,23 @@ import type { DragPayload } from '../hooks/useBlockDrag'
 import type { EmailBlock, GlobalStyle } from '../types'
 import { STARTER_CATEGORIES, type StarterTemplate } from '../templates/starters'
 import type { EmailTemplate } from '../../templates/types'
-import { TemplateTile } from '../../templates/components/TemplateTile'
+import { useState } from 'react'
+import { Search } from 'lucide-react'
+import { TemplateRow } from '../../templates/components/TemplateTile'
+import { SegmentedTabs } from '../../templates/components/TemplateLibraryDialog'
 import { starterHtml } from '../../templates/preview'
+import { INPUT_CLASS } from '../../../components/ui/Field'
 import { BlockEditor } from './BlockEditor'
 
-/** The content tabs, in order, with the names they show. */
+/**
+ * The content tabs, in order, with the names they show. Starters
+ * ('templates') and your own ('saved') share one Templates tab, with a
+ * switch inside it.
+ */
 const CONTENT_TABS = [
   { id: 'blocks', label: 'Blocks' },
   { id: 'sections', label: 'Sections' },
-  { id: 'templates', label: 'Starters' },
-  { id: 'saved', label: 'Saved' },
+  { id: 'templates', label: 'Templates' },
 ] as const
 
 /** A group's label in the side panel. */
@@ -67,17 +74,20 @@ export function SidebarPanel({
         // CONTENT TAB
         <div className="flex flex-col h-full overflow-hidden">
           <div className="flex border-b border-border select-none bg-muted/15 shrink-0">
-            {CONTENT_TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setContentTab(tab.id)}
-                className={`flex-1 py-2.5 text-[13px] font-semibold border-b-2 transition-colors ${
-                  contentTab === tab.id ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+            {CONTENT_TABS.map(tab => {
+              const current = contentTab === tab.id || (tab.id === 'templates' && contentTab === 'saved')
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setContentTab(tab.id === 'templates' && current ? contentTab : tab.id)}
+                  className={`flex-1 py-2.5 text-[13px] font-semibold border-b-2 transition-colors ${
+                    current ? 'border-accent text-accent' : 'border-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              )
+            })}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
@@ -126,36 +136,6 @@ export function SidebarPanel({
                   </div>
                 )}
 
-                {contentTab === 'templates' && (
-                  <div className="space-y-5 animate-in fade-in duration-200">
-                    <div>
-                      <h3 className={PANEL_LABEL}>Starter layouts</h3>
-                      <p className={PANEL_HINT}>Complete designs to build on. Using one replaces the canvas.</p>
-                    </div>
-
-                    {STARTER_CATEGORIES.map(category => {
-                      const inCategory = templates.filter(t => t.category === category)
-                      if (inCategory.length === 0) return null
-                      return (
-                        <section key={category} className="space-y-2.5">
-                          <h4 className={PANEL_LABEL}>{category}</h4>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                            {inCategory.map(template => (
-                              <TemplateTile
-                                key={template.id}
-                                size="sm"
-                                html={starterHtml(template)}
-                                name={template.name}
-                                onSelect={() => applyTemplate(template)}
-                              />
-                            ))}
-                          </div>
-                        </section>
-                      )
-                    })}
-                  </div>
-                )}
-
                 {contentTab === 'sections' && (
                   <div className="space-y-4 animate-in fade-in duration-200">
                     <div>
@@ -191,42 +171,16 @@ export function SidebarPanel({
                   </div>
                 )}
 
-                {contentTab === 'saved' && (
-                  <div className="space-y-4 animate-in fade-in duration-200">
-                    <div>
-                      <h3 className={PANEL_LABEL}>Your templates</h3>
-                      <p className={PANEL_HINT}>Designs your team has saved. Using one replaces the canvas.</p>
-                    </div>
-
-                    {savedTemplates === undefined ? (
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="aspect-[4/5] animate-pulse rounded-md-m bg-muted" />)}
-                      </div>
-                    ) : savedTemplates.length === 0 ? (
-                      <div className="rounded-md-m border border-dashed border-border px-4 py-6 text-center">
-                        <p className="text-sm font-medium text-foreground">No saved templates yet</p>
-                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Keep this design to start other emails from.</p>
-                        <button
-                          onClick={onSaveAsTemplate}
-                          className="mt-3 cursor-pointer text-xs font-semibold text-accent underline-offset-2 hover:underline"
-                        >
-                          Save as template
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
-                        {savedTemplates.map(template => (
-                          <TemplateTile
-                            key={template.id}
-                            size="sm"
-                            html={template.html}
-                            name={template.name}
-                            onSelect={() => applySavedTemplate(template)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                {(contentTab === 'templates' || contentTab === 'saved') && (
+                  <TemplatesTab
+                    showing={contentTab === 'saved' ? 'saved' : 'starters'}
+                    onShow={which => setContentTab(which === 'saved' ? 'saved' : 'templates')}
+                    starters={templates}
+                    applyStarter={applyTemplate}
+                    saved={savedTemplates}
+                    applySaved={applySavedTemplate}
+                    onSaveAsTemplate={onSaveAsTemplate}
+                  />
                 )}
               </div>
             )}
@@ -238,6 +192,82 @@ export function SidebarPanel({
           globalStyle={globalStyle}
           setGlobalStyle={setGlobalStyle}
         />
+      )}
+    </div>
+  )
+}
+
+/** Starters and the team's own templates, as rows; using one replaces the canvas (after asking, if it has blocks). */
+function TemplatesTab({
+  showing,
+  onShow,
+  starters,
+  applyStarter,
+  saved,
+  applySaved,
+  onSaveAsTemplate,
+}: {
+  showing: 'starters' | 'saved'
+  onShow: (which: 'starters' | 'saved') => void
+  starters: StarterTemplate[]
+  applyStarter: (template: StarterTemplate) => void
+  saved: EmailTemplate[] | undefined
+  applySaved: (template: EmailTemplate) => void
+  onSaveAsTemplate: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const matches = (t: { name: string; description: string }) => !q || `${t.name} ${t.description}`.toLowerCase().includes(q)
+  return (
+    <div className="space-y-4 animate-in fade-in duration-200">
+      <SegmentedTabs
+        label="Templates to show"
+        className="w-full [&>button]:flex-1"
+        value={showing}
+        onChange={onShow}
+        options={[
+          { value: 'starters', label: 'Starters' },
+          { value: 'saved', label: <>Your templates{saved ? <span className="ml-1 tabular-nums text-muted-foreground">{saved.length}</span> : null}</> },
+        ]}
+      />
+      <p className={PANEL_HINT}>Using one replaces what's on the canvas. You'll be asked first.</p>
+      <label className="relative block">
+        <span className="sr-only">Search templates</span>
+        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" className={`${INPUT_CLASS} pl-9`} />
+      </label>
+
+      {showing === 'starters' ? (
+        STARTER_CATEGORIES.map(category => {
+          const inCategory = starters.filter(t => t.category === category && matches(t))
+          if (inCategory.length === 0) return null
+          return (
+            <section key={category} className="space-y-1">
+              <h4 className={`${PANEL_LABEL} px-1.5`}>{category}</h4>
+              {inCategory.map(template => (
+                <TemplateRow key={template.id} html={starterHtml(template)} name={template.name} description={template.description} onSelect={() => applyStarter(template)} />
+              ))}
+            </section>
+          )
+        })
+      ) : saved === undefined ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-[105px] animate-pulse rounded-md-m bg-muted" />)}
+        </div>
+      ) : saved.length === 0 ? (
+        <div className="rounded-md-m border border-dashed border-border px-4 py-6 text-center">
+          <p className="text-sm font-medium text-foreground">No saved templates yet</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Keep this design to start other emails from.</p>
+          <button onClick={onSaveAsTemplate} className="mt-3 cursor-pointer text-xs font-semibold text-accent underline-offset-2 hover:underline">
+            Save as template
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {saved.filter(matches).map(template => (
+            <TemplateRow key={template.id} html={template.html} name={template.name} description={template.description} onSelect={() => applySaved(template)} />
+          ))}
+        </div>
       )}
     </div>
   )

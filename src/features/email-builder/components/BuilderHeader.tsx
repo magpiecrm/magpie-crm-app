@@ -26,6 +26,7 @@ export function BuilderHeader({
   isChatOpen,
   setIsChatOpen,
 }: BuilderHeaderProps) {
+  const saveAsLabel = badge === 'Template' ? 'Save as new template' : 'Save as template'
   return (
     <div className="h-16 border-b border-border bg-card px-2 sm:px-6 flex justify-between items-center gap-2 shrink-0">
       <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
@@ -67,14 +68,15 @@ export function BuilderHeader({
           <span className="hidden lg:inline">Preview and test</span>
         </button>
 
+        {/* While editing a template, Save & quit saves it; this one makes another. */}
         <button
           onClick={onSaveAsTemplate}
-          aria-label="Save as template"
-          title="Save as template"
+          aria-label={saveAsLabel}
+          title={saveAsLabel}
           className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted transition-colors text-foreground"
         >
           <BookmarkPlus className="w-4 h-4" />
-          <span className="hidden xl:inline">Save as template</span>
+          <span className="hidden xl:inline">{saveAsLabel}</span>
         </button>
 
         <button

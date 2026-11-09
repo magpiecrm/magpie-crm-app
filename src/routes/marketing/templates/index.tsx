@@ -28,6 +28,9 @@ export const Route = createFileRoute('/marketing/templates/')({
   component: TemplatesPage,
 })
 
+/** Every gallery of templates on this page: the same columns, so a template is the same size wherever it shows. */
+const GRID = 'grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
+
 /** The starters the empty page offers, one from each kind most teams send. */
 const FIRST_STARTERS = ['plain-email', 'newsletter-editorial', 'product-update', 'event-invite']
 
@@ -142,10 +145,10 @@ function TemplatesPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-x-5 gap-y-8 md:grid-cols-3 2xl:grid-cols-4">
-          {Array.from({ length: 6 }).map((_, i) => (
+        <div className={GRID}>
+          {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="animate-pulse">
-              <div className="aspect-[4/3] rounded-md-m bg-muted" />
+              <div className="aspect-[4/3] rounded-md-m bg-muted sm:aspect-[4/5]" />
               <div className="mt-3 h-4 w-2/3 rounded bg-muted" />
               <div className="mt-2 h-3 w-1/3 rounded bg-muted" />
             </div>
@@ -174,7 +177,7 @@ function TemplatesPage() {
           {shown.length === 0 ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No templates match “{query.trim()}”.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 md:grid-cols-3 2xl:grid-cols-4">
+            <div className={GRID}>
               {shown.map(template => (
                 <TemplateCard
                   key={template.id}
@@ -228,9 +231,10 @@ function TemplateCard({
         aria-label={`Edit ${template.name}`}
         className="block cursor-pointer overflow-hidden rounded-md-m border border-border transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-[0_4px_16px_-6px_rgb(17_19_22/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
-        <TemplateThumbnail html={template.html} className="aspect-[4/3]" />
+        {/* Wide on a phone, where one card fills the row; the gallery's shape everywhere else. */}
+        <TemplateThumbnail html={template.html} className="aspect-[4/3] sm:aspect-[4/5]" />
       </button>
-      <h3 className="mt-3 truncate text-[15px] font-semibold leading-snug text-foreground" title={template.name}>
+      <h3 className="mt-3 line-clamp-2 text-[15px] font-semibold leading-snug text-foreground" title={template.name}>
         {template.name}
       </h3>
       {template.description && (
@@ -238,11 +242,11 @@ function TemplateCard({
           {template.description}
         </p>
       )}
+      <p className="mt-1 text-[13px] text-muted-foreground">Edited {editedOn(template.updated_at)}</p>
       {/* Pinned to the bottom, so the buttons line up along a row whatever the text above. */}
-      <div className="mt-auto flex items-center gap-2 pt-2">
-        <p className="mr-auto text-[13px] text-muted-foreground">Edited {editedOn(template.updated_at)}</p>
-        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} aria-label="Use in campaign" className="max-sm:px-2.5">
-          <span className="max-sm:hidden">Use in campaign</span>
+      <div className="mt-auto flex items-center gap-2 pt-3">
+        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="flex-1 max-sm:min-h-9">
+          Use in campaign
         </Button>
         <ActionMenu
           label={`Actions for ${template.name}`}
@@ -272,10 +276,10 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
         </div>
         <h2 className="text-lg font-medium text-foreground">No templates yet</h2>
         <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-          Keep the designs you send often, and start each campaign from one. Begin with a layout, or save any campaign's design from the builder.
+          Keep the designs you send often, and start each campaign from one. Begin with a starter, or save any campaign's design from the builder.
         </p>
       </div>
-      <div className="mx-auto mt-8 grid max-w-4xl grid-cols-2 gap-x-4 gap-y-6 sm:gap-x-5 md:grid-cols-4">
+      <div className="mx-auto mt-8 grid max-w-4xl grid-cols-2 gap-x-4 gap-y-7 sm:gap-x-5 md:grid-cols-4">
         {starters.map(t => (
           <TemplateTile
             key={t.id}
@@ -289,7 +293,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
       </div>
       <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
         <Button onClick={() => onStart(STARTER_TEMPLATES[0].id)} leftIcon={<LayoutTemplate className="h-4 w-4" />}>
-          Browse all {STARTER_TEMPLATES.length} layouts
+          Browse all {STARTER_TEMPLATES.length} starters
         </Button>
         <Button variant="secondary" onClick={() => onStart(undefined)} leftIcon={<Plus className="h-4 w-4" />}>
           Start from blank
@@ -301,7 +305,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
           name={previewing.name}
           description={previewing.description}
           onClose={() => setPreviewing(null)}
-          actionLabel="Use this layout"
+          actionLabel="Use this starter"
           onAction={() => onStart(previewing.id)}
         />
       )}
@@ -327,7 +331,9 @@ function CreateTemplateView({
   const [category, setCategory] = useState<StarterCategory | 'all'>('all')
   const [previewing, setPreviewing] = useState<StarterTemplate | null>(null)
   const starter = STARTER_TEMPLATES.find(t => t.id === starterId)
-  const shown = category === 'all' ? STARTER_TEMPLATES : STARTER_TEMPLATES.filter(t => t.category === category)
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const shown = STARTER_TEMPLATES.filter(t => (category === 'all' || t.category === category) && (!q || `${t.name} ${t.description}`.toLowerCase().includes(q)))
 
   const create = (id: string | undefined) => {
     const picked = STARTER_TEMPLATES.find(t => t.id === id)
@@ -354,20 +360,27 @@ function CreateTemplateView({
           </button>
           <div className="min-w-0">
             <h1 className="text-2xl font-display text-foreground">New template</h1>
-            <p className="mt-1 text-muted-foreground max-sm:text-[15px]">Pick a layout to start from. You can change everything in the builder.</p>
+            <p className="mt-1 text-muted-foreground max-sm:text-[15px]">Pick a starter to begin from. You can change everything in the builder.</p>
           </div>
         </div>
 
-        <SegmentedTabs
-          label="Kinds of layout"
-          className="mb-6"
-          value={category}
-          onChange={setCategory}
-          options={[{ value: 'all' as const, label: 'All' }, ...STARTER_CATEGORIES.map(c => ({ value: c, label: c }))]}
-        />
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <SegmentedTabs
+            label="Kinds of starter"
+            value={category}
+            onChange={setCategory}
+            options={[{ value: 'all' as const, label: 'All' }, ...STARTER_CATEGORIES.map(c => ({ value: c, label: c }))]}
+          />
+          <label className="relative w-full sm:ml-auto sm:w-60">
+            <span className="sr-only">Search starters</span>
+            <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" className={`${INPUT_CLASS} pl-9`} />
+          </label>
+        </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 sm:gap-x-5 lg:grid-cols-4 2xl:grid-cols-5">
-          {category === 'all' && (
+        {shown.length === 0 && <p className="py-16 text-center text-sm text-muted-foreground">No starters match “{query.trim()}”.</p>}
+        <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:gap-x-5 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {category === 'all' && !query.trim() && (
             <TemplateTile
               blank
               name="Blank"
@@ -415,7 +428,7 @@ function CreateTemplateView({
           name={previewing.name}
           description={previewing.description}
           onClose={() => setPreviewing(null)}
-          actionLabel="Use this layout"
+          actionLabel="Use this starter"
           onAction={() => {
             setStarterId(previewing.id)
             setPreviewing(null)

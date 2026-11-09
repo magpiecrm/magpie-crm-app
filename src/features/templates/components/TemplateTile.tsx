@@ -19,7 +19,6 @@ export function TemplateTile({
   onSelect,
   onActivate,
   onPreview,
-  size = 'md',
   blank,
 }: {
   html?: string
@@ -29,12 +28,14 @@ export function TemplateTile({
   onSelect: () => void
   onActivate?: () => void
   onPreview?: () => void
-  size?: 'sm' | 'md'
   /** The empty canvas, drawn as a blank sheet. */
   blank?: boolean
 }) {
-  const sm = size === 'sm'
-  const edge = selected ? 'border-accent ring-2 ring-accent' : blank ? 'border-dashed border-foreground/25 group-hover:border-foreground/40' : 'border-border group-hover:border-foreground/25'
+  const edge = selected
+    ? 'border-accent ring-2 ring-accent'
+    : blank
+      ? 'border-dashed border-foreground/25 group-hover:border-foreground/40'
+      : 'border-border group-hover:border-foreground/25 dark:border-white/10'
   return (
     <div className="group relative min-w-0">
       <button
@@ -47,10 +48,10 @@ export function TemplateTile({
         <div className={`relative overflow-hidden rounded-md-m border transition-[border-color,box-shadow] ${edge}`}>
           {blank ? (
             <div className="flex aspect-[4/5] flex-col items-center justify-center gap-2 bg-card text-muted-foreground">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-muted">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-accent/10 text-accent">
                 <Plus aria-hidden className="h-5 w-5" />
               </span>
-              {!sm && <span className="text-[13px]">Start from nothing</span>}
+              <span className="text-[13px]">Start from nothing</span>
             </div>
           ) : (
             <TemplateThumbnail html={html ?? ''} className="aspect-[4/5]" />
@@ -61,30 +62,54 @@ export function TemplateTile({
             </span>
           )}
         </div>
-        {/* The name leaves room on its right for Preview, which sits over that line. */}
-        <div className={sm ? 'mt-1.5' : 'mt-2.5'}>
-          <p className={`font-medium text-foreground ${sm ? 'line-clamp-2 text-[13px] leading-snug' : 'truncate text-sm'} ${onPreview ? 'pr-[84px]' : ''}`} title={name}>
+        <div className="mt-2.5">
+          <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground" title={name}>
             {name}
           </p>
-          {description && !sm && <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground">{description}</p>}
+          {description && <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground">{description}</p>}
         </div>
       </button>
-      {onPreview && (
-        // A box the picture's size, so Preview lines up with the name just under it.
-        <div className="pointer-events-none absolute inset-x-0 top-0">
-          <div className="aspect-[4/5]" />
-          <button
-            type="button"
-            onClick={onPreview}
-            aria-label={`Preview ${name}`}
-            className="pointer-events-auto absolute right-0 mt-1.5 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-2 text-[13px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <Eye aria-hidden className="h-4 w-4 text-muted-foreground" />
-            Preview
-          </button>
-        </div>
-      )}
+      {onPreview && <PreviewButton name={name} onClick={onPreview} />}
     </div>
+  )
+}
+
+/** The eye on a picture's corner: shown on pointing or focus, always on a touch screen. */
+function PreviewButton({ name, onClick, className = 'right-2 top-2' }: { name: string; onClick: () => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Preview ${name}`}
+      title="Preview"
+      className={`absolute grid h-8 w-8 cursor-pointer place-items-center rounded-full border border-border bg-popover text-foreground shadow-sm transition-[opacity,background-color] hover:bg-muted focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 ${className}`}
+    >
+      <Eye aria-hidden className="h-4 w-4" />
+    </button>
+  )
+}
+
+/**
+ * One email design as a row, for narrow panels: a small picture, then its
+ * name and a line about it. Clicking it uses it.
+ */
+export function TemplateRow({ html, name, description, onSelect }: { html: string; name: string; description?: string; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group flex w-full cursor-pointer items-start gap-3 rounded-md-m p-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <div className="w-[84px] shrink-0 overflow-hidden rounded-md-s border border-border transition-colors group-hover:border-foreground/25 dark:border-white/10">
+        <TemplateThumbnail html={html} className="aspect-[4/5]" inset={6} />
+      </div>
+      <span className="min-w-0 pt-1">
+        <span className="line-clamp-2 block text-sm font-medium leading-snug text-foreground" title={name}>
+          {name}
+        </span>
+        {description && <span className="mt-1 line-clamp-3 block text-[13px] leading-snug text-muted-foreground">{description}</span>}
+      </span>
+    </button>
   )
 }
 
