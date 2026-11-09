@@ -202,16 +202,21 @@ function FieldRow({
           className={`flex min-h-9 shrink-0 items-center gap-2 rounded-md-xs px-2 text-[13px] font-medium text-foreground ${locked ? 'cursor-default' : 'cursor-pointer hover:bg-muted'}`}
           title={locked ? "Every form asks for an email: it's how the person is saved" : undefined}
         >
-          {locked ? <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-hidden /> : null}
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={field.required}
-            disabled={locked}
-            onChange={(e) => onSettings({ required: e.target.checked })}
-            aria-label={locked ? 'Email is always required' : `${field.label} is required`}
-          />
-          <span aria-hidden className={locked ? 'text-muted-foreground' : ''}>Required</span>
+          {locked ? (
+            // Drawn rather than a disabled box, so it reads as fixed on, not faded out.
+            <span role="img" aria-label="Email is always required" className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-foreground/60 text-background">
+              <Lock className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />
+            </span>
+          ) : (
+            <input
+              type="checkbox"
+              className="h-4 w-4"
+              checked={field.required}
+              onChange={(e) => onSettings({ required: e.target.checked })}
+              aria-label={`${field.label} is required`}
+            />
+          )}
+          <span aria-hidden>Required</span>
         </label>
         <button
           type="button"
