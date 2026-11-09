@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkSubmission, contactFieldsOf, fillMergeTags, publicForm, resolveFields, submissionValue, type FormRecord } from './model'
+import { checkSubmission, cleanSource, contactFieldsOf, fillMergeTags, publicForm, resolveFields, submissionValue, type FormRecord } from './model'
 import { iframeSnippet, layoutRows, plainHtmlSnippet, textOn } from './render'
 import type { ContactFieldDef } from '../contacts/contactFields'
 
@@ -94,5 +94,20 @@ describe('rendering', () => {
   it('fills a welcome email, escaping what the visitor typed when it is HTML', () => {
     expect(fillMergeTags('Hi {{first_name}}{{ missing }}', { first_name: '<b>Ann</b>' })).toBe('Hi <b>Ann</b>')
     expect(fillMergeTags('Hi {{first_name}}', { first_name: '<b>Ann</b>' }, { html: true })).toBe('Hi &lt;b&gt;Ann&lt;/b&gt;')
+  })
+})
+
+describe('cleanSource', () => {
+  it('keeps the page without its query string, but with its utm tags', () => {
+    expect(cleanSource('https://site.test/contact?email=a%40b.co&utm_source=google&utm_campaign=brand#x', 'https://www.google.com/search?q=magpie')).toEqual({
+      page: 'site.test/contact',
+      utm: { utm_source: 'google', utm_campaign: 'brand' },
+      referrer: 'www.google.com/search',
+    })
+  })
+  it('drops a referrer on the same site, and anything that is not http(s)', () => {
+    expect(cleanSource('https://site.test/a', 'https://site.test/b')).toEqual({ page: 'site.test/a' })
+    expect(cleanSource('javascript:alert(1)', 'data:text/html,hi')).toBeUndefined()
+    expect(cleanSource(undefined, 42)).toBeUndefined()
   })
 })

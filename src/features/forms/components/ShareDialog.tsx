@@ -16,7 +16,7 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Code2 }> = [
 ]
 
 /** Something to copy, with one Copy button that says when it's done. */
-export function CopyBlock({ value, label, rows = 6, mono = true }: { value: string; label: string; rows?: number; mono?: boolean }) {
+export function CopyBlock({ value, label, rows, mono = true }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean }) {
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
@@ -37,19 +37,16 @@ export function CopyBlock({ value, label, rows = 6, mono = true }: { value: stri
         {/* Long tokens (addresses) break only where they must, so the code stays readable on a phone. */}
         <pre
           ref={pre}
-          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 pb-3 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
-          style={{ maxHeight: `${rows * 1.65 + 1.4}em` }}
+          className={`custom-scrollbar overflow-auto whitespace-pre-wrap rounded-md-s border border-border bg-muted/50 px-3 py-2.5 text-[13px] leading-relaxed text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mono ? 'font-mono' : ''}`}
+          style={rows ? { maxHeight: `${rows * 1.65 + 1.4}em` } : undefined}
           tabIndex={0}
           aria-label={label}
         >
           {value}
         </pre>
-        {more && (
-          <div aria-hidden="true" className="pointer-events-none absolute inset-x-px bottom-px flex h-10 items-end justify-center rounded-b-md-s bg-gradient-to-t from-muted via-muted/80 to-transparent pb-1 text-xs font-medium text-muted-foreground">
-            Scroll for more
-          </div>
-        )}
+        {more && <div aria-hidden="true" className="pointer-events-none absolute inset-x-px bottom-px h-6 rounded-b-md-s bg-gradient-to-t from-muted to-transparent" />}
       </div>
+      {more && <p className="text-xs text-muted-foreground">Scroll the box to see all of it, or copy it whole.</p>}
     </div>
   )
 }
@@ -105,14 +102,19 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
                 Paste this into your page where the form should go. It fills the width it's given and grows to fit. Changes you save in the builder show up on your site
                 straight away, without pasting it again.
               </p>
-              <CopyBlock label="Embed code" value={iframeSnippet(form.id, origin, form.name)} rows={5} />
-              <p className="text-[13px] text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.</p>
+              <CopyBlock label="Embed code" value={iframeSnippet(form.id, origin, form.name)} />
+              <p className="text-[13px] leading-relaxed text-muted-foreground">
+                Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their "Custom HTML" or "Embed" block.{' '}
+                <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-accent hover:underline">
+                  See it live <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                </a>
+              </p>
             </>
           )}
           {tab === 'link' && (
             <>
               <p className="text-sm leading-relaxed text-muted-foreground">The form on a page of its own. Share it in an email, a post, or anywhere you can't embed.</p>
-              <CopyBlock label="Link" value={url} rows={2} />
+              <CopyBlock label="Link" value={url} />
               <div>
                 <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
                   <ExternalLink className="h-4 w-4" aria-hidden /> Open the form's page
@@ -134,8 +136,8 @@ export function ShareDialog({ form, onClose, ready = false }: { form: PublicForm
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Send submissions from your own code: a POST of JSON (or a normal form post) to this address. {required.length > 0 && <>Required: {required.join(', ')}.</>}
               </p>
-              <CopyBlock label="Endpoint" value={`${origin}/api/form-submit/${form.id}`} rows={2} />
-              <CopyBlock label="Example body" value={example} rows={8} />
+              <CopyBlock label="Endpoint" value={`${origin}/api/form-submit/${form.id}`} />
+              <CopyBlock label="Example body" value={example} rows={10} />
             </>
           )}
         </div>

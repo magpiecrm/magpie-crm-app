@@ -18,6 +18,7 @@ export function FormView({
   onReset,
   activeKey,
   onFieldPick,
+  headingLevel = 2,
 }: {
   form: PublicForm
   onSubmit?: (values: Record<string, FormValue>) => Promise<FormSubmitResult>
@@ -28,6 +29,8 @@ export function FormView({
   activeKey?: string | null
   /** In the builder: a field was clicked, to edit it. */
   onFieldPick?: (key: string) => void
+  /** 1 on the form's own page, where the heading is the page's. */
+  headingLevel?: 1 | 2
 }) {
   const uid = useId().replace(/:/g, '')
   const [values, setValues] = useState<Record<string, FormValue>>({})
@@ -98,7 +101,13 @@ export function FormView({
           )}
         </div>
       ) : (
-        <form className={`mf${dark}`} style={style} onSubmit={submit} noValidate aria-label={form.name}>
+        <form className={`mf${dark}`} style={style} onSubmit={submit} noValidate aria-label={form.heading || form.name}>
+          {(form.heading || form.intro) && (
+            <div className="mf-head">
+              {form.heading && (headingLevel === 1 ? <h1 className="mf-title">{form.heading}</h1> : <h2 className="mf-title">{form.heading}</h2>)}
+              {form.intro && <p className="mf-intro">{form.intro}</p>}
+            </div>
+          )}
           {layoutRows(form.fields).map((row) =>
             row.length > 1 ? (
               <div key={row[0].key} className="mf-row">
@@ -136,7 +145,10 @@ function Field({ f, uid, value, problem, onChange, pick }: { f: ResolvedFormFiel
   const id = `${uid}-${f.key.replace(/[^a-z0-9_-]/gi, '_')}`
   const errId = `${id}-error`
   const optional = f.required ? null : <span className="mf-optional">Optional</span>
-  const aria = { 'aria-invalid': problem ? true : undefined, 'aria-describedby': problem ? errId : undefined, 'aria-required': f.required || undefined }
+  const helpId = `${id}-help`
+  const describedBy = [f.help ? helpId : '', problem ? errId : ''].filter(Boolean).join(' ') || undefined
+  const aria = { 'aria-invalid': problem ? true : undefined, 'aria-describedby': describedBy, 'aria-required': f.required || undefined }
+  const help = f.help ? <p className="mf-help" id={helpId}>{f.help}</p> : null
   const err = problem ? <p className="mf-error" id={errId}>{problem}</p> : null
   const cls = `mf-input${problem ? ' mf-invalid' : ''}`
 
@@ -156,6 +168,7 @@ function Field({ f, uid, value, problem, onChange, pick }: { f: ResolvedFormFiel
     return (
       <fieldset className={`mf-field${pickCls}`} aria-describedby={problem ? errId : undefined} {...picking}>
         <legend className="mf-label">{f.label}{optional}</legend>
+        {help}
         <div className="mf-choices">
           {(f.options ?? []).map((o, i) => (
             <label key={o} className="mf-check">
@@ -186,6 +199,7 @@ function Field({ f, uid, value, problem, onChange, pick }: { f: ResolvedFormFiel
   return (
     <div className={`mf-field${pickCls}`} {...picking}>
       <label className="mf-label" htmlFor={id}>{f.label}{optional}</label>
+      {help}
       {control}
       {err}
     </div>

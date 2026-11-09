@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Inbox, Search, Share2, Trash2, UserRound } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Globe, Inbox, ListChecks, Mail, MailX, Search, Share2, Trash2, UserRound, type LucideIcon } from 'lucide-react'
 import { queryKeys } from '../../../../queryKeys'
 import { deleteFormSubmissionFn, getContactFieldsFn, getFormFn, getFormSubmissionsFn } from '../../../../server/functions'
 import { Button } from '../../../../components/ui/Button'
@@ -108,15 +108,17 @@ function SubmissionsPage() {
 
   return (
     <div className="w-full p-4 lg:p-8"><div className="mx-auto w-full max-w-6xl">
-      <dl className="mb-5 grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-m border border-border bg-card">
+      <dl className="mb-5 grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-m border border-border bg-card max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-4 sm:divide-x">
         {[
-          ['Submissions', form.submission_count.toLocaleString('en-GB')],
-          ['This week', week.toLocaleString('en-GB')],
-          ['Latest', form.last_submission_at ? ago(form.last_submission_at).replace(/^on /, '') : 'None'],
-        ].map(([label, value]) => (
+          ['Views', form.views.toLocaleString('en-GB'), `${form.views_this_week.toLocaleString('en-GB')} this week`],
+          ['Submissions', form.submission_count.toLocaleString('en-GB'), `${week.toLocaleString('en-GB')} this week`],
+          ['Conversion', form.views ? `${((form.submission_count / form.views) * 100).toFixed(1)}%` : '—', 'of views sent it'],
+          ['Latest', form.last_submission_at ? ago(form.last_submission_at).replace(/^on /, '') : 'None yet', form.last_submission_at ? whenShort(form.last_submission_at) : ''],
+        ].map(([label, value, sub]) => (
           <div key={label} className="min-w-0 px-3.5 py-3 sm:px-5 sm:py-4">
             <dt className="text-[13px] text-muted-foreground">{label}</dt>
             <dd className="mt-0.5 text-base font-semibold leading-snug tabular-nums text-foreground sm:text-xl">{value}</dd>
+            {sub && <dd className="mt-0.5 text-[13px] text-muted-foreground max-sm:hidden">{sub}</dd>}
           </div>
         ))}
       </dl>
@@ -163,7 +165,7 @@ function SubmissionsPage() {
         <table className="hidden w-full table-fixed text-left text-sm md:table">
           <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
             <tr>
-              <SortHead by="person" label="Person" className="w-[30%] !pl-5" />
+              <SortHead by="person" label="Person" className="w-[15.5rem] !pl-5" />
               {columns.map((f) => (
                 <th key={f.key} scope="col" className={`px-4 py-2.5 font-medium ${f.key === 'message' ? '' : 'w-[17%]'}`}>{f.label}</th>
               ))}
@@ -189,7 +191,7 @@ function SubmissionsPage() {
                     </button>
                     {name && <span className="block truncate text-[13px] text-muted-foreground">{s.contact_email}</span>}
                   </td>
-                  {columns.map((f) => <Cell key={f.key} field={f} value={submissionValue(s, f.key)} />)}
+                  {columns.map((f) => <Cell key={f.key} value={submissionValue(s, f.key)} />)}
                   <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(s.submitted_at)}>{whenShort(s.submitted_at)}</td>
                   <td className="py-3 pr-4 align-top text-muted-foreground">
                     <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
@@ -232,11 +234,39 @@ function SubmissionsPage() {
   )
 }
 
-function Cell({ field, value }: { field: ResolvedFormField; value: string }) {
-  if (!value) return <td className="px-4 py-3 align-top text-muted-foreground/60">—</td>
+/** What sending it did, and where it was sent from: for submissions that kept it. */
+function Happened({ s }: { s: Submission }) {
+  const rows: Array<[LucideIcon, React.ReactNode]> = []
+  if (s.outcome) {
+    rows.push(s.outcome.list_id ? [ListChecks, <>Added to <span className="font-medium">{s.list_name ?? 'a list'}</span>{s.outcome.new_contact === false ? ', already a contact' : ', as a new contact'}</>] : [ListChecks, 'Not added to a list'])
+    if (s.welcome_email) {
+      const at = s.welcome_email.at ? exactTime(s.welcome_email.at) : ''
+      const text = { sent: `Welcome email sent${at ? ` ${at}` : ''}`, due: `Welcome email due ${at}`, skipped: "Welcome email not sent: they'd unsubscribed or bounced", failed: "Welcome email couldn't be sent" }[s.welcome_email.status]
+      rows.push([s.welcome_email.status === 'failed' ? MailX : Mail, text])
+    }
+  }
+  if (s.source?.page) {
+    const utm = s.source.utm ? Object.entries(s.source.utm).map(([k, v]) => `${k.replace('utm_', '')}: ${v}`).join(' · ') : ''
+    rows.push([Globe, <>From <span className="font-medium break-all">{s.source.page}</span>{utm && <span className="text-muted-foreground"> ({utm})</span>}{s.source.referrer && <span className="text-muted-foreground">, after {s.source.referrer}</span>}</>])
+  }
+  if (!rows.length) return null
+  return (
+    <ul className="flex flex-col gap-2 rounded-md-s bg-muted/50 px-3.5 py-3 text-sm text-foreground">
+      {rows.map(([Icon, text], i) => (
+        <li key={i} className="flex items-start gap-2.5">
+          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0">{text}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Cell({ value }: { value: string }) {
+  if (!value) return <td className="px-4 py-3 align-top text-muted-foreground"><span aria-hidden>—</span><span className="sr-only">Empty</span></td>
   return (
     <td className="px-4 py-3 align-top text-foreground/85">
-      <span className={field.key === 'message' ? 'line-clamp-2' : 'block truncate'} title={value}>{value}</span>
+      <span className="block truncate" title={value}>{value}</span>
     </td>
   )
 }
@@ -270,15 +300,9 @@ function SubmissionDialog({
       title={name || s.contact_email}
       description={`Received ${exactTime(s.submitted_at)}`}
       className="sm:max-w-lg"
-      headerActions={
-        <div className="mr-1 flex items-center gap-0.5" aria-label={`Submission ${position}`}>
-          <span className="mr-1 hidden text-xs tabular-nums text-muted-foreground sm:inline">{position}</span>
-          <Button variant="ghost" size="icon" onClick={onPrev} disabled={!onPrev} aria-label="Previous submission"><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next submission"><ChevronRight className="h-4 w-4" /></Button>
-        </div>
-      }
     >
-      <DialogBody>
+      <DialogBody className="flex flex-col gap-4">
+        <Happened s={s} />
         <dl className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
           {fields.map((f) => {
             const value = submissionValue(s, f.key)
@@ -294,9 +318,14 @@ function SubmissionDialog({
         </dl>
       </DialogBody>
       <DialogFooter>
-        <Button variant="ghost" onClick={onDelete} isLoading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} className="mr-auto !text-destructive hover:!bg-destructive/10">
+        <Button variant="ghost" onClick={onDelete} isLoading={deleting} leftIcon={<Trash2 className="h-4 w-4" />} className="!text-destructive hover:!bg-destructive/10">
           Delete
         </Button>
+        <div className="mx-auto flex items-center gap-1 max-sm:order-first max-sm:basis-full max-sm:justify-center" role="group" aria-label={`Submission ${position}`}>
+          <Button variant="secondary" size="icon" onClick={onPrev} disabled={!onPrev} aria-label="Previous submission" className="disabled:!opacity-40"><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="min-w-[4.5rem] text-center text-[13px] tabular-nums text-muted-foreground">{position}</span>
+          <Button variant="secondary" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next submission" className="disabled:!opacity-40"><ChevronRight className="h-4 w-4" /></Button>
+        </div>
         {hasContact ? (
           <Button leftIcon={<UserRound className="h-4 w-4" />} onClick={() => navigate({ to: '/marketing/contacts', search: { contact: s.contact_email } })}>
             Open contact

@@ -6,7 +6,7 @@ export type FormInput = Pick<
   FormRecord,
   | 'name' | 'fields' | 'field_settings' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields'
   | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'
-  | 'submit_label' | 'success_message' | 'style'
+  | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro'
 >
 
 const CORNERS: FormCorners[] = ['square', 'rounded', 'pill']
@@ -35,6 +35,7 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
       if (typeof v.label === 'string' && v.label.trim()) s.label = text(v.label, k === 'consent' ? FORM_LIMITS.successMessage : FORM_LIMITS.label).trim()
       if (typeof v.placeholder === 'string' && v.placeholder.trim()) s.placeholder = text(v.placeholder, FORM_LIMITS.placeholder).trim()
       if (typeof v.required === 'boolean' && k !== 'email') s.required = v.required
+      if (typeof v.help === 'string' && v.help.trim()) s.help = text(v.help, FORM_LIMITS.placeholder).trim()
       if (Object.keys(s).length) settings[k] = s
     }
     out.field_settings = settings
@@ -49,6 +50,8 @@ async function cleanForm(d: Partial<FormInput>): Promise<Partial<FormInput>> {
   if (d.sender_id !== undefined) out.sender_id = d.sender_id ? Number(d.sender_id) : null
   if (d.submit_label !== undefined) out.submit_label = text(d.submit_label, FORM_LIMITS.submitLabel).trim()
   if (d.success_message !== undefined) out.success_message = text(d.success_message, FORM_LIMITS.successMessage).trim()
+  if (d.heading !== undefined) out.heading = text(d.heading, 120).trim()
+  if (d.intro !== undefined) out.intro = text(d.intro, FORM_LIMITS.successMessage).trim()
   if (d.style !== undefined) {
     out.style = {
       ...(validAccent(d.style?.accent) ? { accent: validAccent(d.style?.accent)! } : {}),
@@ -67,7 +70,8 @@ export const getFormsFn = createServerFn({ method: 'GET' }).handler(async () => 
   const stats = db.getFormStats()
   return db.getForms().map((f) => {
     const st = stats.get(f.id)
-    return { ...f, submission_count: st?.total ?? 0, submissions_this_week: st?.week ?? 0, last_submission_at: st?.last ?? null }
+    const views = db.getFormViews(f.id)
+    return { ...f, submission_count: st?.total ?? 0, submissions_this_week: st?.week ?? 0, last_submission_at: st?.last ?? null, views: views.total, views_this_week: views.week }
   })
 })
 
@@ -80,7 +84,8 @@ export const getFormFn = createServerFn({ method: 'GET' })
     const form = db.getForm(data.id)
     if (!form) throw new Error('Form not found')
     const st = db.getFormStats().get(form.id)
-    return { ...form, submission_count: st?.total ?? 0, submissions_this_week: st?.week ?? 0, last_submission_at: st?.last ?? null }
+    const views = db.getFormViews(form.id)
+    return { ...form, submission_count: st?.total ?? 0, submissions_this_week: st?.week ?? 0, last_submission_at: st?.last ?? null, views: views.total, views_this_week: views.week }
   })
 
 export const getFormSubmissionsFn = createServerFn({ method: 'GET' })
@@ -89,20 +94,33 @@ export const getFormSubmissionsFn = createServerFn({ method: 'GET' })
     const { requireAuth } = await import('../auth.server')
     const { db } = await import('../db')
     await requireAuth()
+    const emails = new Map((db.data.pending_emails ?? []).map((e) => [e.id, e]))
+    const lists = new Map(db.data.lists.map((l) => [l.id, l.name]))
     // The contact's columns only, for submissions from before what was sent was kept.
-    return db.getFormSubmissions(data.formId).map(({ contact, ...s }) => ({
-      ...s,
-      contact: contact ? { first_name: contact.first_name, last_name: contact.last_name, company: contact.company, job_title: contact.job_title, custom: contact.custom } : null,
-    }))
+    return db.getFormSubmissions(data.formId).map(({ contact, ...s }) => {
+      const mail = s.outcome?.welcome_email_id ? emails.get(s.outcome.welcome_email_id) : undefined
+      return {
+        ...s,
+        contact: contact ? { first_name: contact.first_name, last_name: contact.last_name, company: contact.company, job_title: contact.job_title, custom: contact.custom } : null,
+        list_name: s.outcome?.list_id ? (lists.get(s.outcome.list_id) ?? null) : null,
+        welcome_email: mail
+          ? { status: mail.outcome ?? (mail.sent ? ('sent' as const) : ('due' as const)), at: mail.send_after }
+          : s.outcome?.welcome_email_id
+            ? { status: 'sent' as const, at: null }
+            : null,
+      }
+    })
   })
 
 /** The form as its hosted page and embed draw it: no lists, emails or submissions. */
 export const getPublicFormFn = createServerFn({ method: 'GET' })
-  .inputValidator((d: { id: string }) => ({ id: String(d.id) }))
+  .inputValidator((d: { id: string; view?: boolean }) => ({ id: String(d.id), view: d.view === true }))
   .handler(async ({ data }) => {
     const { db } = await import('../db')
     const { publicForm } = await import('../../features/forms/model')
     const form = db.getForm(data.id)
+    // A view is the form's own page or embed being drawn for someone: counts by day, nothing about who.
+    if (form && data.view) db.addFormView(form.id)
     return form ? publicForm(form, db.getContactFields()) : null
   })
 

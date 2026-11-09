@@ -4,7 +4,7 @@ import { DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, 
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlignLeft, ArrowDown, ArrowUp, AtSign, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
+  AlignLeft, ArrowDown, ArrowLeft, ArrowUp, AtSign, Briefcase, Building2, Calendar, Check, ChevronDown, GripVertical, Hash, List, ListChecks, Lock, Monitor, Plus, ShieldCheck,
   Info, Palette, Send, Smartphone, SquareCheck, Trash2, Type, User,
   type LucideIcon,
 } from 'lucide-react'
@@ -14,6 +14,7 @@ import { Select } from '../../../components/ui/Select'
 import { Switch } from '../../../components/ui/Switch'
 import { ActionMenu, type ActionMenuItem } from '../../../components/ui/ActionMenu'
 import { Dialog } from '../../../components/ui/Dialog'
+import { Notice } from '../../../components/ui/Notice'
 import { ContactFieldForm } from '../../contacts/components/ContactFieldForm'
 import { invalidateContactFields } from '../../contacts/contactCache'
 import { createListFn } from '../../../server/functions'
@@ -29,7 +30,7 @@ import { textOn } from '../render'
 import { delayLabel } from '../format'
 
 export type FormDraft = Required<Pick<FormInput, 'name' | 'fields' | 'list_id' | 'save_to_list_enabled' | 'save_to_list_fields' | 'welcome_email_enabled' | 'welcome_email_subject' | 'welcome_email_body' | 'welcome_email_delay_minutes' | 'sender_id'>> &
-  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style'>
+  Pick<FormInput, 'field_settings' | 'submit_label' | 'success_message' | 'style' | 'heading' | 'intro'>
 
 export const NEW_FORM: FormDraft = {
   name: '',
@@ -45,6 +46,8 @@ export const NEW_FORM: FormDraft = {
   sender_id: null,
   submit_label: DEFAULT_SUBMIT_LABEL,
   success_message: DEFAULT_SUCCESS_MESSAGE,
+  heading: '',
+  intro: '',
   style: {},
 }
 
@@ -64,6 +67,8 @@ export function draftOf(form: FormRecord): FormDraft {
     sender_id: form.sender_id,
     submit_label: form.submit_label || DEFAULT_SUBMIT_LABEL,
     success_message: form.success_message || DEFAULT_SUCCESS_MESSAGE,
+    heading: form.heading ?? '',
+    intro: form.intro ?? '',
     style: form.style ?? {},
   }
 }
@@ -132,7 +137,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
           aria-checked={value === o.id}
           onClick={() => onChange(o.id)}
           className={`inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md-xs px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-            value === o.id ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.1)] ring-1 ring-border dark:bg-white/[0.14] dark:ring-white/15' : 'text-muted-foreground hover:text-foreground'
+            value === o.id ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.1)] ring-1 ring-border dark:bg-white/[0.2] dark:ring-white/25' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           {o.label}
@@ -158,7 +163,7 @@ function FieldRow({
   onToggle: () => void
   saved: boolean
   canSave: boolean
-  onSettings: (patch: { label?: string; placeholder?: string; required?: boolean }) => void
+  onSettings: (patch: { label?: string; placeholder?: string; required?: boolean; help?: string }) => void
   onSaveToContact: (on: boolean) => void
   onRemove: () => void
   /** Up or down one place, for anyone not dragging; missing at that end of the list. */
@@ -175,7 +180,7 @@ function FieldRow({
       id={`field-row-${field.key.replace(/[^a-z0-9_-]/gi, '_')}`}
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`bg-card ${isDragging ? 'relative z-10 rounded-md-s shadow-md ring-1 ring-border' : ''}`}
+      className={`${open ? 'bg-accent/[0.045] shadow-[inset_3px_0_0_var(--accent)] dark:bg-accent/[0.07]' : 'bg-card'} ${isDragging ? 'relative z-10 rounded-md-s shadow-md ring-1 ring-border' : ''}`}
     >
       <div className="flex min-h-[52px] items-center gap-2 py-1.5 pl-1.5 pr-2">
         <button
@@ -187,7 +192,7 @@ function FieldRow({
         >
           <GripVertical className="h-[18px] w-[18px]" />
         </button>
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs bg-muted text-foreground/70" title={TYPE_NAMES[field.type]}>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md-xs border border-border bg-background text-foreground/75" title={TYPE_NAMES[field.type]}>
           <Icon className="h-3.5 w-3.5" aria-hidden />
         </span>
         <button type="button" onClick={onToggle} aria-expanded={open} aria-controls={panelId} className="flex min-w-0 flex-1 cursor-pointer flex-col items-start rounded-md-xs px-1 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
@@ -197,16 +202,13 @@ function FieldRow({
             {custom && ' · Contact field'}
           </span>
         </button>
-        {/* One tick box in the same place on every row; Email's is ticked for good. */}
+        {/* The Required column: one tick box per row, under its heading; Email's is a lock, as it can't be optional. */}
         <label
-          className={`flex min-h-9 shrink-0 items-center gap-2 rounded-md-xs px-2 text-[13px] font-medium text-foreground ${locked ? 'cursor-default' : 'cursor-pointer hover:bg-muted'}`}
-          title={locked ? "Every form asks for an email: it's how the person is saved" : undefined}
+          className={`flex h-9 w-[4.5rem] shrink-0 items-center justify-center rounded-md-xs ${locked ? 'cursor-help' : 'cursor-pointer hover:bg-muted'}`}
+          title={locked ? "Always required: it's how the person is saved" : field.required ? 'Required' : 'Optional'}
         >
           {locked ? (
-            // Drawn rather than a disabled box, so it reads as fixed on, not faded out.
-            <span role="img" aria-label="Email is always required" className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-foreground/60 text-background">
-              <Lock className="h-2.5 w-2.5" strokeWidth={3} aria-hidden />
-            </span>
+            <Lock className="h-4 w-4 text-foreground/70" aria-label="Email is always required" role="img" />
           ) : (
             <input
               type="checkbox"
@@ -216,7 +218,6 @@ function FieldRow({
               aria-label={`${field.label} is required`}
             />
           )}
-          <span aria-hidden>Required</span>
         </label>
         <button
           type="button"
@@ -250,6 +251,9 @@ function FieldRow({
                   <input className={INPUT_CLASS} value={field.placeholder} placeholder={field.type === 'email' ? 'name@company.com' : ''} onChange={(e) => onSettings({ placeholder: e.target.value })} />
                 </Field>
               )}
+              <Field label="Help text" hint="Optional: a line under the label" className="sm:col-span-2">
+                <input className={INPUT_CLASS} value={field.help} onChange={(e) => onSettings({ help: e.target.value })} placeholder={field.key === 'email' ? "We'll only use it to reply" : ''} />
+              </Field>
             </FieldGrid>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -295,9 +299,18 @@ export function FormBuilder({
   error,
   onSave,
   onCancel,
+  backLabel,
+  status,
+  subtitle,
 }: {
   initial: FormDraft
   isNew: boolean
+  /** Where the top bar's back link goes ("Contact page", "Templates"): `onCancel`. */
+  backLabel: string
+  /** Beside the name: whether it's live. */
+  status?: ReactNode
+  /** Under the name: a line about the form. */
+  subtitle?: ReactNode
   lists: Array<{ id: number; name: string }>
   senders: Array<{ id: number; name: string; email: string }>
   contactFields: ContactFieldDef[]
@@ -341,12 +354,13 @@ export function FormBuilder({
       return at < 0 ? d : { ...d, fields: arrayMove(d.fields, at, Math.max(0, Math.min(d.fields.length - 1, at + by))) }
     })
 
-  const settingsFor = (key: string, patch: { label?: string; placeholder?: string; required?: boolean }) =>
+  const settingsFor = (key: string, patch: { label?: string; placeholder?: string; required?: boolean; help?: string }) =>
     setDraft((d) => {
       const current = { ...(d.field_settings?.[key] ?? {}) }
       if (patch.label !== undefined) current.label = patch.label
       if (patch.placeholder !== undefined) current.placeholder = patch.placeholder
       if (patch.required !== undefined) current.required = patch.required
+      if (patch.help !== undefined) current.help = patch.help
       return { ...d, field_settings: { ...d.field_settings, [key]: current } }
     })
 
@@ -414,6 +428,61 @@ export function FormBuilder({
 
   return (
     <div className="flex min-h-full flex-col">
+      {/* The editor's own bar, under the app's: the form's name, and saving it. It stays in view. */}
+      <div className="sticky top-[calc(4rem+env(safe-area-inset-top,0px))] z-20 border-b border-border bg-background">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3 px-4 py-3 lg:min-h-[5.75rem] lg:px-8">
+          <div className="min-w-0 flex-1 basis-72">
+            <button type="button" onClick={onCancel} className="mb-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md-xs text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+              <ArrowLeft className="h-4 w-4" aria-hidden /> {backLabel}
+            </button>
+            <div className="flex min-w-0 items-center gap-3">
+              <input
+                ref={nameRef}
+                aria-label="Form name"
+                title="Only you see the name. It's what the form is called in this app."
+                placeholder="Untitled form"
+                value={draft.name}
+                required
+                autoFocus={isNew}
+                aria-invalid={!!nameError || undefined}
+                aria-describedby={nameError ? 'form-name-error' : undefined}
+                onChange={(e) => {
+                  set({ name: e.target.value })
+                  if (nameError) setNameError('')
+                }}
+                size={Math.max(12, Math.min(40, draft.name.length + 2))}
+                className={`-mx-1.5 min-w-[8ch] max-w-full rounded-md-xs [field-sizing:content] border border-transparent bg-transparent px-1.5 py-0.5 text-2xl font-display text-foreground placeholder:text-muted-foreground/70 transition-colors hover:border-input focus:border-accent focus:bg-card focus:outline-none focus:ring-[3px] focus:ring-accent/20 ${nameError ? '!border-destructive' : ''}`}
+              />
+              {status}
+            </div>
+            {nameError ? (
+              <p id="form-name-error" className="mt-0.5 text-[13px] text-destructive">{nameError}</p>
+            ) : (
+              subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="mr-1 flex items-center gap-2 text-[13px] text-muted-foreground" aria-live="polite">
+              {error ? (
+                <span className="text-destructive">{error}</span>
+              ) : dirty && !isNew ? (
+                <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground">Unsaved changes</span></>
+              ) : isNew ? (
+                'Not saved yet'
+              ) : (
+                <><Check className="h-3.5 w-3.5" aria-hidden /> Saved</>
+              )}
+            </p>
+            {isNew ? (
+              <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+            ) : (
+              dirty && <Button variant="secondary" onClick={() => setDraft(initial)}>Discard</Button>
+            )}
+            <Button onClick={save} isLoading={saving} disabled={!isNew && !dirty}>{isNew ? 'Create form' : 'Save changes'}</Button>
+          </div>
+        </div>
+      </div>
+
       {/* On a phone the preview is a tab of its own. */}
       <div className="px-4 pt-4 lg:hidden">
         <Segmented
@@ -444,7 +513,7 @@ export function FormBuilder({
                     tab === t.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <t.icon className="h-4 w-4" aria-hidden />
+                  <t.icon className="h-4 w-4 max-sm:hidden" aria-hidden />
                   {t.label}
                   {t.id === 'fields' && <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">{fields.length}</span>}
                 </button>
@@ -452,27 +521,18 @@ export function FormBuilder({
             </div>
             <div id="builder-panel" role="tabpanel" aria-labelledby={`builder-tab-${tab}`} className="divide-y divide-border/70">
             {tab === 'fields' && (<>
-            <Section title="Name" description="For you, and the heading on the form's own page.">
-              <Field label={<span className="sr-only">Form name</span>} error={nameError}>
-                <input
-                  ref={nameRef}
-                  className={`${INPUT_CLASS} ${nameError ? 'border-destructive' : ''}`}
-                  placeholder="Contact us"
-                  value={draft.name}
-                  required
-                  aria-invalid={!!nameError || undefined}
-                  autoFocus={isNew}
-                  onChange={(e) => {
-                    set({ name: e.target.value })
-                    if (nameError) setNameError('')
-                  }}
-                />
+            <Section title="Heading and intro" description="Shown above the fields, on the form's own page and in the embed. Leave them empty if your page already says what the form is for.">
+              <Field label="Heading">
+                <input className={INPUT_CLASS} value={draft.heading ?? ''} maxLength={120} placeholder="Get in touch" onChange={(e) => set({ heading: e.target.value })} />
+              </Field>
+              <Field label="Intro" hint="Optional">
+                <textarea className={`${INPUT_CLASS} min-h-[64px] resize-y`} rows={2} value={draft.intro ?? ''} placeholder="Tell us a little about what you need and we'll reply within a day." onChange={(e) => set({ intro: e.target.value })} />
               </Field>
             </Section>
 
             <Section
               title="Fields"
-              description="What people fill in, in this order. Drag a field to move it, or open it to change its label."
+              description="What people fill in, in this order. Drag to move a field; open one to change its label or help text."
               action={
                 <ActionMenu
                   label="Add a field"
@@ -489,7 +549,12 @@ export function FormBuilder({
             >
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={move}>
                 <SortableContext items={fields.map((f) => f.key)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
+                  <div className="overflow-hidden rounded-md-s border border-border">
+                  <div className="flex items-center justify-between border-b border-border bg-muted/40 py-2 pl-[4.75rem] pr-[3.25rem] text-[13px] font-medium text-muted-foreground" aria-hidden>
+                    <span>Field</span>
+                    <span>Required</span>
+                  </div>
+                  <ul className="flex flex-col divide-y divide-border/70">
                     {fields.map((f, i) => (
                       <FieldRow
                         key={f.key}
@@ -510,6 +575,7 @@ export function FormBuilder({
                       />
                     ))}
                   </ul>
+                  </div>
                 </SortableContext>
               </DndContext>
             </Section>
@@ -646,7 +712,7 @@ export function FormBuilder({
                         aria-label={name}
                         title={name}
                         onClick={() => set({ style: { ...draft.style, accent: hex } })}
-                        className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-black/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-white/40 ${accent === hex ? 'ring-2 ring-foreground ring-offset-2 ring-offset-card' : ''}`}
+                        className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-black/15 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-white/45 ${accent === hex ? 'ring-2 ring-foreground ring-offset-2 ring-offset-card' : ''}`}
                         style={{ background: hex }}
                       >
                         {accent === hex && <Check className="h-4 w-4" style={{ color: textOn(hex) }} aria-hidden />}
@@ -676,17 +742,20 @@ export function FormBuilder({
                 </div>
               </div>
             </Section>
-            <Section title="Spam" description="Every form has a hidden field that people never see and bots fill in. Anything sent with it filled is thanked and thrown away." />
+            <div className="px-5 py-4 sm:px-6">
+              <Notice level="info" title="Spam protection is on">Every form has a hidden field people never see and bots fill in. Anything sent with it filled is thanked and thrown away.</Notice>
+            </div>
             </>)}
             </div>
           </div>
         </div>
 
         {/* The preview stays in view while the settings scroll. */}
-        <aside className={`min-w-0 lg:sticky lg:top-6 ${pane === 'preview' ? 'block' : 'hidden lg:block'}`} aria-label="Preview">
+        <aside className={`min-w-0 lg:sticky lg:top-[calc(4rem+5.75rem+1.5rem)] ${pane === 'preview' ? 'block' : 'hidden lg:block'}`} aria-label="Preview">
           <div className="overflow-hidden rounded-md-m border border-border bg-card">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-2.5">
               <span className="text-sm font-semibold text-foreground">Preview</span>
+              <div className="max-lg:hidden">
               <Segmented
                 label="Preview size"
                 value={device}
@@ -696,8 +765,9 @@ export function FormBuilder({
                   { id: 'phone', label: <><Smartphone className="h-3.5 w-3.5" aria-hidden />Phone</> },
                 ]}
               />
+              </div>
             </div>
-            <div className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 lg:max-h-[calc(100dvh-17rem)] ${draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#2a2d33]'}`}>
+            <div className={`custom-scrollbar flex justify-center overflow-y-auto px-4 py-6 lg:max-h-[calc(100dvh-4rem-5.75rem-11rem)] ${draft.style?.theme === 'dark' ? 'bg-[#111316]' : 'bg-[#f3f4f6] dark:bg-[#2a2d33]'}`}>
               <div
                 className={`h-fit w-full rounded-[10px] border p-5 transition-[max-width] ${device === 'phone' ? 'max-w-[340px]' : 'max-w-full'} ${draft.style?.theme === 'dark' ? 'border-[#2d3139] bg-[#1d2025]' : 'border-[#e5e7eb] bg-white'}`}
               >
@@ -721,25 +791,6 @@ export function FormBuilder({
             </p>
           </div>
         </aside>
-      </div>
-
-      {/* Save stays in reach at the bottom of the screen. */}
-      <div className="sticky bottom-0 z-20 mt-auto border-t border-border bg-background shadow-[0_-1px_3px_rgb(17_19_22/0.04)]">
-        <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3 lg:px-8">
-          <p className="mr-auto flex items-center gap-2 text-[13px] text-muted-foreground" aria-live="polite">
-            {error ? (
-              <span className="text-destructive">{error}</span>
-            ) : dirty && !isNew ? (
-              <><span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden /><span className="font-medium text-foreground">Unsaved changes</span></>
-            ) : isNew ? (
-              'Not saved yet'
-            ) : (
-              'All changes saved'
-            )}
-          </p>
-          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button onClick={save} isLoading={saving}>{isNew ? 'Create form' : 'Save changes'}</Button>
-        </div>
       </div>
 
       {addingField && (

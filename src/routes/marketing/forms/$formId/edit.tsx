@@ -5,6 +5,7 @@ import { queryKeys } from '../../../../queryKeys'
 import { getContactFieldsFn, getFormFn, getSendersFn, listsFn, updateFormFn } from '../../../../server/functions'
 import { FormBuilder, draftOf, type FormDraft } from '../../../../features/forms/components/FormBuilder'
 import { toast } from '../../../../components/ui/toast'
+import { FormStatus } from '../../../../features/forms/components/FormStatus'
 
 export const Route = createFileRoute('/marketing/forms/$formId/edit')({
   component: EditFormPage,
@@ -37,6 +38,9 @@ function EditFormPage() {
     <FormBuilder
       key={form.updated_at ?? form.created_at}
       isNew={false}
+      backLabel="Submissions"
+      status={<FormStatus paused={!!form.paused} />}
+      subtitle={form.paused ? "Paused: it won't take submissions until you resume it." : 'Live: saved changes show on your site straight away.'}
       initial={initial}
       lists={lists}
       senders={senders}

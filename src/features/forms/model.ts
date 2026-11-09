@@ -37,6 +37,8 @@ export interface FormFieldSettings {
   label?: string
   required?: boolean
   placeholder?: string
+  /** A line under the label: what to put, or why it's asked. */
+  help?: string
 }
 
 export type FormCorners = 'square' | 'rounded' | 'pill'
@@ -65,6 +67,9 @@ export interface FormRecord {
   sender_id: number | null
   submit_label?: string
   success_message?: string
+  /** Shown above the fields, on its own page and in the embed. Empty: none. */
+  heading?: string
+  intro?: string
   style?: FormStyle
   /** Paused forms refuse submissions, wherever they're embedded. */
   paused?: boolean
@@ -86,6 +91,16 @@ export interface FormSubmissionRecord {
   values?: Record<string, FormValue>
   /** The consent box's wording when they ticked it. */
   consent_text?: string
+  /** The page it was sent from (no query string but its utm_ tags), and the page before. */
+  source?: FormSource
+  /** What sending it did. Missing on submissions from before it was kept. */
+  outcome?: { list_id?: number; new_contact?: boolean; welcome_email_id?: string }
+}
+
+export interface FormSource {
+  page?: string
+  referrer?: string
+  utm?: Record<string, string>
 }
 
 export const DEFAULT_SUBMIT_LABEL = 'Submit'
@@ -104,6 +119,7 @@ export interface ResolvedFormField {
   type: FormInputType
   required: boolean
   placeholder: string
+  help: string
   options?: string[]
   /** It goes onto the contact (built-in column or custom field), not just the submission. */
   contact: boolean
@@ -136,13 +152,13 @@ export function resolveFields(form: Pick<FormRecord, 'fields' | 'field_settings'
       if (!def) continue
       out.push({
         key, label: settings.label?.trim() || def.label, type: TYPE_OF[def.type], required: isRequired(form, key),
-        placeholder: settings.placeholder ?? '', options: def.options, contact: true,
+        placeholder: settings.placeholder ?? '', help: settings.help ?? '', options: def.options, contact: true,
       })
     } else if (isBuiltin(key)) {
       const label = settings.label?.trim() || (key === 'consent' ? DEFAULT_CONSENT_TEXT : BUILTIN_LABELS[key])
       const type: FormInputType = key === 'email' ? 'email' : key === 'message' ? 'textarea' : key === 'consent' ? 'checkbox' : 'text'
       out.push({
-        key, label, type, required: isRequired(form, key), placeholder: settings.placeholder ?? '', contact: key !== 'message' && key !== 'consent',
+        key, label, type, required: isRequired(form, key), placeholder: settings.placeholder ?? '', help: settings.help ?? '', contact: key !== 'message' && key !== 'consent',
       })
     }
   }
@@ -153,6 +169,8 @@ export function resolveFields(form: Pick<FormRecord, 'fields' | 'field_settings'
 export interface PublicForm {
   id: string
   name: string
+  heading: string
+  intro: string
   fields: ResolvedFormField[]
   submitLabel: string
   successMessage: string
@@ -164,6 +182,8 @@ export function publicForm(form: FormRecord, contactFields: ContactFieldDef[]): 
   return {
     id: form.id,
     name: form.name,
+    heading: form.heading?.trim() ?? '',
+    intro: form.intro?.trim() ?? '',
     fields: resolveFields(form, contactFields),
     submitLabel: form.submit_label?.trim() || DEFAULT_SUBMIT_LABEL,
     successMessage: form.success_message?.trim() || DEFAULT_SUCCESS_MESSAGE,
@@ -275,3 +295,33 @@ export function fillMergeTags(text: string, values: Record<string, FormValue>, o
 export const HONEYPOT = '_magpie_hp'
 
 export const submissionId = (s: Pick<FormSubmissionRecord, 'id' | 'submitted_at' | 'contact_email'>) => s.id ?? `${s.submitted_at}|${s.contact_email}`
+
+const UTM = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']
+
+/**
+ * Where a submission came from, as the page told us: the address without its
+ * query string (which can carry anything, an email included), keeping only
+ * its utm_ tags; the page before it, as a site and path. Nothing that isn't
+ * an http(s) address.
+ */
+export function cleanSource(page: unknown, referrer: unknown): FormSource | undefined {
+  const parse = (v: unknown) => {
+    if (typeof v !== 'string' || v.length > 2000) return null
+    try {
+      const u = new URL(v)
+      return u.protocol === 'http:' || u.protocol === 'https:' ? u : null
+    } catch {
+      return null
+    }
+  }
+  const p = parse(page)
+  const r = parse(referrer)
+  const out: FormSource = {}
+  if (p) {
+    out.page = `${p.host}${p.pathname}`.slice(0, 300)
+    const utm = Object.fromEntries(UTM.flatMap((k) => (p.searchParams.get(k) ? [[k, p.searchParams.get(k)!.slice(0, 100)]] : [])))
+    if (Object.keys(utm).length) out.utm = utm
+  }
+  if (r && r.host !== p?.host) out.referrer = `${r.host}${r.pathname}`.slice(0, 300)
+  return Object.keys(out).length ? out : undefined
+}

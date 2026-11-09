@@ -8,7 +8,7 @@ export const FORM_TEMPLATES: Array<{ id: string; name: string; description: stri
     name: 'Contact us',
     description: 'Name, email, company and a message.',
     icon: MessageSquare,
-    draft: { name: 'Contact us', fields: ['first_name', 'last_name', 'email', 'company', 'message'] },
+    draft: { name: 'Contact us', heading: 'Get in touch', intro: "Tell us what you need and we'll reply within one working day.", fields: ['first_name', 'last_name', 'email', 'company', 'message'] },
   },
   {
     id: 'newsletter',
@@ -17,6 +17,8 @@ export const FORM_TEMPLATES: Array<{ id: string; name: string; description: stri
     icon: Mail,
     draft: {
       name: 'Newsletter sign-up',
+      heading: 'Get the newsletter',
+      intro: 'One email a month: what we learned, and what we shipped.',
       fields: ['first_name', 'email', 'consent'],
       submit_label: 'Subscribe',
       success_message: "You're subscribed. Look out for the next issue in your inbox.",
@@ -31,6 +33,7 @@ export const FORM_TEMPLATES: Array<{ id: string; name: string; description: stri
     icon: Presentation,
     draft: {
       name: 'Demo request',
+      heading: 'Book a demo',
       fields: ['first_name', 'last_name', 'email', 'company', 'job_title', 'message'],
       field_settings: { message: { label: 'What would you like to see?' }, company: { required: true } },
       submit_label: 'Request a demo',
@@ -44,6 +47,7 @@ export const FORM_TEMPLATES: Array<{ id: string; name: string; description: stri
     icon: Calendar,
     draft: {
       name: 'Event registration',
+      heading: 'Register',
       fields: ['first_name', 'last_name', 'email', 'company'],
       submit_label: 'Register',
       success_message: "You're registered. We'll email you the details before the day.",
@@ -57,5 +61,6 @@ export const FORM_TEMPLATES: Array<{ id: string; name: string; description: stri
 
 export function templateDraft(id: string | undefined): FormDraft {
   const t = FORM_TEMPLATES.find((x) => x.id === id)
-  return t ? { ...NEW_FORM, ...t.draft } : NEW_FORM
+  // Blank is just the email every form has.
+  return t ? { ...NEW_FORM, heading: t.draft.name, ...t.draft } : { ...NEW_FORM, fields: ['email'], save_to_list_fields: [] }
 }

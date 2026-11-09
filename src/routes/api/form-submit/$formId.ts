@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { db } from '../../../server/db'
 import { notify } from '../../../server/notify'
 import { writeCustomValues } from '../../../server/contactFieldValues'
-import { checkSubmission, contactFieldsOf, fillMergeTags, HONEYPOT, publicForm } from '../../../features/forms/model'
+import { checkSubmission, cleanSource, contactFieldsOf, fillMergeTags, HONEYPOT, publicForm, type FormSubmissionRecord } from '../../../features/forms/model'
 
 function corsHeaders(origin: string) {
   return {
@@ -73,10 +73,13 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
         const { email, values, custom } = checked
         const str = (k: string) => (typeof values[k] === 'string' ? (values[k] as string) : '')
 
+        const outcome: NonNullable<FormSubmissionRecord['outcome']> = {}
         try {
           if (form.save_to_list_enabled !== false && form.list_id) {
             const save = new Set(contactFieldsOf(form))
             const existing = db.getContact(email)
+            outcome.list_id = form.list_id
+            outcome.new_contact = !existing
             // New details fill blanks; what a contact already has stays.
             const builtin: Record<string, string> = {}
             for (const k of ['first_name', 'last_name', 'company', 'job_title'] as const) {
@@ -90,11 +93,6 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
             db.markSignedUp(email)
           }
 
-          const consent = fields.find((f) => f.key === 'consent')
-          db.addFormSubmission(params.formId, email, values, consent && values.consent === true ? { consent_text: consent.label } : {})
-          const name = `${str('first_name')} ${str('last_name')}`.trim()
-          notify('form_submission', `${name || email} submitted "${form.name}"`, { contactEmail: email, url: `/marketing/forms/${params.formId}` })
-
           if (form.welcome_email_enabled && form.welcome_email_subject) {
             const html = `<div style="font-family:inherit;line-height:1.6">${fillMergeTags(form.welcome_email_body, values, { html: true }).replace(/\n/g, '<br/>')}</div>`
             let from: string | undefined
@@ -102,8 +100,19 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
               const sender = db.data.senders.find((s) => s.id === form.sender_id)
               if (sender) from = `"${sender.name}" <${sender.email}>`
             }
-            db.addPendingEmail(email, str('first_name'), fillMergeTags(form.welcome_email_subject, values), html, form.welcome_email_delay_minutes * 60 * 1000, from)
+            outcome.welcome_email_id = db.addPendingEmail(email, str('first_name'), fillMergeTags(form.welcome_email_subject, values), html, form.welcome_email_delay_minutes * 60 * 1000, from)
           }
+
+          const consent = fields.find((f) => f.key === 'consent')
+          // The page sends where it sits (`_page`, `_referrer`); a plain HTML post says it in its Referer.
+          const source = cleanSource(body._page ?? (isHtmlForm ? request.headers.get('referer') : undefined), body._referrer)
+          db.addFormSubmission(params.formId, email, values, {
+            ...(consent && values.consent === true ? { consent_text: consent.label } : {}),
+            ...(source ? { source } : {}),
+            outcome,
+          })
+          const name = `${str('first_name')} ${str('last_name')}`.trim()
+          notify('form_submission', `${name || email} submitted "${form.name}"`, { contactEmail: email, url: `/marketing/forms/${params.formId}` })
 
           return isHtmlForm ? back('sent=1') : json(200, { success: true, message: successMessage })
         } catch (err) {

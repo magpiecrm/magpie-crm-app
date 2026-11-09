@@ -112,10 +112,33 @@ function FormPage() {
     )
   }
 
+  // The editor brings its own bar (name, status, save), so the page's header and tabs step aside.
+  if (editing) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <Outlet />
+        {(sharing || share) && <ShareDialog form={publicForm(form, contactFields)} ready={share === 'new'} onClose={closeShare} />}
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-full flex-col">
+      {form.paused && (
+        <div className="border-b border-amber-500/30 bg-amber-500/[0.08] px-4 py-2.5 lg:px-8">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="flex min-w-0 flex-1 items-center gap-2 text-sm text-foreground">
+              <Pause className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden />
+              <span><span className="font-semibold">Paused.</span> It still shows on your site, but won't take submissions.</span>
+            </p>
+            <Button size="sm" variant="secondary" leftIcon={<Play className="h-3.5 w-3.5" />} onClick={() => pause.mutate()} isLoading={pause.isPending}>
+              Resume
+            </Button>
+          </div>
+        </div>
+      )}
       <header className="border-b border-border px-4 pt-4 lg:px-8 lg:pt-6">
-        <div className={`mx-auto w-full ${editing ? '' : 'max-w-6xl'}`}>
+        <div className="mx-auto w-full max-w-6xl">
           <Link to="/marketing/forms" className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
             <ArrowLeft className="h-4 w-4" aria-hidden /> Forms
           </Link>

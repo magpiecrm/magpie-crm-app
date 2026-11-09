@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { getPublicFormFn } from '../../server/functions'
 import { FormView } from '../../features/forms/components/FormView'
 
@@ -17,7 +17,7 @@ export const Route = createFileRoute('/f/$formId')({
     sent: search.sent === 1 || search.sent === '1' || search.sent === true ? true : undefined,
     error: typeof search.error === 'string' ? search.error : undefined,
   }),
-  loader: ({ params }) => getPublicFormFn({ data: { id: params.formId } }),
+  loader: ({ params }) => getPublicFormFn({ data: { id: params.formId, view: true } }),
   head: ({ loaderData }) => ({
     meta: [{ title: loaderData?.name ?? 'Form' }, { name: 'robots', content: 'noindex, nofollow' }],
   }),
@@ -39,6 +39,21 @@ function HostedFormPage() {
   const { formId } = Route.useParams()
   const { embed, sent, error } = Route.useSearch()
   const root = useRef<HTMLDivElement>(null)
+  // Where the form is: this page, or (in an embed) the page around it, which embed.js tells us.
+  const [place, setPlace] = useState<{ page: string; referrer: string } | null>(null)
+  useEffect(() => {
+    if (!embed || window.parent === window) {
+      setPlace({ page: location.href, referrer: document.referrer })
+      return
+    }
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== window.parent || e.data?.type !== 'magpie-form:page' || e.data.id !== formId) return
+      setPlace({ page: String(e.data.url ?? ''), referrer: String(e.data.referrer ?? '') })
+    }
+    window.addEventListener('message', onMessage)
+    window.parent.postMessage({ type: 'magpie-form:hello', id: formId }, '*')
+    return () => window.removeEventListener('message', onMessage)
+  }, [embed, formId])
 
   // Inside an iframe: tell the page around it how tall the form is, as it changes.
   useEffect(() => {
@@ -65,12 +80,13 @@ function HostedFormPage() {
       ) : (
         <FormView
           form={form}
+          headingLevel={embed ? 2 : 1}
           done={sent}
           onSubmit={async (values) => {
             const res = await fetch(`/api/form-submit/${encodeURIComponent(formId)}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(values),
+              body: JSON.stringify({ ...values, ...(place ? { _page: place.page, _referrer: place.referrer } : {}) }),
             })
             const json = await res.json().catch(() => ({}))
             return res.ok ? { ok: true, message: json.message } : { ok: false, error: json.error, problems: json.problems }
@@ -94,11 +110,6 @@ function HostedFormPage() {
               boxShadow: dark ? 'none' : '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.1)', border: dark ? '1px solid #2d3139' : '1px solid #e5e7eb',
             }}
           >
-            {form && (
-              <h1 style={{ margin: '0 0 24px', fontSize: 24, lineHeight: 1.25, fontWeight: 700, color: dark ? '#f4f4f5' : '#111827', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif' }}>
-                {form.name}
-              </h1>
-            )}
             {body}
           </div>
         </main>

@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ChevronRight, Copy, FileText, Pause, Pencil, Play, Plus, Search, Share2, Trash2 } from 'lucide-react'
+import { Copy, FileText, Pause, Pencil, Play, Plus, Search, Share2, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { deleteFormFn, duplicateFormFn, getContactFieldsFn, getFormsFn, listsFn, setFormPausedFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
@@ -11,7 +11,7 @@ import { confirmDialog } from '../../../components/ui/confirm'
 import { toast } from '../../../components/ui/toast'
 import { ShareDialog } from '../../../features/forms/components/ShareDialog'
 import { FormStatus } from '../../../features/forms/components/FormStatus'
-import { FORM_TEMPLATES } from '../../../features/forms/templates'
+import { TemplateTiles } from '../../../features/forms/components/TemplateTiles'
 import { publicForm, type FormRecord } from '../../../features/forms/model'
 import { ago } from '../../../features/forms/format'
 
@@ -107,7 +107,8 @@ function FormsPage() {
               <span>Form</span>
               <span>Status</span>
               <span className="text-right">Submissions</span>
-              <span>Last submission</span>
+              <span className="text-right">Conversion</span>
+              <span className="pl-4">Last submission</span>
               <span className="sr-only">Actions</span>
             </div>
             <ul className="divide-y divide-border/70">
@@ -115,7 +116,7 @@ function FormsPage() {
                 const list = listName(f)
                 return (
                   <li key={f.id} data-form-card className="group/row relative">
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_7rem_9rem_10rem_6.5rem]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_6.5rem_8rem_7.5rem_9rem_6.5rem]">
                       <div className="min-w-0">
                         <Link
                           to="/marketing/forms/$formId"
@@ -144,7 +145,11 @@ function FormsPage() {
                         <p className="text-[15px] font-semibold tabular-nums text-foreground">{f.submission_count.toLocaleString('en-GB')}</p>
                         <p className="text-[13px] text-muted-foreground">{f.submissions_this_week ? `${f.submissions_this_week} this week` : 'None this week'}</p>
                       </div>
-                      <p className="hidden text-sm text-muted-foreground md:block">{f.last_submission_at ? ago(f.last_submission_at).replace(/^on /, '') : 'None yet'}</p>
+                      <div className="hidden text-right md:block" title="Of the people who saw the form, how many sent it">
+                        <p className="text-[15px] font-semibold tabular-nums text-foreground">{f.views ? `${((f.submission_count / f.views) * 100).toFixed(1)}%` : '—'}</p>
+                        <p className="text-[13px] text-muted-foreground">{f.views.toLocaleString('en-GB')} view{f.views === 1 ? '' : 's'}</p>
+                      </div>
+                      <p className="hidden pl-4 text-sm text-muted-foreground md:block">{f.last_submission_at ? ago(f.last_submission_at).replace(/^on /, '') : 'None yet'}</p>
                       <div className="relative z-10 flex items-center justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setSharing(f)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
                           Share
@@ -190,29 +195,8 @@ function EmptyForms() {
         <h2 className="text-lg font-semibold text-foreground">Make your first form</h2>
         <p className="mt-1.5 text-muted-foreground">Put it on your website or share its link. Everyone who sends it becomes a contact you can email.</p>
       </div>
-      <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-2">
-        {FORM_TEMPLATES.map((t) => (
-          <Link
-            key={t.id}
-            to="/marketing/forms/new"
-            search={{ template: t.id }}
-            className="group flex items-start gap-3 rounded-md-s border border-border bg-background px-4 py-3.5 text-left transition-colors hover:border-foreground/25 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          >
-            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md-xs bg-muted text-foreground/75">
-              <t.icon className="h-4 w-4" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold text-foreground">{t.name}</span>
-              <span className="block text-[13px] text-muted-foreground">{t.description}</span>
-            </span>
-            <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
-          </Link>
-        ))}
-      </div>
-      <div className="mt-5 text-center">
-        <Link to="/marketing/forms/new" search={{ template: 'blank' }} className="inline-flex items-center gap-1.5 text-sm font-medium text-accent hover:underline">
-          <Plus className="h-4 w-4" aria-hidden /> Start from a blank form
-        </Link>
+      <div className="mx-auto mt-8 max-w-3xl">
+        <TemplateTiles />
       </div>
     </div>
   )

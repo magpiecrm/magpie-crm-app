@@ -241,6 +241,8 @@ export interface DbSchema {
   }>
   forms?: FormRecord[]
   form_submissions?: FormSubmissionRecord[]
+  /** Looks at each form's page or embed, by form and day (yyyy-mm-dd): counts only. */
+  form_views?: Record<string, Record<string, number>>
   pending_emails?: Array<{
     id: string
     contact_email: string
@@ -1268,6 +1270,18 @@ class JsonDb {
     if (!this.saveWaiting) this.saveData(this.data)
   }
 
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** For counts that can wait a few seconds (form views): one write for many, as the whole file is rewritten each time. */
+  private saveSoon() {
+    if (this.saveTimer) return
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null
+      this.save()
+    }, 5000)
+    this.saveTimer.unref?.()
+  }
+
   /**
    * Runs a change to the data made by a domain module (e.g. server/sales/),
    * then saves it. The change runs synchronously, so nothing interleaves.
@@ -1796,6 +1810,7 @@ class JsonDb {
     if (this.data.form_submissions) {
       this.data.form_submissions = this.data.form_submissions.filter(s => s.form_id !== id)
     }
+    if (this.data.form_views) delete this.data.form_views[id]
     this.save()
   }
 
@@ -1852,12 +1867,34 @@ class JsonDb {
     this.save()
   }
 
-  addFormSubmission(formId: string, contactEmail: string, values: Record<string, FormValue>, extra: { consent_text?: string } = {}) {
+  addFormSubmission(formId: string, contactEmail: string, values: Record<string, FormValue>, extra: Pick<FormSubmissionRecord, 'consent_text' | 'source' | 'outcome'> = {}) {
     if (!this.data.form_submissions) this.data.form_submissions = []
     this.data.form_submissions.push({
       id: crypto.randomUUID(), form_id: formId, contact_email: contactEmail, values, ...extra, submitted_at: new Date().toISOString(),
     })
     this.save()
+  }
+
+  /** One more look at a form's page or embed today. Counts only, by day. */
+  addFormView(formId: string) {
+    if (!this.data.form_views) this.data.form_views = {}
+    const day = new Date().toISOString().slice(0, 10)
+    const days = (this.data.form_views[formId] ??= {})
+    days[day] = (days[day] ?? 0) + 1
+    this.saveSoon()
+  }
+
+  /** A form's views, all time and in the last 7 days. */
+  getFormViews(formId: string) {
+    const days = this.data.form_views?.[formId] ?? {}
+    const since = new Date(Date.now() - 6 * 86400e3).toISOString().slice(0, 10)
+    let total = 0
+    let week = 0
+    for (const [day, n] of Object.entries(days)) {
+      total += n
+      if (day >= since) week += n
+    }
+    return { total, week }
   }
 
   /** Removes one submission (`submissionId`). The contact it made stays. */

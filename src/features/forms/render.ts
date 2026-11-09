@@ -54,6 +54,10 @@ textarea.mf-input{min-height:112px;resize:vertical;border-radius:min(var(--mf-ra
 .mf-done{display:flex;gap:12px;align-items:flex-start;padding:16px 18px;border:1px solid var(--mf-border);border-radius:min(var(--mf-radius),12px);background:var(--mf-bg)}
 .mf-done-mark{flex:none;width:22px;height:22px;border-radius:999px;background:var(--mf-accent);color:var(--mf-accent-text);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;line-height:1}
 .mf-done p{margin:0;white-space:pre-line}
+.mf-head{display:flex;flex-direction:column;gap:6px;margin-bottom:4px}
+.mf-title{margin:0;font-size:22px;line-height:1.25;font-weight:700;letter-spacing:-.01em;color:var(--mf-text)}
+.mf-intro{margin:0;font-size:15px;line-height:1.55;color:var(--mf-muted);white-space:pre-line}
+.mf-help{margin:-2px 0 0;font-size:13px;line-height:1.45;color:var(--mf-muted)}
 .mf-preview-reset{appearance:none;align-self:flex-start;background:none;border:0;padding:0;color:var(--mf-muted);font:inherit;font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .mf-hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
 .mf-dark{color-scheme:dark;--mf-text:#f4f4f5;--mf-muted:#a1a1aa;--mf-border:#737985;--mf-bg:#1d2025;--mf-error:#f97066;--mf-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")}
@@ -97,7 +101,8 @@ function fieldHtml(f: ResolvedFormField, id: string): string {
     const auto = { email: 'email', first_name: 'given-name', last_name: 'family-name', company: 'organization', job_title: 'organization-title' }[f.key]
     control = `<input class="mf-input" id="${fid}" type="${t}" name="${name}"${auto ? ` autocomplete="${auto}"` : ''}${ph}${req}>`
   }
-  return `<div class="mf-field"><label class="mf-label" for="${fid}">${esc(f.label)}${optional}</label>${control}</div>`
+  const help = f.help ? `<p class="mf-help" id="${fid}-help">${esc(f.help)}</p>` : ''
+  return `<div class="mf-field"><label class="mf-label" for="${fid}">${esc(f.label)}${optional}</label>${help}${control}</div>`
 }
 
 /**
@@ -118,7 +123,7 @@ ${FORM_CSS}
 </style>
 <div class="mf-wrap">
 <form class="mf${form.style.theme === 'dark' ? ' mf-dark' : ''}" id="${id}" action="${esc(action)}" method="post">
-${rows}
+${form.heading || form.intro ? `  <div class="mf-head">${form.heading ? `<h2 class="mf-title">${esc(form.heading)}</h2>` : ''}${form.intro ? `<p class="mf-intro">${esc(form.intro)}</p>` : ''}</div>\n` : ''}${rows}
   <div class="mf-hp" aria-hidden="true"><input name="${HONEYPOT}" tabindex="-1" autocomplete="off"></div>
   <button class="mf-button" type="submit">${esc(form.submitLabel)}</button>
 </form>
@@ -130,6 +135,7 @@ ${rows}
     e.preventDefault();
     var data = {};
     new FormData(f).forEach(function (v, k) { data[k] = k in data ? [].concat(data[k], v) : v; });
+    data._page = location.href; data._referrer = document.referrer;
     var b = f.querySelector('button'); b.disabled = true;
     fetch(f.action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
