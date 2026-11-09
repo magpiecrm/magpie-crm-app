@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
@@ -54,8 +55,27 @@ export function SaveTemplateDialog({ isOpen, onClose, getHtml, defaultName, edit
           <div className="flex gap-4">
             <TemplateThumbnail html={html} inset={6} className="aspect-[4/5] w-24 shrink-0 rounded-md-s border border-border max-sm:hidden dark:border-white/10" />
             <div className="min-w-0 flex-1 space-y-4">
-              <Field label="Name" hint={taken ? 'You already have a template with this name.' : undefined}>
-                <input autoFocus required maxLength={200} value={name} onChange={e => setName(e.target.value)} onFocus={e => e.currentTarget.select()} className={INPUT_CLASS} />
+              <Field
+                label="Name"
+                hint={
+                  taken ? (
+                    <span id="save-template-name-taken" className="flex items-start gap-1.5 text-amber-800 dark:text-amber-300">
+                      <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      You already have a template called this. Saving makes a second one.
+                    </span>
+                  ) : undefined
+                }
+              >
+                <input
+                  autoFocus
+                  required
+                  maxLength={200}
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  onFocus={e => e.currentTarget.select()}
+                  aria-describedby={taken ? 'save-template-name-taken' : undefined}
+                  className={`${INPUT_CLASS} ${taken ? 'border-amber-600 focus:border-amber-600 focus:ring-amber-600/20' : ''}`}
+                />
               </Field>
               <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>} hint="Shown on the template's card.">
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />

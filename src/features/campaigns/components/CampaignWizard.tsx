@@ -821,14 +821,9 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
             ) : (
               <div className="pb-2">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">Start from a template</p>
-                    <p className="mt-0.5 text-[13px] text-muted-foreground">
-                      {savedTemplates.length > 0 ? 'Your most recent templates. Pick one, or see them all.' : 'A few starters. Pick one, or see them all.'}
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-foreground">{savedTemplates.length > 0 ? 'Your recent templates' : 'Starters'}</p>
                   <div className="flex gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
-                    <Button variant="secondary" size="sm" onClick={() => setShowBuilder(true)}>
+                    <Button variant="ghost" size="sm" onClick={() => setShowBuilder(true)}>
                       Start from scratch
                     </Button>
                     <Button size="sm" onClick={() => setShowTemplates(true)} leftIcon={<LayoutTemplate className="h-3.5 w-3.5" />}>

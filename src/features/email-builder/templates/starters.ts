@@ -8,7 +8,8 @@
  *
  * They share one house style (6px button radius, #6b7280 for small print,
  * images cropped to one shape per row, sans throughout but for the editorial
- * newsletter's serif) and each has a sample brand of its own: a mark and a
+ * newsletter, whose headings and story text are serif and its labels,
+ * button and footer sans) and each has a sample brand of its own: a mark and a
  * name in its accent colour, which it also uses for its eyebrow and main
  * button, with secondary links outlined or as text. So the set reads as a family without every one looking the same.
  * A starter with its own footer block carries the unsubscribe link there and
@@ -137,7 +138,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         eyebrow('Issue 12 · 25 August', '#9a3412'),
         { id: id('b'), type: 'title', content: 'Is there a perfect time of day to focus?', style: { fontSize: 28, fontFamily: SERIF, color: INK, paddingBottom: 20 } },
         { id: id('b'), type: 'image', content: img('photo-1499750310107-5fef28a66643', 1056, 594), alt: 'A desk with a laptop, a notebook and coffee', style: { paddingBottom: 24 } },
-        { id: id('b'), type: 'text', content: 'Open with the one idea the reader came for. Two or three sentences is plenty: the click-through is what matters, not the word count.', style: { fontSize: 16, color: BODY } },
+        { id: id('b'), type: 'text', content: 'Open with the one idea the reader came for. Two or three sentences is plenty: the click-through is what matters, not the word count.', style: { fontSize: 17, fontFamily: SERIF, color: BODY } },
         { id: id('b'), type: 'button', content: 'Read the full story', url: '#', align: 'left', style: { paddingTop: 8, paddingBottom: 0 } },
       ] },
       { id: id('b'), type: 'section', content: '', style: { paddingTop: 0, paddingRight: 0, paddingBottom: 0, paddingLeft: 0 }, children: [

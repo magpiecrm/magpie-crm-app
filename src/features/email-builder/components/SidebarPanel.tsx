@@ -195,7 +195,7 @@ export function SidebarPanel({
 
 /** One template in the panel: a wide picture of its opening, its name under it. Clicking uses it. */
 function PanelTemplate({ html, name, onUse }: { html: string; name: string; onUse: () => void }) {
-  return <TemplateTile html={html} name={name} shape="aspect-[16/10]" fromTop onSelect={onUse} />
+  return <TemplateTile html={html} name={name} shape="aspect-[16/10]" onSelect={onUse} />
 }
 
 /**
@@ -250,20 +250,23 @@ function TemplatesTab({
         )}
       </section>
 
-      {STARTER_CATEGORIES.map(category => {
-        const inCategory = starters.filter(t => t.category === category && matches(t))
-        if (inCategory.length === 0) return null
-        return (
-          <section key={category} className="space-y-3">
-            <h3 className="text-[13px] font-semibold text-foreground">
-              Starters <span className="font-normal text-muted-foreground">· {category}</span>
-            </h3>
-            {inCategory.map(template => (
-              <PanelTemplate key={template.id} html={starterHtml(template)} name={template.name} onUse={() => applyStarter(template)} />
-            ))}
-          </section>
-        )
-      })}
+      <section className="space-y-3">
+        <h3 className="flex items-baseline justify-between text-[13px] font-semibold text-foreground">
+          Starters <span className="font-normal tabular-nums text-muted-foreground">{starters.length}</span>
+        </h3>
+        {STARTER_CATEGORIES.map(category => {
+          const inCategory = starters.filter(t => t.category === category && matches(t))
+          if (inCategory.length === 0) return null
+          return (
+            <div key={category} className="space-y-3 pt-2">
+              <h4 className="text-xs font-medium text-muted-foreground">{category}</h4>
+              {inCategory.map(template => (
+                <PanelTemplate key={template.id} html={starterHtml(template)} name={template.name} onUse={() => applyStarter(template)} />
+              ))}
+            </div>
+          )
+        })}
+      </section>
     </div>
   )
 }

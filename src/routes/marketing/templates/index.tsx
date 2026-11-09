@@ -12,8 +12,8 @@ import {
 } from '../../../server/functions'
 import { STARTER_CATEGORIES, STARTER_TEMPLATES, type StarterCategory, type StarterTemplate } from '../../../features/email-builder/templates/starters'
 import { TemplateThumbnail } from '../../../features/templates/components/TemplateThumbnail'
-import { TemplatePreviewDialog, TemplateTile } from '../../../features/templates/components/TemplateTile'
-import { SegmentedTabs } from '../../../features/templates/components/TemplateLibraryDialog'
+import { PreviewButton, TemplatePreviewDialog, TemplateTile } from '../../../features/templates/components/TemplateTile'
+import { SegmentedTabs } from '../../../features/templates/components/SegmentedTabs'
 import { starterHtml } from '../../../features/templates/preview'
 import type { EmailTemplate } from '../../../features/templates/types'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
@@ -49,6 +49,7 @@ function TemplatesPage() {
   // Undefined while the list shows; otherwise New template, with a starter already picked or none (blank).
   const [creating, setCreating] = useState<{ starterId?: string } | undefined>(undefined)
   const [renaming, setRenaming] = useState<EmailTemplate | null>(null)
+  const [previewing, setPreviewing] = useState<EmailTemplate | null>(null)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<'edited' | 'name'>('edited')
 
@@ -190,11 +191,22 @@ function TemplatesPage() {
                   onRename={() => rename(template)}
                   onDuplicate={() => duplicateMutation.mutate(template.id)}
                   onDelete={() => confirmDelete(template)}
+                  onPreview={() => setPreviewing(template)}
                 />
               ))}
             </div>
           )}
         </>
+      )}
+      {previewing && (
+        <TemplatePreviewDialog
+          html={previewing.html}
+          name={previewing.name}
+          description={previewing.description}
+          onClose={() => setPreviewing(null)}
+          actionLabel="Use in campaign"
+          onAction={() => startCampaign(previewing.id)}
+        />
       )}
       {renaming && (
         <RenameTemplateDialog
@@ -222,9 +234,11 @@ function TemplateCard({
   onRename,
   onDuplicate,
   onDelete,
+  onPreview,
 }: {
   template: EmailTemplate
   onOpen: () => void
+  onPreview: () => void
   onUse: () => void
   onRename: () => void
   onDuplicate: () => void
@@ -242,8 +256,9 @@ function TemplateCard({
           {/* Wide on a phone, where one card fills the row; the gallery's shape everywhere else. */}
           <TemplateThumbnail html={template.html} className="aspect-[4/3] sm:aspect-[4/5]" />
         </button>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
-          <Button size="sm" onClick={onUse} className="pointer-events-auto shadow-md max-sm:min-h-9">
+        {/* Over the picture where there's a pointer to bring it up; a button below it on a touch screen. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:hidden">
+          <Button size="sm" onClick={onUse} className="pointer-events-auto shadow-md">
             Use in campaign
           </Button>
         </div>
@@ -254,6 +269,7 @@ function TemplateCard({
             {template.name}
           </h3>
         </button>
+        <PreviewButton name={template.name} onClick={onPreview} className="-mt-1" />
         <ActionMenu
           label={`Actions for ${template.name}`}
           className="-mr-1.5 -mt-1"
@@ -271,6 +287,9 @@ function TemplateCard({
         {template.description}
       </p>
       <p className="mt-1.5 text-xs text-muted-foreground/90">Edited {editedOn(template.updated_at)}</p>
+      <Button variant="secondary" size="sm" onClick={onUse} className="mt-3 min-h-10 w-full [@media(hover:hover)]:hidden">
+        Use in campaign
+      </Button>
     </article>
   )
 }
@@ -432,7 +451,7 @@ function CreateTemplateView({
               Cancel
             </Button>
             <Button type="submit" isLoading={isSaving}>
-              Create template
+              {starter ? 'Create template' : 'Create blank template'}
             </Button>
           </div>
         </div>
