@@ -396,12 +396,14 @@ export function BlockRenderer({
           <div className="flex-1 min-w-0" style={{ fontFamily: globalStyle.fontFamily }}>
             <h4 className="font-bold text-base leading-tight truncate text-[#111827]">{block.content}</h4>
             <p className="text-xs mt-1 leading-snug line-clamp-3 text-[#4b5563]">{block.subContent}</p>
+            {/* The block's own button colours and style, as the compiled email uses them. */}
             <button 
               className="text-[10px] font-bold py-1.5 px-3 mt-2 pointer-events-none"
               style={{ 
-                backgroundColor: globalStyle.buttonBgColor, 
-                color: globalStyle.buttonTextColor,
-                borderRadius: `${globalStyle.buttonRadius}px`
+                backgroundColor: block.style?.btnVariant === 'outline' ? 'transparent' : (block.style?.btnBgColor ?? globalStyle.buttonBgColor),
+                border: block.style?.btnVariant === 'outline' ? `2px solid ${block.style?.btnBgColor ?? globalStyle.buttonBgColor}` : undefined,
+                color: block.style?.btnVariant === 'outline' ? (block.style?.btnTextColor ?? block.style?.btnBgColor ?? globalStyle.buttonBgColor) : (block.style?.btnTextColor ?? globalStyle.buttonTextColor),
+                borderRadius: `${block.style?.btnRadius ?? globalStyle.buttonRadius}px`
               }}
             >
               Read More

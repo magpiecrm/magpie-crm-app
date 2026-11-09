@@ -829,7 +829,7 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
                   </div>
                   <div className="flex gap-2 max-sm:w-full max-sm:[&>button]:flex-1">
                     <Button variant="secondary" size="sm" onClick={() => setShowBuilder(true)}>
-                      Design from scratch
+                      Start from scratch
                     </Button>
                     <Button size="sm" onClick={() => setShowTemplates(true)} leftIcon={<LayoutTemplate className="h-3.5 w-3.5" />}>
                       Choose a template

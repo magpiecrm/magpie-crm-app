@@ -784,7 +784,8 @@ export function EmailBuilder({
         isOpen={showSaveTemplate}
         onClose={() => setShowSaveTemplate(false)}
         getHtml={() => compileHTML(blocks, globalStyle)}
-        defaultName={template ? `${template.name} (copy)` : campaignName}
+        defaultName={template ? template.name : campaignName}
+        editingTemplate={template?.name}
       />
 
     </div>

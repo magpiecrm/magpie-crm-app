@@ -119,14 +119,12 @@ const renderButton: BlockRenderer = (block, globalStyle) => {
   const btn = bulletproofButton({
     label: block.content || 'Click here',
     href: block.url || '#',
-    bgColor: block.style?.btnBgColor ?? globalStyle.buttonBgColor,
-    textColor: block.style?.btnTextColor ?? globalStyle.buttonTextColor,
+    ...buttonColours(block, globalStyle),
     radius: block.style?.btnRadius ?? globalStyle.buttonRadius,
     font: font(block, globalStyle),
     fontSize: block.style?.fontSize ?? 14,
     height: block.style?.height ?? 44,
     width: isCustomWidth ? Math.round((parseFloat(block.width!) / 100) * globalStyle.bodyWidth) : undefined,
-    outline: block.style?.btnVariant === 'outline',
   })
   return blockTable(`${paddingCss(block.style, BLOCK_PADDING_DEFAULTS[block.type])} text-align: ${block.align || 'left'};`, btn)
 }
@@ -182,6 +180,17 @@ const renderDynamic: BlockRenderer = (block, globalStyle) =>
     `<table cellpadding="0" cellspacing="0" border="0" role="presentation" width="100%" style="width: 100%; border-collapse: collapse;"><tbody><tr><td style="padding: 12px; background-color: #f9fafb; border: 1px dashed #d1d5db; font-family: ${font(block, globalStyle)}; font-size: 13px; color: #374151;">{{ ${escapeHtml(block.content || 'dynamic_var')} }}</td></tr></tbody></table>`,
   )
 
+/**
+ * A block's button colours. An outline button's text is the outline's colour
+ * unless the block sets its own: the email's default button text (white, for a
+ * filled button) would vanish on a white email. The builder's canvas does the same.
+ */
+const buttonColours = (block: EmailBlock, globalStyle: GlobalStyle) => {
+  const outline = block.style?.btnVariant === 'outline'
+  const bgColor = block.style?.btnBgColor ?? globalStyle.buttonBgColor
+  return { bgColor, textColor: block.style?.btnTextColor ?? (outline ? bgColor : globalStyle.buttonTextColor), outline }
+}
+
 /** Two-column media/text row that stacks below 620px. */
 const renderSplit: BlockRenderer = (block, globalStyle) => {
   const f = font(block, globalStyle)
@@ -192,7 +201,7 @@ const renderSplit: BlockRenderer = (block, globalStyle) => {
     emailImage({ src: block.subImage || 'https://via.placeholder.com/300x200', alt: block.alt || '', radius: block.style?.borderRadius ?? 6 }),
     'xs-mb-16',
     '',
-    `padding-${mediaFirst ? 'right' : 'left'}: 16px;`,
+    `padding-${mediaFirst ? 'right' : 'left'}: 12px;`,
   )
   const copy = column(
     52,
@@ -201,13 +210,13 @@ const renderSplit: BlockRenderer = (block, globalStyle) => {
      ${bulletproofButton({
        label: 'Read more',
        href: block.url || '#',
-       bgColor: block.style?.btnBgColor ?? globalStyle.buttonBgColor,
-       textColor: block.style?.btnTextColor ?? globalStyle.buttonTextColor,
+       ...buttonColours(block, globalStyle),
        radius: block.style?.btnRadius ?? globalStyle.buttonRadius,
        font: f,
        fontSize: 14,
        height: 40,
      })}`,
+    '',
     '',
     `padding-${mediaFirst ? 'left' : 'right'}: 12px;`,
   )

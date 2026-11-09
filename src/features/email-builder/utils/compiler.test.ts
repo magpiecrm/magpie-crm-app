@@ -33,3 +33,15 @@ describe('starter templates', () => {
     expect(html.match(/href="\{\{ unsubscribe \}\}"/g)).toHaveLength(1)
   })
 })
+
+describe('outline buttons', () => {
+  it("set their label in the outline's colour, not the filled buttons' white", () => {
+    const html = compileHTML([{ id: 'b', type: 'button', content: 'Read more', url: '#', style: { btnVariant: 'outline', btnBgColor: '#1d4ed8' } } as EmailBlock], DEFAULT_GLOBAL_STYLE)
+    expect(html).toContain('border: 2px solid #1d4ed8; color: #1d4ed8;')
+  })
+
+  it('keep a text colour the block sets', () => {
+    const html = compileHTML([{ id: 's', type: 'split', content: 'Story', subContent: '', url: '#', style: { btnVariant: 'outline', btnBgColor: '#1d4ed8', btnTextColor: '#111827' } } as EmailBlock], DEFAULT_GLOBAL_STYLE)
+    expect(html).toContain('border: 2px solid #1d4ed8; color: #111827;')
+  })
+})

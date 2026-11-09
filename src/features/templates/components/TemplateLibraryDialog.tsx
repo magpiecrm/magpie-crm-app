@@ -24,15 +24,22 @@ export function SegmentedTabs<T extends string>({
   options,
   label,
   className = '',
+  scroll,
 }: {
   value: T
   onChange: (value: T) => void
   options: Array<{ value: T; label: React.ReactNode }>
   label: string
   className?: string
+  /** On a phone, one row that scrolls sideways rather than wrapping. */
+  scroll?: boolean
 }) {
   return (
-    <div role="tablist" aria-label={label} className={`inline-flex max-w-full flex-wrap gap-1 rounded-md-s bg-muted p-1 ${className}`}>
+    <div
+      role="tablist"
+      aria-label={label}
+      className={`inline-flex max-w-full gap-1 rounded-md-s bg-muted p-1 ${scroll ? 'max-sm:overflow-x-auto max-sm:[scrollbar-width:none] sm:flex-wrap' : 'flex-wrap'} ${className}`}
+    >
       {options.map((o) => (
         <button
           key={o.value}

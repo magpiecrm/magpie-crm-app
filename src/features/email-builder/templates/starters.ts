@@ -7,10 +7,10 @@
  * model — no markup or CSS is copied.
  *
  * They share one house style (6px button radius, #6b7280 for small print,
- * images cropped to one shape per row, newsletters with serif headings,
- * everything else in sans) and each has a sample brand of its own: a mark and
- * a name in its accent colour, which it also uses for its eyebrow and main
- * button. So the set reads as a family without every one looking the same.
+ * images cropped to one shape per row, sans throughout but for the editorial
+ * newsletter's serif) and each has a sample brand of its own: a mark and a
+ * name in its accent colour, which it also uses for its eyebrow and main
+ * button, with secondary links outlined or as text. So the set reads as a family without every one looking the same.
  * A starter with its own footer block carries the unsubscribe link there and
  * hides the appended legal line (`footerText: ''`), so there is only ever one.
  *
@@ -95,8 +95,8 @@ const eyebrow = (content: string, color: string, style: EmailBlock['style'] = {}
 const subscribed = (company: string) => `You're receiving this because you subscribed to updates from ${company}.`
 const customer = (company: string) => `You're receiving this because you have an account with ${company}.`
 
-/** A digest story's Read more: quiet, so the email's own button is the one main action. */
-const STORY: EmailBlock['style'] = { paddingBottom: 0, btnBgColor: '#eff6ff', btnTextColor: '#1d4ed8' }
+/** A digest story's Read more: outlined, so the email's own button is the one main action. */
+const STORY: EmailBlock['style'] = { paddingBottom: 0, btnVariant: 'outline', btnBgColor: '#1d4ed8' }
 
 export const STARTER_TEMPLATES: StarterTemplate[] = [
   {
@@ -126,7 +126,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Editorial newsletter',
     description: 'Lead story with a photo, then two smaller pieces, on cards.',
     category: 'Newsletter',
-    globalStyle: { ...HOUSE, cardMode: true, canvasBgColor: '#f1eee7', paddingX: 36, paddingY: 32, cardRadius: 8, cardGap: 12 },
+    globalStyle: { ...HOUSE, cardMode: true, canvasBgColor: '#f1eee7', paddingX: 36, paddingY: 32, cardRadius: 8, cardGap: 12, buttonBgColor: '#9a3412' },
     build: () => [
       { id: id('b'), type: 'navigation', content: '◆ Fieldnotes', url: '#', links: [
         { id: id('nl'), label: 'Latest', url: '#' },
@@ -145,7 +145,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         { id: id('b'), type: 'articles', content: '', items: [
           { id: id('it'), image: img('photo-1441974231531-c6227db76b6e', 520, 340), title: 'A shorter path to deep work', text: 'What changed when we cut the meeting block in half.', url: '#', alt: 'Sunlight through a forest' },
           { id: id('it'), image: img('photo-1470071459604-3b5ec3a7fe05', 520, 340), title: 'The quiet hours experiment', text: 'Three weeks of protected mornings, measured properly.', url: '#', alt: 'A green valley under mist' },
-        ], style: { paddingBottom: 0, linkColor: '#9a3412' } },
+        ], style: { paddingBottom: 0, linkColor: '#9a3412', fontFamily: SERIF } },
       ] },
       footer('Fieldnotes', subscribed('Fieldnotes'), { paddingTop: 0 }),
     ],
@@ -155,11 +155,11 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Link digest',
     description: 'One column: a short intro and three linked stories.',
     category: 'Newsletter',
-    globalStyle: { ...HOUSE },
+    globalStyle: { ...HOUSE, buttonBgColor: '#1d4ed8' },
     build: () => [
-      logo('● Margin', 'left', '#1d4ed8', { fontFamily: SERIF, fontSize: 21 }),
+      logo('● Margin', 'left', '#1d4ed8'),
       eyebrow('Issue 14 · Friday 13 November', '#1d4ed8'),
-      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 28, fontFamily: SERIF, color: INK, paddingBottom: 12 } },
+      { id: id('b'), type: 'title', content: 'This week in three links', style: { fontSize: 28, color: INK, paddingBottom: 12 } },
       { id: id('b'), type: 'text', content: 'A short note from the editor on why these three are worth your time this week.', style: { fontSize: 16, color: BODY, paddingBottom: 8 } },
       { id: id('b'), type: 'divider', content: '' },
       { id: id('b'), type: 'split', content: 'The case for smaller teams', subContent: 'Why the four-person unit keeps outperforming the twelve-person one, with the numbers behind it.', subImage: img('photo-1522071820081-009f0129c71c', 480, 360), url: '#', alt: 'A small team around a laptop', style: STORY },
@@ -175,7 +175,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
   {
     id: 'product-update',
     name: 'Product update',
-    description: "What's new this month: what shipped, what improved, what's fixed.",
+    description: "What shipped this month, what improved and what's fixed.",
     category: 'Announcement',
     globalStyle: { ...HOUSE, buttonBgColor: '#0f766e', linkColor: '#0f766e' },
     build: () => [
@@ -278,7 +278,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
         { id: id('c'), type: 'title', content: '30% off everything', align: 'center', style: { color: '#ffffff', fontSize: 36, textAlign: 'center', paddingBottom: 8 } },
         { id: id('c'), type: 'text', content: 'Three days only, ending Sunday at midnight.', style: { color: '#e4e4e7', fontSize: 16, textAlign: 'center', paddingBottom: 16 } },
         // The code as a chip of its own, easy to spot and copy.
-        { id: id('c'), type: 'text', content: 'Code AUTUMN30', width: '46%', align: 'center', style: { bgColor: '#27272a', color: '#ffffff', fontFamily: MONO, fontSize: 16, fontWeight: 'bold', textAlign: 'center', paddingTop: 10, paddingBottom: 10 } },
+        { id: id('c'), type: 'text', content: 'Code AUTUMN30', width: '46%', align: 'center', style: { bgColor: '#3f3f46', color: '#ffffff', fontFamily: MONO, fontSize: 16, fontWeight: 'bold', textAlign: 'center', paddingTop: 10, paddingBottom: 10 } },
         { id: id('c'), type: 'button', content: 'Shop the sale', url: '#', align: 'center', style: { paddingTop: 24, paddingBottom: 0 } },
       ] },
       { id: id('b'), type: 'spacer', content: '32' },
@@ -316,7 +316,7 @@ export const STARTER_TEMPLATES: StarterTemplate[] = [
     name: 'Password reset',
     description: 'A single-purpose account email with one clear action.',
     category: 'Transactional',
-    globalStyle: { ...HOUSE, paddingX: 60 },
+    globalStyle: { ...HOUSE, paddingX: 60, buttonBgColor: '#0f766e' },
     build: () => [
       logo('▲ Apex', 'center', '#0f766e'),
       { id: id('b'), type: 'title', content: 'Reset your password', align: 'center', style: { fontSize: 24, color: INK, textAlign: 'center', paddingBottom: 12 } },

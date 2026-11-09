@@ -5,16 +5,14 @@ import { STARTER_CATEGORIES, type StarterTemplate } from '../templates/starters'
 import type { EmailTemplate } from '../../templates/types'
 import { useState } from 'react'
 import { Search } from 'lucide-react'
-import { TemplateRow } from '../../templates/components/TemplateTile'
-import { SegmentedTabs } from '../../templates/components/TemplateLibraryDialog'
+import { TemplateTile } from '../../templates/components/TemplateTile'
 import { starterHtml } from '../../templates/preview'
 import { INPUT_CLASS } from '../../../components/ui/Field'
 import { BlockEditor } from './BlockEditor'
 
 /**
  * The content tabs, in order, with the names they show. Starters
- * ('templates') and your own ('saved') share one Templates tab, with a
- * switch inside it.
+ * ('templates') and your own ('saved') share one Templates tab, one list.
  */
 const CONTENT_TABS = [
   { id: 'blocks', label: 'Blocks' },
@@ -173,8 +171,6 @@ export function SidebarPanel({
 
                 {(contentTab === 'templates' || contentTab === 'saved') && (
                   <TemplatesTab
-                    showing={contentTab === 'saved' ? 'saved' : 'starters'}
-                    onShow={which => setContentTab(which === 'saved' ? 'saved' : 'templates')}
                     starters={templates}
                     applyStarter={applyTemplate}
                     saved={savedTemplates}
@@ -197,18 +193,22 @@ export function SidebarPanel({
   )
 }
 
-/** Starters and the team's own templates, as rows; using one replaces the canvas (after asking, if it has blocks). */
+/** One template in the panel: a wide picture of its opening, its name under it. Clicking uses it. */
+function PanelTemplate({ html, name, onUse }: { html: string; name: string; onUse: () => void }) {
+  return <TemplateTile html={html} name={name} shape="aspect-[16/10]" fromTop onSelect={onUse} />
+}
+
+/**
+ * The team's own templates, then the starters by kind, in one list with one
+ * search. Using one replaces the canvas (after asking, if it has blocks).
+ */
 function TemplatesTab({
-  showing,
-  onShow,
   starters,
   applyStarter,
   saved,
   applySaved,
   onSaveAsTemplate,
 }: {
-  showing: 'starters' | 'saved'
-  onShow: (which: 'starters' | 'saved') => void
   starters: StarterTemplate[]
   applyStarter: (template: StarterTemplate) => void
   saved: EmailTemplate[] | undefined
@@ -218,57 +218,52 @@ function TemplatesTab({
   const [query, setQuery] = useState('')
   const q = query.trim().toLowerCase()
   const matches = (t: { name: string; description: string }) => !q || `${t.name} ${t.description}`.toLowerCase().includes(q)
+  const yours = (saved ?? []).filter(matches)
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
-      <SegmentedTabs
-        label="Templates to show"
-        className="w-full [&>button]:flex-1"
-        value={showing}
-        onChange={onShow}
-        options={[
-          { value: 'starters', label: 'Starters' },
-          { value: 'saved', label: <>Your templates{saved ? <span className="ml-1 tabular-nums text-muted-foreground">{saved.length}</span> : null}</> },
-        ]}
-      />
-      <p className={PANEL_HINT}>Using one replaces what's on the canvas. You'll be asked first.</p>
-      <label className="relative block">
-        <span className="sr-only">Search templates</span>
-        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search" className={`${INPUT_CLASS} pl-9`} />
-      </label>
+    <div className="space-y-5 animate-in fade-in duration-200">
+      <div className="space-y-2">
+        <label className="relative block">
+          <span className="sr-only">Search templates</span>
+          <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search templates" className={`${INPUT_CLASS} pl-9`} />
+        </label>
+        <p className={PANEL_HINT}>Using one replaces what's on the canvas. You'll be asked first.</p>
+      </div>
 
-      {showing === 'starters' ? (
-        STARTER_CATEGORIES.map(category => {
-          const inCategory = starters.filter(t => t.category === category && matches(t))
-          if (inCategory.length === 0) return null
-          return (
-            <section key={category} className="space-y-1">
-              <h4 className={`${PANEL_LABEL} px-1.5`}>{category}</h4>
-              {inCategory.map(template => (
-                <TemplateRow key={template.id} html={starterHtml(template)} name={template.name} description={template.description} onSelect={() => applyStarter(template)} />
-              ))}
-            </section>
-          )
-        })
-      ) : saved === undefined ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-[105px] animate-pulse rounded-md-m bg-muted" />)}
-        </div>
-      ) : saved.length === 0 ? (
-        <div className="rounded-md-m border border-dashed border-border px-4 py-6 text-center">
-          <p className="text-sm font-medium text-foreground">No saved templates yet</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Keep this design to start other emails from.</p>
-          <button onClick={onSaveAsTemplate} className="mt-3 cursor-pointer text-xs font-semibold text-accent underline-offset-2 hover:underline">
-            Save as template
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-1">
-          {saved.filter(matches).map(template => (
-            <TemplateRow key={template.id} html={template.html} name={template.name} description={template.description} onSelect={() => applySaved(template)} />
-          ))}
-        </div>
-      )}
+      <section className="space-y-3">
+        <h3 className="flex items-baseline justify-between text-[13px] font-semibold text-foreground">
+          Your templates {saved && <span className="font-normal tabular-nums text-muted-foreground">{saved.length}</span>}
+        </h3>
+        {saved === undefined ? (
+          <div className="aspect-[16/10] animate-pulse rounded-md-m bg-muted" />
+        ) : saved.length === 0 ? (
+          <div className="rounded-md-m border border-dashed border-border px-4 py-5 text-center">
+            <p className="text-xs leading-relaxed text-muted-foreground">None yet. Keep this design to start other emails from.</p>
+            <button onClick={onSaveAsTemplate} className="mt-2 cursor-pointer text-xs font-semibold text-accent underline-offset-2 hover:underline">
+              Save as template
+            </button>
+          </div>
+        ) : yours.length === 0 ? (
+          <p className="text-xs text-muted-foreground">None match.</p>
+        ) : (
+          yours.map(template => <PanelTemplate key={template.id} html={template.html} name={template.name} onUse={() => applySaved(template)} />)
+        )}
+      </section>
+
+      {STARTER_CATEGORIES.map(category => {
+        const inCategory = starters.filter(t => t.category === category && matches(t))
+        if (inCategory.length === 0) return null
+        return (
+          <section key={category} className="space-y-3">
+            <h3 className="text-[13px] font-semibold text-foreground">
+              Starters <span className="font-normal text-muted-foreground">· {category}</span>
+            </h3>
+            {inCategory.map(template => (
+              <PanelTemplate key={template.id} html={starterHtml(template)} name={template.name} onUse={() => applyStarter(template)} />
+            ))}
+          </section>
+        )
+      })}
     </div>
   )
 }

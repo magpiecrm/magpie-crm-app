@@ -22,14 +22,25 @@ interface Box {
  * A scaled-down, non-interactive picture of an email, framed the same way on
  * every screen: the email's body (`.em-container`) inset on a neutral backing
  * and fitted to its width. A short email shows whole, centred; a long one
- * runs off the bottom and fades out there.
+ * runs off the bottom edge. `top` always fills the width from the top, for a
+ * wide, short frame that shows an email's opening.
  *
  * The email is laid out in a sandboxed iframe at desktop width. It may be
  * read (to measure its body) but runs no scripts and can't navigate.
  *
  * The frame's shape comes from `className` (e.g. `aspect-[4/5]`).
  */
-export function TemplateThumbnail({ html, className = '', inset = 12 }: { html: string; className?: string; inset?: number }) {
+export function TemplateThumbnail({
+  html,
+  className = '',
+  inset = 12,
+  top: fromTop = false,
+}: {
+  html: string
+  className?: string
+  inset?: number
+  top?: boolean
+}) {
   const frameRef = useRef<HTMLDivElement>(null)
   const [frame, setFrame] = useState<{ w: number; h: number } | null>(null)
   const [box, setBox] = useState<Box | null>(null)
@@ -61,7 +72,7 @@ export function TemplateThumbnail({ html, className = '', inset = 12 }: { html: 
   const b = box ?? { x: (RENDER_WIDTH - 600) / 2, y: 24, w: 600, h: 2000, doc: 2000 }
   const scale = frame ? (frame.w - inset * 2) / b.w : 0
   const shown = b.h * scale
-  const fits = frame ? shown <= frame.h - inset * 2 : false
+  const fits = frame && !fromTop ? shown <= frame.h - inset * 2 : false
   const top = frame ? (fits ? (frame.h - shown) / 2 : inset) : 0
 
   return (
@@ -80,15 +91,14 @@ export function TemplateThumbnail({ html, className = '', inset = 12 }: { html: 
           onLoad={onLoad}
           className={`absolute left-0 top-0 origin-top-left pointer-events-none border-0 bg-transparent transition-opacity duration-150 dark:brightness-[0.96] ${box ? 'opacity-100' : 'opacity-0'}`}
           style={{
+            // Emails have no dark mode. Matching the email's own (light) scheme keeps the frame
+            // see-through on a dark page: a browser paints a mismatched frame opaque.
+            colorScheme: 'light',
             width: RENDER_WIDTH,
             height: b.doc,
             transform: `translate(${inset - b.x * scale}px, ${top - b.y * scale}px) scale(${scale})`,
           }}
         />
-      )}
-      {/* A long email runs on past the frame: fade it out rather than cut it through a button. */}
-      {box && !fits && (
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-muted dark:from-[#1f2226] to-transparent" />
       )}
     </div>
   )

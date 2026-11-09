@@ -31,6 +31,9 @@ export const Route = createFileRoute('/marketing/templates/')({
 /** Every gallery of templates on this page: the same columns, so a template is the same size wherever it shows. */
 const GRID = 'grid grid-cols-1 gap-x-5 gap-y-8 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5'
 
+/** A gallery tile's picture: wide on a phone, where one fills the row, upright elsewhere. */
+const TILE_SHAPE = 'aspect-[4/3] sm:aspect-[4/5]'
+
 /** The starters the empty page offers, one from each kind most teams send. */
 const FIRST_STARTERS = ['plain-email', 'newsletter-editorial', 'product-update', 'event-invite']
 
@@ -207,7 +210,11 @@ function TemplatesPage() {
   )
 }
 
-/** A saved template: its picture opens the builder; Use in campaign beside the "…" menu, which has the rest. */
+/**
+ * A saved template: its picture and name open the builder, Use in campaign
+ * shows over the picture (on pointing or focus, always on a touch screen),
+ * and the "…" menu beside the name has the rest.
+ */
 function TemplateCard({
   template,
   onOpen,
@@ -224,33 +231,32 @@ function TemplateCard({
   onDelete: () => void
 }) {
   return (
-    <article data-template-card className="flex min-w-0 flex-col">
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={`Edit ${template.name}`}
-        className="block cursor-pointer overflow-hidden rounded-md-m border border-border transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-[0_4px_16px_-6px_rgb(17_19_22/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-      >
-        {/* Wide on a phone, where one card fills the row; the gallery's shape everywhere else. */}
-        <TemplateThumbnail html={template.html} className="aspect-[4/3] sm:aspect-[4/5]" />
-      </button>
-      <h3 className="mt-3 line-clamp-2 text-[15px] font-semibold leading-snug text-foreground" title={template.name}>
-        {template.name}
-      </h3>
-      {template.description && (
-        <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-muted-foreground" title={template.description}>
-          {template.description}
-        </p>
-      )}
-      <p className="mt-1 text-[13px] text-muted-foreground">Edited {editedOn(template.updated_at)}</p>
-      {/* Pinned to the bottom, so the buttons line up along a row whatever the text above. */}
-      <div className="mt-auto flex items-center gap-2 pt-3">
-        <Button variant="secondary" size="sm" onClick={onUse} leftIcon={<Send className="h-3.5 w-3.5" />} className="flex-1 max-sm:min-h-9">
-          Use in campaign
-        </Button>
+    <article data-template-card className="group flex min-w-0 flex-col">
+      <div className="relative">
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Edit ${template.name}`}
+          className="block w-full cursor-pointer overflow-hidden rounded-md-m border border-border transition-[border-color,box-shadow] hover:border-foreground/25 hover:shadow-[0_4px_16px_-6px_rgb(17_19_22/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:border-white/10"
+        >
+          {/* Wide on a phone, where one card fills the row; the gallery's shape everywhere else. */}
+          <TemplateThumbnail html={template.html} className="aspect-[4/3] sm:aspect-[4/5]" />
+        </button>
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100">
+          <Button size="sm" onClick={onUse} className="pointer-events-auto shadow-md max-sm:min-h-9">
+            Use in campaign
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3 flex items-start gap-1">
+        <button type="button" onClick={onOpen} tabIndex={-1} className="min-w-0 flex-1 cursor-pointer text-left">
+          <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-foreground" title={template.name}>
+            {template.name}
+          </h3>
+        </button>
         <ActionMenu
           label={`Actions for ${template.name}`}
-          bordered
+          className="-mr-1.5 -mt-1"
           actions={[
             { label: 'Edit design', icon: Pencil, onSelect: onOpen },
             { label: 'Use in campaign', icon: Send, onSelect: onUse },
@@ -260,6 +266,11 @@ function TemplateCard({
           ]}
         />
       </div>
+      {/* Two lines kept for the description, so cards along a row line up. */}
+      <p className="mt-0.5 line-clamp-2 min-h-[2.3rem] text-[13px] leading-snug text-muted-foreground" title={template.description || undefined}>
+        {template.description}
+      </p>
+      <p className="mt-1.5 text-xs text-muted-foreground/90">Edited {editedOn(template.updated_at)}</p>
     </article>
   )
 }
@@ -296,7 +307,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
           Browse all {STARTER_TEMPLATES.length} starters
         </Button>
         <Button variant="secondary" onClick={() => onStart(undefined)} leftIcon={<Plus className="h-4 w-4" />}>
-          Start from blank
+          Start from scratch
         </Button>
       </div>
       {previewing && (
@@ -305,7 +316,7 @@ function EmptyTemplates({ onStart }: { onStart: (starterId?: string) => void }) 
           name={previewing.name}
           description={previewing.description}
           onClose={() => setPreviewing(null)}
-          actionLabel="Use this starter"
+          actionLabel="Use template"
           onAction={() => onStart(previewing.id)}
         />
       )}
@@ -366,6 +377,7 @@ function CreateTemplateView({
 
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <SegmentedTabs
+            scroll
             label="Kinds of starter"
             value={category}
             onChange={setCategory}
@@ -379,12 +391,13 @@ function CreateTemplateView({
         </div>
 
         {shown.length === 0 && <p className="py-16 text-center text-sm text-muted-foreground">No starters match “{query.trim()}”.</p>}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:gap-x-5 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-7 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {category === 'all' && !query.trim() && (
             <TemplateTile
               blank
+              shape={TILE_SHAPE}
               name="Blank"
-              description="An empty canvas: add blocks yourself."
+              description="An empty canvas: start from scratch."
               selected={starterId === undefined}
               onSelect={() => setStarterId(undefined)}
               onActivate={() => create(undefined)}
@@ -393,6 +406,7 @@ function CreateTemplateView({
           {shown.map(t => (
             <TemplateTile
               key={t.id}
+              shape={TILE_SHAPE}
               html={starterHtml(t)}
               name={t.name}
               description={t.description}
@@ -407,13 +421,14 @@ function CreateTemplateView({
 
       {/* Stays at the bottom of the screen, so the name and Create are always in reach. */}
       <div className="sticky bottom-0 z-10 border-t border-border bg-card shadow-[0_-6px_16px_-10px_rgb(17_19_22/0.18)] dark:shadow-none">
-        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-end gap-3 px-4 py-3 lg:px-8">
-          <Field label={<>Template name <span className="font-normal text-muted-foreground">(optional)</span></>} className="w-full sm:w-80">
+        <div className="mx-auto flex w-full max-w-[1400px] items-end gap-3 px-4 py-3 lg:px-8">
+          <Field label={<>Template name <span className="font-normal text-muted-foreground">(optional)</span></>} className="min-w-0 flex-1 sm:w-80 sm:flex-none">
             <input value={name} onChange={e => setName(e.target.value)} placeholder={starter?.name ?? 'Untitled template'} maxLength={200} className={INPUT_CLASS} />
           </Field>
-          {error && <p className="text-[13px] text-destructive sm:self-center">{error}</p>}
-          <div className="flex gap-2 max-sm:w-full sm:ml-auto [&>button]:max-sm:flex-1">
-            <Button type="button" variant="secondary" onClick={onClose}>
+          {error && <p className="text-[13px] text-destructive max-sm:hidden sm:self-center">{error}</p>}
+          <div className="flex shrink-0 gap-2 sm:ml-auto">
+            {/* On a phone the back arrow cancels, so the bar stays one row. */}
+            <Button type="button" variant="secondary" onClick={onClose} className="max-sm:hidden">
               Cancel
             </Button>
             <Button type="submit" isLoading={isSaving}>
@@ -428,10 +443,10 @@ function CreateTemplateView({
           name={previewing.name}
           description={previewing.description}
           onClose={() => setPreviewing(null)}
-          actionLabel="Use this starter"
+          actionLabel="Use template"
           onAction={() => {
-            setStarterId(previewing.id)
             setPreviewing(null)
+            create(previewing.id)
           }}
         />
       )}
@@ -456,7 +471,7 @@ function RenameTemplateDialog({
   const [name, setName] = useState(template.name)
   const [description, setDescription] = useState(template.description ?? '')
   return (
-    <Dialog isOpen onClose={onClose} title="Edit details" className="sm:max-w-md">
+    <Dialog isOpen onClose={onClose} title="Edit details" className="sm:max-w-lg">
       <form
         className="flex min-h-0 flex-col"
         onSubmit={e => {
@@ -464,21 +479,26 @@ function RenameTemplateDialog({
           if (name.trim()) onSave(name.trim(), description.trim())
         }}
       >
-        <DialogBody className="space-y-4">
-          <Field label="Name">
-            <input
-              required
-              maxLength={200}
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onFocus={e => e.currentTarget.select()}
-              autoFocus
-              className={INPUT_CLASS}
-            />
-          </Field>
-          <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>} hint="Shown on the template's card.">
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />
-          </Field>
+        <DialogBody>
+          <div className="flex gap-4">
+            <TemplateThumbnail html={template.html} inset={6} className="aspect-[4/5] w-24 shrink-0 rounded-md-s border border-border max-sm:hidden dark:border-white/10" />
+            <div className="min-w-0 flex-1 space-y-4">
+              <Field label="Name">
+                <input
+                  required
+                  maxLength={200}
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  onFocus={e => e.currentTarget.select()}
+                  autoFocus
+                  className={INPUT_CLASS}
+                />
+              </Field>
+              <Field label={<>Description <span className="font-normal text-muted-foreground">(optional)</span></>} hint="Shown on the template's card.">
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className={`${INPUT_CLASS} resize-none`} />
+              </Field>
+            </div>
+          </div>
         </DialogBody>
         <DialogFooter>
           {error && <p className="text-[13px] text-destructive sm:mr-auto">{error}</p>}
