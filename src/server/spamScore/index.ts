@@ -167,12 +167,16 @@ export async function sequenceSpamScore(id: string, draft: SequenceDraft = {}, d
   const current = enrolled.filter((e) => e.status === 'active' || e.status === 'paused')
   const recipients = recipientsOf(data, (current.length ? current : enrolled).map((e) => e.contact_email))
   const cold = isColdSend(recipients)
+  // The AI writes each person's emails, and its own always sign off.
+  const personalised = !!s.steps[0]?.personalise
 
   const contents: ContentInput[] = steps.map((st, i) => ({
     kind: 'sequence',
     // The first email always has a subject; a follow-up without one replies in its thread.
     subject: i === 0 ? (st.subject ?? '') : st.subject,
     text: composeText(st.body, settings),
+    body: st.body,
+    signOffAdded: personalised,
     cold,
     trackOpens: settings.track_opens,
     trackClicks: settings.track_clicks,

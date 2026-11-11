@@ -165,10 +165,86 @@ describe('cold email', () => {
   })
 })
 
+describe('selling', () => {
+  const points = (input: ContentInput) => contentFindings(input).reduce((n, f) => n + f.points, 0)
+
+  it('marks down a pushy email that once scored as nothing much', () => {
+    const pushy = sequence({ subject: 'Free offer', text: 'Hi\nGet our product for free NOW\n\nNot interested? {{ unsubscribe }}' })
+    expect(codes(pushy).sort()).toEqual(['body_caps', 'body_phrases', 'impersonal_cold', 'no_signoff_cold', 'subject_phrases'])
+    expect(points(pushy)).toBe(26)
+  })
+
+  it('counts salesy words in the subject, but not again inside a phrase', () => {
+    expect(finding(campaign({ subject: 'A discount on your hiring' }), 'subject_words')?.points).toBe(4)
+    expect(finding(campaign({ subject: 'Cheap bonus deal' }), 'subject_words')?.points).toBe(8)
+    expect(codes(campaign({ subject: 'Special offer for your team' }))).toEqual(['subject_phrases'])
+    expect(codes(campaign({ subject: 'Your hiring plans' }))).not.toContain('subject_words')
+  })
+
+  it('counts salesy words in the email only once there are a few', () => {
+    const html = (words: string) => `<p>Hi {{ contact.first_name }}, ${words} for your team. Worth a chat?</p>`
+    expect(codes(campaign({ html: html('we can save you time') }))).not.toContain('body_words')
+    expect(finding(campaign({ html: html('a discount and a bonus') }), 'body_words')?.points).toBe(4)
+    expect(finding(campaign({ html: html('a cheap, exclusive bonus deal at a discount') }), 'body_words')?.points).toBe(8)
+    // A word and its plural are one: a CRM's emails talk about deals.
+    expect(codes(campaign({ html: html('a deal desk that closes deals') }))).not.toContain('body_words')
+    // "free" is counted in the phrase, so only "offer" is left: one word.
+    expect(codes(campaign({ html: html('a free trial and an offer') }))).not.toContain('body_words')
+  })
+
+  it("doesn't count a company's name, or words in a link", () => {
+    expect(codes(campaign({ html: '<p>Hi {{ contact.first_name }}, a discount for you.</p><p>Acme Widgets Limited</p>' }))).not.toContain('body_words')
+    expect(codes(sequence({ text: 'Hi {{ contact.first_name }}, a discount: https://acme.test/free-deal\n\nJo\n\n{{ unsubscribe }}' }))).not.toContain('body_words')
+  })
+})
+
+describe('shouting in the email', () => {
+  it('catches a salesy word in capitals, or a line of them', () => {
+    expect(finding(sequence({ text: 'Hi {{ contact.first_name }}, reply NOW.\n\nJo\n\n{{ unsubscribe }}' }), 'body_caps')?.text).toMatch(/"NOW"/)
+    expect(finding(campaign({ html: '<p>PLEASE READ THIS before Friday, {{ contact.first_name }}.</p>' }), 'body_caps')?.fix).toMatch(/Bold a word/)
+  })
+
+  it("leaves short forms, firms' names, merge tags and links alone", () => {
+    const text = 'Hi {{ contact.FIRSTNAME }}, we audit for HSBC and KPMG, CEO to CTO: https://ACME.TEST/NOW\n\nJo\n\n{{ unsubscribe }}'
+    expect(codes(sequence({ text }))).not.toContain('body_caps')
+  })
+})
+
+describe('next to no text', () => {
+  it('marks down a first email with next to nothing in it, but not a short follow-up', () => {
+    const short = { body: 'Hi there', text: 'Hi there\n\nJo Smith\nFounder, Acme\n\nNot interested? {{ unsubscribe }}' }
+    expect(finding(sequence(short), 'little_text')?.text).toBe('The email says only 2 words, besides its sign-off and last line.')
+    expect(codes(sequence({ ...short, subject: null }))).not.toContain('little_text')
+    expect(codes(sequence())).not.toContain('little_text')
+  })
+})
+
+describe('who is writing', () => {
+  const ending = (end: string) => sequence({ text: `Hi {{ contact.first_name }},\n\nSaw you are hiring. Worth a chat?${end}\n\nNot interested? {{ unsubscribe }} and I won't email you again.` })
+
+  it('asks a cold email to sign off', () => {
+    expect(finding(ending(''), 'no_signoff_cold')?.fix).toMatch(/sign-off in the sequence settings/)
+    expect(finding(campaign({ cold: true }), 'no_signoff_cold')?.fix).toMatch(/End with your name/)
+  })
+
+  it('takes a closing or a name', () => {
+    expect(codes(ending('\n\nThanks,'))).not.toContain('no_signoff_cold')
+    expect(codes(ending('\n\nJo Smith\nFounder, Acme'))).not.toContain('no_signoff_cold')
+    expect(codes(ending('\n\n— Sam | Head of Sales, Acme'))).not.toContain('no_signoff_cold')
+  })
+
+  it("doesn't ask a follow-up in its thread, an AI-written email, or opt-in email", () => {
+    expect(codes(sequence({ subject: null, text: 'Any thoughts?\n\n{{ unsubscribe }}' }))).not.toContain('no_signoff_cold')
+    expect(codes({ ...ending(''), signOffAdded: true })).not.toContain('no_signoff_cold')
+    expect(codes({ ...ending(''), cold: false })).not.toContain('no_signoff_cold')
+  })
+})
+
 describe('trigger phrases', () => {
   it('match whole phrases, with either apostrophe', () => {
     expect(triggerPhrases('This isn’t spam, honest')).toEqual(["this isn't spam"])
     expect(triggerPhrases('Our winners list')).toEqual([])
     expect(triggerPhrases('We have a free plan')).toEqual([])
+    expect(triggerPhrases('Start a free trial for free')).toEqual(['for free', 'free trial'])
   })
 })

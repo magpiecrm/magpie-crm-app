@@ -56,7 +56,7 @@ beforeEach(() => {
   }
 })
 
-const draft = { subject: 'Quick question', previewText: 'A note', htmlContent: '<p>Hi {{ contact.first_name }}, worth a chat?</p>', senderId: 1, listId: 7, trackOpens: false, unsubscribeEnabled: true }
+const draft = { subject: 'Quick question', previewText: 'A note', htmlContent: '<p>Hi {{ contact.first_name }}, worth a chat?</p><p>Jo</p>', senderId: 1, listId: 7, trackOpens: false, unsubscribeEnabled: true }
 
 describe('combine', () => {
   it('adds points up to 100, and a finding that makes it high does so whatever the points', () => {
@@ -116,6 +116,14 @@ describe('a sequence', () => {
     const s = await sequenceSpamScore('s1', { steps: [{ subject: 'Hello', body: 'Hi {{ contact.first_name }}, see https://a.test' }], settings: { track_clicks: true } })
     expect(s.steps).toHaveLength(1)
     expect(s.findings.map((x) => x.code)).toEqual(expect.arrayContaining(['masked_link', 'click_tracking_cold']))
+  })
+
+  it('asks for a sign-off, unless the AI writes the emails, whose own always have one', async () => {
+    const seq = state.data.sequences[0]
+    seq.settings = { ...settings, signature: '' }
+    expect((await sequenceSpamScore('s1')).steps![0].findings.map((x) => x.code)).toContain('no_signoff_cold')
+    seq.steps[0] = { ...seq.steps[0], personalise: { brief: 'Offer a pilot' } }
+    expect((await sequenceSpamScore('s1')).steps![0].findings.map((x) => x.code)).not.toContain('no_signoff_cold')
   })
 
   it("counts who it still has to email", async () => {
