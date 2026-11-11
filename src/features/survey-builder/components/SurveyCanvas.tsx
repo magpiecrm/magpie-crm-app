@@ -2,7 +2,8 @@ import type React from 'react'
 import { GitBranch, Plus } from 'lucide-react'
 import type { BlockDropTarget, DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlockType, SurveyDesign } from '../types'
-import { mix } from '../runtime/questions'
+import { SurveyStyles, mix } from '../runtime/questions'
+import { cardStyle } from '../runtime/SurveyRenderer'
 import { SurveyBlockFrame } from './SurveyBlockFrame'
 import type { Dispatch } from './SurveyBlockEditor'
 
@@ -43,12 +44,13 @@ export function SurveyCanvas({
   return (
     <div
       data-canvas-scroll
-      className="flex-1 flex items-start justify-center p-2 lg:p-[15px] pb-20 lg:pb-[15px] min-h-[calc(100dvh-64px)] overflow-y-auto"
+      className="flex-1 flex items-start justify-center px-3 pt-3 pb-24 lg:px-8 lg:pt-6 lg:pb-10 min-h-[calc(100dvh-64px)] overflow-y-auto"
       style={{ background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor }}
       onClick={() => setSelectedBlockId(null)}
     >
+      <SurveyStyles theme={theme} />
       <div
-        className="w-full flex flex-col gap-6 my-4 origin-top transition-all duration-300"
+        className="sv-root w-full flex flex-col gap-7 my-4 origin-top transition-all duration-300"
         style={{
           maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth}px` : '375px',
           zoom: zoomLevel,
@@ -63,37 +65,59 @@ export function SurveyCanvas({
           const branches = ruleCount > 0 || (page.defaultNext && page.defaultNext.kind !== 'next')
           return (
             <div key={page.id} data-page-id={page.id} onClick={e => (e.stopPropagation(), setSelectedPageId(page.id), setSelectedBlockId(null))}>
-              <div className="flex items-center justify-between mb-1.5 px-1 font-sans">
-                <span className={`text-[11px] font-bold uppercase tracking-wider ${isSelectedPage ? 'text-accent' : 'text-muted-foreground'}`}>
-                  {page.title || `Page ${pageIndex + 1}`}
+              <div className="mb-2 flex items-center justify-between gap-3 px-1 font-sans">
+                <span className="flex min-w-0 items-center gap-2 text-[13px]" style={{ color: isSelectedPage ? theme.textColor : mix(theme.textColor, 0.68) }}>
+                  <span
+                    className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[11px] font-semibold tabular-nums"
+                    style={{ background: isSelectedPage ? theme.accentColor : mix(theme.textColor, 0.1), color: isSelectedPage ? theme.buttonTextColor : theme.textColor }}
+                  >
+                    {pageIndex + 1}
+                  </span>
+                  <span className="truncate font-semibold">{page.title || `Page ${pageIndex + 1}`}</span>
                 </span>
                 {branches && (
                   <button
                     onClick={e => (e.stopPropagation(), onOpenLogic())}
-                    className="flex items-center gap-1 text-[10px] font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded"
+                    className="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium transition-colors"
+                    style={{ background: mix(theme.textColor, 0.07), color: theme.textColor }}
+                    title="Open the survey's logic"
                   >
-                    <GitBranch className="w-3 h-3" />
-                    {ruleCount ? `${ruleCount} rule${ruleCount > 1 ? 's' : ''}` : 'Custom next'}
+                    <GitBranch className="h-3.5 w-3.5" aria-hidden />
+                    {ruleCount ? `${ruleCount} rule${ruleCount > 1 ? 's' : ''}` : 'Goes elsewhere next'}
                   </button>
                 )}
               </div>
               <div
                 data-canvas-body
                 data-block-count={page.blocks.length}
-                className={`relative transition-shadow ${isSelectedPage ? 'ring-1 ring-accent/40' : ''}`}
+                className="relative transition-shadow"
                 style={{
-                  background: theme.cardBgColor,
-                  borderRadius: theme.cardRadius ?? 12,
-                  padding: '28px 24px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  ...cardStyle(theme),
+                  maxWidth: undefined,
+                  boxShadow: isSelectedPage ? `0 0 0 2px ${mix(theme.accentColor, 0.55)}` : cardStyle(theme).boxShadow,
                 }}
               >
+                {theme.logoUrl && pageIndex === 0 && (
+                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                    <img src={theme.logoUrl} alt="" style={{ maxHeight: 40 }} />
+                  </div>
+                )}
+                {theme.showProgressBar && design.pages.length > 1 && (
+                  <div className="pointer-events-none" aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                    <div style={{ flex: 1, height: 6, background: mix(theme.textColor, 0.1), borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.max((pageIndex / design.pages.length) * 100, 3)}%`, background: theme.accentColor, borderRadius: 999 }} />
+                    </div>
+                    <span style={{ fontSize: 13, opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
+                      {pageIndex + 1} of {design.pages.length}
+                    </span>
+                  </div>
+                )}
                 {page.blocks.length === 0 ? (
                   <div
                     className="h-32 border-2 border-dashed rounded-lg flex items-center justify-center text-center text-xs p-4 select-none font-sans"
                     style={{ borderColor: mix(theme.textColor, 0.15), color: mix(theme.textColor, 0.5) }}
                   >
-                    Drop questions here, or pick one from the Content panel
+                    Drag a question here, or pick one on the left
                   </div>
                 ) : (
                   <div className="flex flex-col" style={{ gap: theme.cardMode ? 12 : 4 }}>
@@ -130,15 +154,11 @@ export function SurveyCanvas({
                 {!!dragging && dropTarget?.pageId === page.id && dropTarget.index === page.blocks.length && page.blocks.length > 0 && (
                   <div className="h-0.5 bg-accent rounded-full pointer-events-none mt-1" />
                 )}
-                <div
-                  className="flex justify-end gap-3 mt-6 pointer-events-none select-none"
-                  aria-hidden
-                  style={{ opacity: 0.6 }}
-                >
+                <div className="flex justify-end gap-3 pointer-events-none select-none" aria-hidden style={{ marginTop: 28 }}>
                   <span
                     style={{
-                      padding: '9px 18px',
-                      fontSize: 14,
+                      padding: '11px 22px',
+                      fontSize: 15,
                       fontWeight: 600,
                       borderRadius: theme.buttonRadius,
                       background: theme.accentColor,
@@ -158,9 +178,10 @@ export function SurveyCanvas({
             e.stopPropagation()
             dispatch('survey.addPage', { page: { blocks: [] } })
           }}
-          className="w-full py-3 border-2 border-dashed border-border rounded-xl text-xs font-semibold text-muted-foreground hover:text-accent hover:border-accent/50 flex items-center justify-center gap-1 font-sans bg-card/60"
+          className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 border-dashed font-sans text-sm font-medium transition-colors hover:brightness-95"
+          style={{ borderColor: mix(theme.textColor, 0.22), color: mix(theme.textColor, 0.75), background: 'transparent' }}
         >
-          <Plus className="w-4 h-4" /> Add page
+          <Plus className="h-4 w-4" aria-hidden /> Add a page
         </button>
       </div>
     </div>

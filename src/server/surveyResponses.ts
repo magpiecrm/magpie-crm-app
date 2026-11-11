@@ -4,7 +4,7 @@ import { notify } from './notify'
 import { isSurveyOpen } from './surveys'
 import { decodeSurveyToken, type SurveyToken } from './surveyLinks'
 import { applySurveyToContact } from './surveyContacts'
-import type { Answers, ResponseSource, Survey, SurveyResponse } from '../features/survey-builder/types'
+import type { Answers, ResponseSource, Survey, SurveyResponse, SurveyTheme } from '../features/survey-builder/types'
 import { isQuestionType } from '../features/survey-builder/types'
 import { computePath, resolveNext, type NextStep } from '../features/survey-builder/logic/evaluate'
 import { validatePage, validateSubmission } from '../features/survey-builder/logic/validate'
@@ -204,8 +204,8 @@ function publicSurveyPayload(survey: Survey) {
  */
 export type PublicSurveyLoad =
   | { state: 'not_found' }
-  | { state: 'closed'; name: string }
-  | { state: 'invalid_link'; name: string }
+  | { state: 'closed'; name: string; theme: SurveyTheme }
+  | { state: 'invalid_link'; name: string; theme: SurveyTheme }
   | {
       state: 'open'
       survey: ReturnType<typeof publicSurveyPayload>
@@ -224,8 +224,10 @@ export function loadPublicSurvey(
 
   const token = opts.t ? decodeSurveyToken(opts.t, survey.id) : null
   const open = isSurveyOpen(survey) || opts.preview || (token?.test && survey.status === 'draft')
-  if (!open) return survey.status === 'draft' ? { state: 'not_found' } : { state: 'closed', name: survey.name }
-  if (opts.t && !token) return { state: 'invalid_link', name: survey.name }
+  // Closed and broken-link pages are drawn in the survey's own look: its colours, font and logo, nothing else.
+  const look = { theme: survey.design.theme }
+  if (!open) return survey.status === 'draft' ? { state: 'not_found' } : { state: 'closed', name: survey.name, ...look }
+  if (opts.t && !token) return { state: 'invalid_link', name: survey.name, ...look }
 
   let existing: SurveyResponse | null = null
   if (token) {

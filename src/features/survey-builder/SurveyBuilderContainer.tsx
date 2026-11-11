@@ -10,7 +10,7 @@ import { Dialog, DialogBody } from '../../components/ui/Dialog'
 import { AIChat } from '../copilot/components/AIChat'
 import { useBlockDrag, type BlockDropTarget, type DragPayload } from '../email-builder/hooks/useBlockDrag'
 import type { Survey, SurveyBlockType, SurveyDesign, SurveySettings } from './types'
-import { isQuestionType } from './types'
+import { SURVEY_BLOCK_TYPES, isQuestionType } from './types'
 import { applySurveyBuilderAction, checkStructureLock, findBlock, newBlockId } from './applyAction'
 import { lintSurvey } from './logic/lint'
 import { SURVEY_STARTER_TEMPLATES, type SurveyStarterTemplate } from './templates/starters'
@@ -102,19 +102,21 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
     if (!design.pages.some(p => p.id === selectedPageId)) setSelectedPageId(design.pages[0]?.id ?? null)
   }, [design.pages, selectedPageId])
 
-  // Auto zoom the canvas to fit, as the email builder does.
+  // The canvas is the survey at its real size; it only shrinks when the window
+  // is too narrow for it. A phone always shows the phone layout.
+  const canvasMode = isDesktop ? previewMode : 'mobile'
   useEffect(() => {
     const handleResize = () => {
       const left = isDesktop ? 64 + 320 : 0
       const right = isDesktop && isChatOpen ? chatWidth : 0
-      const available = window.innerWidth - left - right - (isDesktop ? 30 : 16)
-      const target = previewMode === 'desktop' ? design.theme.bodyWidth : 375
-      setZoomLevel(Math.max(0.4, Math.min(1.5, (available / target) * 0.92)))
+      const available = window.innerWidth - left - right - (isDesktop ? 64 : 24)
+      const target = canvasMode === 'desktop' ? design.theme.bodyWidth : 375
+      setZoomLevel(Math.max(0.5, Math.min(1, available / target)))
     }
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [design.theme.bodyWidth, previewMode, isChatOpen, chatWidth, isDesktop])
+  }, [design.theme.bodyWidth, canvasMode, isChatOpen, chatWidth, isDesktop])
 
   /** Apply one design action, refusing edits that would break the structure lock. */
   const dispatch = useCallback(
@@ -225,7 +227,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   }
 
   const selectedBlock = selectedBlockId ? findBlock(design, selectedBlockId)?.block : undefined
-  const errorCount = issues.filter(i => i.level === 'error').length
+  const logicErrors = issues.filter(i => i.level === 'error' && (i.area === 'logic' || i.area === 'survey')).length
 
   const panel = (
     <SurveySidebarPanel
@@ -286,7 +288,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           setActiveMenu={setActiveMenu}
           setSelectedBlockId={setSelectedBlockId}
           onSelect={() => setIsPanelOpen(true)}
-          logicIssueCount={errorCount}
+          logicIssueCount={logicErrors}
         />
 
         {isDesktop ? (
@@ -295,7 +297,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           <Sheet
             isOpen={isPanelOpen}
             onClose={() => setIsPanelOpen(false)}
-            title={selectedBlock ? 'Edit block' : activeMenu[0].toUpperCase() + activeMenu.slice(1)}
+            title={selectedBlock ? (SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label ?? 'Block') : activeMenu === 'content' ? 'Add to the survey' : activeMenu[0].toUpperCase() + activeMenu.slice(1)}
             className="h-[75dvh]"
           >
             {panel}
@@ -304,7 +306,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
 
         <SurveyCanvas
           design={design}
-          previewMode={previewMode}
+          previewMode={canvasMode}
           zoomLevel={zoomLevel}
           selectedBlockId={selectedBlockId}
           setSelectedBlockId={setSelectedBlockId}

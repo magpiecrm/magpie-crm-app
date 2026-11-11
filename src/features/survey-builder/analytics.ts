@@ -16,8 +16,12 @@ export interface SurveySummary {
   completed: number
   completionRate: number | null
   medianSeconds: number | null
-  /** How many responses reached each page, in page order. */
-  pageReach: Array<{ pageId: string; title: string; reached: number }>
+  /**
+   * Each page in order: how many responses reached it, how many stopped there
+   * without finishing, and whether only a rule leads to it (so not reaching it
+   * isn't anyone leaving).
+   */
+  pageReach: Array<{ pageId: string; title: string; reached: number; stopped: number; branch: boolean }>
   bySource: Record<string, number>
   questions: QuestionSummary[]
 }
@@ -85,6 +89,21 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): Que
 }
 
 /**
+ * Whether a page is only reached when logic sends people there: some earlier
+ * page has a rule or a "go to" pointing at it, and the page before it doesn't
+ * simply carry on into it.
+ */
+function isBranchPage(design: SurveyDesign, index: number): boolean {
+  if (index === 0) return false
+  const page = design.pages[index]
+  const targets = (p: SurveyDesign['pages'][number]) => [...(p.rules ?? []).map(r => r.goTo), ...(p.defaultNext ? [p.defaultNext] : [])]
+  const pointedAt = design.pages.slice(0, index).some(p => targets(p).some(t => t.kind === 'page' && t.pageId === page.id))
+  const before = design.pages[index - 1]
+  const fallsThrough = !before.defaultNext || before.defaultNext.kind === 'next'
+  return pointedAt || !fallsThrough
+}
+
+/**
  * Aggregate results for the summary tab and the copilot's `getSurveyResults`.
  * Partial responses count towards per-question results — an NPS score answered
  * inline in an email is real data even if the follow-up page was skipped.
@@ -109,6 +128,8 @@ export function computeSurveySummary(design: SurveyDesign, responses: SurveyResp
       title: p.title || `Page ${i + 1}`,
       // `path` holds submitted pages; a partial response is also sitting on its current page.
       reached: responses.filter(r => r.path.includes(p.id) || r.current_page_id === p.id || (i === 0 && r.path.length === 0)).length,
+      stopped: responses.filter(r => r.status === 'partial' && (r.current_page_id ?? r.path[r.path.length - 1] ?? design.pages[0]?.id) === p.id).length,
+      branch: isBranchPage(design, i),
     })),
     bySource,
     questions: design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses))),

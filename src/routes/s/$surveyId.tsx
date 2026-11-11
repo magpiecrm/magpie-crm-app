@@ -4,7 +4,8 @@ import { getPublicSurveyFn } from '../../server/functions'
 import type { Answers, ResponseSource, SurveyDesign } from '../../features/survey-builder/types'
 import { computePath, findQuestion } from '../../features/survey-builder/logic/evaluate'
 import { validateAnswer } from '../../features/survey-builder/logic/validate'
-import { SurveyRenderer, type SubmitPageResult } from '../../features/survey-builder/runtime/SurveyRenderer'
+import { SurveyMessage, SurveyRenderer, type SubmitPageResult } from '../../features/survey-builder/runtime/SurveyRenderer'
+import { DEFAULT_SURVEY_THEME } from '../../features/survey-builder/types'
 
 interface SurveySearch {
   /** Per-recipient token from an email. */
@@ -61,25 +62,16 @@ function writeStored(id: string, value: Stored | null) {
   }
 }
 
-function Message({ title, body }: { title: string; body: string }) {
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Helvetica, Arial, sans-serif', background: '#f4f4f5', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: '40px 28px', maxWidth: 480, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <h1 style={{ fontSize: 22, margin: '0 0 8px' }}>{title}</h1>
-        <p style={{ margin: 0, color: '#52525b' }}>{body}</p>
-      </div>
-    </div>
-  )
-}
-
 function PublicSurveyPage() {
   const data = Route.useLoaderData()
   const { surveyId } = Route.useParams()
   const search = Route.useSearch()
 
-  if (data.state === 'not_found') return <Message title="Survey not found" body="This survey doesn't exist or isn't published yet." />
-  if (data.state === 'closed') return <Message title={data.name} body="This survey is closed. Thank you for your interest." />
-  if (data.state === 'invalid_link') return <Message title={data.name} body="This survey link has expired or isn't valid. Reload the page you opened it from, or use the link from your email." />
+  const embedded = search.embed
+  if (data.state === 'not_found') return <SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />
+  if (data.state === 'closed') return <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />
+  if (data.state === 'invalid_link')
+    return <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />
 
   return <OpenSurvey key={surveyId} data={data} surveyId={surveyId} search={search} />
 }

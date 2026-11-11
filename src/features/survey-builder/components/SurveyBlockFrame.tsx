@@ -25,6 +25,9 @@ interface SurveyBlockFrameProps {
  * survey counterpart of the email builder's `BlockRenderer`. The block itself
  * is drawn by the same `SurveyBlockView` respondents see.
  */
+const tool =
+  'inline-flex h-8 w-8 items-center justify-center rounded-md-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent'
+
 export function SurveyBlockFrame({
   block,
   index,
@@ -49,8 +52,8 @@ export function SurveyBlockFrame({
     <div
       data-block-index={index}
       onClick={stop(onSelect)}
-      className={`relative group rounded-md transition-all ${dragging ? 'opacity-40' : ''} ${
-        selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-transparent' : 'hover:ring-1 hover:ring-accent/40'
+      className={`relative group rounded-md outline-offset-[6px] transition-[outline-color,opacity] ${dragging ? 'opacity-40' : ''} ${
+        selected ? 'outline-2 outline-solid outline-accent' : 'outline-1 outline-solid outline-transparent hover:outline-accent/45'
       }`}
     >
       {showDropLine && <div className="absolute -top-1 left-0 right-0 h-0.5 bg-accent rounded-full pointer-events-none z-10" />}
@@ -60,37 +63,35 @@ export function SurveyBlockFrame({
         <SurveyBlockView block={block} theme={theme} disabled />
       </div>
 
+      {/* Beside the card on a wide screen, above the outline on a narrow one: never over the block's own text. */}
       <div
-        className={`absolute right-1 -top-3 flex-row gap-0.5 bg-card border border-border rounded-lg shadow-sm p-0.5 z-20 ${
+        className={`absolute -right-[6px] -top-[46px] z-20 flex-row items-center gap-0.5 rounded-md-s border border-border bg-popover p-0.5 font-sans text-foreground shadow-md lg:-top-[7px] lg:left-[calc(100%+var(--sv-card-pad,32px)+12px)] lg:right-auto lg:flex-col ${
           selected ? 'flex' : 'hidden group-hover:flex'
         }`}
       >
         <button
           onPointerDown={e => startDrag(e, { kind: 'move', index, pageId })}
           onClick={e => e.stopPropagation()}
-          className="p-1 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing touch-none"
-          aria-label="Drag block"
+          className={`${tool} cursor-grab active:cursor-grabbing touch-none`}
+          aria-label="Drag to move"
+          title="Drag to move"
         >
-          <GripVertical className="w-3.5 h-3.5" />
+          <GripVertical className="h-4 w-4" />
         </button>
-        <button disabled={index === 0} onClick={stop(() => onMove('up'))} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30" aria-label="Move up">
-          <ArrowUp className="w-3.5 h-3.5" />
+        <button disabled={index === 0} onClick={stop(() => onMove('up'))} className={tool} aria-label="Move up" title="Move up">
+          <ArrowUp className="h-4 w-4" />
         </button>
-        <button
-          disabled={index === blocksLength - 1}
-          onClick={stop(() => onMove('down'))}
-          className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-          aria-label="Move down"
-        >
-          <ArrowDown className="w-3.5 h-3.5" />
+        <button disabled={index === blocksLength - 1} onClick={stop(() => onMove('down'))} className={tool} aria-label="Move down" title="Move down">
+          <ArrowDown className="h-4 w-4" />
         </button>
+        <span className="mx-0.5 h-5 w-px bg-border lg:mx-0 lg:my-0.5 lg:h-px lg:w-5" aria-hidden />
         {locked ? (
-          <span className="p-1 text-amber-500" title="Has responses — can't be deleted">
-            <Lock className="w-3.5 h-3.5" />
+          <span className={`${tool} cursor-help`} title="It has responses, so it can't be deleted" aria-label="Locked: it has responses">
+            <Lock className="h-4 w-4" />
           </span>
         ) : (
-          <button onClick={stop(onDelete)} className="p-1 text-muted-foreground hover:text-destructive" aria-label="Delete block">
-            <Trash2 className="w-3.5 h-3.5" />
+          <button onClick={stop(onDelete)} className={`${tool} hover:!text-destructive`} aria-label="Delete" title="Delete">
+            <Trash2 className="h-4 w-4" />
           </button>
         )}
       </div>

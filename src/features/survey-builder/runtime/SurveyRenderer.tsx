@@ -4,7 +4,7 @@ import type { AnswerValue, Answers, SurveyDesign, SurveySettings } from '../type
 import { resolveNext } from '../logic/evaluate'
 import { validatePage } from '../logic/validate'
 import { SurveyBlockView } from './SurveyBlockView'
-import { mix } from './questions'
+import { SurveyStyles, mix } from './questions'
 
 export type SubmitPageResult =
   | { ok: true; next: { kind: 'page'; pageId: string } | { kind: 'end' } }
@@ -135,23 +135,8 @@ export function SurveyRenderer({
       return next
     })
 
-  const outer: React.CSSProperties = {
-    minHeight: embedded ? undefined : '100vh',
-    boxSizing: 'border-box',
-    padding: embedded ? 0 : '32px 16px',
-    background: embedded ? 'transparent' : theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
-    fontFamily: theme.fontFamily,
-    lineHeight: theme.lineHeight,
-    color: theme.textColor,
-  }
-  const card: React.CSSProperties = {
-    maxWidth: theme.bodyWidth,
-    margin: '0 auto',
-    background: theme.cardBgColor,
-    borderRadius: theme.cardRadius ?? 12,
-    padding: '28px 24px',
-    boxShadow: embedded ? undefined : '0 1px 3px rgba(0,0,0,0.08)',
-  }
+  const outer = pageStyle(theme, embedded)
+  const card = cardStyle(theme, embedded)
   const button = (primary: boolean): React.CSSProperties => ({
     padding: '11px 22px',
     fontSize: 15,
@@ -166,21 +151,19 @@ export function SurveyRenderer({
   })
 
   if (done || !page) {
-    return (
-      <div style={outer}>
-        <div style={{ ...card, textAlign: 'center', padding: '48px 24px' }}>
-          {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 20 }} />}
-          <h2 style={{ margin: '0 0 8px', fontSize: 24 }}>{settings.thankYou.title}</h2>
-          <p style={{ margin: 0, opacity: 0.8, whiteSpace: 'pre-wrap' }}>{settings.thankYou.message}</p>
-        </div>
-      </div>
-    )
+    return <SurveyMessage theme={theme} title={settings.thankYou.title} body={settings.thankYou.message} embedded={embedded} />
   }
 
-  const progress = pages.length > 1 ? Math.round(((pageIndex + (isLast ? 1 : 0)) / pages.length) * 100) : null
+  // Pages finished, out of the ones this person will see: logic can skip some,
+  // so the last page they get counts as the end, and the bar is never full
+  // before they've sent it.
+  const pagesDone = history.length - 1
+  const total = pagesDone + 1 + (isLast ? 0 : Math.max(1, pages.length - pageIndex - 1))
+  const progress = pages.length > 1 ? Math.round((pagesDone / total) * 100) : null
 
   return (
-    <div style={outer}>
+    <div style={outer} className="sv-root">
+      <SurveyStyles theme={theme} />
       <form style={card} onSubmit={handleNext} noValidate>
         {theme.logoUrl && (
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
@@ -188,14 +171,20 @@ export function SurveyRenderer({
           </div>
         )}
         {theme.showProgressBar && progress !== null && (
-          <div
-            role="progressbar"
-            aria-valuenow={progress}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            style={{ height: 4, background: mix(theme.textColor, 0.08), borderRadius: 999, marginBottom: 20, overflow: 'hidden' }}
-          >
-            <div style={{ height: '100%', width: `${Math.max(progress, 4)}%`, background: theme.accentColor, transition: 'width 300ms' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <div
+              role="progressbar"
+              aria-label={`Page ${pagesDone + 1} of ${total}`}
+              aria-valuenow={progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              style={{ flex: 1, height: 6, background: mix(theme.textColor, 0.1), borderRadius: 999, overflow: 'hidden' }}
+            >
+              <div style={{ height: '100%', width: `${Math.max(progress, 3)}%`, background: theme.accentColor, borderRadius: 999, transition: 'width 300ms' }} />
+            </div>
+            <span style={{ fontSize: 13, opacity: 0.75, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }} aria-hidden>
+              {pagesDone + 1} of {total}
+            </span>
           </div>
         )}
 
@@ -232,7 +221,7 @@ export function SurveyRenderer({
           </p>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 28 }}>
           {settings.allowBack && canGoBack ? (
             <button type="button" style={button(false)} onClick={goBack} disabled={submitting}>
               {theme.backLabel}
@@ -245,6 +234,50 @@ export function SurveyRenderer({
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+/** The hosted page around the card: the survey's background, its font, and room above. */
+export function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSProperties {
+  return {
+    minHeight: embedded ? undefined : '100vh',
+    boxSizing: 'border-box',
+    padding: embedded ? 0 : 'clamp(24px, 8vh, 72px) 16px 48px',
+    background: embedded ? 'transparent' : theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
+    fontFamily: theme.fontFamily,
+    lineHeight: theme.lineHeight,
+    color: theme.textColor,
+  }
+}
+
+export function cardStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSProperties {
+  return {
+    maxWidth: theme.bodyWidth,
+    margin: '0 auto',
+    boxSizing: 'border-box',
+    background: theme.cardBgColor,
+    borderRadius: theme.cardRadius ?? 12,
+    // Its side padding is a variable, so the builder can put a block's tools just outside the card.
+    ['--sv-card-pad' as string]: 'clamp(18px, 5vw, 32px)',
+    padding: 'clamp(20px, 5vw, 36px) var(--sv-card-pad)',
+    boxShadow: embedded ? undefined : `0 1px 2px ${mix(theme.textColor, 0.06)}, 0 0 0 1px ${mix(theme.textColor, 0.06)}`,
+  }
+}
+
+/**
+ * A card with a heading and a line, in the survey's own look and in the same
+ * place as its pages: the thank-you once it's sent, and the closed or
+ * broken-link pages.
+ */
+export function SurveyMessage({ theme, title, body, embedded }: { theme: SurveyDesign['theme']; title: string; body: string; embedded?: boolean }) {
+  return (
+    <div style={pageStyle(theme, embedded)} className="sv-root">
+      <div style={{ ...cardStyle(theme, embedded), textAlign: 'center', paddingTop: 48, paddingBottom: 48 }}>
+        {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 20 }} />}
+        <h1 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 700, lineHeight: 1.25 }}>{title}</h1>
+        <p style={{ margin: 0, opacity: 0.8, whiteSpace: 'pre-wrap' }}>{body}</p>
+      </div>
     </div>
   )
 }

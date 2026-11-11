@@ -6,6 +6,8 @@ import { compatibleFieldTypes } from './answers'
 export interface LintIssue {
   level: 'error' | 'warning'
   message: string
+  /** Where the builder shows it: the Logic panel, the question's settings, the Settings panel, or across the survey. */
+  area: 'logic' | 'question' | 'settings' | 'survey'
   pageId?: string
   blockId?: string
 }
@@ -34,14 +36,14 @@ export function lintSurvey(
     }),
   )
 
-  if (design.pages.length === 0) issues.push({ level: 'error', message: 'The survey has no pages.' })
-  if (questionPage.size === 0) issues.push({ level: 'error', message: 'The survey has no questions.' })
+  if (design.pages.length === 0) issues.push({ level: 'error', area: 'survey', message: 'The survey has no pages.' })
+  if (questionPage.size === 0) issues.push({ level: 'error', area: 'survey', message: 'The survey has no questions.' })
 
   const checkTarget = (target: PageTarget | undefined, fromIndex: number, pageId: string, what: string) => {
     if (!target || target.kind !== 'page') return
     const to = pageIndex.get(target.pageId)
-    if (to === undefined) issues.push({ level: 'error', pageId, message: `${what} jumps to a page that no longer exists.` })
-    else if (to <= fromIndex) issues.push({ level: 'error', pageId, message: `${what} jumps backwards; jumps must go to a later page.` })
+    if (to === undefined) issues.push({ level: 'error', area: 'logic', pageId, message: `${what} jumps to a page that no longer exists.` })
+    else if (to <= fromIndex) issues.push({ level: 'error', area: 'logic', pageId, message: `${what} jumps backwards; jumps must go to a later page.` })
   }
 
   const reachable = new Set<string>()
@@ -54,8 +56,8 @@ export function lintSurvey(
       checkTarget(rule.goTo, i, page.id, what)
       for (const qid of conditionQuestionIds(rule.when)) {
         const qPage = questionPage.get(qid)
-        if (qPage === undefined) issues.push({ level: 'error', pageId: page.id, message: `${what} refers to a question that no longer exists.` })
-        else if (qPage > i) issues.push({ level: 'error', pageId: page.id, message: `${what} refers to a question on a later page.` })
+        if (qPage === undefined) issues.push({ level: 'error', area: 'logic', pageId: page.id, message: `${what} refers to a question that no longer exists.` })
+        else if (qPage > i) issues.push({ level: 'error', area: 'logic', pageId: page.id, message: `${what} refers to a question on a later page.` })
       }
       if (rule.goTo.kind === 'page') reachable.add(rule.goTo.pageId)
     })
@@ -68,16 +70,16 @@ export function lintSurvey(
     for (const block of page.blocks) {
       const q = block.question
       if (!isQuestionType(block.type) || !q) continue
-      if (!q.title.trim()) issues.push({ level: 'warning', pageId: page.id, blockId: block.id, message: `A question on ${label} has no title.` })
+      if (!q.title.trim()) issues.push({ level: 'warning', area: 'question', pageId: page.id, blockId: block.id, message: `A question on ${label} has no title.` })
       if (CHOICE_TYPES.includes(block.type) && (q.options?.length ?? 0) < 2 && !q.allowOther) {
-        issues.push({ level: 'error', pageId: page.id, blockId: block.id, message: `"${q.title || 'Untitled'}" needs at least two options.` })
+        issues.push({ level: 'error', area: 'question', pageId: page.id, blockId: block.id, message: `"${q.title || 'Untitled'}" needs at least two options.` })
       }
       if (q.mapTo?.field.startsWith('custom:')) {
         const key = q.mapTo.field.slice('custom:'.length)
         const def = contactFields.find(f => f.key === key)
-        if (!def) issues.push({ level: 'error', pageId: page.id, blockId: block.id, message: `"${q.title}" maps to a contact field that no longer exists.` })
+        if (!def) issues.push({ level: 'error', area: 'question', pageId: page.id, blockId: block.id, message: `"${q.title}" maps to a contact field that no longer exists.` })
         else if (!compatibleFieldTypes(block).includes(def.type)) {
-          issues.push({ level: 'warning', pageId: page.id, blockId: block.id, message: `"${q.title}" (${block.type}) maps to ${def.type} field "${def.label}"; some answers won't be saved.` })
+          issues.push({ level: 'warning', area: 'question', pageId: page.id, blockId: block.id, message: `"${q.title}" (${block.type}) maps to ${def.type} field "${def.label}"; some answers won't be saved.` })
         }
       }
     }
@@ -85,7 +87,7 @@ export function lintSurvey(
 
   design.pages.forEach((page, i) => {
     if (!reachable.has(page.id)) {
-      issues.push({ level: 'warning', pageId: page.id, message: `${page.title || `Page ${i + 1}`} can never be reached.` })
+      issues.push({ level: 'warning', area: 'logic', pageId: page.id, message: `${page.title || `Page ${i + 1}`} can never be reached.` })
     }
   })
 
@@ -93,7 +95,8 @@ export function lintSurvey(
   if (settings?.identifyContacts && !hasEmailQuestion) {
     issues.push({
       level: 'warning',
-      message: 'Identify contacts is on but there is no Email question, so only respondents from email links will be matched to contacts.',
+      area: 'settings',
+      message: 'There is no Email question, so only people who open it from an email campaign are matched to their contact.',
     })
   }
 
