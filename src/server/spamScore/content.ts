@@ -238,7 +238,7 @@ export function contentFindings(input: ContentInput): SpamFinding[] {
     add(
       'body_phrases',
       Math.min(POINTS.bodyPhraseMax, POINTS.bodyPhrase * bodyPhrases.length),
-      `The email uses ${plural(bodyPhrases.length, 'phrase')} spam filters look for: ${quoted(bodyPhrases)}.`,
+      `The email uses ${bodyPhrases.length === 1 ? 'a phrase' : plural(bodyPhrases.length, 'phrase')} spam filters look for: ${quoted(bodyPhrases)}.`,
       'Rewrite those lines in plainer words.',
     )
   }

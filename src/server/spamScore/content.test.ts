@@ -72,6 +72,7 @@ describe('the body', () => {
     const f = finding(campaign({ subject: 'Click here', html: '<p>Click here for a risk-free trial. Act now.</p>' }), 'body_phrases')
     expect(f?.text).toMatch(/"act now", "risk-free"/)
     expect(f?.text).not.toMatch(/click here/)
+    expect(finding(campaign({ html: '<p>Act now.</p>' }), 'body_phrases')?.text).toMatch(/^The email uses a phrase spam filters look for: "act now"/)
   })
 
   it('marks down an email that is mostly images', () => {
