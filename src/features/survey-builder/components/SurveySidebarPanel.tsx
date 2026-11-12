@@ -158,10 +158,10 @@ function ContentMenu({
                           addBlock(item.type)
                         }}
                         onPointerDown={e => startDrag(e, { kind: 'new', blockType: item.type })}
-                        className="flex min-h-10 cursor-grab touch-none items-center gap-2 rounded-md-s border border-border bg-card px-2 py-1.5 text-left text-[13px] font-medium text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/60 active:cursor-grabbing"
+                        className="flex min-h-10 cursor-grab touch-none items-center gap-1.5 rounded-md-s border border-border bg-card px-1.5 py-1.5 text-left text-[13px] font-medium tracking-[-0.005em] text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
                       >
                         <BlockChip type={item.type} size="sm" />
-                        <span className="min-w-0 truncate">{PALETTE_LABELS[item.type] ?? item.label}</span>
+                        <span className="min-w-0 truncate">{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -275,9 +275,6 @@ function ContentMenu({
     </div>
   )
 }
-
-/** Shorter names where the palette's half-width tiles would cut the full one. */
-const PALETTE_LABELS: Partial<Record<string, string>> = { multiple_choice: 'Checkboxes' }
 
 const pageTool =
   'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent'

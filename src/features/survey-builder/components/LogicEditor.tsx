@@ -90,7 +90,7 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
   )
 
   return (
-    <div className="space-y-3 rounded-md-m border border-border bg-card p-3.5">
+    <div className="space-y-3 rounded-md-m border border-border bg-card p-3.5 dark:bg-white/[0.03]">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-foreground/[0.08] px-1 text-[11px] tabular-nums">{index + 1}</span>
         {page.title || `Page ${index + 1}`}
@@ -158,7 +158,7 @@ function RuleRow({
 }) {
   const header = (
     <div className="flex items-start justify-between gap-2">
-      <p className="pt-1.5 text-[13px] font-semibold leading-snug text-foreground">
+      <p className="pt-1.5 text-[13px] font-medium leading-snug text-foreground">
         If {describeCondition(design, rule.when)}, go to {describeTarget(design, rule.goTo, pageIndex)}
       </p>
       <button
@@ -189,9 +189,10 @@ function RuleRow({
   const setWhen = (patch: Partial<typeof when>) => onChange({ ...rule, when: { ...when, ...patch } })
 
   return (
-    <div className="space-y-2 rounded-md-s bg-muted/50 p-2.5">
+    <div className="space-y-2 rounded-md-s border border-border bg-background p-2.5">
       {header}
       <Select
+        aria-label="Question"
         value={when.questionId}
         onChange={e => {
           const q = questions.find(x => x.id === e.target.value)!
@@ -207,23 +208,28 @@ function RuleRow({
           </option>
         ))}
       </Select>
-      <Select
-        value={when.op}
-        onChange={e => {
-          const op = e.target.value as ConditionOp
-          setWhen({ op, value: question ? defaultValue(question, op) : undefined })
-        }}
-        className={inputClass}
-      >
-        {ops.map(op => (
-          <option key={op} value={op}>
-            {OP_LABELS[op]}
-          </option>
-        ))}
-      </Select>
-      {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
-      <label className={labelClass}>Go to</label>
-      {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
+      <div className={`grid gap-2 ${needsValue(when.op) && question ? 'grid-cols-2' : 'grid-cols-1'}`}>
+        <Select
+          value={when.op}
+          aria-label="Is"
+          onChange={e => {
+            const op = e.target.value as ConditionOp
+            setWhen({ op, value: question ? defaultValue(question, op) : undefined })
+          }}
+          className={inputClass}
+        >
+          {ops.map(op => (
+            <option key={op} value={op}>
+              {OP_LABELS[op]}
+            </option>
+          ))}
+        </Select>
+        {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
+      </div>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
+        <span className="text-[13px] text-muted-foreground">go to</span>
+        {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
+      </div>
     </div>
   )
 }
@@ -249,7 +255,7 @@ function ValueInput({
     )
   }
   if (question.type === 'nps') {
-    const group = (n: number) => (n === 6 ? ' (the top detractor score)' : n === 8 ? ' (the top passive score)' : n === 9 ? ' (the first promoter score)' : '')
+    const group = (n: number) => (n === 6 ? ' · detractors to here' : n === 8 ? ' · passives to here' : n === 9 ? ' · promoters from here' : '')
     return (
       <Select value={String(value ?? '')} onChange={e => onChange(Number(e.target.value))} className={inputClass} aria-label="Score">
         {Array.from({ length: 11 }, (_, n) => (

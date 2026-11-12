@@ -54,7 +54,9 @@ export function SurveyBlockFrame({
     <div
       data-block-index={index}
       onClick={stop(onSelect)}
-      className={`relative group rounded-md outline-offset-[6px] transition-[outline-color,opacity] ${dragging ? 'opacity-40' : ''} ${
+      // Selected, it makes room above itself for its tools, so they never sit on its text or its neighbour's.
+      style={selected ? { marginTop: 44 } : undefined}
+      className={`relative group rounded-md outline-offset-[10px] transition-[outline-color,opacity] ${dragging ? 'opacity-40' : ''} ${
         selected ? 'outline-2 outline-solid outline-accent' : 'outline-1 outline-solid outline-transparent hover:outline-accent/45'
       }`}
     >
@@ -65,10 +67,10 @@ export function SurveyBlockFrame({
         <SurveyBlockView block={block} theme={theme} disabled />
       </div>
 
-      {/* On the outline's top-right corner, clear of the text below it. */}
+      {/* Above the outline's top-right corner, in the room the block makes for it. */}
       <div
-        className={`absolute -top-[23px] right-1 z-20 flex-row items-center gap-0.5 rounded-md-s border border-border bg-popover p-0.5 font-sans text-foreground shadow-md ${
-          selected ? 'flex' : 'hidden group-hover:flex'
+        className={`absolute -top-[54px] -right-[10px] z-20 flex-row items-center gap-0.5 rounded-md-s border border-border bg-popover p-0.5 font-sans text-foreground shadow-md ${
+          selected ? 'flex' : 'hidden'
         }`}
         onClick={e => e.stopPropagation()}
       >

@@ -105,7 +105,7 @@ export function SurveyBuilderHeader({
           leftIcon={<MessageSquare className="h-4 w-4" />}
           className={`max-lg:!px-2.5 ${isChatOpen ? '!border-accent/40 !bg-accent/10' : ''}`}
         >
-          <span className="max-lg:hidden">Copilot</span>
+          <span className="max-lg:hidden">AI Copilot</span>
         </Button>
         {live ? (
           // A live survey changes for respondents as soon as it's saved, so saving is publishing.
@@ -116,9 +116,11 @@ export function SurveyBuilderHeader({
           )
         ) : (
           <>
-            <Button variant="secondary" onClick={onSave} disabled={isSaving || !isDirty} leftIcon={<Save className="h-4 w-4" />} aria-label="Save draft" className="max-sm:!px-2.5">
-              <span className="max-sm:hidden">Save draft</span>
-            </Button>
+            {isDirty && (
+              <Button variant="secondary" onClick={onSave} disabled={isSaving} leftIcon={<Save className="h-4 w-4" />} aria-label="Save draft" className="max-sm:!px-2.5">
+                <span className="max-sm:hidden">Save draft</span>
+              </Button>
+            )}
             <Button onClick={onPublish} disabled={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label={status === 'closed' ? 'Reopen' : 'Publish'} className="max-sm:!px-2.5">
               <span className="max-sm:hidden">{status === 'closed' ? 'Save and reopen' : 'Publish'}</span>
             </Button>

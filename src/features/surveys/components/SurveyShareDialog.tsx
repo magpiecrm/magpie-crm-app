@@ -12,10 +12,10 @@ import { SurveyQrCode, surveyQrUrl } from './SurveyQrCode'
 type Tab = 'link' | 'email' | 'embed' | 'signed'
 
 const TABS: Array<{ id: Tab; label: string; short: string; icon: typeof Code2 }> = [
-  { id: 'link', label: 'Link and QR', short: 'Link', icon: Link2 },
+  { id: 'link', label: 'Link', short: 'Link', icon: Link2 },
   { id: 'email', label: 'Email', short: 'Email', icon: Mail },
   { id: 'embed', label: 'Embed', short: 'Embed', icon: Code2 },
-  { id: 'signed', label: 'Your app', short: 'App', icon: KeyRound },
+  { id: 'signed', label: 'Your app', short: 'Your app', icon: KeyRound },
 ]
 
 /**
@@ -31,7 +31,7 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
   const open = `${link}${survey.status === 'draft' ? '?preview=1' : ''}`
 
   return (
-    <Dialog isOpen onClose={onClose} title={`Share “${survey.name}”`} description="Send it by email, share its link, or put it on your website." className="sm:max-w-2xl">
+    <Dialog isOpen onClose={onClose} title={`Share “${survey.name}”`} description="Share its link or QR code, send it by email, or put it on your website." className="sm:max-w-2xl">
       <DialogBody className="flex flex-col gap-5">
         <div role="tablist" aria-label="Ways to share" className="grid grid-cols-4 gap-1 rounded-md-s bg-muted p-1">
           {TABS.map(t => (

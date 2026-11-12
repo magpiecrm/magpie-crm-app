@@ -26,7 +26,8 @@ function inputStyle(theme: SurveyTheme): React.CSSProperties {
     fontFamily: theme.fontFamily,
     color: theme.textColor,
     background: theme.cardBgColor,
-    border: `1px solid ${mix(theme.textColor, 0.2)}`,
+    // 3:1 against the card, so the box itself can be seen (WCAG 1.4.11).
+    border: `1px solid ${mix(theme.textColor, 0.42)}`,
     borderRadius: Math.min(theme.buttonRadius, 12),
     outline: 'none',
   }
@@ -104,7 +105,7 @@ function pillStyle(theme: SurveyTheme, selected: boolean): React.CSSProperties {
     cursor: 'pointer',
     color: selected ? theme.buttonTextColor : theme.textColor,
     background: selected ? theme.accentColor : theme.cardBgColor,
-    border: `1px solid ${selected ? theme.accentColor : mix(theme.textColor, 0.2)}`,
+    border: `1px solid ${selected ? theme.accentColor : mix(theme.textColor, 0.42)}`,
     borderRadius: Math.min(theme.buttonRadius, 12),
   }
 }
@@ -213,7 +214,7 @@ function Marker({ theme, selected, square }: { theme: SurveyTheme; selected: boo
         height: 16,
         flexShrink: 0,
         borderRadius: square ? 4 : 999,
-        border: `2px solid ${selected ? theme.buttonTextColor : mix(theme.textColor, 0.35)}`,
+        border: `2px solid ${selected ? theme.buttonTextColor : mix(theme.textColor, 0.5)}`,
         background: selected ? theme.buttonTextColor : 'transparent',
         boxShadow: selected ? `inset 0 0 0 2px ${theme.accentColor}` : undefined,
       }}
@@ -323,7 +324,7 @@ export function QuestionInput(props: QuestionInputProps) {
           rows={4}
           value={typeof value === 'string' ? value : ''}
           onChange={e => onChange(e.target.value)}
-          style={{ ...inputStyle(theme), resize: 'vertical' }}
+          style={{ ...inputStyle(theme), resize: 'none' }}
         />
       )
     case 'dropdown': {

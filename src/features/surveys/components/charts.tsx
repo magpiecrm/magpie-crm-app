@@ -11,6 +11,10 @@
  */
 
 export const BAR = 'bg-[#4b5262] dark:bg-[#aeb4bf]'
+/** The answer most people gave, picked out from the rest in the app's teal. */
+const LEAD = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
+/** Every other answer: a lighter ink, still 3:1 on the card. */
+const REST = 'bg-[#868d99] dark:bg-[#7d8491]'
 const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
 const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
 const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
@@ -20,26 +24,30 @@ const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100)
 
 /**
  * Horizontal bars, one per row, each its share of everyone who answered, on a
- * track that is 100%; the label column is the same width on every card, so
- * bars line up down the page.
+ * track that is 100% and no wider than it needs to be, with its numbers right
+ * after it. The label column is the same width on every card, so bars line up
+ * down the page; the most-given answer is marked in teal.
  */
-export function BarList({ rows, total }: { rows: Array<{ label: string; count: number; note?: string }>; total: number }) {
-  const labelWidth = '14rem'
+export function BarList({ rows, total, lead = true }: { rows: Array<{ label: string; count: number; note?: string }>; total: number; lead?: boolean }) {
+  const top = Math.max(...rows.map(r => r.count))
   return (
     <ul className="flex flex-col gap-2.5">
-      {rows.map((row, i) => (
-        <li key={i} className="grid items-center gap-x-3 gap-y-1 text-sm max-sm:grid-cols-[minmax(0,1fr)_auto] sm:[grid-template-columns:var(--label)_minmax(0,1fr)_5.5rem]" style={{ ['--label' as string]: `minmax(0, ${labelWidth})` }}>
-          <span className="min-w-0 truncate text-foreground" title={row.note ? `${row.label}: ${row.note}` : row.label}>
-            {row.label}
-          </span>
-          <span className="tabular-nums text-right text-muted-foreground sm:order-last">
-            <span className="font-semibold text-foreground">{row.count}</span> · {pct(row.count, total)}%
-          </span>
-          <span className={`h-4 overflow-hidden rounded-r-[4px] max-sm:col-span-2 ${TRACK}`} title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
-            <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
-          </span>
-        </li>
-      ))}
+      {rows.map((row, i) => {
+        const isLead = lead && row.count > 0 && row.count === top
+        return (
+          <li key={i} className="grid items-center gap-x-3 gap-y-1 text-sm max-sm:grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,14rem)_minmax(0,34rem)_6rem]">
+            <span className={`min-w-0 truncate ${isLead ? 'font-medium text-foreground' : 'text-foreground'}`} title={row.note ? `${row.label}: ${row.note}` : row.label}>
+              {row.label}
+            </span>
+            <span className="tabular-nums text-muted-foreground max-sm:text-right sm:order-last">
+              <span className="font-semibold text-foreground">{pct(row.count, total)}%</span> · {row.count}
+            </span>
+            <span className={`h-4 overflow-hidden rounded-r-[4px] max-sm:col-span-2 ${TRACK}`} title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
+              <span className={`block h-full rounded-r-[4px] ${isLead ? LEAD : REST}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
+            </span>
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -50,6 +58,7 @@ export function Distribution({
   start,
   colorFor,
   labels,
+  average,
 }: {
   counts: number[]
   start: number
@@ -57,18 +66,29 @@ export function Distribution({
   colorFor?: (value: number) => string
   /** Words under the two ends, e.g. "Not likely" and "Very likely". */
   labels?: [string | undefined, string | undefined]
+  /** Marks the average on the scale, between the columns it falls between. */
+  average?: number | null
 }) {
   const max = Math.max(1, ...counts)
   const total = counts.reduce((a, b) => a + b, 0)
+  const avgAt = average === null || average === undefined ? null : ((average - start + 0.5) / counts.length) * 100
   return (
     <div>
-      <div className="flex h-36 items-end gap-[2px]">
+      <div className="relative flex h-36 items-end gap-[2px]">
+        {/* Faint lines at half and full height, so a column's size reads against something. */}
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-5 border-t border-dashed border-border" />
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-[calc(50%+10px)] border-t border-dashed border-border" />
+        {avgAt !== null && (
+          <span aria-hidden className="pointer-events-none absolute bottom-0 top-0 z-[1] border-l-2 border-foreground/70" style={{ left: `${avgAt}%` }}>
+            <span className="absolute -top-0.5 left-1 whitespace-nowrap rounded bg-card px-1 text-xs font-medium text-foreground">average {average!.toFixed(1)}</span>
+          </span>
+        )}
         {counts.map((count, i) => {
           const value = start + i
           return (
             <div key={value} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${value}: ${count} (${pct(count, total)}%)`}>
               <span className="text-xs tabular-nums text-muted-foreground">{count || ''}</span>
-              <div className={`w-full max-w-9 rounded-t-[4px] ${colorFor?.(value) ?? BAR}`} style={{ height: `${(count / max) * 100}%`, minHeight: count ? 4 : 0 }} />
+              <div className={`relative w-full max-w-9 rounded-t-[4px] ${colorFor?.(value) ?? BAR}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 4 : 0 }} />
             </div>
           )
         })}
@@ -92,8 +112,11 @@ export function Distribution({
 
 export const npsBand = (value: number) => (value <= 6 ? DETRACTOR : value <= 8 ? PASSIVE : PROMOTER)
 
-/** Detractor / passive / promoter split as one stacked bar, each group named with its share. */
-export function NpsSplit({ detractors, passives, promoters }: { detractors: number; passives: number; promoters: number }) {
+/**
+ * An NPS result as a band of four aligned tiles (the score, then each group's
+ * share and count) over the groups as one stacked bar.
+ */
+export function NpsSummary({ score, detractors, passives, promoters }: { score: number | null; detractors: number; passives: number; promoters: number }) {
   const total = detractors + passives + promoters
   const parts = [
     { label: 'Detractors', range: '0–6', count: detractors, cls: DETRACTOR },
@@ -101,9 +124,28 @@ export function NpsSplit({ detractors, passives, promoters }: { detractors: numb
     { label: 'Promoters', range: '9–10', count: promoters, cls: PROMOTER },
   ]
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-3">
+      <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-s border border-border max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-4 sm:divide-x">
+        <div className="px-4 py-3">
+          <dt className="text-[13px] text-muted-foreground">NPS</dt>
+          <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
+          <dd className="text-[13px] text-muted-foreground">from −100 to +100</dd>
+        </div>
+        {parts.map(p => (
+          <div key={p.label} className="px-4 py-3">
+            <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${p.cls}`} aria-hidden />
+              {p.label}
+            </dt>
+            <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{pct(p.count, total)}%</dd>
+            <dd className="text-[13px] text-muted-foreground">
+              {p.count} scored {p.range}
+            </dd>
+          </div>
+        ))}
+      </dl>
       {/* The 2px gap is the surface showing between stacked segments. */}
-      <div className="flex h-3 gap-[2px]">
+      <div className="flex h-3 gap-[2px]" aria-hidden>
         {parts.map(
           p =>
             p.count > 0 && (
@@ -111,20 +153,44 @@ export function NpsSplit({ detractors, passives, promoters }: { detractors: numb
             ),
         )}
       </div>
-      <dl className="grid grid-cols-3 gap-3">
-        {parts.map(p => (
-          <div key={p.label} className="min-w-0">
-            <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${p.cls}`} aria-hidden />
-              <span className="truncate">{p.label}</span>
-            </dt>
-            <dd className="mt-0.5 text-sm tabular-nums text-muted-foreground">
-              <span className="text-base font-semibold text-foreground">{pct(p.count, total)}%</span> · {p.count}
-            </dd>
-          </div>
+    </div>
+  )
+}
+
+/** NPS week by week: a column per week, up from zero for a positive score and down for a negative one, each labelled. */
+export function NpsTrend({ weeks }: { weeks: Array<{ week: string; score: number; answered: number }> }) {
+  const fmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const anyNegative = weeks.some(w => w.score < 0)
+  return (
+    <div>
+      <div className={`relative flex items-stretch gap-1 ${anyNegative ? 'h-40' : 'h-28'}`}>
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 border-t border-border" style={{ top: anyNegative ? '50%' : '100%' }} />
+        {weeks.map(w => {
+          const h = (Math.abs(w.score) / 100) * (anyNegative ? 50 : 100)
+          return (
+            <div key={w.week} className="relative min-w-0 flex-1" title={`Week of ${fmt.format(new Date(w.week))}: NPS ${w.score > 0 ? '+' : ''}${w.score}, from ${w.answered} answer${w.answered === 1 ? '' : 's'}`}>
+              <div
+                className={`absolute inset-x-[15%] ${w.score >= 0 ? `rounded-t-[4px] ${PROMOTER}` : `rounded-b-[4px] ${DETRACTOR}`}`}
+                style={w.score >= 0 ? { bottom: anyNegative ? '50%' : 0, height: `${Math.max(h, 1)}%` } : { top: '50%', height: `${Math.max(h, 1)}%` }}
+              />
+              <span
+                className="absolute inset-x-0 text-center text-xs font-medium tabular-nums text-foreground"
+                style={w.score >= 0 ? { bottom: `calc(${anyNegative ? 50 : 0}% + ${h}% + 2px)` } : { top: `calc(50% + ${h}% + 2px)` }}
+              >
+                {w.score > 0 ? '+' : ''}
+                {w.score}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-1.5 flex gap-1">
+        {weeks.map(w => (
+          <span key={w.week} className="min-w-0 flex-1 truncate text-center text-xs tabular-nums text-muted-foreground">
+            {fmt.format(new Date(w.week))}
+          </span>
         ))}
-      </dl>
-      <p className="text-[13px] text-muted-foreground">Detractors scored 0–6, passives 7–8 and promoters 9–10.</p>
+      </div>
     </div>
   )
 }

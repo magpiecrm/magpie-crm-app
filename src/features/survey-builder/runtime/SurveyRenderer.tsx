@@ -144,7 +144,7 @@ export function SurveyRenderer({
     fontFamily: theme.fontFamily,
     cursor: submitting ? 'wait' : 'pointer',
     borderRadius: theme.buttonRadius,
-    border: primary ? 'none' : `1px solid ${mix(theme.textColor, 0.2)}`,
+    border: primary ? 'none' : `1px solid ${mix(theme.textColor, 0.42)}`,
     background: primary ? theme.accentColor : 'transparent',
     color: primary ? theme.buttonTextColor : theme.textColor,
     opacity: submitting ? 0.7 : 1,
@@ -244,7 +244,11 @@ export function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): Rea
   return {
     minHeight: embedded ? undefined : '100vh',
     boxSizing: 'border-box',
-    padding: embedded ? 0 : 'clamp(24px, 8vh, 72px) 16px 48px',
+    // A short page sits in the middle of the window; a long one starts near the top and scrolls.
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: embedded ? 'flex-start' : 'center',
+    padding: embedded ? 0 : 'clamp(24px, 6vh, 64px) 16px',
     background: embedded ? 'transparent' : theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
     fontFamily: theme.fontFamily,
     lineHeight: theme.lineHeight,
@@ -254,6 +258,7 @@ export function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): Rea
 
 export function cardStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSProperties {
   return {
+    width: '100%',
     maxWidth: theme.bodyWidth,
     margin: '0 auto',
     boxSizing: 'border-box',
@@ -262,7 +267,7 @@ export function cardStyle(theme: SurveyDesign['theme'], embedded?: boolean): Rea
     // Its side padding is a variable, so the builder can put a block's tools just outside the card.
     ['--sv-card-pad' as string]: 'clamp(18px, 5vw, 32px)',
     padding: 'clamp(20px, 5vw, 36px) var(--sv-card-pad)',
-    boxShadow: embedded ? undefined : `0 1px 2px ${mix(theme.textColor, 0.06)}, 0 0 0 1px ${mix(theme.textColor, 0.06)}`,
+    boxShadow: embedded ? undefined : `0 0 0 1px ${mix(theme.textColor, 0.05)}, 0 1px 2px ${mix(theme.textColor, 0.04)}, 0 12px 32px -16px ${mix(theme.textColor, 0.18)}`,
   }
 }
 
@@ -274,7 +279,7 @@ export function cardStyle(theme: SurveyDesign['theme'], embedded?: boolean): Rea
 export function SurveyMessage({ theme, title, body, embedded }: { theme: SurveyDesign['theme']; title: string; body: string; embedded?: boolean }) {
   return (
     <div style={pageStyle(theme, embedded)} className="sv-root">
-      <div style={{ ...cardStyle(theme, embedded), textAlign: 'center', paddingTop: 48, paddingBottom: 48 }}>
+      <div style={{ ...cardStyle(theme, embedded), textAlign: 'center', paddingTop: 44, paddingBottom: 48, borderTop: `4px solid ${theme.accentColor}` }}>
         {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 20 }} />}
         <h1 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 700, lineHeight: 1.25 }}>{title}</h1>
         <p style={{ margin: 0, opacity: 0.8, whiteSpace: 'pre-wrap' }}>{body}</p>

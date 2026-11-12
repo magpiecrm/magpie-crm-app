@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Laptop, RotateCcw, Smartphone, X } from 'lucide-react'
+import { AlertTriangle, RotateCcw, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
@@ -76,7 +76,6 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const [selectedPageId, setSelectedPageId] = useState<string | null>(survey.design.pages[0]?.id ?? null)
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [showPreview, setShowPreview] = useState(false)
-  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [previewRun, setPreviewRun] = useState(0)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isChatOpen, setIsChatOpen] = useState(false)
@@ -112,8 +111,9 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
     const handleResize = () => {
       const left = isDesktop ? 64 + 320 : 0
       const right = isDesktop && isChatOpen ? chatWidth : 0
-      const available = window.innerWidth - left - right - (isDesktop ? 64 : 24)
-      const target = canvasMode === 'desktop' ? design.theme.bodyWidth : 375
+      const available = window.innerWidth - left - right - (isDesktop ? 64 : 16)
+      // The survey's width plus the page frame drawn around it.
+      const target = canvasMode === 'desktop' ? design.theme.bodyWidth + 96 : 407
       setZoomLevel(Math.max(0.5, Math.min(1, available / target)))
     }
     handleResize()
@@ -379,26 +379,10 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isOpen={showPreview}
         onClose={() => setShowPreview(false)}
         title="Preview"
-        description="Answer it as a respondent would: logic and checks run, nothing is saved."
+        description={`As on ${canvasMode === 'mobile' ? 'a phone' : 'a computer'}. Answer it as a respondent would: logic and checks run, nothing is saved.`}
         className="sm:max-w-5xl"
         headerActions={
           <div className="mr-8 flex items-center gap-2">
-            <div role="group" aria-label="Show it as on" className="flex gap-0.5 rounded-md-s bg-muted p-0.5">
-              {(['desktop', 'mobile'] as const).map(mode => (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={previewDevice === mode}
-                  onClick={() => setPreviewDevice(mode)}
-                  className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-2.5 text-[13px] font-medium transition-colors ${
-                    previewDevice === mode ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {mode === 'desktop' ? <Laptop className="h-4 w-4" aria-hidden /> : <Smartphone className="h-4 w-4" aria-hidden />}
-                  <span className="max-sm:hidden">{mode === 'desktop' ? 'Computer' : 'Phone'}</span>
-                </button>
-              ))}
-            </div>
             <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setPreviewRun(n => n + 1)}>
               Restart
             </Button>
@@ -407,7 +391,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
       >
         <DialogBody>
           <div className="flex justify-center rounded-md-s border border-border" style={{ background: design.theme.pageBgColor }}>
-            <div className="w-full transition-[max-width] duration-200" style={{ maxWidth: previewDevice === 'mobile' ? 390 : '100%' }}>
+            {/* As on a computer or a phone, whichever the top bar shows. */}
+            <div className="w-full transition-[max-width] duration-200" style={{ maxWidth: canvasMode === 'mobile' ? 390 : '100%' }}>
               {/* Remount per open and per restart, so it starts from page one. */}
               {showPreview && <SurveyRenderer key={previewRun} design={design} settings={settings} />}
             </div>

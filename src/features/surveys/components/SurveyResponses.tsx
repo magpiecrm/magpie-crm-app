@@ -12,6 +12,7 @@ import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ActionMenu } from '../../../components/ui/ActionMenu'
 import { ColumnsMenu, useStoredColumns } from '../../../components/ui/ColumnsMenu'
+import { Switch } from '../../../components/ui/Switch'
 import { confirmDialog } from '../../../components/ui/confirm'
 import { toast } from '../../../components/ui/toast'
 import type { ExportColumn } from '../../../utils/export'
@@ -73,6 +74,17 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
   return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
 }
 
+/** No answer in a table cell: a quiet dash when logic skipped the question or they never reached it, the words when they saw it and left it. */
+function MissingCell({ why }: { why: string }) {
+  if (why === 'Not answered') return <span className="text-[13px] italic text-muted-foreground">No answer</span>
+  return (
+    <span className="text-muted-foreground" title={why}>
+      <span aria-hidden>—</span>
+      <span className="sr-only">{why}</span>
+    </span>
+  )
+}
+
 function StatusPill({ status }: { status: ResponseRow['status'] }) {
   return status === 'completed' ? (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] text-foreground/85">
@@ -110,12 +122,8 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
     return survey.design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => ({ block: b, n: ++n, pageId: p.id })))
   }, [survey.design])
   const choosable = [...questions.map(q => ({ key: q.block.id, label: `Q${q.n}. ${q.block.question?.title || 'Untitled question'}` })), { key: SOURCE_COLUMN, label: 'Came from' }]
-  // By default, the three questions most people answered, in the survey's order: on a survey with logic, the first three are often skipped.
-  const defaults = useMemo(() => {
-    const answered = (id: string) => responses.filter(r => r.answers[id] !== undefined && r.answers[id] !== null).length
-    const top = new Set([...questions].sort((a, b) => answered(b.block.id) - answered(a.block.id) || a.n - b.n).slice(0, 3).map(q => q.block.id))
-    return questions.filter(q => top.has(q.block.id)).map(q => q.block.id)
-  }, [questions, responses])
+  // By default every question shows: the table scrolls sideways with the person pinned, so no branch's answers are hidden.
+  const defaults = useMemo(() => questions.map(q => q.block.id), [questions])
   const [chosen, setChosen] = useStoredColumns(`magpie-survey-columns:${survey.id}`, defaults)
   const columns = choosable.filter(c => chosen.includes(c.key))
 
@@ -298,7 +306,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         </ul>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${44 + columns.length * 15}rem` }}>
+          <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${35 + columns.length * 12.5}rem` }}>
             <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
               <tr>
                 <th scope="col" className="sticky left-0 z-10 w-11 bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-4">
@@ -319,26 +327,33 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                     }
                   />
                 </th>
-                <th scope="col" className="sticky left-11 z-10 w-[14rem] bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-2 pr-4 font-medium shadow-[1px_0_0_var(--color-border)]">
+                <th scope="col" className="sticky left-11 z-10 w-[13rem] align-top bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-2 pr-4 font-medium shadow-[1px_0_0_var(--color-border)]">
                   Person
                 </th>
-                {columns.map(c => (
-                  <th key={c.key} scope="col" className="px-4 py-2.5 align-bottom font-medium">
-                    <span className="line-clamp-2" title={c.label}>
-                      {c.label}
-                    </span>
-                  </th>
-                ))}
-                {columns.length === 0 && <th scope="col" />}
-                <th scope="col" className="w-[8.5rem] px-4 py-2.5 font-medium">
-                  Status
-                </th>
-                <th scope="col" aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'} className="w-[9.5rem] px-4 py-2.5 font-medium">
+                <th scope="col" aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'} className="w-[8.5rem] px-4 py-2.5 align-top font-medium">
                   <button type="button" onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))} className="-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md-xs px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
-                    Updated
+                    Submitted
                     {sortDir === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-foreground" aria-hidden /> : <ArrowDown className="h-3.5 w-3.5 text-foreground" aria-hidden />}
                   </button>
                 </th>
+                <th scope="col" className="w-[8rem] px-4 py-2.5 align-top font-medium">
+                  Status
+                </th>
+                {columns.map(c => {
+                  const [num, ...rest] = c.label.split('. ')
+                  return (
+                    <th key={c.key} scope="col" className="px-4 py-2.5 align-top font-medium">
+                      <span className="line-clamp-2" title={c.label}>
+                        {c.key === SOURCE_COLUMN ? c.label : (
+                          <>
+                            <span className="font-semibold text-foreground">{num}</span> {rest.join('. ')}
+                          </>
+                        )}
+                      </span>
+                    </th>
+                  )
+                })}
+                {columns.length === 0 && <th scope="col" />}
                 <th scope="col" className="w-10">
                   <span className="sr-only">Open</span>
                 </th>
@@ -374,6 +389,12 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                       </button>
                       <span className="block truncate text-[13px] text-muted-foreground">{r.contactName ? r.contact_email : SOURCE_LABELS[r.source] ?? r.source}</span>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(r.updated_at)}>
+                      {whenShort(r.updated_at)}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <StatusPill status={r.status} />
+                    </td>
                     {columns.map(c => {
                       if (c.key === SOURCE_COLUMN) {
                         return (
@@ -388,17 +409,11 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                       const value = r.answers[c.key]
                       return (
                         <td key={c.key} className="px-4 py-3 align-top text-foreground/85">
-                          {value === undefined || value === null ? <span className="text-[13px] text-muted-foreground">{missing(r, x)}</span> : <Answer block={x.block} value={value} />}
+                          {value === undefined || value === null ? <MissingCell why={missing(r, x)} /> : <Answer block={x.block} value={value} />}
                         </td>
                       )
                     })}
                     {columns.length === 0 && <td />}
-                    <td className="px-4 py-3 align-top">
-                      <StatusPill status={r.status} />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(r.updated_at)}>
-                      {whenShort(r.updated_at)}
-                    </td>
                     <td className="py-3 pr-4 align-top text-muted-foreground">
                       <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
                     </td>
@@ -467,7 +482,9 @@ function ResponseDialog({
   deleting: boolean
 }) {
   const navigate = useNavigate()
+  const [onlyAnswered, setOnlyAnswered] = useState(false)
   const person = personOf(r)
+  const shownQuestions = onlyAnswered ? questions.filter(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null) : questions
   const took = r.completed_at ? Math.max(0, (Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000) : null
   return (
     <Dialog
@@ -511,8 +528,17 @@ function ResponseDialog({
             </span>
           </li>
         </ul>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-muted-foreground">
+            {questions.filter(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null).length} of {questions.length} questions answered
+          </span>
+          <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-foreground">
+            Hide unanswered
+            <Switch label="Hide unanswered questions" checked={onlyAnswered} onChange={setOnlyAnswered} />
+          </label>
+        </div>
         <ol className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
-          {questions.map(x => {
+          {shownQuestions.map(x => {
             const value = r.answers[x.block.id]
             const has = value !== undefined && value !== null
             return (

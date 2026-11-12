@@ -135,7 +135,7 @@ function SurveysPage() {
                           >
                             {s.name}
                           </Link>
-                          <p className="mt-0.5 text-[13px] text-muted-foreground md:truncate">
+                          <p className="mt-0.5 text-[13px] text-muted-foreground md:line-clamp-2">
                             {s.questionCount} question{s.questionCount === 1 ? '' : 's'}
                             {s.pageCount > 1 && ` on ${s.pageCount} pages`}
                             {' · '}
@@ -164,9 +164,16 @@ function SurveysPage() {
                         <div className="hidden text-right md:block">{s.headline ? <HeadlineResult headline={s.headline} /> : <span className="text-[15px] text-muted-foreground">—</span>}</div>
                         <p className="hidden pl-4 text-sm text-muted-foreground md:block">{s.lastResponseAt ? ago(s.lastResponseAt).replace(/^on /, '') : 'None yet'}</p>
                         <div className="relative z-10 flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => setSharing(s)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
-                            Share
-                          </Button>
+                          {/* A draft can't take answers yet, so its quick action is to carry on editing it. */}
+                          {s.status === 'draft' ? (
+                            <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: s.id } })} leftIcon={<Pencil className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
+                              Edit
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" onClick={() => setSharing(s)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
+                              Share
+                            </Button>
+                          )}
                           <ActionMenu
                             label={`Actions for ${s.name}`}
                             items={[

@@ -48,11 +48,9 @@ export function SurveyBlockEditor({ block, dispatch, locked, lockedOptionIds, co
   return (
     <div className="space-y-5">
       {locked && (
-        <p className="flex items-start gap-2 rounded-md-s bg-muted/70 px-3 py-2.5 text-[13px] leading-relaxed text-muted-foreground">
-          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span>
-            <span className="font-medium text-foreground">It has responses,</span> so it can't change type or be deleted. Its wording and options can still change; duplicate the survey to change more.
-          </span>
+        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground" title="People have answered it, so its type can't change and it can't be deleted. Its wording and options can still change; duplicate the survey to change more.">
+          <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          Has responses: wording and options only
         </p>
       )}
       {issues.map((issue, i) => (

@@ -5,7 +5,20 @@ import { scaleRange } from './logic/validate'
 
 export type QuestionSummary =
   | { kind: 'choice'; id: string; title: string; type: string; answered: number; options: Array<{ id: string; label: string; count: number }>; other: string[] }
-  | { kind: 'nps'; id: string; title: string; type: string; answered: number; score: number | null; promoters: number; passives: number; detractors: number; distribution: number[] }
+  | {
+      kind: 'nps'
+      id: string
+      title: string
+      type: string
+      answered: number
+      score: number | null
+      promoters: number
+      passives: number
+      detractors: number
+      distribution: number[]
+      /** NPS for each week with answers (weeks start on Monday), oldest first, the last twelve at most. */
+      trend: Array<{ week: string; score: number; answered: number }>
+    }
   | { kind: 'scale'; id: string; title: string; type: string; answered: number; average: number | null; min: number; distribution: number[] }
   | { kind: 'yes_no'; id: string; title: string; type: string; answered: number; yes: number; no: number }
   | { kind: 'number'; id: string; title: string; type: string; answered: number; average: number | null; min: number | null; max: number | null }
@@ -35,6 +48,14 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+/** The Monday (UTC) of the week a time falls in, as YYYY-MM-DD. */
+function weekStart(iso: string): string {
+  const d = new Date(iso)
+  d.setUTCHours(0, 0, 0, 0)
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+
 function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): QuestionSummary {
   const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type }
   const answered = responses.filter(r => r.answers[block.id] !== undefined && r.answers[block.id] !== null)
@@ -60,7 +81,18 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): Que
     const detractors = nums.filter(n => n <= 6).length
     const passives = nums.length - promoters - detractors
     const score = nums.length ? Math.round(((promoters - detractors) / nums.length) * 100) : null
-    return { ...base, kind: 'nps', answered: nums.length, score, promoters, passives, detractors, distribution }
+    const weeks = new Map<string, number[]>()
+    for (const r of answered) {
+      const v = r.answers[block.id]
+      if (typeof v !== 'number') continue
+      const week = weekStart(r.started_at)
+      weeks.set(week, [...(weeks.get(week) ?? []), v])
+    }
+    const trend = [...weeks.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([week, vs]) => ({ week, answered: vs.length, score: Math.round(((vs.filter(n => n >= 9).length - vs.filter(n => n <= 6).length) / vs.length) * 100) }))
+    return { ...base, kind: 'nps', answered: nums.length, score, promoters, passives, detractors, distribution, trend }
   }
 
   if (block.type === 'rating' || block.type === 'scale') {

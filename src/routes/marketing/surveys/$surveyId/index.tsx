@@ -147,7 +147,7 @@ function SurveyResultsPage() {
           </Button>
         )}
         <Button variant="secondary" leftIcon={<Eye className="h-4 w-4" />} onClick={() => window.open(publicUrl, '_blank', 'noopener')}>
-          Try it yourself
+          Preview
         </Button>
       </div>
     </div>

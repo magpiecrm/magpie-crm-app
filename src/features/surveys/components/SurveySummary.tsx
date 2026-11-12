@@ -11,7 +11,8 @@ import type { Survey, SurveyBlock } from '../../survey-builder/types'
 import { isQuestionType, SURVEY_BLOCK_TYPES } from '../../survey-builder/types'
 import { BlockChip } from '../../survey-builder/blockIcons'
 import { ago, whenShort } from '../../forms/format'
-import { BAR, BarList, Distribution, NpsSplit, TRACK, npsBand } from './charts'
+import { BAR, BarList, Distribution, NpsSummary, NpsTrend, TRACK, npsBand } from './charts'
+import { SegmentedTabs } from '../../templates/components/SegmentedTabs'
 import { SOURCE_LABELS } from '../sources'
 
 export type Range = 'all' | '7' | '30' | '90'
@@ -155,6 +156,53 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
   )
 }
 
+/** NPS: the score and its groups, then every score or the score week by week. */
+function NpsBody({ q, labels }: { q: Extract<QuestionSummary, { kind: 'nps' }>; labels: [string | undefined, string | undefined] }) {
+  const [view, setView] = useState<'scores' | 'weeks'>('scores')
+  return (
+    <div className="flex flex-col gap-5">
+      <NpsSummary score={q.score} detractors={q.detractors} passives={q.passives} promoters={q.promoters} />
+      {q.trend.length > 1 && (
+        <SegmentedTabs
+          label="Show"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'scores', label: 'Every score' },
+            { value: 'weeks', label: 'By week' },
+          ]}
+          className="self-start"
+        />
+      )}
+      {view === 'weeks' && q.trend.length > 1 ? <NpsTrend weeks={q.trend} /> : <Distribution counts={q.distribution} start={0} colorFor={npsBand} labels={labels} />}
+    </div>
+  )
+}
+
+/** A choice question's answers as bars, in the survey's order or most picked first. */
+function ChoiceBars({ q }: { q: Extract<QuestionSummary, { kind: 'choice' }> }) {
+  const [order, setOrder] = useState<'asked' | 'most'>('asked')
+  const rows = [...q.options.map(o => ({ label: o.label, count: o.count })), ...(q.other.length ? [{ label: 'Other', count: q.other.length }] : [])]
+  const shown = order === 'most' ? [...rows].sort((a, b) => b.count - a.count) : rows
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.length > 2 && (
+        <SegmentedTabs
+          label="Order"
+          value={order}
+          onChange={setOrder}
+          options={[
+            { value: 'asked', label: 'As asked' },
+            { value: 'most', label: 'Most picked first' },
+          ]}
+          className="self-start"
+        />
+      )}
+      <BarList rows={shown} total={q.answered} />
+    </div>
+  )
+}
+
 function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: SurveyBlock; n: number; started: number }) {
   const typeLabel = SURVEY_BLOCK_TYPES.find(t => t.type === block.type)?.label
   const scale = block.question?.scale
@@ -175,30 +223,27 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
       {q.answered === 0 ? (
         <p className="text-sm text-muted-foreground">Nobody has answered this yet.</p>
       ) : q.kind === 'nps' ? (
-        <div className="flex flex-col gap-6">
-          <div className="grid items-end gap-x-10 gap-y-4 md:grid-cols-[auto_minmax(0,1fr)]">
-            <p className="flex items-baseline gap-2">
-              <span className="text-4xl font-semibold tabular-nums tracking-tight text-foreground">{q.score === null ? '—' : `${q.score > 0 ? '+' : ''}${q.score}`}</span>
-              <span className="text-sm text-muted-foreground">NPS, on a scale of −100 to +100</span>
-            </p>
-            <NpsSplit detractors={q.detractors} passives={q.passives} promoters={q.promoters} />
-          </div>
-          <Distribution counts={q.distribution} start={0} colorFor={npsBand} labels={[scale?.minLabel, scale?.maxLabel]} />
-        </div>
+        <NpsBody q={q} labels={[scale?.minLabel, scale?.maxLabel]} />
       ) : q.kind === 'scale' ? (
         <div className="flex flex-col gap-6">
-          <p className="flex items-baseline gap-2">
-            <span className="text-4xl font-semibold tabular-nums tracking-tight text-foreground">{q.average === null ? '—' : q.average.toFixed(1)}</span>
-            <span className="text-sm text-muted-foreground">
-              average, out of {q.min + q.distribution.length - 1}
-              {block.type === 'rating' ? ' stars' : ''}
-            </span>
-          </p>
-          <Distribution counts={q.distribution} start={q.min} labels={[scale?.minLabel, scale?.maxLabel]} />
+          <dl className="grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border sm:max-w-xl">
+            {[
+              ['Average', q.average === null ? '—' : q.average.toFixed(1), `out of ${q.min + q.distribution.length - 1}${block.type === 'rating' ? ' stars' : ''}`],
+              ['Most given', String(q.min + q.distribution.indexOf(Math.max(...q.distribution))), `by ${Math.max(...q.distribution)} people`],
+              ['Answered', String(q.answered), `of ${started}`],
+            ].map(([label, value, sub]) => (
+              <div key={label} className="min-w-0 px-4 py-3">
+                <dt className="text-[13px] text-muted-foreground">{label}</dt>
+                <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{value}</dd>
+                <dd className="truncate text-[13px] text-muted-foreground">{sub}</dd>
+              </div>
+            ))}
+          </dl>
+          <Distribution counts={q.distribution} start={q.min} labels={[scale?.minLabel, scale?.maxLabel]} average={q.average} />
         </div>
       ) : q.kind === 'choice' ? (
         <div className="flex flex-col gap-4">
-          <BarList rows={[...q.options.map(o => ({ label: o.label, count: o.count })), ...(q.other.length ? [{ label: 'Other', count: q.other.length }] : [])]} total={q.answered} />
+          <ChoiceBars q={q} />
           {block.type === 'multiple_choice' && <p className="text-[13px] text-muted-foreground">People could pick more than one, so the shares add up to more than 100%.</p>}
           {q.other.length > 0 && <OtherAnswers values={q.other} />}
         </div>

@@ -50,16 +50,22 @@ export function describeCondition(design: SurveyDesign, c: Condition): string {
 }
 
 /**
- * A page's routes, as lines a person can read: one per rule ("If Q1 is at
- * most 6, go to 2. What went wrong"), then where everyone else goes. Empty
- * when the page simply carries on to the next one.
+ * A page's routes, as lines a person can read, in parts so the builder can
+ * make each destination a link to that page: one per rule ("If Q1 is at most
+ * 6, go to" + "2. What went wrong"), then where everyone else goes. Empty when
+ * the page simply carries on to the next one.
  */
-export function describePageRoutes(design: SurveyDesign, pageIndex: number): string[] {
+export function describePageRouteParts(design: SurveyDesign, pageIndex: number): Array<{ lead: string; target: string; pageId: string | null }> {
   const page = design.pages[pageIndex]
   const rules = page.rules ?? []
   const custom = !!page.defaultNext && page.defaultNext.kind !== 'next'
   if (!rules.length && !custom) return []
-  const lines = rules.map(r => `If ${describeCondition(design, r.when)}, go to ${describeTarget(design, r.goTo, pageIndex)}`)
-  lines.push(`${rules.length ? 'Everyone else goes' : 'Then go'} to ${describeTarget(design, page.defaultNext, pageIndex)}`)
-  return lines
+  const pageOf = (t: PageTarget | undefined) => {
+    if (!t || t.kind === 'next') return design.pages[pageIndex + 1]?.id ?? null
+    return t.kind === 'page' ? t.pageId : null
+  }
+  return [
+    ...rules.map(r => ({ lead: `If ${describeCondition(design, r.when)}, go to`, target: describeTarget(design, r.goTo, pageIndex), pageId: pageOf(r.goTo) })),
+    { lead: rules.length ? 'Everyone else goes to' : 'Then go to', target: describeTarget(design, page.defaultNext, pageIndex), pageId: pageOf(page.defaultNext) },
+  ]
 }

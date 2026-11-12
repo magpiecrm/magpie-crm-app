@@ -2,7 +2,7 @@ import type React from 'react'
 import { CornerDownRight, Flag, Plus } from 'lucide-react'
 import type { BlockDropTarget, DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings } from '../types'
-import { describePageRoutes } from '../logic/describe'
+import { describePageRouteParts } from '../logic/describe'
 import { SurveyStyles, mix } from '../runtime/questions'
 import { cardStyle } from '../runtime/SurveyRenderer'
 import { SurveyBlockFrame } from './SurveyBlockFrame'
@@ -52,15 +52,17 @@ export function SurveyCanvas({
   return (
     <div
       data-canvas-scroll
-      className="flex-1 flex items-start justify-center px-3 pt-3 pb-24 lg:px-8 lg:pt-6 lg:pb-10 min-h-[calc(100dvh-64px)] overflow-y-auto"
-      style={{ background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor }}
+      className="flex-1 flex items-start justify-center bg-background px-2 pt-2 pb-24 lg:px-8 lg:pt-6 lg:pb-10 min-h-[calc(100dvh-64px)] overflow-y-auto"
       onClick={() => setSelectedBlockId(null)}
     >
       <SurveyStyles theme={theme} />
       <div
-        className="sv-root w-full flex flex-col gap-7 my-4 origin-top transition-all duration-300"
+        // The survey's own page, framed on the app's surface, so it reads as what respondents see in both themes.
+        className="sv-root w-full flex flex-col gap-7 origin-top rounded-2xl border border-border shadow-sm transition-all duration-300"
         style={{
-          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth}px` : '375px',
+          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth + 96}px` : '407px',
+          padding: previewMode === 'desktop' ? '32px 48px 40px' : '20px 16px 32px',
+          background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
           zoom: zoomLevel,
           fontFamily: theme.fontFamily,
           lineHeight: theme.lineHeight,
@@ -69,7 +71,7 @@ export function SurveyCanvas({
       >
         {design.pages.map((page, pageIndex) => {
           const isSelectedPage = page.id === selectedPageId
-          const routes = describePageRoutes(design, pageIndex)
+          const routes = describePageRouteParts(design, pageIndex)
           // The page gets a ring only when it is what's selected; a selected question has its own.
           const pageRing = isSelectedPage && !page.blocks.some(b => b.id === selectedBlockId)
           return (
@@ -83,6 +85,11 @@ export function SurveyCanvas({
                     {pageIndex + 1}
                   </span>
                   <span className="truncate font-semibold">{page.title || `Page ${pageIndex + 1}`}</span>
+                  {pageRing && (
+                    <span className="shrink-0 rounded-full px-2 py-px text-xs font-medium" style={{ background: mix(theme.accentColor, 0.12), color: theme.textColor }}>
+                      Adding here
+                    </span>
+                  )}
                 </span>
               </div>
               <div
@@ -92,7 +99,7 @@ export function SurveyCanvas({
                 style={{
                   ...cardStyle(theme),
                   maxWidth: undefined,
-                  boxShadow: pageRing ? `0 0 0 2px ${mix(theme.textColor, 0.3)}` : cardStyle(theme).boxShadow,
+                  boxShadow: pageRing ? `0 0 0 2px ${mix(theme.accentColor, 0.6)}` : cardStyle(theme).boxShadow,
                 }}
               >
                 {theme.logoUrl && pageIndex === 0 && (
@@ -169,20 +176,36 @@ export function SurveyCanvas({
                 </div>
               </div>
               {routes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={e => (e.stopPropagation(), onOpenLogic())}
-                  title="Change it in Logic"
-                  className="mt-2 flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left font-sans text-[13px] transition-colors"
-                  style={{ color: mix(theme.textColor, 0.78), background: mix(theme.textColor, 0.05) }}
-                >
-                  {routes.map((line, i) => (
-                    <span key={i} className="flex items-start gap-1.5">
-                      <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                      <span>{line}</span>
+                <div className="mt-2 flex flex-col gap-1 rounded-md border-l-[3px] py-2 pl-3 pr-2 font-sans text-[13px]" style={{ borderColor: theme.accentColor, background: theme.cardBgColor, color: theme.textColor }}>
+                  {routes.map((r, i) => (
+                    <span key={i} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <CornerDownRight className="h-3.5 w-3.5 shrink-0" style={{ color: theme.accentColor }} aria-hidden />
+                      <button type="button" onClick={e => (e.stopPropagation(), onOpenLogic())} className="cursor-pointer text-left hover:underline" title="Change it in Logic">
+                        {r.lead}
+                      </button>
+                      {r.pageId ? (
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation()
+                            document.querySelector(`[data-page-id="${r.pageId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                            setSelectedPageId(r.pageId!)
+                            setSelectedBlockId(null)
+                          }}
+                          className="cursor-pointer rounded-full px-2 py-px font-medium transition-colors"
+                          style={{ background: mix(theme.accentColor, 0.12) }}
+                          title="Go to that page"
+                        >
+                          {r.target}
+                        </button>
+                      ) : (
+                        <span className="rounded-full px-2 py-px font-medium" style={{ background: mix(theme.textColor, 0.08) }}>
+                          {r.target}
+                        </span>
+                      )}
                     </span>
                   ))}
-                </button>
+                </div>
               )}
             </div>
           )

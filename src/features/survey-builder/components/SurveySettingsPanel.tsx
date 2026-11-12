@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
@@ -64,20 +65,7 @@ export function SurveySettingsPanel({ settings, setSettings, issues }: SurveySet
         <Toggle label="More than one response each" hint="Let the same contact answer it more than once." checked={settings.allowMultipleResponses} onChange={allowMultipleResponses => setSettings({ allowMultipleResponses })} />
         <Toggle label="Back button" hint="Let people go back a page to change an answer." checked={settings.allowBack} onChange={allowBack => setSettings({ allowBack })} />
         <Toggle label="Tell me about new responses" hint="A notification in the app for each one." checked={settings.notifyOnResponse} onChange={notifyOnResponse => setSettings({ notifyOnResponse })} />
-        <div className="space-y-1.5">
-          <label className={labelClass} htmlFor="survey-closes-at">
-            Close it automatically
-          </label>
-          <input
-            id="survey-closes-at"
-            type="datetime-local"
-            lang="en-GB"
-            value={settings.closesAt ? toLocalInput(settings.closesAt) : ''}
-            onChange={e => setSettings({ closesAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
-            className={inputClass}
-          />
-          <p className={hintClass}>{settings.closesAt ? `It stops taking responses on ${dateFmt.format(new Date(settings.closesAt))}.` : 'Leave it empty to keep it open until you close it.'}</p>
-        </div>
+        <CloseDateField value={settings.closesAt ?? null} onChange={closesAt => setSettings({ closesAt })} />
       </section>
 
       <section className="space-y-4">
@@ -113,8 +101,90 @@ export function SurveySettingsPanel({ settings, setSettings, issues }: SurveySet
   )
 }
 
-function toLocalInput(iso: string): string {
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+const pad = (n: number) => String(n).padStart(2, '0')
+const dayInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+const TIMES = Array.from({ length: 48 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 ? '30' : '00'}`)
+
+/** End of a day `days` from now, 23:30 local, the way people mean "in a week". */
+function inDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  d.setHours(23, 30, 0, 0)
+  return d.toISOString()
+}
+
+function endOfMonth(): string {
+  const d = new Date()
+  d.setMonth(d.getMonth() + 1, 0)
+  d.setHours(23, 30, 0, 0)
+  return d.toISOString()
+}
+
+/**
+ * When the survey stops taking responses: a few common choices, or a day and
+ * a time of your own; always said back in words, day first.
+ */
+function CloseDateField({ value, onChange }: { value: string | null; onChange: (iso: string | null) => void }) {
+  const [custom, setCustom] = useState(!!value)
+  const date = value ? new Date(value) : null
+  return (
+    <div className="space-y-1.5">
+      <label className={labelClass} htmlFor="survey-closes">
+        Close it automatically
+      </label>
+      <Select
+        id="survey-closes"
+        value={custom || value ? 'date' : 'never'}
+        onChange={e => {
+          const v = e.target.value
+          if (v === 'never') (setCustom(false), onChange(null))
+          else if (v === 'date') (setCustom(true), onChange(value ?? inDays(14)))
+          else (setCustom(true), onChange(v === 'month' ? endOfMonth() : inDays(Number(v))))
+        }}
+        className={inputClass}
+      >
+        <option value="never">Never: I'll close it myself</option>
+        <option value="7">In a week</option>
+        <option value="14">In two weeks</option>
+        <option value="30">In 30 days</option>
+        <option value="month">At the end of this month</option>
+        <option value="date">On a date…</option>
+      </Select>
+      {date && (
+        <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+          <input
+            type="date"
+            aria-label="Day it closes"
+            value={dayInput(date)}
+            onChange={e => {
+              if (!e.target.value) return
+              const [y, m, d] = e.target.value.split('-').map(Number)
+              const next = new Date(date)
+              next.setFullYear(y, m - 1, d)
+              onChange(next.toISOString())
+            }}
+            className={inputClass}
+          />
+          <Select
+            aria-label="Time it closes"
+            value={`${pad(date.getHours())}:${date.getMinutes() < 30 ? '00' : '30'}`}
+            onChange={e => {
+              const [h, min] = e.target.value.split(':').map(Number)
+              const next = new Date(date)
+              next.setHours(h, min, 0, 0)
+              onChange(next.toISOString())
+            }}
+            className={inputClass}
+          >
+            {TIMES.map(t => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      <p className={hintClass}>{date ? `It stops taking responses on ${dateFmt.format(date)}.` : 'It stays open until you close it.'}</p>
+    </div>
+  )
 }
