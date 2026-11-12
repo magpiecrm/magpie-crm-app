@@ -1,9 +1,9 @@
 import type React from 'react'
-import { AlertTriangle, Pencil, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
-import type { ConditionOp, LogicRule, PageTarget, SurveyBlock, SurveyDesign, SurveyPage } from '../types'
+import type { Condition, ConditionOp, LogicRule, PageTarget, SurveyBlock, SurveyDesign, SurveyPage } from '../types'
 import { CHOICE_TYPES, isQuestionType } from '../types'
 import { newRuleId } from '../applyAction'
 import type { LintIssue } from '../logic/lint'
@@ -147,6 +147,21 @@ function defaultValue(block: SurveyBlock, op: ConditionOp): string | number | bo
   return 0
 }
 
+type Simple = Extract<Condition, { questionId: string }>
+
+/** A rule's condition as the pop-up edits it: one or more simple conditions, all or any of which must hold. Null when it's nested deeper (the copilot's). */
+function flatten(when: Condition): { join: 'all' | 'any'; conds: Simple[] } | null {
+  if ('questionId' in when) return { join: 'all', conds: [when] }
+  const list = 'all' in when ? when.all : when.any
+  if (!list.every(c => 'questionId' in c)) return null
+  return { join: 'all' in when ? 'all' : 'any', conds: list as Simple[] }
+}
+
+function unflatten(join: 'all' | 'any', conds: Simple[]): Condition {
+  if (conds.length === 1) return conds[0]
+  return join === 'all' ? { all: conds } : { any: conds }
+}
+
 function RuleRow({
   design,
   pageIndex,
@@ -168,19 +183,29 @@ function RuleRow({
   onChange: (rule: LogicRule) => void
   onDelete: () => void
 }) {
-  const [draft, setDraft] = useState<LogicRule | null>(null)
+  // The pop-up changes a draft; Save keeps it, Cancel (or closing) leaves the rule as it was.
+  const [draft, setDraft] = useState<{ join: 'all' | 'any'; conds: Simple[]; goTo: PageTarget } | null>(null)
+  const flat = flatten(rule.when)
   const iconButton =
     'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+  const open = () => {
+    if (!flat) return
+    setDraft({ join: flat.join, conds: flat.conds, goTo: rule.goTo })
+    setEditing(true)
+  }
+  // A rule just added opens straight away; give it its draft.
+  if (editing && !draft && flat) setDraft({ join: flat.join, conds: flat.conds, goTo: rule.goTo })
+
   const header = (
     <div className="flex items-start gap-1">
-      <button type="button" onClick={() => setEditing(true)} className="group min-w-0 flex-1 cursor-pointer pt-1.5 text-left text-[13px] leading-snug text-foreground">
+      <button type="button" onClick={open} className="group min-w-0 flex-1 cursor-pointer pt-1.5 text-left text-[13px] leading-snug text-foreground">
         <span className="block font-medium group-hover:underline">If {describeCondition(design, rule.when)}</span>
         <span className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground">
           go to <span className="rounded-full bg-accent/10 px-2 py-px font-medium text-foreground">{describeTarget(design, rule.goTo, pageIndex)}</span>
         </span>
       </button>
-      {'questionId' in rule.when && (
-        <button type="button" onClick={() => setEditing(true)} className={iconButton} aria-label="Change this rule" title="Change this rule">
+      {flat && (
+        <button type="button" onClick={open} className={iconButton} aria-label="Change this rule" title="Change this rule">
           <Pencil className="h-3.5 w-3.5" />
         </button>
       )}
@@ -190,71 +215,125 @@ function RuleRow({
     </div>
   )
 
-  if (!('questionId' in rule.when)) {
+  if (!flat) {
     return (
       <div className="space-y-1.5">
         {header}
-        <p className={hintClass}>Several conditions together, set by the copilot. Change them through the copilot, or delete the rule.</p>
+        <p className={hintClass}>Conditions inside conditions, set by the copilot. Change them through the copilot, or delete the rule.</p>
         {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
       </div>
     )
   }
 
-  // The pop-up changes a draft; Save keeps it, Cancel (or closing) leaves the rule as it was.
-  const draftRule = draft ?? rule
-  const when = ('questionId' in draftRule.when ? draftRule.when : rule.when) as typeof rule.when & { questionId: string }
-  const question = questions.find(q => q.id === when.questionId)
-  const ops = opsFor(question)
-  const setWhen = (patch: Partial<typeof when>) => setDraft({ ...draftRule, when: { ...when, ...patch } })
+  const d = draft ?? { join: flat.join, conds: flat.conds, goTo: rule.goTo }
+  const setCond = (i: number, patch: Partial<Simple>) => setDraft({ ...d, conds: d.conds.map((c, j) => (j === i ? { ...c, ...patch } : c)) })
   const close = () => (setDraft(null), setEditing(false))
+  const draftWhen = unflatten(d.join, d.conds)
 
   return (
     <div className="rounded-md-s border border-border bg-background p-2.5">
       {header}
-      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftRule.when)}, go to ${describeTarget(design, draftRule.goTo, pageIndex)}`} className="sm:max-w-lg">
+      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftWhen)}, go to ${describeTarget(design, d.goTo, pageIndex)}`} className="sm:max-w-xl">
         <DialogBody className="flex flex-col gap-4">
-          <div className="space-y-1.5">
-            <span className={labelClass}>If the answer to</span>
-            <Select
-              aria-label="Question"
-              value={when.questionId}
-              onChange={e => {
-                const q = questions.find(x => x.id === e.target.value)!
+          {d.conds.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-foreground">
+              It applies when
+              <div role="radiogroup" aria-label="Which conditions" className="inline-flex gap-0.5 rounded-md-s bg-muted p-0.5">
+                {(['all', 'any'] as const).map(j => (
+                  <button
+                    key={j}
+                    type="button"
+                    role="radio"
+                    aria-checked={d.join === j}
+                    onClick={() => setDraft({ ...d, join: j })}
+                    className={`inline-flex min-h-8 cursor-pointer items-center rounded-md-xs px-3 font-medium transition-colors ${
+                      d.join === j ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {j === 'all' ? 'all of these' : 'any of these'}
+                  </button>
+                ))}
+              </div>
+              are true
+            </div>
+          )}
+          <ol className="flex flex-col gap-3">
+            {d.conds.map((c, i) => {
+              const question = questions.find(q => q.id === c.questionId)
+              const ops = opsFor(question)
+              return (
+                <li key={i} className="flex flex-col gap-2 rounded-md-s border border-border p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={labelClass}>{i === 0 ? 'If the answer to' : d.join === 'all' ? 'and the answer to' : 'or the answer to'}</span>
+                    {d.conds.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setDraft({ ...d, conds: d.conds.filter((_, j) => j !== i) })}
+                        className={`${iconButton} hover:!text-destructive`}
+                        aria-label="Remove this condition"
+                        title="Remove this condition"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <Select
+                    aria-label="Question"
+                    value={c.questionId}
+                    onChange={e => {
+                      const q = questions.find(x => x.id === e.target.value)!
+                      const op = opsFor(q)[0]
+                      setCond(i, { questionId: q.id, op, value: defaultValue(q, op) })
+                    }}
+                    className={inputClass}
+                  >
+                    {!question && <option value={c.questionId}>(deleted question)</option>}
+                    {questions.map((q, k) => (
+                      <option key={q.id} value={q.id}>
+                        Q{k + 1}. {q.question?.title || 'Untitled question'}
+                      </option>
+                    ))}
+                  </Select>
+                  <div className={`grid gap-3 ${needsValue(c.op) && question ? 'sm:grid-cols-2' : ''}`}>
+                    <Select
+                      value={c.op}
+                      aria-label="Is"
+                      onChange={e => {
+                        const op = e.target.value as ConditionOp
+                        setCond(i, { op, value: question ? defaultValue(question, op) : undefined })
+                      }}
+                      className={inputClass}
+                    >
+                      {ops.map(op => (
+                        <option key={op} value={op}>
+                          {OP_LABELS[op]}
+                        </option>
+                      ))}
+                    </Select>
+                    {needsValue(c.op) && question && <ValueInput question={question} value={c.value} onChange={value => setCond(i, { value })} />}
+                  </div>
+                  {question?.type === 'nps' && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
+                </li>
+              )
+            })}
+          </ol>
+          <div>
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Plus className="h-3.5 w-3.5" />}
+              onClick={() => {
+                const q = questions[questions.length - 1]
                 const op = opsFor(q)[0]
-                setWhen({ questionId: q.id, op, value: defaultValue(q, op) })
+                setDraft({ ...d, conds: [...d.conds, { questionId: q.id, op, value: defaultValue(q, op) }] })
               }}
-              className={inputClass}
             >
-              {!question && <option value={when.questionId}>(deleted question)</option>}
-              {questions.map((q, i) => (
-                <option key={q.id} value={q.id}>
-                  Q{i + 1}. {q.question?.title || 'Untitled question'}
-                </option>
-              ))}
-            </Select>
+              Add a condition
+            </Button>
           </div>
-          <div className={`grid gap-3 ${needsValue(when.op) && question ? 'sm:grid-cols-2' : ''}`}>
-            <Select
-              value={when.op}
-              aria-label="Is"
-              onChange={e => {
-                const op = e.target.value as ConditionOp
-                setWhen({ op, value: question ? defaultValue(question, op) : undefined })
-              }}
-              className={inputClass}
-            >
-              {ops.map(op => (
-                <option key={op} value={op}>
-                  {OP_LABELS[op]}
-                </option>
-              ))}
-            </Select>
-            {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
-          </div>
-          {question?.type === 'nps' && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
           <div className="space-y-1.5">
-            <span className={labelClass}>Go to</span>
-            {targetSelect(draftRule.goTo, goTo => setDraft({ ...draftRule, goTo }))}
+            <span className={labelClass}>Then go to</span>
+            {targetSelect(d.goTo, goTo => setDraft({ ...d, goTo }))}
           </div>
         </DialogBody>
         <DialogFooter>
@@ -266,7 +345,7 @@ function RuleRow({
           </Button>
           <Button
             onClick={() => {
-              if (draft) onChange(draft)
+              onChange({ ...rule, when: draftWhen, goTo: d.goTo })
               close()
             }}
           >

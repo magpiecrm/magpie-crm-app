@@ -57,7 +57,8 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
         {survey.status === 'draft' && <Notice level="warning" title="This survey is a draft">Publish it first: until then its link only opens for you, as a preview.</Notice>}
         {survey.status === 'closed' && <Notice level="warning" title="This survey is closed">Its link shows that it's closed. Reopen it to take responses again.</Notice>}
 
-        <div role="tabpanel" id={`survey-share-panel-${tab}`} aria-labelledby={`survey-share-tab-${tab}`} className="flex flex-col gap-4">
+        {/* One height for every tab, so the pop-up doesn't jump as they're switched. */}
+        <div role="tabpanel" id={`survey-share-panel-${tab}`} aria-labelledby={`survey-share-tab-${tab}`} className="flex min-h-[19rem] flex-col gap-4">
           {tab === 'link' && (
             <>
               <p className="text-sm leading-relaxed text-muted-foreground">

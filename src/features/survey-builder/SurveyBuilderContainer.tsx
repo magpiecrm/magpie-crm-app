@@ -119,8 +119,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
       const left = isDesktop ? 64 + 320 : 0
       const right = (isDesktop && isChatOpen ? chatWidth : 0) + (inspectorOpen ? 320 : 0)
       const available = window.innerWidth - left - right - (isDesktop ? 64 : 16)
-      // The survey's width plus the page frame drawn around it.
-      const target = canvasMode === 'desktop' ? design.theme.bodyWidth + 64 : 399
+      const target = canvasMode === 'desktop' ? design.theme.bodyWidth : 375
       setZoomLevel(Math.max(0.5, Math.min(1, available / target)))
     }
     handleResize()

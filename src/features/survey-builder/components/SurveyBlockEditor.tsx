@@ -14,8 +14,8 @@ export const inputClass =
   'w-full min-h-9 max-sm:min-h-11 px-2.5 py-1.5 bg-card border border-input rounded-md-s text-[13px] max-sm:text-base text-foreground placeholder:text-muted-foreground/90 transition-[border-color,box-shadow] focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60'
 /** A field's label: sentence case, the same as every form in the app. */
 export const labelClass = 'block text-[13px] font-medium text-foreground'
-/** A group of fields: the only uppercase text in the panel. */
-export const sectionLabelClass = 'block text-xs font-semibold uppercase tracking-[0.07em] text-muted-foreground'
+/** A group of fields' heading: sentence case like everything else, set apart by weight. */
+export const sectionLabelClass = 'block text-[13px] font-semibold text-foreground'
 /** A line of help under a field or group. */
 export const hintClass = 'text-[13px] leading-relaxed text-muted-foreground text-pretty'
 

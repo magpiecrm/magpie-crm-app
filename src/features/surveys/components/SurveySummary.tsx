@@ -100,7 +100,7 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
             ].map(([label, value, sub]) => (
               <div key={label} className="min-w-0 px-3.5 py-3 sm:px-5 sm:py-4">
                 <dt className="text-[13px] text-muted-foreground">{label}</dt>
-                <dd className="mt-0.5 text-base font-semibold leading-snug tabular-nums text-foreground sm:text-xl">{value}</dd>
+                <dd className="mt-0.5 text-lg font-semibold leading-snug tabular-nums tracking-tight text-foreground sm:text-[1.625rem]">{value}</dd>
                 {sub && <dd className="mt-0.5 text-xs text-muted-foreground sm:text-[13px]">{sub}</dd>}
               </div>
             ))}
@@ -126,15 +126,18 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
                       </span>
                       {p.branch && <span className="block text-[13px] text-muted-foreground">Only when logic sends people here</span>}
                     </span>
-                    <span className={`h-3 overflow-hidden rounded-r-[4px] ${TRACK} max-sm:order-last max-sm:col-span-2`}>
-                      <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${(p.reached / Math.max(1, summary.started)) * 100}%`, minWidth: p.reached ? 4 : 0 }} />
+                    {/* Those who went on, then those who stopped here in amber, out of everyone who started. */}
+                    <span className={`flex h-3 gap-[2px] overflow-hidden rounded-r-[4px] ${TRACK} max-sm:order-last max-sm:col-span-2`} title={`${p.reached - p.stopped} went on, ${p.stopped} stopped here`}>
+                      <span className={`block h-full ${p.stopped ? '' : 'rounded-r-[4px]'} ${BAR}`} style={{ width: `${((p.reached - p.stopped) / Math.max(1, summary.started)) * 100}%`, minWidth: p.reached - p.stopped ? 4 : 0 }} />
+                      {p.stopped > 0 && <span className="block h-full rounded-r-[4px] bg-[#b9740c] dark:bg-[#e0a03a]" style={{ width: `${(p.stopped / Math.max(1, summary.started)) * 100}%`, minWidth: 4 }} />}
                     </span>
                     <span className="text-right text-sm tabular-nums text-muted-foreground">
                       <span className="font-semibold text-foreground">{p.reached}</span> reached
                     </span>
-                    <span className={`text-right text-sm tabular-nums max-sm:hidden ${p.stopped ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    <span className={`flex items-center justify-end gap-1.5 text-right text-sm tabular-nums max-sm:hidden ${p.stopped ? 'text-foreground' : 'text-muted-foreground'}`}>
                       {p.stopped ? (
                         <>
+                          <span className="h-2.5 w-2.5 rounded-[3px] bg-[#b9740c] dark:bg-[#e0a03a]" aria-hidden />
                           <span className="font-semibold">{p.stopped}</span> stopped here
                         </>
                       ) : (
@@ -355,7 +358,7 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{a.value}</p>
               <p className="mt-0.5 text-[13px] text-muted-foreground">{a.n > 1 ? `Latest: ${a.email ?? 'Anonymous'} · ${whenShort(a.at)}` : `${a.email ?? 'Anonymous'} · ${whenShort(a.at)}`}</p>
             </div>
-            {a.n > 1 && <span className="shrink-0 rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium tabular-nums text-foreground">{a.n} people</span>}
+            {a.n > 1 && <span className="shrink-0 rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium tabular-nums text-foreground">Said by {a.n}</span>}
           </li>
         ))}
         {shown.length === 0 && <li className="px-3.5 py-3 text-sm text-muted-foreground">No answers with “{search.trim()}”.</li>}

@@ -134,7 +134,7 @@ export function NpsSummary({ score, detractors, passives, promoters }: { score: 
       <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-s border border-border max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-[1.3fr_1fr_1fr_1fr] sm:divide-x">
         <div className="px-4 py-3">
           <dt className="text-[13px] font-medium text-foreground">NPS</dt>
-          <dd className="text-[2.75rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
+          <dd className="text-[2.5rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
           <dd className="text-[13px] text-muted-foreground">from −100 to +100</dd>
         </div>
         {parts.map(p => (

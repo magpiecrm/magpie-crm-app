@@ -8,13 +8,6 @@ import { cardStyle } from '../runtime/SurveyRenderer'
 import { SurveyBlockFrame } from './SurveyBlockFrame'
 import type { Dispatch } from './SurveyBlockEditor'
 
-/** Space round each page, the survey's background showing in it. */
-const PANEL_PAD = 32
-
-const pagePanel = (theme: SurveyDesign['theme']): React.CSSProperties => ({
-  background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
-})
-
 interface SurveyCanvasProps {
   design: SurveyDesign
   previewMode: 'desktop' | 'mobile'
@@ -64,11 +57,11 @@ export function SurveyCanvas({
     >
       <SurveyStyles theme={theme} />
       <div
-        // The builder's own labels sit on the app's surface in its colours; only each page (in a panel of the
-        // survey's background) takes the survey's look, so the canvas reads right in either theme.
+        // The builder's own desk, in the app's colours; only the survey's cards take the survey's look,
+        // so nothing glares in a dark app. Its page background shows in Preview and in Style.
         className="sv-root w-full flex flex-col gap-7 origin-top transition-all duration-300"
         style={{
-          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth + PANEL_PAD * 2}px` : `${375 + 24}px`,
+          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth}px` : '375px',
           zoom: zoomLevel,
           fontFamily: theme.fontFamily,
           lineHeight: theme.lineHeight,
@@ -95,7 +88,7 @@ export function SurveyCanvas({
                   {pageRing && <span className="shrink-0 rounded-full bg-accent/10 px-2 py-px text-xs font-medium text-foreground">Adding here</span>}
                 </span>
               </div>
-              <div className="rounded-xl border border-border" style={{ ...pagePanel(theme), padding: previewMode === 'desktop' ? PANEL_PAD : 12 }}>
+              <div>
               <div
                 data-canvas-body
                 data-block-count={page.blocks.length}
@@ -232,7 +225,7 @@ export function SurveyCanvas({
             </span>
             At the end
           </div>
-          <div className="rounded-xl border border-border" style={{ ...pagePanel(theme), padding: previewMode === 'desktop' ? PANEL_PAD : 12 }}>
+          <div>
           <div style={{ ...cardStyle(theme), maxWidth: undefined, textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
             {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 16 }} />}
             <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, marginBottom: 8 }}>{thankYou.title}</div>

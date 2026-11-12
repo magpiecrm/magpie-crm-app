@@ -63,19 +63,22 @@ export function SurveyBuilderHeader({
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <input
-          value={name}
-          onChange={e => setName(e.target.value)}
-          aria-label="Survey name"
-          title="Rename the survey"
-          style={{ width: `${Math.min(Math.max(name.length + 2, 10), 40)}ch` }}
-          className="min-w-0 max-w-full text-ellipsis rounded-md-s border border-transparent bg-transparent px-2 py-1.5 text-[15px] font-semibold text-foreground transition-colors hover:border-border focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20"
-        />
-        <span className="hidden shrink-0 sm:inline-flex">
-          <SurveyStatusBadge status={status} />
-        </span>
-        <span className="hidden shrink-0 items-center gap-1.5 text-[13px] text-muted-foreground md:inline-flex" aria-live="polite">
-          {isSaving ? (
+        {/* On a phone, two lines: the name, then its status and whether it's saved. */}
+        <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            aria-label="Survey name"
+            title="Rename the survey"
+            style={{ width: `${Math.min(Math.max(name.length + 2, 10), 40)}ch` }}
+            className="min-w-0 max-w-full text-ellipsis rounded-md-s border border-transparent bg-transparent px-2 py-1 text-[15px] font-semibold text-foreground transition-colors hover:border-border focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20 sm:py-1.5"
+          />
+          <span className="flex min-w-0 items-center gap-2 px-2 sm:px-0">
+            <span className="shrink-0">
+              <SurveyStatusBadge status={status} />
+            </span>
+            <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground max-md:[&>svg]:hidden sm:text-[13px]" aria-live="polite">
+                {isSaving ? (
             'Saving…'
           ) : isDirty ? (
             <>
@@ -88,7 +91,9 @@ export function SurveyBuilderHeader({
               {live ? 'Respondents see this version' : 'Saved'}
             </>
           )}
-        </span>
+            </span>
+          </span>
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">

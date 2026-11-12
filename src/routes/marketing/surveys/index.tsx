@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ClipboardList, Copy, Pencil, Play, Plus, Search, Share2, Square, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ClipboardList, Copy, Pencil, Play, Plus, Search, Share2, Square, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { closeSurveyFn, deleteSurveyFn, duplicateSurveyFn, getSurveysFn, publishSurveyFn } from '../../../server/functions'
 import { Button } from '../../../components/ui/Button'
@@ -22,6 +22,7 @@ export const Route = createFileRoute('/marketing/surveys/')({
 })
 
 type SurveyRow = Awaited<ReturnType<typeof getSurveysFn>>[number]
+type Sort = { by: 'name' | 'responses' | 'completed' | 'latest'; dir: 'asc' | 'desc' }
 
 const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
 
@@ -32,6 +33,7 @@ function SurveysPage() {
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [sharing, setSharing] = useState<SurveyRow | null>(null)
+  const [sort, setSort] = useState<Sort>({ by: 'latest', dir: 'desc' })
 
   const { data: surveys = [], isLoading } = useQuery({ queryKey: queryKeys.surveys.list(), queryFn: () => getSurveysFn() })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list() })
@@ -74,7 +76,31 @@ function SurveysPage() {
   }
 
   const q = query.trim().toLowerCase()
-  const shown = q ? surveys.filter(s => s.name.toLowerCase().includes(q)) : surveys
+  const matched = q ? surveys.filter(s => s.name.toLowerCase().includes(q)) : surveys
+  // Latest activity first unless a column says otherwise.
+  const key = (s: SurveyRow): string | number =>
+    sort.by === 'name' ? s.name.toLowerCase() : sort.by === 'responses' ? s.responseCount : sort.by === 'completed' ? (s.responseCount ? s.completedCount / s.responseCount : -1) : (s.lastResponseAt ?? s.updated_at)
+  const shown = [...matched].sort((a, b) => {
+    const x = key(a)
+    const y = key(b)
+    const d = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))
+    return sort.dir === 'asc' ? d : -d
+  })
+  const SortHead = ({ by, label, right }: { by: Sort['by']; label: string; right?: boolean }) => {
+    const active = sort.by === by
+    const Arrow = sort.dir === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <button
+        type="button"
+        onClick={() => setSort(s => (s.by === by ? { by, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by, dir: by === 'name' ? 'asc' : 'desc' }))}
+        aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+        className={`-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md-xs px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${right ? 'justify-self-end' : 'justify-self-start'} ${active ? 'text-foreground' : ''}`}
+      >
+        {label}
+        <Arrow className={`h-3.5 w-3.5 ${active ? '' : 'opacity-0'}`} aria-hidden />
+      </button>
+    )
+  }
 
   return (
     <div className="w-full p-4 lg:p-8">
@@ -112,12 +138,14 @@ function SurveysPage() {
             )}
             <div className="overflow-hidden rounded-md-m border border-border bg-card">
               <div className={`hidden ${COLUMNS} items-center gap-x-4 border-b border-border bg-muted/40 px-5 py-2.5 text-[13px] font-medium text-muted-foreground md:grid`}>
-                <span>Survey</span>
+                <SortHead by="name" label="Survey" />
                 <span>Status</span>
-                <span className="text-right">Responses</span>
-                <span className="text-right">Completed</span>
+                <SortHead by="responses" label="Responses" right />
+                <SortHead by="completed" label="Completed" right />
                 <span className="text-right">Result</span>
-                <span className="whitespace-nowrap pl-4">Latest</span>
+                <span className="whitespace-nowrap pl-3">
+                  <SortHead by="latest" label="Latest" />
+                </span>
                 <span className="sr-only">Actions</span>
               </div>
               <ul className="divide-y divide-border/70">

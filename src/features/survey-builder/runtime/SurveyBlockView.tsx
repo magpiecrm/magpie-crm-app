@@ -95,6 +95,12 @@ export function SurveyBlockView({ block, theme, value, onChange, error, disabled
           )}
         </div>
         {q.description && <div style={{ fontSize: 14, opacity: 0.75, marginBottom: 10, whiteSpace: 'pre-wrap' }}>{q.description}</div>}
+        {block.type === 'multiple_choice' && (
+          // How many they may pick, said before they start, not after a refusal.
+          <div style={{ fontSize: 13, opacity: 0.75, marginTop: q.description ? -4 : -6, marginBottom: 10 }}>
+            {q.maxSelect && q.minSelect ? `Pick ${q.minSelect} to ${q.maxSelect}` : q.maxSelect ? `Pick up to ${q.maxSelect}` : q.minSelect ? `Pick at least ${q.minSelect}` : 'Pick as many as you like'}
+          </div>
+        )}
         <QuestionInput block={block} theme={theme} value={value} onChange={v => onChange?.(v)} disabled={disabled} />
         {error && (
           <div role="alert" style={{ color: '#dc2626', fontSize: 13, marginTop: 6 }}>
