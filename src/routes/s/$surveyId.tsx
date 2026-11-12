@@ -156,12 +156,16 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     return () => window.removeEventListener('keydown', onKey)
   }, [search.embed, surveyId])
 
-  // Let the embedding page size the iframe to the survey.
+  // Let the embedding page size the iframe to the survey. The page's body is
+  // held at the window's height, so watch the survey itself and send its own
+  // height: it then grows and shrinks with each page, whenever it renders.
+  const embedRoot = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (!search.embed || typeof ResizeObserver === 'undefined') return
-    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, height: document.documentElement.scrollHeight }, '*')
+    const root = embedRoot.current
+    if (!search.embed || !root || typeof ResizeObserver === 'undefined') return
+    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, height: Math.ceil(root.getBoundingClientRect().height) }, '*')
     const observer = new ResizeObserver(send)
-    observer.observe(document.body)
+    observer.observe(root)
     send()
     // The embed script can load after the first height went out, so it asks again.
     const onAsk = (e: MessageEvent) => {
@@ -174,17 +178,15 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     }
   }, [search.embed, surveyId])
 
-  if (!start) return <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
-
-  const finished = data.completed || start.done
-
-  return (
+  const page = !start ? (
+    <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
+  ) : (
     <SurveyRenderer
       design={design}
       settings={data.survey.settings}
       initialAnswers={start.answers}
-      initialPath={finished ? undefined : start.path}
-      initiallyCompleted={finished}
+      initialPath={data.completed || start.done ? undefined : start.path}
+      initiallyCompleted={data.completed || start.done}
       embedded={search.embed}
       honeypotRef={honeypotRef}
       hiddenBlockIds={data.identified?.hiddenBlockIds}
@@ -207,5 +209,14 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
         return result
       }}
     />
+  )
+
+  // Embedded, one element holds the survey from the first render, so its height can be watched (flow-root keeps its children's margins inside it).
+  return search.embed ? (
+    <div ref={embedRoot} style={{ display: 'flow-root' }}>
+      {page}
+    </div>
+  ) : (
+    page
   )
 }
