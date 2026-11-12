@@ -109,10 +109,10 @@ function ContentMenu({
     )
   }
 
-  const tabs: Array<{ id: SurveyContentTab; label: string }> = [
+  const tabs: Array<{ id: SurveyContentTab; label: string; count?: number }> = [
     { id: 'blocks', label: 'Add' },
     { id: 'templates', label: 'Templates' },
-    { id: 'pages', label: `Pages (${design.pages.length})` },
+    { id: 'pages', label: 'Pages', count: design.pages.length },
   ]
 
   return (
@@ -124,11 +124,12 @@ function ContentMenu({
             role="tab"
             aria-selected={contentTab === tab.id}
             onClick={() => setContentTab(tab.id)}
-            className={`relative min-h-11 cursor-pointer text-[13px] font-medium transition-colors ${
+            className={`relative inline-flex min-h-11 cursor-pointer items-center gap-1.5 text-[13px] font-medium transition-colors ${
               contentTab === tab.id ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab.label}
+            {tab.count !== undefined && <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium tabular-nums text-foreground/80">{tab.count}</span>}
           </button>
         ))}
       </div>
@@ -160,7 +161,7 @@ function ContentMenu({
                         className="flex min-h-10 cursor-grab touch-none items-center gap-2 rounded-md-s border border-border bg-card px-2 py-1.5 text-left text-[13px] font-medium text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/60 active:cursor-grabbing"
                       >
                         <BlockChip type={item.type} size="sm" />
-                        <span className="min-w-0 truncate">{item.label}</span>
+                        <span className="min-w-0 truncate">{PALETTE_LABELS[item.type] ?? item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -274,6 +275,9 @@ function ContentMenu({
     </div>
   )
 }
+
+/** Shorter names where the palette's half-width tiles would cut the full one. */
+const PALETTE_LABELS: Partial<Record<string, string>> = { multiple_choice: 'Checkboxes' }
 
 const pageTool =
   'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent'

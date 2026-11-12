@@ -136,13 +136,14 @@ function SurveyResultsPage() {
             : 'Share its link or send it in a campaign. Results show up here as people answer.'}
       </p>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
+        {/* The page's own Publish or Reopen is in the header; here, what to do next. */}
         {survey.status === 'published' ? (
           <Button leftIcon={<Share2 className="h-4 w-4" />} onClick={() => setSharing(true)}>
             Share the survey
           </Button>
         ) : (
-          <Button leftIcon={survey.status === 'draft' ? <Rocket className="h-4 w-4" /> : <Play className="h-4 w-4" />} isLoading={setStatus.isPending} onClick={() => setStatus.mutate('publish')}>
-            {survey.status === 'draft' ? 'Publish' : 'Reopen'}
+          <Button variant="secondary" leftIcon={<Pencil className="h-4 w-4" />} onClick={edit}>
+            Edit survey
           </Button>
         )}
         <Button variant="secondary" leftIcon={<Eye className="h-4 w-4" />} onClick={() => window.open(publicUrl, '_blank', 'noopener')}>
@@ -180,9 +181,11 @@ function SurveyResultsPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="secondary" leftIcon={<Share2 className="h-4 w-4" />} onClick={() => setSharing(true)}>
-                Share
-              </Button>
+              {survey.status !== 'draft' && (
+                <Button variant="secondary" leftIcon={<Share2 className="h-4 w-4" />} onClick={() => setSharing(true)}>
+                  Share
+                </Button>
+              )}
               <Button variant={survey.status === 'published' ? 'primary' : 'secondary'} leftIcon={<Pencil className="h-4 w-4" />} onClick={edit}>
                 Edit survey
               </Button>

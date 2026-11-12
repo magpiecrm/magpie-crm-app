@@ -5,22 +5,10 @@ import { CHOICE_TYPES, isQuestionType } from '../types'
 import { newRuleId } from '../applyAction'
 import type { LintIssue } from '../logic/lint'
 import { scaleRange } from '../logic/validate'
+import { OP_LABELS, describeCondition, describeTarget } from '../logic/describe'
 import type { Dispatch } from './SurveyBlockEditor'
 import { hintClass, inputClass, labelClass, sectionLabelClass } from './SurveyBlockEditor'
 import { Select } from '../../../components/ui/Select'
-
-const OP_LABELS: Record<ConditionOp, string> = {
-  answered: 'is answered',
-  not_answered: 'is not answered',
-  eq: 'is',
-  neq: 'is not',
-  includes: 'includes',
-  not_includes: 'does not include',
-  gt: 'is greater than',
-  gte: 'is at least',
-  lt: 'is less than',
-  lte: 'is at most',
-}
 
 function opsFor(block: SurveyBlock | undefined): ConditionOp[] {
   if (!block) return ['answered', 'not_answered']
@@ -111,6 +99,8 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
       {rules.map(rule => (
         <RuleRow
           key={rule.id}
+          design={design}
+          pageIndex={index}
           rule={rule}
           questions={questions}
           targetSelect={targetSelect}
@@ -134,7 +124,7 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
       )}
 
       <div className="space-y-1.5">
-        <label className={labelClass}>{rules.length ? 'Otherwise, go to' : 'After this page, go to'}</label>
+        <label className={labelClass}>{rules.length ? 'Everyone else goes to' : 'Everyone goes to'}</label>
         {targetSelect(page.defaultNext, t => save(rules, t.kind === 'next' ? undefined : t))}
       </div>
     </div>
@@ -150,12 +140,16 @@ function defaultValue(block: SurveyBlock, op: ConditionOp): string | number | bo
 }
 
 function RuleRow({
+  design,
+  pageIndex,
   rule,
   questions,
   targetSelect,
   onChange,
   onDelete,
 }: {
+  design: SurveyDesign
+  pageIndex: number
   rule: LogicRule
   questions: SurveyBlock[]
   targetSelect: (value: PageTarget | undefined, onChange: (t: PageTarget) => void) => React.ReactNode
@@ -163,8 +157,10 @@ function RuleRow({
   onDelete: () => void
 }) {
   const header = (
-    <div className="flex items-center justify-between">
-      <span className={labelClass}>If</span>
+    <div className="flex items-start justify-between gap-2">
+      <p className="pt-1.5 text-[13px] font-semibold leading-snug text-foreground">
+        If {describeCondition(design, rule.when)}, go to {describeTarget(design, rule.goTo, pageIndex)}
+      </p>
       <button
         type="button"
         onClick={onDelete}
@@ -226,7 +222,7 @@ function RuleRow({
         ))}
       </Select>
       {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
-      <label className={labelClass}>then go to</label>
+      <label className={labelClass}>Go to</label>
       {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
     </div>
   )
@@ -247,6 +243,19 @@ function ValueInput({
         {question.question.options.map(o => (
           <option key={o.id} value={o.id}>
             {o.label}
+          </option>
+        ))}
+      </Select>
+    )
+  }
+  if (question.type === 'nps') {
+    const group = (n: number) => (n === 6 ? ' (the top detractor score)' : n === 8 ? ' (the top passive score)' : n === 9 ? ' (the first promoter score)' : '')
+    return (
+      <Select value={String(value ?? '')} onChange={e => onChange(Number(e.target.value))} className={inputClass} aria-label="Score">
+        {Array.from({ length: 11 }, (_, n) => (
+          <option key={n} value={n}>
+            {n}
+            {group(n)}
           </option>
         ))}
       </Select>

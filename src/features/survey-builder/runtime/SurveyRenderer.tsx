@@ -159,7 +159,8 @@ export function SurveyRenderer({
   // before they've sent it.
   const pagesDone = history.length - 1
   const total = pagesDone + 1 + (isLast ? 0 : Math.max(1, pages.length - pageIndex - 1))
-  const progress = pages.length > 1 ? Math.round((pagesDone / total) * 100) : null
+  // The bar shows the page they're on out of the pages they'll see, as its label says.
+  const progress = pages.length > 1 ? Math.round(((pagesDone + 1) / total) * 100) : null
 
   return (
     <div style={outer} className="sv-root">
@@ -183,7 +184,7 @@ export function SurveyRenderer({
               <div style={{ height: '100%', width: `${Math.max(progress, 3)}%`, background: theme.accentColor, borderRadius: 999, transition: 'width 300ms' }} />
             </div>
             <span style={{ fontSize: 13, opacity: 0.75, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }} aria-hidden>
-              {pagesDone + 1} of {total}
+              Page {pagesDone + 1} of {total}
             </span>
           </div>
         )}
@@ -198,7 +199,7 @@ export function SurveyRenderer({
           style={{ position: 'absolute', left: -10000, width: 1, height: 1, opacity: 0 }}
         />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: theme.cardMode ? 12 : 4 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {visibleBlocks.map(block => (
             <div
               key={block.id}

@@ -1,7 +1,8 @@
 import type React from 'react'
-import { GitBranch, Plus } from 'lucide-react'
+import { CornerDownRight, Flag, Plus } from 'lucide-react'
 import type { BlockDropTarget, DragPayload } from '../../email-builder/hooks/useBlockDrag'
-import type { SurveyBlockType, SurveyDesign } from '../types'
+import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings } from '../types'
+import { describePageRoutes } from '../logic/describe'
 import { SurveyStyles, mix } from '../runtime/questions'
 import { cardStyle } from '../runtime/SurveyRenderer'
 import { SurveyBlockFrame } from './SurveyBlockFrame'
@@ -21,6 +22,10 @@ interface SurveyCanvasProps {
   startDrag: (e: React.PointerEvent, payload: DragPayload<SurveyBlockType>) => void
   lockedBlockIds: Set<string>
   onOpenLogic: () => void
+  onOpenSettings: () => void
+  /** The thank-you, drawn after the last page. */
+  thankYou: SurveySettings['thankYou']
+  onDuplicate: (block: SurveyBlock, pageId: string, index: number) => void
 }
 
 /** Every page stacked as its own card, so the whole survey is visible and editable at once. */
@@ -38,6 +43,9 @@ export function SurveyCanvas({
   startDrag,
   lockedBlockIds,
   onOpenLogic,
+  onOpenSettings,
+  thankYou,
+  onDuplicate,
 }: SurveyCanvasProps) {
   const { theme } = design
 
@@ -61,8 +69,9 @@ export function SurveyCanvas({
       >
         {design.pages.map((page, pageIndex) => {
           const isSelectedPage = page.id === selectedPageId
-          const ruleCount = page.rules?.length ?? 0
-          const branches = ruleCount > 0 || (page.defaultNext && page.defaultNext.kind !== 'next')
+          const routes = describePageRoutes(design, pageIndex)
+          // The page gets a ring only when it is what's selected; a selected question has its own.
+          const pageRing = isSelectedPage && !page.blocks.some(b => b.id === selectedBlockId)
           return (
             <div key={page.id} data-page-id={page.id} onClick={e => (e.stopPropagation(), setSelectedPageId(page.id), setSelectedBlockId(null))}>
               <div className="mb-2 flex items-center justify-between gap-3 px-1 font-sans">
@@ -75,17 +84,6 @@ export function SurveyCanvas({
                   </span>
                   <span className="truncate font-semibold">{page.title || `Page ${pageIndex + 1}`}</span>
                 </span>
-                {branches && (
-                  <button
-                    onClick={e => (e.stopPropagation(), onOpenLogic())}
-                    className="inline-flex min-h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium transition-colors"
-                    style={{ background: mix(theme.textColor, 0.07), color: theme.textColor }}
-                    title="Open the survey's logic"
-                  >
-                    <GitBranch className="h-3.5 w-3.5" aria-hidden />
-                    {ruleCount ? `${ruleCount} rule${ruleCount > 1 ? 's' : ''}` : 'Goes elsewhere next'}
-                  </button>
-                )}
               </div>
               <div
                 data-canvas-body
@@ -94,7 +92,7 @@ export function SurveyCanvas({
                 style={{
                   ...cardStyle(theme),
                   maxWidth: undefined,
-                  boxShadow: isSelectedPage ? `0 0 0 2px ${mix(theme.accentColor, 0.55)}` : cardStyle(theme).boxShadow,
+                  boxShadow: pageRing ? `0 0 0 2px ${mix(theme.textColor, 0.3)}` : cardStyle(theme).boxShadow,
                 }}
               >
                 {theme.logoUrl && pageIndex === 0 && (
@@ -105,10 +103,10 @@ export function SurveyCanvas({
                 {theme.showProgressBar && design.pages.length > 1 && (
                   <div className="pointer-events-none" aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                     <div style={{ flex: 1, height: 6, background: mix(theme.textColor, 0.1), borderRadius: 999, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.max((pageIndex / design.pages.length) * 100, 3)}%`, background: theme.accentColor, borderRadius: 999 }} />
+                      <div style={{ height: '100%', width: `${((pageIndex + 1) / design.pages.length) * 100}%`, background: theme.accentColor, borderRadius: 999 }} />
                     </div>
                     <span style={{ fontSize: 13, opacity: 0.75, fontVariantNumeric: 'tabular-nums' }}>
-                      {pageIndex + 1} of {design.pages.length}
+                      Page {pageIndex + 1} of {design.pages.length}
                     </span>
                   </div>
                 )}
@@ -120,7 +118,7 @@ export function SurveyCanvas({
                     Drag a question here, or pick one on the left
                   </div>
                 ) : (
-                  <div className="flex flex-col" style={{ gap: theme.cardMode ? 12 : 4 }}>
+                  <div className="flex flex-col" style={{ gap: 12 }}>
                     {page.blocks.map((block, index) => (
                       <div
                         key={block.id}
@@ -145,6 +143,7 @@ export function SurveyCanvas({
                             dispatch('survey.deleteBlock', { id: block.id })
                             if (selectedBlockId === block.id) setSelectedBlockId(null)
                           }}
+                          onDuplicate={() => onDuplicate(block, page.id, index + 1)}
                           startDrag={startDrag}
                         />
                       </div>
@@ -169,6 +168,22 @@ export function SurveyCanvas({
                   </span>
                 </div>
               </div>
+              {routes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={e => (e.stopPropagation(), onOpenLogic())}
+                  title="Change it in Logic"
+                  className="mt-2 flex w-full cursor-pointer flex-col gap-0.5 rounded-md px-2 py-1.5 text-left font-sans text-[13px] transition-colors"
+                  style={{ color: mix(theme.textColor, 0.78), background: mix(theme.textColor, 0.05) }}
+                >
+                  {routes.map((line, i) => (
+                    <span key={i} className="flex items-start gap-1.5">
+                      <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>{line}</span>
+                    </span>
+                  ))}
+                </button>
+              )}
             </div>
           )
         })}
@@ -183,6 +198,21 @@ export function SurveyCanvas({
         >
           <Plus className="h-4 w-4" aria-hidden /> Add a page
         </button>
+        {/* What people see once they've sent the last page. */}
+        <div onClick={e => (e.stopPropagation(), onOpenSettings())} className="cursor-pointer" title="Change it in Settings">
+          <div className="mb-2 flex items-center gap-2 px-1 font-sans text-[13px] font-semibold" style={{ color: mix(theme.textColor, 0.68) }}>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full" style={{ background: mix(theme.textColor, 0.1), color: theme.textColor }}>
+              <Flag className="h-3 w-3" aria-hidden />
+            </span>
+            When they finish
+          </div>
+          <div style={{ ...cardStyle(theme), maxWidth: undefined, textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
+            {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 16 }} />}
+            <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, marginBottom: 8 }}>{thankYou.title}</div>
+            <div style={{ opacity: 0.8, whiteSpace: 'pre-wrap' }}>{thankYou.message}</div>
+          </div>
+        </div>
+
       </div>
     </div>
   )

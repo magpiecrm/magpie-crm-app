@@ -51,12 +51,19 @@ export function mix(hex: string, alpha: number): string {
 export const SURVEY_CSS = `
 .sv-root input::placeholder, .sv-root textarea::placeholder { color: currentColor; opacity: .62; }
 .sv-root button:focus-visible, .sv-root input:focus-visible, .sv-root textarea:focus-visible, .sv-root select:focus-visible { outline: 2px solid var(--sv-accent); outline-offset: 2px; }
+.sv-root input:focus, .sv-root textarea:focus, .sv-root select:focus { border-color: var(--sv-accent) !important; }
+.sv-root [role=radio][aria-checked=false]:not(:disabled):hover, .sv-root [role=checkbox][aria-checked=false]:not(:disabled):hover { border-color: var(--sv-accent) !important; background: var(--sv-hover) !important; }
+.sv-root select { appearance: none; -webkit-appearance: none; padding-right: 40px !important; background-image: var(--sv-chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 14px; }
 .sv-scale { container-type: inline-size; }
-@container (max-width: 480px) { .sv-scale-wide { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; row-gap: 6px !important; } }
+@container (max-width: 480px) {
+  .sv-scale-wide { display: flex !important; flex-wrap: wrap; }
+  .sv-scale-wide > * { flex: 1 0 calc(100% / 6 - 4px); }
+}
 `
 
 export function SurveyStyles({ theme }: { theme: SurveyTheme }) {
-  return <style>{`${SURVEY_CSS}.sv-root { --sv-accent: ${theme.accentColor}; }`}</style>
+  const chevron = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${theme.textColor}' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>`)}")`
+  return <style>{`${SURVEY_CSS}.sv-root { --sv-accent: ${theme.accentColor}; --sv-hover: ${mix(theme.accentColor, 0.06)}; --sv-chevron: ${chevron}; }`}</style>
 }
 
 function rgb(hex: string): [number, number, number] | null {

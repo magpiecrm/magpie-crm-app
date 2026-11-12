@@ -210,15 +210,15 @@ export const surveyTools = [
     handler: async ({ id }) => {
       const { getSurveyOrThrow } = await import('../../surveys')
       const { getAppUrl } = await import('../../appUrl')
-      const { surveyEmbedSnippet, surveySignedEmbedExample } = await import('../../../features/surveys/embed')
+      const { surveyEmbedCode, surveySignedEmbedExample } = await import('../../../features/surveys/embed')
       const survey = getSurveyOrThrow(id)
       const origin = await getAppUrl()
       return {
         status: survey.status,
         link: `${origin}/s/${id}`,
         qrLink: `${origin}/s/${id}?src=qr`,
-        qrNote: 'The Share tab on the survey page shows this as a downloadable QR code (PNG/SVG). Scans are counted as source "QR code".',
-        embed: surveyEmbedSnippet(origin, id),
+        qrNote: 'The Share pop-up on the survey\'s page shows this as a downloadable QR code (PNG/SVG). Scans are counted as source "QR code".',
+        embed: surveyEmbedCode(origin, id, survey.name),
         signedInEmbed: {
           note: 'For surveys inside the user\'s own app: their server exchanges an API key + the signed-in user\'s email for a personal iframe URL, so answers go to that contact without an Email question.',
           serverCode: surveySignedEmbedExample(origin, id),

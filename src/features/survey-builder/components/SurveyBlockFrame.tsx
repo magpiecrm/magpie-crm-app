@@ -1,5 +1,5 @@
 import type React from 'react'
-import { ArrowDown, ArrowUp, GripVertical, Lock, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, GripVertical, Lock, Trash2 } from 'lucide-react'
 import type { DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlock, SurveyBlockType, SurveyTheme } from '../types'
 import { SurveyBlockView } from '../runtime/SurveyBlockView'
@@ -17,6 +17,7 @@ interface SurveyBlockFrameProps {
   onSelect: () => void
   onMove: (direction: 'up' | 'down') => void
   onDelete: () => void
+  onDuplicate: () => void
   startDrag: (e: React.PointerEvent, payload: DragPayload<SurveyBlockType>) => void
 }
 
@@ -26,7 +27,7 @@ interface SurveyBlockFrameProps {
  * is drawn by the same `SurveyBlockView` respondents see.
  */
 const tool =
-  'inline-flex h-8 w-8 items-center justify-center rounded-md-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent'
+  'inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-xs text-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent'
 
 export function SurveyBlockFrame({
   block,
@@ -41,6 +42,7 @@ export function SurveyBlockFrame({
   onSelect,
   onMove,
   onDelete,
+  onDuplicate,
   startDrag,
 }: SurveyBlockFrameProps) {
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
@@ -63,15 +65,20 @@ export function SurveyBlockFrame({
         <SurveyBlockView block={block} theme={theme} disabled />
       </div>
 
-      {/* Beside the card on a wide screen, above the outline on a narrow one: never over the block's own text. */}
+      {/* On the outline's top-right corner, clear of the text below it. */}
       <div
-        className={`absolute -right-[6px] -top-[46px] z-20 flex-row items-center gap-0.5 rounded-md-s border border-border bg-popover p-0.5 font-sans text-foreground shadow-md lg:-top-[7px] lg:left-[calc(100%+var(--sv-card-pad,32px)+12px)] lg:right-auto lg:flex-col ${
+        className={`absolute -top-[23px] right-1 z-20 flex-row items-center gap-0.5 rounded-md-s border border-border bg-popover p-0.5 font-sans text-foreground shadow-md ${
           selected ? 'flex' : 'hidden group-hover:flex'
         }`}
+        onClick={e => e.stopPropagation()}
       >
+        {locked && (
+          <span className="mx-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground" title="People have answered it, so it can't change type or be deleted">
+            <Lock className="h-3.5 w-3.5" aria-hidden /> Has responses
+          </span>
+        )}
         <button
           onPointerDown={e => startDrag(e, { kind: 'move', index, pageId })}
-          onClick={e => e.stopPropagation()}
           className={`${tool} cursor-grab active:cursor-grabbing touch-none`}
           aria-label="Drag to move"
           title="Drag to move"
@@ -84,16 +91,18 @@ export function SurveyBlockFrame({
         <button disabled={index === blocksLength - 1} onClick={stop(() => onMove('down'))} className={tool} aria-label="Move down" title="Move down">
           <ArrowDown className="h-4 w-4" />
         </button>
-        <span className="mx-0.5 h-5 w-px bg-border lg:mx-0 lg:my-0.5 lg:h-px lg:w-5" aria-hidden />
-        {locked ? (
-          <span className={`${tool} cursor-help`} title="It has responses, so it can't be deleted" aria-label="Locked: it has responses">
-            <Lock className="h-4 w-4" />
-          </span>
-        ) : (
-          <button onClick={stop(onDelete)} className={`${tool} hover:!text-destructive`} aria-label="Delete" title="Delete">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
+        <button onClick={stop(onDuplicate)} className={tool} aria-label="Duplicate" title="Duplicate">
+          <Copy className="h-4 w-4" />
+        </button>
+        <button
+          onClick={stop(onDelete)}
+          disabled={locked}
+          className={`${tool} hover:!text-destructive`}
+          aria-label="Delete"
+          title={locked ? "It has responses, so it can't be deleted" : 'Delete'}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
     </div>
   )

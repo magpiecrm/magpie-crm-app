@@ -1,25 +1,30 @@
 /**
  * Small result charts for the survey summary, in plain HTML.
  *
- * Palette (checked with the dataviz validator, light and dark): a question's
- * counts are one series, so one hue, the app's teal stepped up for chroma
- * (#0a87a0 / dark #26a6b8). NPS is a polarity split, so the diverging pair:
- * red detractors, a mid grey for passives (3:1 on the card), teal promoters.
- * Values and labels always wear text colours, never the bar's, and every bar
- * has its number beside or above it, so colour is never the only channel.
+ * Colour is kept for meaning. A question's counts are one series of plain
+ * magnitude, so they're drawn in one neutral ink. NPS is a polarity split, so
+ * it alone gets colour, the diverging pair checked with the dataviz validator
+ * in both themes: red detractors, a neutral grey midpoint for passives, the
+ * app's teal (stepped up for chroma) for promoters. Values and labels always
+ * wear text colours, and every bar has its number beside or above it, so
+ * colour is never the only channel.
  */
 
-const BAR = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
+export const BAR = 'bg-[#4b5262] dark:bg-[#aeb4bf]'
 const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
-const PASSIVE = 'bg-[#8f8e88] dark:bg-[#6e6d68]'
-const PROMOTER = BAR
-const TRACK = 'bg-foreground/[0.06]'
+const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
+const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
+export const TRACK = 'bg-foreground/[0.06] dark:bg-foreground/[0.1]'
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0)
 
-/** Horizontal bars, one per row, all scaled to the largest value, each with its count and share. */
-export function BarList({ rows, total, labelWidth = '12rem' }: { rows: Array<{ label: string; count: number; note?: string }>; total: number; labelWidth?: string }) {
-  const max = Math.max(1, ...rows.map(r => r.count))
+/**
+ * Horizontal bars, one per row, each its share of everyone who answered, on a
+ * track that is 100%; the label column is the same width on every card, so
+ * bars line up down the page.
+ */
+export function BarList({ rows, total }: { rows: Array<{ label: string; count: number; note?: string }>; total: number }) {
+  const labelWidth = '14rem'
   return (
     <ul className="flex flex-col gap-2.5">
       {rows.map((row, i) => (
@@ -31,7 +36,7 @@ export function BarList({ rows, total, labelWidth = '12rem' }: { rows: Array<{ l
             <span className="font-semibold text-foreground">{row.count}</span> · {pct(row.count, total)}%
           </span>
           <span className={`h-4 overflow-hidden rounded-r-[4px] max-sm:col-span-2 ${TRACK}`} title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
-            <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${(row.count / max) * 100}%`, minWidth: row.count ? 4 : 0 }} />
+            <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
           </span>
         </li>
       ))}
@@ -57,7 +62,7 @@ export function Distribution({
   const total = counts.reduce((a, b) => a + b, 0)
   return (
     <div>
-      <div className="flex h-32 items-end gap-[2px]">
+      <div className="flex h-36 items-end gap-[2px]">
         {counts.map((count, i) => {
           const value = start + i
           return (

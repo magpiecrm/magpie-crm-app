@@ -15,7 +15,7 @@ export const inputClass =
 /** A field's label: sentence case, the same as every form in the app. */
 export const labelClass = 'block text-[13px] font-medium text-foreground'
 /** A group of fields: the only uppercase text in the panel. */
-export const sectionLabelClass = 'block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground'
+export const sectionLabelClass = 'block text-xs font-semibold uppercase tracking-[0.07em] text-muted-foreground'
 /** A line of help under a field or group. */
 export const hintClass = 'text-[13px] leading-relaxed text-muted-foreground'
 

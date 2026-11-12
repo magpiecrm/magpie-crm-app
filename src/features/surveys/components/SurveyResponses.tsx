@@ -70,7 +70,7 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
     )
   }
   const text = answerToDisplay(block, value)
-  return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="block truncate" title={text}>{text}</span>
+  return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
 }
 
 function StatusPill({ status }: { status: ResponseRow['status'] }) {
@@ -216,11 +216,6 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
           </Select>
-          <Select className={`${INPUT_CLASS} !w-auto`} value={status} onChange={e => resetPage(setStatus)(e.target.value as typeof status)} aria-label="Finished or not">
-            <option value="">Finished or not</option>
-            <option value="completed">Finished</option>
-            <option value="partial">Not finished</option>
-          </Select>
           {sources.length > 1 && (
             <Select className={`${INPUT_CLASS} !w-auto max-sm:hidden`} value={source} onChange={e => resetPage(setSource)(e.target.value)} aria-label="Where from">
               <option value="">From anywhere</option>
@@ -238,9 +233,36 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         </div>
       )}
 
-      <p className="text-[13px] text-muted-foreground" aria-live="polite">
-        {filtered ? `${shown.length} of ${responses.length} responses` : `${responses.length} response${responses.length === 1 ? '' : 's'}`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div role="tablist" aria-label="Finished or not" className="inline-flex gap-1 rounded-md-s bg-muted p-1">
+          {(
+            [
+              ['', 'All', responses.length],
+              ['completed', 'Finished', responses.filter(r => r.status === 'completed').length],
+              ['partial', 'Not finished', responses.filter(r => r.status === 'partial').length],
+            ] as const
+          ).map(([value, label, n]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={status === value}
+              onClick={() => resetPage(setStatus)(value)}
+              className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                status === value ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+              <span className="tabular-nums text-muted-foreground">{n}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[13px] text-muted-foreground" aria-live="polite">
+          {filtered ? `${shown.length} match` : `${responses.length} response${responses.length === 1 ? '' : 's'}`}
+          {' · '}
+          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown
+        </p>
+      </div>
 
       <div className="overflow-hidden rounded-md-m border border-border bg-card">
         {/* A phone gets one card per response. */}
@@ -276,10 +298,10 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         </ul>
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[56rem] table-fixed text-left text-sm">
+          <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${44 + columns.length * 15}rem` }}>
             <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
               <tr>
-                <th scope="col" className="w-11 py-2.5 pl-4">
+                <th scope="col" className="sticky left-0 z-10 w-11 bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-4">
                   <input
                     type="checkbox"
                     className="h-4 w-4"
@@ -297,12 +319,12 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                     }
                   />
                 </th>
-                <th scope="col" className="w-[15rem] py-2.5 pl-2 pr-4 font-medium">
+                <th scope="col" className="sticky left-11 z-10 w-[14rem] bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-2 pr-4 font-medium shadow-[1px_0_0_var(--color-border)]">
                   Person
                 </th>
                 {columns.map(c => (
-                  <th key={c.key} scope="col" className="px-4 py-2.5 font-medium">
-                    <span className="block truncate" title={c.label}>
+                  <th key={c.key} scope="col" className="px-4 py-2.5 align-bottom font-medium">
+                    <span className="line-clamp-2" title={c.label}>
                       {c.label}
                     </span>
                   </th>
@@ -327,10 +349,10 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                 const person = personOf(r)
                 return (
                   <tr key={r.id} onClick={() => setOpenId(r.id)} className={`group cursor-pointer transition-colors hover:bg-muted/40 ${picked.has(r.id) ? 'bg-accent/[0.05]' : ''}`}>
-                    <td className="py-3 pl-4 align-top" onClick={e => e.stopPropagation()}>
+                    <td className="sticky left-0 z-[1] bg-card py-3 pl-4 align-top group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        className="mt-0.5 h-4 w-4"
+                        className="mt-0.5 h-[18px] w-[18px]"
                         aria-label={`Select ${person || 'this anonymous response'}`}
                         checked={picked.has(r.id)}
                         onChange={e =>
@@ -342,7 +364,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                         }
                       />
                     </td>
-                    <td className="py-3 pl-2 pr-4 align-top">
+                    <td className="sticky left-11 z-[1] bg-card py-3 pl-2 pr-4 align-top shadow-[1px_0_0_var(--color-border)] group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]">
                       <button
                         type="button"
                         onClick={e => (e.stopPropagation(), setOpenId(r.id))}

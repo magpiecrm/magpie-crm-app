@@ -1,5 +1,4 @@
 import { ArrowLeft, Check, Eye, Laptop, MessageSquare, Rocket, Save, Smartphone } from 'lucide-react'
-import { ThemeToggle } from '../../../components/ui/ThemeToggle'
 import { Button } from '../../../components/ui/Button'
 import type { SurveyStatus } from '../types'
 import { SurveyStatusBadge } from '../../surveys/components/SurveyStatusBadge'
@@ -68,7 +67,7 @@ export function SurveyBuilderHeader({
           aria-label="Survey name"
           title="Rename the survey"
           style={{ width: `${Math.min(Math.max(name.length + 2, 10), 40)}ch` }}
-          className="min-w-0 max-w-full rounded-md-s border border-transparent bg-transparent px-2 py-1.5 text-[15px] font-semibold text-foreground transition-colors hover:border-border focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20"
+          className="min-w-0 max-w-full text-ellipsis rounded-md-s border border-transparent bg-transparent px-2 py-1.5 text-[15px] font-semibold text-foreground transition-colors hover:border-border focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20"
         />
         <span className="hidden shrink-0 sm:inline-flex">
           <SurveyStatusBadge status={status} />
@@ -78,22 +77,19 @@ export function SurveyBuilderHeader({
             'Saving…'
           ) : isDirty ? (
             <>
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
-              Unsaved changes
+              <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+              {live ? 'Changes not live yet' : 'Unsaved changes'}
             </>
           ) : (
             <>
               <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-              Saved
+              {live ? 'Respondents see this version' : 'Saved'}
             </>
           )}
         </span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <span className="hidden xl:inline-flex">
-          <ThemeToggle />
-        </span>
         <div role="group" aria-label="Show it as on" className="hidden gap-0.5 rounded-md-s bg-muted p-0.5 lg:flex">
           {device('desktop', 'A computer', Laptop)}
           {device('mobile', 'A phone', Smartphone)}
@@ -111,20 +107,22 @@ export function SurveyBuilderHeader({
         >
           <span className="max-lg:hidden">Copilot</span>
         </Button>
-        <Button
-          variant={live ? 'primary' : 'secondary'}
-          onClick={onSave}
-          disabled={isSaving || (!isDirty && live)}
-          aria-label={live ? 'Save changes' : 'Save'}
-          leftIcon={<Save className="h-4 w-4" />}
-          className="max-sm:!px-2.5"
-        >
-          <span className="max-sm:hidden">{live ? 'Save changes' : 'Save'}</span>
-        </Button>
-        {!live && (
-          <Button onClick={onPublish} disabled={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label={status === 'closed' ? 'Reopen' : 'Publish'} className="max-sm:!px-2.5">
-            <span className="max-sm:hidden">{status === 'closed' ? 'Reopen' : 'Publish'}</span>
-          </Button>
+        {live ? (
+          // A live survey changes for respondents as soon as it's saved, so saving is publishing.
+          isDirty && (
+            <Button onClick={onSave} isLoading={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label="Publish changes" className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">Publish changes</span>
+            </Button>
+          )
+        ) : (
+          <>
+            <Button variant="secondary" onClick={onSave} disabled={isSaving || !isDirty} leftIcon={<Save className="h-4 w-4" />} aria-label="Save draft" className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">Save draft</span>
+            </Button>
+            <Button onClick={onPublish} disabled={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label={status === 'closed' ? 'Reopen' : 'Publish'} className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">{status === 'closed' ? 'Save and reopen' : 'Publish'}</span>
+            </Button>
+          </>
         )}
       </div>
     </div>

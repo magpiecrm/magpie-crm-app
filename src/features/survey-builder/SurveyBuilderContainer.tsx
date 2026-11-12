@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle, Laptop, RotateCcw, Smartphone, X } from 'lucide-react'
+import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
 import { useIsDesktop } from '../../hooks/useMediaQuery'
@@ -75,6 +76,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const [selectedPageId, setSelectedPageId] = useState<string | null>(survey.design.pages[0]?.id ?? null)
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [showPreview, setShowPreview] = useState(false)
+  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'mobile'>('desktop')
+  const [previewRun, setPreviewRun] = useState(0)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
@@ -319,7 +322,22 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           lockedBlockIds={locked.blocks}
           onOpenLogic={() => {
             setActiveMenu('logic')
+            setSelectedBlockId(null)
             setIsPanelOpen(true)
+          }}
+          onOpenSettings={() => {
+            setActiveMenu('settings')
+            setSelectedBlockId(null)
+            setIsPanelOpen(true)
+          }}
+          thankYou={settings.thankYou}
+          onDuplicate={(block, pageId, index) => {
+            // A copy is a new question: new ids for it and its options, so responses never mix.
+            const { id: _id, ...rest } = structuredClone(block)
+            if (rest.question?.options) rest.question.options = rest.question.options.map(({ id: _o, ...o }) => o) as typeof rest.question.options
+            if (rest.question) rest.question.title = rest.question.title ? `${rest.question.title} (copy)` : rest.question.title
+            const copy = { ...rest, id: newBlockId() }
+            if (dispatch('survey.addBlock', { pageId, index, block: copy })) setSelectedBlockId(copy.id)
           }}
         />
 
@@ -361,13 +379,38 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isOpen={showPreview}
         onClose={() => setShowPreview(false)}
         title="Preview"
-        description="Logic and validation run as they will for respondents. Nothing is saved."
-        className="sm:max-w-4xl"
+        description="Answer it as a respondent would: logic and checks run, nothing is saved."
+        className="sm:max-w-5xl"
+        headerActions={
+          <div className="mr-8 flex items-center gap-2">
+            <div role="group" aria-label="Show it as on" className="flex gap-0.5 rounded-md-s bg-muted p-0.5">
+              {(['desktop', 'mobile'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={previewDevice === mode}
+                  onClick={() => setPreviewDevice(mode)}
+                  className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-2.5 text-[13px] font-medium transition-colors ${
+                    previewDevice === mode ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {mode === 'desktop' ? <Laptop className="h-4 w-4" aria-hidden /> : <Smartphone className="h-4 w-4" aria-hidden />}
+                  <span className="max-sm:hidden">{mode === 'desktop' ? 'Computer' : 'Phone'}</span>
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setPreviewRun(n => n + 1)}>
+              Restart
+            </Button>
+          </div>
+        }
       >
         <DialogBody>
-          <div className="rounded-md-s overflow-hidden border border-border">
-            {/* Remount per open so every preview starts from page one. */}
-            {showPreview && <SurveyRenderer design={design} settings={settings} />}
+          <div className="flex justify-center rounded-md-s border border-border" style={{ background: design.theme.pageBgColor }}>
+            <div className="w-full transition-[max-width] duration-200" style={{ maxWidth: previewDevice === 'mobile' ? 390 : '100%' }}>
+              {/* Remount per open and per restart, so it starts from page one. */}
+              {showPreview && <SurveyRenderer key={previewRun} design={design} settings={settings} />}
+            </div>
           </div>
         </DialogBody>
       </Dialog>

@@ -1,17 +1,11 @@
 /**
- * The iframe embed snippet. An iframe (rather than Forms' inline script) lets
- * the embed reuse the hosted renderer — pages, logic and validation — with its
- * CSS isolated from the host site. The script only resizes the iframe to fit.
+ * The embed code: the survey's iframe and the small hosted script that sizes
+ * it (`public/surveys/embed.js`), so what's pasted is two short lines.
  */
-export function surveyEmbedSnippet(origin: string, surveyId: string): string {
-  const id = `em-survey-${surveyId}`
-  return `<iframe id="${id}" src="${origin}/s/${surveyId}?embed=1" title="Survey" style="width:100%;min-height:320px;border:0;display:block" loading="lazy"></iframe>
-<script>
-  window.addEventListener('message', function (e) {
-    if (e.origin !== ${JSON.stringify(origin)} || !e.data || e.data.type !== 'em-survey:height' || e.data.id !== ${JSON.stringify(surveyId)}) return;
-    document.getElementById(${JSON.stringify(id)}).style.height = e.data.height + 'px';
-  });
-</script>`
+export function surveyEmbedCode(origin: string, surveyId: string, name: string): string {
+  const title = `Survey: ${name}`.replace(/"/g, '&quot;')
+  return `<iframe src="${origin}/s/${surveyId}?embed=1" title="${title}" data-magpie-survey="${surveyId}" style="width:100%;min-height:320px;border:0;display:block" loading="lazy"></iframe>
+<script src="${origin}/surveys/embed.js" async></script>`
 }
 
 /**
@@ -27,5 +21,5 @@ const res = await fetch(${JSON.stringify(`${origin}/api/surveys/${surveyId}/toke
 })
 const { url } = await res.json() // valid for 24 hours
 
-// Then render the same embed code as above, with src set to \`url\`.`
+// Then paste the same embed code as above, with the iframe's src set to \`url\`.`
 }

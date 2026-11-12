@@ -31,12 +31,12 @@ export function SurveySidebarMenu({ activeMenu, setActiveMenu, setSelectedBlockI
             onSelect?.()
           }}
           aria-current={activeMenu === id ? 'true' : undefined}
-          className={`relative flex h-14 w-14 cursor-pointer flex-col items-center justify-center gap-1 rounded-md-m transition-colors ${
+          className={`relative flex h-14 w-14 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 flex-col items-center justify-center gap-1 rounded-md-m transition-colors ${
             activeMenu === id ? 'bg-foreground/[0.07] text-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           <Icon className="h-5 w-5" />
-          <span className={`text-[11px] ${activeMenu === id ? 'font-semibold' : 'font-medium'}`}>{label}</span>
+          <span className={`text-xs ${activeMenu === id ? 'font-semibold' : 'font-medium'}`}>{label}</span>
           {id === 'logic' && logicIssueCount > 0 && (
             <span className="absolute right-2 top-1.5 h-2 w-2 rounded-full bg-destructive" aria-label={`${logicIssueCount} to fix`} />
           )}

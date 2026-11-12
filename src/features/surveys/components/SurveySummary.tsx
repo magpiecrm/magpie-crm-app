@@ -11,7 +11,7 @@ import type { Survey, SurveyBlock } from '../../survey-builder/types'
 import { isQuestionType, SURVEY_BLOCK_TYPES } from '../../survey-builder/types'
 import { BlockChip } from '../../survey-builder/blockIcons'
 import { ago, whenShort } from '../../forms/format'
-import { BarList, Distribution, NpsSplit, npsBand } from './charts'
+import { BAR, BarList, Distribution, NpsSplit, TRACK, npsBand } from './charts'
 import { SOURCE_LABELS } from '../sources'
 
 export type Range = 'all' | '7' | '30' | '90'
@@ -122,8 +122,8 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
                       </span>
                       {p.branch && <span className="block text-[13px] text-muted-foreground">Only when logic sends people here</span>}
                     </span>
-                    <span className="h-3 overflow-hidden rounded-r-[4px] bg-foreground/[0.06] max-sm:order-last max-sm:col-span-2">
-                      <span className="block h-full rounded-r-[4px] bg-[#0a87a0] dark:bg-[#26a6b8]" style={{ width: `${(p.reached / Math.max(1, summary.started)) * 100}%`, minWidth: p.reached ? 4 : 0 }} />
+                    <span className={`h-3 overflow-hidden rounded-r-[4px] ${TRACK} max-sm:order-last max-sm:col-span-2`}>
+                      <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${(p.reached / Math.max(1, summary.started)) * 100}%`, minWidth: p.reached ? 4 : 0 }} />
                     </span>
                     <span className="text-right text-sm tabular-nums text-muted-foreground">
                       <span className="font-semibold text-foreground">{p.reached}</span> reached
@@ -175,23 +175,24 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
       {q.answered === 0 ? (
         <p className="text-sm text-muted-foreground">Nobody has answered this yet.</p>
       ) : q.kind === 'nps' ? (
-        <div className="grid gap-6 md:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] md:gap-10">
-          <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
+          <div className="grid items-end gap-x-10 gap-y-4 md:grid-cols-[auto_minmax(0,1fr)]">
             <p className="flex items-baseline gap-2">
-              <span className="text-4xl font-semibold tabular-nums tracking-tight text-foreground">
-                {q.score === null ? '—' : `${q.score > 0 ? '+' : ''}${q.score}`}
-              </span>
-              <span className="text-sm text-muted-foreground">NPS, from −100 to +100</span>
+              <span className="text-4xl font-semibold tabular-nums tracking-tight text-foreground">{q.score === null ? '—' : `${q.score > 0 ? '+' : ''}${q.score}`}</span>
+              <span className="text-sm text-muted-foreground">NPS, on a scale of −100 to +100</span>
             </p>
             <NpsSplit detractors={q.detractors} passives={q.passives} promoters={q.promoters} />
           </div>
           <Distribution counts={q.distribution} start={0} colorFor={npsBand} labels={[scale?.minLabel, scale?.maxLabel]} />
         </div>
       ) : q.kind === 'scale' ? (
-        <div className="grid gap-6 md:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] md:gap-10">
+        <div className="flex flex-col gap-6">
           <p className="flex items-baseline gap-2">
             <span className="text-4xl font-semibold tabular-nums tracking-tight text-foreground">{q.average === null ? '—' : q.average.toFixed(1)}</span>
-            <span className="text-sm text-muted-foreground">average, out of {q.min + q.distribution.length - 1}</span>
+            <span className="text-sm text-muted-foreground">
+              average, out of {q.min + q.distribution.length - 1}
+              {block.type === 'rating' ? ' stars' : ''}
+            </span>
           </p>
           <Distribution counts={q.distribution} start={q.min} labels={[scale?.minLabel, scale?.maxLabel]} />
         </div>
@@ -202,7 +203,7 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
           {q.other.length > 0 && <OtherAnswers values={q.other} />}
         </div>
       ) : q.kind === 'yes_no' ? (
-        <BarList labelWidth="6rem" rows={[{ label: 'Yes', count: q.yes }, { label: 'No', count: q.no }]} total={q.answered} />
+        <BarList rows={[{ label: 'Yes', count: q.yes }, { label: 'No', count: q.no }]} total={q.answered} />
       ) : q.kind === 'number' ? (
         <dl className="grid max-w-md grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border">
           {[
@@ -253,9 +254,9 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
       {answers.length > SHOWN && (
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" size="sm" onClick={() => (setAll(v => !v), setSearch(''))}>
-            {all ? 'Show fewer' : `Show all ${answers.length}`}
+            {all ? 'Show fewer' : answers.length < total ? `Show the latest ${answers.length}` : `Show all ${answers.length}`}
           </Button>
-          {total > answers.length && all && <span className="text-[13px] text-muted-foreground">The latest {answers.length} of {total}. Export the responses for every one.</span>}
+          {total > answers.length && <span className="text-[13px] text-muted-foreground">Of {total}. Every answer is in the Responses tab and its export.</span>}
         </div>
       )}
     </div>
@@ -263,13 +264,24 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
 }
 
 function OtherAnswers({ values }: { values: string[] }) {
+  // The same write-in from several people shows once, with how many.
+  const counts = new Map<string, { label: string; n: number }>()
+  for (const v of values) {
+    const key = v.trim().toLowerCase()
+    if (!key) continue
+    const hit = counts.get(key)
+    if (hit) hit.n += 1
+    else counts.set(key, { label: v.trim(), n: 1 })
+  }
+  const grouped = [...counts.values()].sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
   return (
     <div>
       <p className="mb-1.5 text-[13px] font-medium text-foreground">Written in under Other</p>
       <ul className="flex flex-wrap gap-1.5">
-        {values.slice(-12).map((v, i) => (
-          <li key={i} className="rounded-full bg-foreground/[0.06] px-2.5 py-0.5 text-[13px] text-foreground/85">
-            {v}
+        {grouped.slice(0, 16).map(g => (
+          <li key={g.label} className="inline-flex items-center gap-1.5 rounded-full bg-foreground/[0.06] px-2.5 py-0.5 text-[13px] text-foreground/85">
+            {g.label}
+            {g.n > 1 && <span className="tabular-nums text-muted-foreground">· {g.n}</span>}
           </li>
         ))}
       </ul>

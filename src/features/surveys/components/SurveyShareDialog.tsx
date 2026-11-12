@@ -6,7 +6,7 @@ import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
 import { CopyBlock } from '../../../components/ui/CopyBlock'
 import type { SurveyStatus } from '../../survey-builder/types'
-import { surveyEmbedSnippet, surveySignedEmbedExample } from '../embed'
+import { surveyEmbedCode, surveySignedEmbedExample } from '../embed'
 import { SurveyQrCode, surveyQrUrl } from './SurveyQrCode'
 
 type Tab = 'link' | 'email' | 'embed' | 'signed'
@@ -63,7 +63,7 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Anyone with the link can answer. Answers are anonymous, unless the survey asks for an email and “Identify contacts” is on in its settings.
               </p>
-              <CopyBlock primary wrap label="Link" value={link} />
+              <CopyBlock primary wrap mono={false} copyLabel="Copy link" label="Link" value={link} />
               <div className="flex flex-col gap-2">
                 <span className="text-[13px] font-medium text-foreground">QR code</span>
                 <SurveyQrCode url={surveyQrUrl(origin, survey.id)} name={survey.name} />
@@ -86,9 +86,9 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
           {tab === 'embed' && (
             <>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Paste it into your page where the survey should go. It grows to fit each page of the survey, and changes you publish show up without pasting it again.
+                Paste both lines into your page where the survey should go. It grows to fit each page of the survey, and changes you publish show up without pasting it again.
               </p>
-              <CopyBlock primary label="Embed code" value={surveyEmbedSnippet(origin, survey.id)} rows={8} />
+              <CopyBlock primary wrap label="Embed code" value={surveyEmbedCode(origin, survey.id, survey.name)} />
               <p className="text-[13px] leading-relaxed text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their “Custom HTML” or “Embed” block.</p>
             </>
           )}

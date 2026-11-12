@@ -316,7 +316,8 @@ export const DEFAULT_SURVEY_THEME: SurveyTheme = {
   accentColor: '#27272a',
   buttonTextColor: '#ffffff',
   buttonRadius: 8,
-  fontFamily: 'Helvetica, Arial, sans-serif',
+  // The visitor's own interface font: modern on every device, nothing to load.
+  fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   lineHeight: 1.5,
   cardRadius: 12,
   showProgressBar: true,

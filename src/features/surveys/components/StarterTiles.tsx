@@ -2,32 +2,17 @@ import { ChevronRight, Loader2, Plus } from 'lucide-react'
 import type { SurveyBlock } from '../../survey-builder/types'
 import { isQuestionType } from '../../survey-builder/types'
 import { SURVEY_STARTER_TEMPLATES } from '../../survey-builder/templates/starters'
+import { BlockChip } from '../../survey-builder/blockIcons'
 
-/** A small drawing of a survey's first questions: a score row, stars, choices or a text box. */
+/** A starter's first few question types as their coloured chips, so NPS, a rating and a lead form look different at a glance. */
 function Sketch({ blocks }: { blocks: SurveyBlock[] }) {
   const questions = blocks.filter(b => isQuestionType(b.type)).slice(0, 3)
-  const bar = 'block rounded-[2px] bg-foreground/[0.12]'
   return (
-    <span aria-hidden className="flex h-[58px] w-[58px] shrink-0 flex-col gap-[5px] rounded-md-s border border-border bg-background p-1.5">
+    <span aria-hidden className="flex w-[58px] shrink-0 flex-col gap-1 rounded-md-s border border-border bg-background p-1.5">
       {questions.map(q => (
-        <span key={q.id} className="flex flex-col gap-[2px]">
-          <span className="block h-[3px] w-3/4 rounded-[2px] bg-foreground/35" />
-          {q.type === 'nps' || q.type === 'scale' ? (
-            <span className="flex gap-[1.5px]">
-              {Array.from({ length: q.type === 'nps' ? 9 : 7 }, (_, i) => <span key={i} className={`h-[5px] flex-1 ${bar}`} />)}
-            </span>
-          ) : q.type === 'rating' ? (
-            <span className="flex gap-[2px] text-[7px] leading-[7px] text-foreground/35">★★★★★</span>
-          ) : q.type === 'long_text' ? (
-            <span className={`h-[8px] ${bar}`} />
-          ) : ['single_choice', 'multiple_choice', 'yes_no'].includes(q.type) ? (
-            <span className="flex gap-[2px]">
-              <span className={`h-[5px] flex-1 ${bar}`} />
-              <span className={`h-[5px] flex-1 ${bar}`} />
-            </span>
-          ) : (
-            <span className={`h-[5px] ${bar}`} />
-          )}
+        <span key={q.id} className="flex items-center gap-1">
+          <BlockChip type={q.type} size="sm" />
+          <span className="h-[4px] flex-1 rounded-[2px] bg-foreground/[0.12]" />
         </span>
       ))}
     </span>
@@ -68,7 +53,7 @@ export function StarterTiles({ onPick, pending }: { onPick: (templateId: string)
         )
       })}
       <button type="button" className={tile} disabled={!!pending} onClick={() => onPick('blank')}>
-        <span aria-hidden className="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-md-s border border-dashed border-border text-foreground/60">
+        <span aria-hidden className="flex h-[58px] w-[58px] shrink-0 items-center justify-center self-start rounded-md-s border border-dashed border-border text-foreground/60">
           <Plus className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">

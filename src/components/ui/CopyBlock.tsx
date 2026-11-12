@@ -4,7 +4,7 @@ import { useMoreBelow } from './Dialog'
 import { Button } from './Button'
 
 /** Something to copy, with one Copy button that says when it's done. */
-export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false }: { value: string; label: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
+export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false, copyLabel }: { value: string; label: string; /** The button's words before it's pressed; "Copy code" for the main one, "Copy" otherwise. */ copyLabel?: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
@@ -32,7 +32,7 @@ export function CopyBlock({ value, label, rows, mono = true, primary = false, wr
       <div className="flex items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-foreground">{label}</span>
         <Button variant={primary ? 'primary' : 'secondary'} size="sm" onClick={copy} leftIcon={copied ? <Check className={`h-3.5 w-3.5 ${primary ? '' : 'text-emerald-600 dark:text-emerald-400'}`} /> : <Copy className="h-3.5 w-3.5" />} aria-live="polite">
-          {copied ? 'Copied' : primary ? 'Copy code' : 'Copy'}
+          {copied ? 'Copied' : copyLabel ?? (primary ? 'Copy code' : 'Copy')}
         </Button>
       </div>
       <div className="relative">

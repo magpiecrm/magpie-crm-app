@@ -26,7 +26,7 @@ export interface SurveySummary {
   questions: QuestionSummary[]
 }
 
-const TEXT_SAMPLE = 50
+const TEXT_SAMPLE = 200
 
 function median(values: number[]): number | null {
   if (!values.length) return null
