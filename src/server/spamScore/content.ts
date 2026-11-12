@@ -6,7 +6,7 @@
 import type { SpamFinding } from '../../features/spam-score/types'
 import { GMAIL_CLIP_BYTES } from '../copilot/lint'
 import { htmlToText } from '../providers/plainText'
-import { triggerPhrases } from './phrases'
+import { salesyWords, SHOUT_WORDS, triggerPhrases } from './phrases'
 
 export interface ContentInput {
   kind: 'campaign' | 'sequence'
@@ -17,6 +17,10 @@ export interface ContentInput {
   html?: string
   /** A sequence email's text: its body, sign-off and last line. */
   text?: string
+  /** A sequence email's own words, without the sign-off and last line `text` adds. */
+  body?: string
+  /** A sign-off goes on when it's sent, whatever the text says: the AI's own emails in a personalised sequence (render.ts aiSignOff). */
+  signOffAdded?: boolean
   /** Most of the people it goes to are cold (found by prospecting, not signed up or replied). */
   cold: boolean
   trackOpens: boolean
@@ -36,9 +40,14 @@ export const POINTS = {
   subjectEmoji: 3,
   subjectPhrase: 6,
   subjectPhraseMax: 15,
+  subjectWord: 4,
+  subjectWordMax: 8,
   noPreview: 2,
   bodyPhrase: 3,
   bodyPhraseMax: 15,
+  bodyWord: 2,
+  bodyWordMax: 8,
+  bodyCaps: 8,
   imagesOnly: 15,
   imageHeavy: 8,
   littleText: 10,
@@ -59,6 +68,7 @@ export const POINTS = {
   longCold: 4,
   newsletterCold: 6,
   impersonalCold: 4,
+  noSignoffCold: 5,
   openTrackingCold: 5,
   clickTrackingCold: 5,
 }
@@ -76,6 +86,7 @@ const ACRONYMS = new Set([
   'KPI', 'ERP', 'HTML', 'URL', 'SMTP', 'DNS', 'SQL', 'AWS', 'LLC', 'LTD', 'PLC', 'USA', 'NHS', 'VAT', 'HMRC', 'SAAS',
 ])
 const MERGE_TAG = /\{\{[^{}]*\}\}/
+const MERGE_TAGS = new RegExp(MERGE_TAG.source, 'g')
 const PERSONAL_TAG = /\{\{[^{}]*\b(contact\.|first_?name|last_?name|company)\b/i
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/gi
 const LOOKS_LIKE_ADDRESS = /^(https?:\/\/\S+|www\.\S+|[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(\/\S*)?)$/i
@@ -86,6 +97,41 @@ const decode = (s: string) => htmlToText(s).trim()
 const wordsIn = (text: string) => text.replace(URL_RE, ' ').match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const quoted = (xs: string[]) => xs.slice(0, 3).map((x) => `"${x}"`).join(', ') + (xs.length > 3 ? '…' : '')
+const withoutLinks = (text: string) => text.replace(URL_RE, ' ')
+const hasText = (s: string) => /[\p{L}\p{N}]/u.test(s)
+
+/** Words in capitals that aren't short forms like CEO, each once: merge tags and links left out. */
+function shoutedWords(text: string): string[] {
+  const plain = withoutLinks(text).replace(MERGE_TAGS, ' ')
+  const caps = plain.match(/(?<![\p{L}\p{N}])\p{Lu}{3,}(?![\p{L}\p{N}])/gu) ?? []
+  return [...new Set(caps.filter((w) => !ACRONYMS.has(w)))]
+}
+
+/** Three or more words in capitals in a row, "PLEASE READ THIS": shouting a line, not naming firms like HSBC, KPMG. */
+function shoutedRuns(text: string): string[] {
+  const plain = withoutLinks(text).replace(MERGE_TAGS, ' ')
+  return [...new Set(plain.match(/(?<![\p{L}\p{N}])\p{Lu}{2,}(?:[ \t]+\p{Lu}{2,}){2,}(?![\p{L}\p{N}])/gu) ?? [])]
+}
+
+const GREETING = /^(hi|hello|hey|dear|morning|afternoon|good (morning|afternoon|evening))\b/i
+const CLOSING =
+  /^(thanks|thank you|many thanks|thanks again|cheers|best|all the best|regards|kind regards|best regards|warm regards|warmly|sincerely|yours|talk soon|speak soon|take care|ta|thx)\b/i
+/** The line a person leaves by, which isn't the sign-off. */
+const UNSUBSCRIBE_LINE = /unsubscribe|opt[\s-]?out|manage (your )?(email )?preferences|update (your )?preferences|stop (receiving|getting) (these )?emails|rather not hear|no longer (wish|want) to (receive|hear)/i
+
+/** A line that is someone's name, or their name and company: "Sam", "Sam Jones, Acme", "Sam | Founder, Acme". */
+function looksLikeName(line: string): boolean {
+  if (line.length > 60 || /[?!:]|https?:/.test(line)) return false
+  const words = line.split(/[\s,|·–—-]+/).filter(Boolean)
+  return words.length > 0 && words.length <= 6 && words.every((w) => /^[\p{Lu}\p{N}&@]/u.test(w) || /^(at|of|and|the|for)$/i.test(w))
+}
+
+/** Whether the email ends by saying who's writing: a sign-off or a name, in its last few lines. */
+function signsOff(text: string): boolean {
+  const lines = text.split('\n').map((l) => l.trim()).filter((l) => hasText(l) && !UNSUBSCRIBE_LINE.test(l))
+  // The first line is the greeting (or the only line), and "Hi" on its own isn't a name.
+  return lines.slice(1).slice(-6).some((l) => !GREETING.test(l) && (CLOSING.test(l) || looksLikeName(l)))
+}
 
 interface Link {
   href: string
@@ -171,6 +217,15 @@ export function contentFindings(input: ContentInput): SpamFinding[] {
         'Say it in your own words.',
       )
     }
+    const selling = salesyWords(withoutLinks(subject), phrases)
+    if (selling.length) {
+      add(
+        'subject_words',
+        Math.min(POINTS.subjectWordMax, POINTS.subjectWord * selling.length),
+        `The subject sells (${quoted(selling)}). Words like that count for more in a subject than anywhere else.`,
+        'Make the subject about them or their work, and keep the offer for the email.',
+      )
+    }
   }
   if (isCampaign && html && !input.previewText?.trim()) {
     add('no_preview', POINTS.noPreview, 'There is no preview text, so inboxes show whatever text comes first.', 'Add a short preview line under the subject.')
@@ -183,8 +238,40 @@ export function contentFindings(input: ContentInput): SpamFinding[] {
     add(
       'body_phrases',
       Math.min(POINTS.bodyPhraseMax, POINTS.bodyPhrase * bodyPhrases.length),
-      `The email uses ${plural(bodyPhrases.length, 'phrase')} spam filters look for: ${quoted(bodyPhrases)}.`,
+      `The email uses ${bodyPhrases.length === 1 ? 'a phrase' : plural(bodyPhrases.length, 'phrase')} spam filters look for: ${quoted(bodyPhrases)}.`,
       'Rewrite those lines in plainer words.',
+    )
+  }
+  // One salesy word is ordinary; a few read as an advert.
+  const bodySelling = salesyWords(withoutLinks(text), triggerPhrases(text))
+  if (bodySelling.length >= 2) {
+    add(
+      'body_words',
+      Math.min(POINTS.bodyWordMax, POINTS.bodyWord * bodySelling.length),
+      `The email uses ${plural(bodySelling.length, 'salesy word')} (${quoted(bodySelling)}). Each is ordinary on its own, but together they read as an advert.`,
+      "Keep one, at most, and say plainly what you're offering.",
+    )
+  }
+  const runs = shoutedRuns(text)
+  const inRun = (w: string) => runs.some((r) => r.split(/\s+/).includes(w))
+  const shouted = [...runs, ...shoutedWords(text).filter((w) => SHOUT_WORDS.has(w) && !inRun(w))]
+  if (shouted.length) {
+    const them = shouted.length === 1 && !shouted[0].includes(' ') ? 'it' : 'them'
+    add(
+      'body_caps',
+      POINTS.bodyCaps,
+      `The email shouts in capitals (${quoted(shouted)}), which is what spam looks like.`,
+      isCampaign ? `Write ${them} in normal case. Bold a word if it really needs it.` : `Write ${them} in normal case.`,
+    )
+  }
+  // A sequence email that starts a conversation with next to nothing in it; a follow-up in its thread can be short.
+  const ownWords = wordsIn(input.body ?? text)
+  if (!isCampaign && input.subject !== null && ownWords < LIMITS.littleText) {
+    add(
+      'little_text',
+      POINTS.littleText,
+      ownWords ? `The email says only ${plural(ownWords, 'word')}, besides its sign-off and last line.` : 'The email has no text yet.',
+      'Write the message itself: who you are, why them, and one question.',
     )
   }
 
@@ -275,6 +362,15 @@ export function contentFindings(input: ContentInput): SpamFinding[] {
     }
     if (!PERSONAL_TAG.test(`${subject ?? ''}\n${isCampaign ? html : text}`)) {
       add('impersonal_cold', POINTS.impersonalCold, 'This cold email is the same for everyone: no name or company in it.', 'Use their first name or company, e.g. {{ contact.first_name }}.')
+    }
+    // A follow-up in its thread sits under the email that said who's writing.
+    if (input.subject !== null && !input.signOffAdded && words && !signsOff(text)) {
+      add(
+        'no_signoff_cold',
+        POINTS.noSignoffCold,
+        "It doesn't say who's writing: there's no sign-off or name at the end. A cold email from nobody in particular reads as bulk mail.",
+        isCampaign ? "End with your name, and your company if they won't know it." : 'Add your name and company as the sign-off in the sequence settings.',
+      )
     }
     if (input.trackOpens) {
       add('open_tracking_cold', POINTS.openTrackingCold, 'Open tracking adds a hidden image, which marks cold email as bulk mail.', isCampaign ? 'Turn off "Track opens" in the design settings.' : 'Turn off open tracking in the sequence settings.')
