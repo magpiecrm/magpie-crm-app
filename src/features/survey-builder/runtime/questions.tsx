@@ -49,7 +49,7 @@ export function mix(hex: string, alpha: number): string {
  * number scales (NPS 0–10) folding into two rows of 6 and 5 when the card is
  * narrow, so every number stays a thumb's width.
  */
-export const SURVEY_CSS = `
+const SURVEY_CSS = `
 .sv-root input::placeholder, .sv-root textarea::placeholder { color: currentColor; opacity: .62; }
 .sv-root button:focus-visible, .sv-root input:focus-visible, .sv-root textarea:focus-visible, .sv-root select:focus-visible { outline: 2px solid var(--sv-accent); outline-offset: 2px; }
 .sv-root input:focus, .sv-root textarea:focus, .sv-root select:focus { border-color: var(--sv-accent) !important; }

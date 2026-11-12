@@ -16,7 +16,7 @@ export const OP_LABELS: Record<ConditionOp, string> = {
 }
 
 /** Each question's number in the survey (Q1, Q2…), the way the builder and results count them. */
-export function questionNumbers(design: SurveyDesign): Map<string, { n: number; block: SurveyBlock }> {
+function questionNumbers(design: SurveyDesign): Map<string, { n: number; block: SurveyBlock }> {
   const out = new Map<string, { n: number; block: SurveyBlock }>()
   let n = 0
   for (const p of design.pages) for (const b of p.blocks) if (isQuestionType(b.type)) out.set(b.id, { n: ++n, block: b })

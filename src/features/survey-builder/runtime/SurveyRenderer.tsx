@@ -243,7 +243,7 @@ export function SurveyRenderer({
 }
 
 /** The hosted page around the card: the survey's background, its font, and room above. */
-export function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSProperties {
+function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSProperties {
   return {
     minHeight: embedded ? undefined : '100vh',
     boxSizing: 'border-box',

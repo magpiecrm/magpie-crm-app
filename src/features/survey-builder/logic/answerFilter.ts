@@ -13,7 +13,7 @@ export interface AnswerFilter {
  * an NPS question's three groups, each rating or scale mark, Yes and No, or
  * each choice (and Other). Text, number and date questions have none.
  */
-export function answerFilterOptions(block: SurveyBlock): Array<{ value: string; label: string }> {
+function answerFilterOptions(block: SurveyBlock): Array<{ value: string; label: string }> {
   if (block.type === 'nps') {
     return [
       { value: 'detractor', label: 'Detractors (0–6)' },

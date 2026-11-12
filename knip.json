@@ -6,6 +6,7 @@
   "ignore": [
     "public/sw.js",
     "public/forms/embed.js",
+    "public/surveys/embed.js",
     "cloudflare-worker/worker.js"
   ],
   "ignoreDependencies": [

@@ -6,7 +6,7 @@ import { Select } from '../../../components/ui/Select'
 import { contrastRatio } from '../runtime/questions'
 
 /** Fonts a survey page can use: the visitor's own system font, then the usual safe stacks, by name. */
-export const SURVEY_FONTS = [
+const SURVEY_FONTS = [
   { label: 'System font', value: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
   { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
   { label: 'Arial', value: "Arial, 'Helvetica Neue', Helvetica, sans-serif" },
