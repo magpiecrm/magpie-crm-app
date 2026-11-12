@@ -96,21 +96,27 @@ export const getPublicSurveyFn = createServerFn({ method: 'GET' })
 
 /** The summary of a survey's responses, optionally only the last `days` days' or one source's. */
 export const getSurveySummaryFn = createServerFn({ method: 'GET' })
-  .inputValidator((d: { id: string; days?: number; source?: string }) => ({
+  .inputValidator((d: { id: string; days?: number; source?: string; answer?: { questionId: string; value: string } }) => ({
     id: String(d.id),
     days: typeof d.days === 'number' && d.days > 0 ? Math.min(d.days, 3650) : undefined,
     source: typeof d.source === 'string' && d.source ? d.source : undefined,
+    answer: d.answer && typeof d.answer.questionId === 'string' && typeof d.answer.value === 'string' ? { questionId: d.answer.questionId, value: d.answer.value } : undefined,
   }))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const { db } = await import('../db')
     const { getSurveyOrThrow } = await import('../surveys')
     const { computeSurveySummary } = await import('../../features/survey-builder/analytics')
+    const { matchesAnswer } = await import('../../features/survey-builder/logic/answerFilter')
+    const { findQuestion } = await import('../../features/survey-builder/logic/evaluate')
     await requireAuth()
     const survey = getSurveyOrThrow(data.id)
     const all = db.getSurveyResponses(survey.id)
     const since = data.days ? new Date(Date.now() - data.days * 86400e3).toISOString() : ''
-    const responses = all.filter(r => (!since || r.started_at >= since) && (!data.source || r.source === data.source))
+    const by = data.answer ? findQuestion(survey.design, data.answer.questionId) : undefined
+    const responses = all.filter(
+      r => (!since || r.started_at >= since) && (!data.source || r.source === data.source) && (!by || matchesAnswer(by, r.answers[by.id], data.answer!.value)),
+    )
     const weekAgo = new Date(Date.now() - 7 * 86400e3).toISOString()
     return {
       ...computeSurveySummary(survey.design, responses),

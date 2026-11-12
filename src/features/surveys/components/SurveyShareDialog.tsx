@@ -63,7 +63,7 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Anyone with the link can answer. Answers are anonymous, unless the survey asks for an email and “Identify contacts” is on in its settings.
               </p>
-              <CopyBlock primary wrap mono={false} copyLabel="Copy link" label="Link" value={link} />
+              <CopyBlock primary inline copyLabel="Copy link" label="Link" value={link} />
               <div className="flex flex-col gap-2">
                 <span className="text-[13px] font-medium text-foreground">QR code</span>
                 <SurveyQrCode url={surveyQrUrl(origin, survey.id)} name={survey.name} />

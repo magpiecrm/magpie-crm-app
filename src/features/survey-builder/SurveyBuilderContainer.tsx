@@ -4,7 +4,7 @@ import { AlertTriangle, RotateCcw, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
-import { useIsDesktop } from '../../hooks/useMediaQuery'
+import { useIsDesktop, useIsWide } from '../../hooks/useMediaQuery'
 import { useResizablePanel } from '../../hooks/useResizablePanel'
 import { Sheet } from '../../components/ui/Sheet'
 import { Dialog, DialogBody } from '../../components/ui/Dialog'
@@ -20,6 +20,8 @@ import { SurveyBuilderHeader } from './components/SurveyBuilderHeader'
 import { SurveySidebarMenu, type SurveyMenu } from './components/SurveySidebarMenu'
 import { SurveySidebarPanel, type SurveyContentTab } from './components/SurveySidebarPanel'
 import { SurveyCanvas } from './components/SurveyCanvas'
+import { SurveyBlockEditor } from './components/SurveyBlockEditor'
+import { BlockChip } from './blockIcons'
 import { SurveyRenderer } from './runtime/SurveyRenderer'
 import { confirmDialog } from '../../components/ui/confirm'
 
@@ -83,6 +85,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const [notice, setNotice] = useState<string | null>(null)
   const { width: chatWidth, isResizing: isChatResizing, startResizing } = useResizablePanel()
   const isDesktop = useIsDesktop()
+  // Wide enough, a selected question's settings open in their own panel on the right, so the palette and pages stay put.
+  const isWide = useIsWide()
 
   const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const issues = useMemo(() => lintSurvey(design, settings, contactFields), [design, settings, contactFields])
@@ -107,19 +111,20 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   // The canvas is the survey at its real size; it only shrinks when the window
   // is too narrow for it. A phone always shows the phone layout.
   const canvasMode = isDesktop ? previewMode : 'mobile'
+  const inspectorOpen = isWide && !!selectedBlockId
   useEffect(() => {
     const handleResize = () => {
       const left = isDesktop ? 64 + 320 : 0
-      const right = isDesktop && isChatOpen ? chatWidth : 0
+      const right = (isDesktop && isChatOpen ? chatWidth : 0) + (inspectorOpen ? 320 : 0)
       const available = window.innerWidth - left - right - (isDesktop ? 64 : 16)
       // The survey's width plus the page frame drawn around it.
-      const target = canvasMode === 'desktop' ? design.theme.bodyWidth + 96 : 407
+      const target = canvasMode === 'desktop' ? design.theme.bodyWidth + 64 : 399
       setZoomLevel(Math.max(0.5, Math.min(1, available / target)))
     }
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [design.theme.bodyWidth, canvasMode, isChatOpen, chatWidth, isDesktop])
+  }, [design.theme.bodyWidth, canvasMode, isChatOpen, chatWidth, isDesktop, inspectorOpen])
 
   /** Apply one design action, refusing edits that would break the structure lock. */
   const dispatch = useCallback(
@@ -241,7 +246,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
       settings={settings}
       setSettings={setSettings}
       dispatch={dispatch}
-      selectedBlock={selectedBlock}
+      selectedBlock={inspectorOpen ? undefined : selectedBlock}
       setSelectedBlockId={setSelectedBlockId}
       selectedPageId={selectedPageId}
       setSelectedPageId={setSelectedPageId}
@@ -341,6 +346,34 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           }}
         />
 
+        {inspectorOpen && selectedBlock && (
+          <aside aria-label="Question settings" className="sticky top-0 flex h-[calc(100dvh-64px)] w-80 shrink-0 flex-col border-l border-border bg-card" onClick={e => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+              <BlockChip type={selectedBlock.type} size="sm" />
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label}</h2>
+              <button
+                type="button"
+                onClick={() => setSelectedBlockId(null)}
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Close question settings"
+                title="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <SurveyBlockEditor
+                block={selectedBlock}
+                dispatch={dispatch}
+                locked={locked.blocks.has(selectedBlock.id)}
+                lockedOptionIds={locked.options}
+                contactFields={contactFields}
+                issues={issues.filter(i => i.blockId === selectedBlock.id)}
+              />
+            </div>
+          </aside>
+        )}
+
         {isChatOpen && (
           <aside
             style={{
@@ -394,7 +427,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
             {/* As on a computer or a phone, whichever the top bar shows. */}
             <div className="w-full transition-[max-width] duration-200" style={{ maxWidth: canvasMode === 'mobile' ? 390 : '100%' }}>
               {/* Remount per open and per restart, so it starts from page one. */}
-              {showPreview && <SurveyRenderer key={previewRun} design={design} settings={settings} />}
+              {showPreview && <SurveyRenderer key={previewRun} framed design={design} settings={settings} />}
             </div>
           </div>
         </DialogBody>

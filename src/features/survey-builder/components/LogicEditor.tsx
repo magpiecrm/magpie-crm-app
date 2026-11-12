@@ -1,5 +1,8 @@
 import type React from 'react'
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { Button } from '../../../components/ui/Button'
 import type { ConditionOp, LogicRule, PageTarget, SurveyBlock, SurveyDesign, SurveyPage } from '../types'
 import { CHOICE_TYPES, isQuestionType } from '../types'
 import { newRuleId } from '../applyAction'
@@ -74,18 +77,19 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
   const questions = design.pages.slice(0, index + 1).flatMap(p => p.blocks.filter(b => isQuestionType(b.type)))
   const laterPages = design.pages.slice(index + 1)
 
+  const [editing, setEditing] = useState<string | null>(null)
   const save = (nextRules: LogicRule[], defaultNext = page.defaultNext) =>
     dispatch('survey.setPageLogic', { pageId: page.id, rules: nextRules, defaultNext })
 
   const targetSelect = (value: PageTarget | undefined, onChange: (t: PageTarget) => void) => (
     <Select value={targetValue(value)} onChange={e => onChange(parseTarget(e.target.value))} className={inputClass} aria-label="Go to">
-      <option value="next">{laterPages.length ? 'The next page' : 'Finish the survey'}</option>
+      <option value="next">{laterPages.length ? 'The next page' : 'The end'}</option>
       {laterPages.map(p => (
         <option key={p.id} value={`page:${p.id}`}>
           {design.pages.indexOf(p) + 1}. {p.title || `Page ${design.pages.indexOf(p) + 1}`}
         </option>
       ))}
-      {laterPages.length > 0 && <option value="end">Finish the survey</option>}
+      {laterPages.length > 0 && <option value="end">The end</option>}
     </Select>
   )
 
@@ -104,6 +108,8 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
           rule={rule}
           questions={questions}
           targetSelect={targetSelect}
+          editing={editing === rule.id}
+          setEditing={open => setEditing(open ? rule.id : null)}
           onChange={updated => save(rules.map(r => (r.id === rule.id ? updated : r)))}
           onDelete={() => save(rules.filter(r => r.id !== rule.id))}
         />
@@ -115,7 +121,9 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
           onClick={() => {
             const q = questions[questions.length - 1]
             const op = opsFor(q)[0]
-            save([...rules, { id: newRuleId(), when: { questionId: q.id, op, value: defaultValue(q, op) }, goTo: { kind: 'end' } }])
+            const id = newRuleId()
+            save([...rules, { id, when: { questionId: q.id, op, value: defaultValue(q, op) }, goTo: { kind: 'end' } }])
+            setEditing(id)
           }}
           className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md-s px-2 text-[13px] font-medium text-accent hover:bg-accent/10"
         >
@@ -145,9 +153,13 @@ function RuleRow({
   rule,
   questions,
   targetSelect,
+  editing,
+  setEditing,
   onChange,
   onDelete,
 }: {
+  editing: boolean
+  setEditing: (open: boolean) => void
   design: SurveyDesign
   pageIndex: number
   rule: LogicRule
@@ -156,18 +168,20 @@ function RuleRow({
   onChange: (rule: LogicRule) => void
   onDelete: () => void
 }) {
+  const sentence = `If ${describeCondition(design, rule.when)}, go to ${describeTarget(design, rule.goTo, pageIndex)}`
+  const iconButton =
+    'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
   const header = (
-    <div className="flex items-start justify-between gap-2">
-      <p className="pt-1.5 text-[13px] font-medium leading-snug text-foreground">
-        If {describeCondition(design, rule.when)}, go to {describeTarget(design, rule.goTo, pageIndex)}
-      </p>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-        aria-label="Delete this rule"
-        title="Delete this rule"
-      >
+    <div className="flex items-start gap-1">
+      <button type="button" onClick={() => setEditing(true)} className="min-w-0 flex-1 cursor-pointer pt-1.5 text-left text-[13px] font-medium leading-snug text-foreground hover:underline">
+        {sentence}
+      </button>
+      {'questionId' in rule.when && (
+        <button type="button" onClick={() => setEditing(true)} className={iconButton} aria-label="Change this rule" title="Change this rule">
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <button type="button" onClick={onDelete} className={`${iconButton} hover:!text-destructive`} aria-label="Delete this rule" title="Delete this rule">
         <Trash2 className="h-3.5 w-3.5" />
       </button>
     </div>
@@ -189,47 +203,58 @@ function RuleRow({
   const setWhen = (patch: Partial<typeof when>) => onChange({ ...rule, when: { ...when, ...patch } })
 
   return (
-    <div className="space-y-2 rounded-md-s border border-border bg-background p-2.5">
+    <div className="rounded-md-s border border-border bg-background p-2.5">
       {header}
-      <Select
-        aria-label="Question"
-        value={when.questionId}
-        onChange={e => {
-          const q = questions.find(x => x.id === e.target.value)!
-          const op = opsFor(q)[0]
-          setWhen({ questionId: q.id, op, value: defaultValue(q, op) })
-        }}
-        className={inputClass}
-      >
-        {!question && <option value={when.questionId}>(deleted question)</option>}
-        {questions.map((q, i) => (
-          <option key={q.id} value={q.id}>
-            Q{i + 1}. {q.question?.title || 'Untitled question'}
-          </option>
-        ))}
-      </Select>
-      <div className={`grid gap-2 ${needsValue(when.op) && question ? 'grid-cols-2' : 'grid-cols-1'}`}>
-        <Select
-          value={when.op}
-          aria-label="Is"
-          onChange={e => {
-            const op = e.target.value as ConditionOp
-            setWhen({ op, value: question ? defaultValue(question, op) : undefined })
-          }}
-          className={inputClass}
-        >
-          {ops.map(op => (
-            <option key={op} value={op}>
-              {OP_LABELS[op]}
-            </option>
-          ))}
-        </Select>
-        {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
-      </div>
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-        <span className="text-[13px] text-muted-foreground">go to</span>
-        {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
-      </div>
+      <Dialog isOpen={editing} onClose={() => setEditing(false)} title="Change this rule" description={sentence} className="sm:max-w-lg">
+        <DialogBody className="flex flex-col gap-4">
+          <div className="space-y-1.5">
+            <span className={labelClass}>If the answer to</span>
+            <Select
+              aria-label="Question"
+              value={when.questionId}
+              onChange={e => {
+                const q = questions.find(x => x.id === e.target.value)!
+                const op = opsFor(q)[0]
+                setWhen({ questionId: q.id, op, value: defaultValue(q, op) })
+              }}
+              className={inputClass}
+            >
+              {!question && <option value={when.questionId}>(deleted question)</option>}
+              {questions.map((q, i) => (
+                <option key={q.id} value={q.id}>
+                  Q{i + 1}. {q.question?.title || 'Untitled question'}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className={`grid gap-3 ${needsValue(when.op) && question ? 'sm:grid-cols-2' : ''}`}>
+            <Select
+              value={when.op}
+              aria-label="Is"
+              onChange={e => {
+                const op = e.target.value as ConditionOp
+                setWhen({ op, value: question ? defaultValue(question, op) : undefined })
+              }}
+              className={inputClass}
+            >
+              {ops.map(op => (
+                <option key={op} value={op}>
+                  {OP_LABELS[op]}
+                </option>
+              ))}
+            </Select>
+            {needsValue(when.op) && question && <ValueInput question={question} value={when.value} onChange={value => setWhen({ value })} />}
+          </div>
+          {question?.type === 'nps' && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
+          <div className="space-y-1.5">
+            <span className={labelClass}>Go to</span>
+            {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button onClick={() => setEditing(false)}>Done</Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   )
 }
@@ -255,7 +280,7 @@ function ValueInput({
     )
   }
   if (question.type === 'nps') {
-    const group = (n: number) => (n === 6 ? ' · detractors to here' : n === 8 ? ' · passives to here' : n === 9 ? ' · promoters from here' : '')
+    const group = (n: number) => (n === 6 ? ' (top detractor score)' : n === 8 ? ' (top passive score)' : n === 9 ? ' (first promoter score)' : '')
     return (
       <Select value={String(value ?? '')} onChange={e => onChange(Number(e.target.value))} className={inputClass} aria-label="Score">
         {Array.from({ length: 11 }, (_, n) => (

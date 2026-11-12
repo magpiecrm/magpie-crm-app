@@ -18,6 +18,7 @@ interface SurveyBlockFrameProps {
   onMove: (direction: 'up' | 'down') => void
   onDelete: () => void
   onDuplicate: () => void
+  onEditText: (text: string) => void
   startDrag: (e: React.PointerEvent, payload: DragPayload<SurveyBlockType>) => void
 }
 
@@ -43,6 +44,7 @@ export function SurveyBlockFrame({
   onMove,
   onDelete,
   onDuplicate,
+  onEditText,
   startDrag,
 }: SurveyBlockFrameProps) {
   const stop = (fn: () => void) => (e: React.MouseEvent) => {
@@ -64,7 +66,8 @@ export function SurveyBlockFrame({
 
       {/* Inputs are visible but inert on the canvas; clicks select the block. */}
       <div className="pointer-events-none select-none">
-        <SurveyBlockView block={block} theme={theme} disabled />
+        {/* Selected, its title (or a heading's and text's words) can be typed right here. */}
+        <SurveyBlockView block={block} theme={theme} disabled onEditText={selected && (block.question || block.type === 'heading' || block.type === 'text') ? onEditText : undefined} />
       </div>
 
       {/* Above the outline's top-right corner, in the room the block makes for it. */}

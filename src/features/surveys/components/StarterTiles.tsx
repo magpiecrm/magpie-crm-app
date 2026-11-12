@@ -1,20 +1,28 @@
 import { ChevronRight, Loader2, Plus } from 'lucide-react'
-import type { SurveyBlock } from '../../survey-builder/types'
-import { isQuestionType } from '../../survey-builder/types'
+import type { SurveyBlock, SurveyTheme } from '../../survey-builder/types'
+import { DEFAULT_SURVEY_THEME, isQuestionType } from '../../survey-builder/types'
+import { SurveyBlockView } from '../../survey-builder/runtime/SurveyBlockView'
 import { SURVEY_STARTER_TEMPLATES } from '../../survey-builder/templates/starters'
-import { BlockChip } from '../../survey-builder/blockIcons'
 
-/** A starter's first few question types as their coloured chips, so NPS, a rating and a lead form look different at a glance. */
-function Sketch({ blocks }: { blocks: SurveyBlock[] }) {
-  const questions = blocks.filter(b => isQuestionType(b.type)).slice(0, 3)
+/**
+ * A starter's first page as it will look, drawn small: the real blocks in the
+ * default style, laid out at 520px and scaled to the tile.
+ */
+function Miniature({ blocks, theme }: { blocks: SurveyBlock[]; theme: SurveyTheme }) {
+  const W = 520
+  const SCALE = 0.2
   return (
-    <span aria-hidden className="flex w-[58px] shrink-0 flex-col gap-1 rounded-md-s border border-border bg-background p-1.5">
-      {questions.map(q => (
-        <span key={q.id} className="flex items-center gap-1">
-          <BlockChip type={q.type} size="sm" />
-          <span className="h-[4px] flex-1 rounded-[2px] bg-foreground/[0.12]" />
+    <span aria-hidden className="relative block h-[84px] w-[104px] shrink-0 overflow-hidden rounded-md-s border border-border" style={{ background: theme.pageBgColor }}>
+      <span
+        className="pointer-events-none absolute left-0 top-0 block origin-top-left select-none"
+        style={{ width: W, transform: `scale(${SCALE})`, padding: 28, fontFamily: theme.fontFamily, lineHeight: theme.lineHeight, color: theme.textColor }}
+      >
+        <span className="block" style={{ background: theme.cardBgColor, borderRadius: 14, padding: '28px 28px 20px', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
+          {blocks.slice(0, 4).map(b => (
+            <SurveyBlockView key={b.id} block={b} theme={theme} disabled />
+          ))}
         </span>
-      ))}
+      </span>
     </span>
   )
 }
@@ -35,7 +43,7 @@ export function StarterTiles({ onPick, pending }: { onPick: (templateId: string)
         const questions = pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)))
         return (
           <button key={t.id} type="button" className={tile} disabled={!!pending} onClick={() => onPick(t.id)}>
-            <Sketch blocks={pages.flatMap(p => p.blocks)} />
+            <Miniature blocks={pages[0]?.blocks ?? []} theme={{ ...DEFAULT_SURVEY_THEME, ...t.theme }} />
             <span className="min-w-0 flex-1">
               <span className="block text-[15px] font-semibold text-foreground">{t.name}</span>
               <span className="mt-0.5 block text-[13px] text-muted-foreground">{t.description}</span>
@@ -53,7 +61,7 @@ export function StarterTiles({ onPick, pending }: { onPick: (templateId: string)
         )
       })}
       <button type="button" className={tile} disabled={!!pending} onClick={() => onPick('blank')}>
-        <span aria-hidden className="flex h-[58px] w-[58px] shrink-0 items-center justify-center self-start rounded-md-s border border-dashed border-border text-foreground/60">
+        <span aria-hidden className="flex h-[84px] w-[104px] shrink-0 items-center justify-center rounded-md-s border border-dashed border-border text-foreground/60">
           <Plus className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">

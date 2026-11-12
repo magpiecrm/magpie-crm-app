@@ -7,10 +7,10 @@ import { Button } from '../../../components/ui/Button'
 export const surveyQrUrl = (origin: string, surveyId: string) => `${origin}/s/${surveyId}?src=qr`
 
 /**
- * Black on white with a quiet zone and medium error correction: the
+ * Black on white with the full four-module quiet zone and medium error correction: the
  * combination every phone camera reads reliably, including from print.
  */
-const QR_OPTIONS = { errorCorrectionLevel: 'M' as const, margin: 2, color: { dark: '#000000', light: '#ffffff' } }
+const QR_OPTIONS = { errorCorrectionLevel: 'M' as const, margin: 4, color: { dark: '#000000', light: '#ffffff' } }
 
 function download(href: string, filename: string) {
   const a = document.createElement('a')
@@ -37,8 +37,8 @@ export function SurveyQrCode({ url, name }: { url: string; name: string }) {
 
   return (
     <div className="flex flex-col items-start gap-4 sm:flex-row sm:gap-5">
-      <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-md-s border border-border bg-white">
-        {preview ? <img src={preview} alt={`QR code for ${name}`} className="h-full w-full" /> : null}
+      <div className="flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-md-m border border-border bg-white p-1">
+        {preview ? <img src={preview} alt={`QR code that opens ${url}`} className="h-full w-full" /> : null}
       </div>
       <div className="flex flex-col gap-3">
         <p className="text-[13px] leading-relaxed text-muted-foreground">

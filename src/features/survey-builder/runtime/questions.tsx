@@ -55,10 +55,11 @@ export const SURVEY_CSS = `
 .sv-root input:focus, .sv-root textarea:focus, .sv-root select:focus { border-color: var(--sv-accent) !important; }
 .sv-root [role=radio][aria-checked=false]:not(:disabled):hover, .sv-root [role=checkbox][aria-checked=false]:not(:disabled):hover { border-color: var(--sv-accent) !important; background: var(--sv-hover) !important; }
 .sv-root select { appearance: none; -webkit-appearance: none; padding-right: 40px !important; background-image: var(--sv-chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 14px; }
+.sv-editable:empty::before { content: attr(data-placeholder); opacity: .5; }
+.sv-editable:focus { box-shadow: 0 2px 0 var(--sv-accent); }
 .sv-scale { container-type: inline-size; }
 @container (max-width: 480px) {
-  .sv-scale-wide { display: flex !important; flex-wrap: wrap; }
-  .sv-scale-wide > * { flex: 1 0 calc(100% / 6 - 4px); }
+  .sv-scale-wide { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; row-gap: 6px !important; }
 }
 `
 

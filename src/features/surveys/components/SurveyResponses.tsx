@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock, Mail, Search, Trash2, UserRound } from 'lucide-react'
@@ -22,6 +22,8 @@ import { answerToDisplay } from '../../survey-builder/logic/answers'
 import { BlockChip } from '../../survey-builder/blockIcons'
 import { exactTime, whenShort } from '../../forms/format'
 import { SOURCE_LABELS, SOURCE_PHRASES } from '../sources'
+import { AnswerFilterSelect } from './AnswerFilterSelect'
+import { matchesAnswer, type AnswerFilter } from '../../survey-builder/logic/answerFilter'
 
 type ResponseRow = Awaited<ReturnType<typeof getSurveyResponsesFn>>[number]
 type Question = { block: SurveyBlock; n: number; pageId: string }
@@ -32,8 +34,8 @@ const sourceText = (r: ResponseRow) => [SOURCE_LABELS[r.source] ?? r.source, r.c
 
 /** What a question's cell says when it has no answer: why not. */
 function missing(r: ResponseRow, q: Question): string {
-  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'Not answered'
-  return r.status === 'completed' ? 'Skipped by logic' : 'Not reached'
+  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'No answer'
+  return r.status === 'completed' ? 'Skipped' : 'Not reached'
 }
 
 /** An answer drawn for a table cell or the response pop-up: an NPS score in its group's colour, stars for a rating, choices as pills. */
@@ -57,6 +59,19 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
       </span>
     )
   }
+  if (value && typeof value === 'object' && !full) {
+    const labels = [...value.optionIds.map(id => block.question?.options?.find(o => o.id === id)?.label ?? id), ...(value.other ? [`Other: ${value.other}`] : [])]
+    return (
+      <span className="flex flex-wrap gap-1" title={labels.join(', ')}>
+        {labels.slice(0, 2).map(l => (
+          <span key={l} className="max-w-full truncate rounded-full border border-border px-2 py-px text-[13px] text-foreground">
+            {l}
+          </span>
+        ))}
+        {labels.length > 2 && <span className="px-1 text-[13px] text-muted-foreground">+{labels.length - 2}</span>}
+      </span>
+    )
+  }
   if (value && typeof value === 'object' && full) {
     const labels = value.optionIds.map(id => block.question?.options?.find(o => o.id === id)?.label ?? id)
     return (
@@ -74,13 +89,12 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
   return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
 }
 
-/** No answer in a table cell: a quiet dash when logic skipped the question or they never reached it, the words when they saw it and left it. */
+/** No answer in a table cell, in the same words as the response pop-up: Skipped (by logic), No answer, Not reached. */
 function MissingCell({ why }: { why: string }) {
-  if (why === 'Not answered') return <span className="text-[13px] italic text-muted-foreground">No answer</span>
+  const title = why === 'Skipped' ? 'Logic skipped this question for them' : why === 'Not reached' ? 'They stopped before this question' : 'They saw it and left it blank'
   return (
-    <span className="text-muted-foreground" title={why}>
-      <span aria-hidden>—</span>
-      <span className="sr-only">{why}</span>
+    <span className="text-[13px] text-muted-foreground" title={title}>
+      {why}
     </span>
   )
 }
@@ -106,6 +120,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   const [range, setRange] = useState<'all' | '7' | '30' | '90'>('all')
   const [status, setStatus] = useState<'' | 'completed' | 'partial'>('')
   const [source, setSource] = useState('')
+  const [answer, setAnswer] = useState<AnswerFilter | null>(null)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
@@ -123,7 +138,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   }, [survey.design])
   const choosable = [...questions.map(q => ({ key: q.block.id, label: `Q${q.n}. ${q.block.question?.title || 'Untitled question'}` })), { key: SOURCE_COLUMN, label: 'Came from' }]
   // By default every question shows: the table scrolls sideways with the person pinned, so no branch's answers are hidden.
-  const defaults = useMemo(() => questions.map(q => q.block.id), [questions])
+  const defaults = useMemo(() => [...questions.map(q => q.block.id), SOURCE_COLUMN], [questions])
   const [chosen, setChosen] = useStoredColumns(`magpie-survey-columns:${survey.id}`, defaults)
   const columns = choosable.filter(c => chosen.includes(c.key))
 
@@ -149,6 +164,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   })
 
   const q = query.trim().toLowerCase()
+  const answerBy = answer ? questions.find(x => x.block.id === answer.questionId)?.block : undefined
   const since = range === 'all' ? '' : new Date(Date.now() - Number(range) * 86400e3).toISOString()
   const shown = useMemo(() => {
     const rows = responses.filter(
@@ -156,15 +172,30 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         (!since || r.started_at >= since) &&
         (!status || r.status === status) &&
         (!source || r.source === source) &&
+        (!answerBy || matchesAnswer(answerBy, r.answers[answerBy.id], answer!.value)) &&
         (!q || [personOf(r), r.contact_email ?? '', ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].some(v => v.toLowerCase().includes(q))),
     )
     return rows.sort((a, b) => (sortDir === 'asc' ? a.updated_at.localeCompare(b.updated_at) : b.updated_at.localeCompare(a.updated_at)))
-  }, [responses, since, status, source, q, sortDir, questions])
+  }, [responses, since, status, source, q, sortDir, questions, answerBy, answer])
   const sources = [...new Set(responses.map(r => r.source))]
   const pageRows = shown.slice((page - 1) * perPage, page * perPage)
+  const scroller = useRef<HTMLDivElement>(null)
+  const [moreRight, setMoreRight] = useState(false)
+  const [scrolls, setScrolls] = useState(false)
+  const measure = () => {
+    const el = scroller.current
+    if (!el) return
+    setScrolls(el.scrollWidth > el.clientWidth + 4)
+    setMoreRight(el.scrollWidth - el.scrollLeft - el.clientWidth > 4)
+  }
+  useEffect(() => {
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  })
   const openIndex = openId ? shown.findIndex(r => r.id === openId) : -1
   const open = openIndex >= 0 ? shown[openIndex] : null
-  const filtered = !!q || range !== 'all' || !!status || !!source
+  const filtered = !!q || range !== 'all' || !!status || !!source || !!answer
 
   const exportColumns = useMemo<ExportColumn<ResponseRow>[]>(
     () => [
@@ -234,6 +265,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
               ))}
             </Select>
           )}
+          <AnswerFilterSelect design={survey.design} value={answer} onChange={a => (setAnswer(a), setPage(1))} />
           <div className="ml-auto flex items-center gap-2">
             <ColumnsMenu options={choosable} chosen={chosen} onChange={setChosen} />
             <ExportMenu filename={survey.name} rows={shown} columns={exportColumns} sheetName="Responses" />
@@ -268,7 +300,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         <p className="text-[13px] text-muted-foreground" aria-live="polite">
           {filtered ? `${shown.length} match` : `${responses.length} response${responses.length === 1 ? '' : 's'}`}
           {' · '}
-          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown
+          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown{scrolls ? ' · scroll sideways for more' : ''}
         </p>
       </div>
 
@@ -305,7 +337,8 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
           })}
         </ul>
 
-        <div className="hidden overflow-x-auto md:block">
+        <div className="relative hidden md:block">
+        <div ref={scroller} className="overflow-x-auto" onScroll={measure}>
           <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${35 + columns.length * 12.5}rem` }}>
             <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
               <tr>
@@ -422,6 +455,9 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
               })}
             </tbody>
           </table>
+        </div>
+        {/* While more columns lie to the right, the edge fades, so the table is seen to go on. */}
+        {moreRight && <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-card to-transparent" />}
         </div>
         {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-muted-foreground">{q ? <>Nothing matches “{query.trim()}”.</> : 'No responses match these filters.'}</p>}
         {shown.length > 25 && (
@@ -546,7 +582,7 @@ function ResponseDialog({
                 <BlockChip type={x.block.type} label={`Q${x.n}`} size="sm" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] text-muted-foreground">{x.block.question?.title || 'Untitled question'}</p>
-                  <div className="mt-1">{has ? <Answer block={x.block} value={value} full /> : <span className="text-sm italic text-muted-foreground">{missing(r, x)}</span>}</div>
+                  <div className="mt-1">{has ? <Answer block={x.block} value={value} full /> : <span className="text-sm text-muted-foreground">{missing(r, x)}</span>}</div>
                 </div>
               </li>
             )

@@ -17,7 +17,7 @@ export const labelClass = 'block text-[13px] font-medium text-foreground'
 /** A group of fields: the only uppercase text in the panel. */
 export const sectionLabelClass = 'block text-xs font-semibold uppercase tracking-[0.07em] text-muted-foreground'
 /** A line of help under a field or group. */
-export const hintClass = 'text-[13px] leading-relaxed text-muted-foreground'
+export const hintClass = 'text-[13px] leading-relaxed text-muted-foreground text-pretty'
 
 export type Dispatch = (action: string, args: any) => void
 

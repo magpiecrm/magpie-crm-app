@@ -1,5 +1,5 @@
 import type React from 'react'
-import { CornerDownRight, Flag, Plus } from 'lucide-react'
+import { CheckCircle2, CornerDownRight, Plus } from 'lucide-react'
 import type { BlockDropTarget, DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings } from '../types'
 import { describePageRouteParts } from '../logic/describe'
@@ -7,6 +7,13 @@ import { SurveyStyles, mix } from '../runtime/questions'
 import { cardStyle } from '../runtime/SurveyRenderer'
 import { SurveyBlockFrame } from './SurveyBlockFrame'
 import type { Dispatch } from './SurveyBlockEditor'
+
+/** Space round each page, the survey's background showing in it. */
+const PANEL_PAD = 32
+
+const pagePanel = (theme: SurveyDesign['theme']): React.CSSProperties => ({
+  background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
+})
 
 interface SurveyCanvasProps {
   design: SurveyDesign
@@ -57,12 +64,11 @@ export function SurveyCanvas({
     >
       <SurveyStyles theme={theme} />
       <div
-        // The survey's own page, framed on the app's surface, so it reads as what respondents see in both themes.
-        className="sv-root w-full flex flex-col gap-7 origin-top rounded-2xl border border-border shadow-sm transition-all duration-300"
+        // The builder's own labels sit on the app's surface in its colours; only each page (in a panel of the
+        // survey's background) takes the survey's look, so the canvas reads right in either theme.
+        className="sv-root w-full flex flex-col gap-7 origin-top transition-all duration-300"
         style={{
-          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth + 96}px` : '407px',
-          padding: previewMode === 'desktop' ? '32px 48px 40px' : '20px 16px 32px',
-          background: theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
+          maxWidth: previewMode === 'desktop' ? `${theme.bodyWidth + PANEL_PAD * 2}px` : `${375 + 24}px`,
           zoom: zoomLevel,
           fontFamily: theme.fontFamily,
           lineHeight: theme.lineHeight,
@@ -77,21 +83,19 @@ export function SurveyCanvas({
           return (
             <div key={page.id} data-page-id={page.id} onClick={e => (e.stopPropagation(), setSelectedPageId(page.id), setSelectedBlockId(null))}>
               <div className="mb-2 flex items-center justify-between gap-3 px-1 font-sans">
-                <span className="flex min-w-0 items-center gap-2 text-[13px]" style={{ color: isSelectedPage ? theme.textColor : mix(theme.textColor, 0.68) }}>
+                <span className={`flex min-w-0 items-center gap-2 text-sm ${isSelectedPage ? 'text-foreground' : 'text-muted-foreground'}`}>
                   <span
-                    className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1 text-[11px] font-semibold tabular-nums"
-                    style={{ background: isSelectedPage ? theme.accentColor : mix(theme.textColor, 0.1), color: isSelectedPage ? theme.buttonTextColor : theme.textColor }}
+                    className={`inline-flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full px-1 text-xs font-semibold tabular-nums ${
+                      isSelectedPage ? 'bg-accent text-accent-foreground' : 'bg-foreground/[0.08] text-foreground'
+                    }`}
                   >
                     {pageIndex + 1}
                   </span>
                   <span className="truncate font-semibold">{page.title || `Page ${pageIndex + 1}`}</span>
-                  {pageRing && (
-                    <span className="shrink-0 rounded-full px-2 py-px text-xs font-medium" style={{ background: mix(theme.accentColor, 0.12), color: theme.textColor }}>
-                      Adding here
-                    </span>
-                  )}
+                  {pageRing && <span className="shrink-0 rounded-full bg-accent/10 px-2 py-px text-xs font-medium text-foreground">Adding here</span>}
                 </span>
               </div>
+              <div className="rounded-xl border border-border" style={{ ...pagePanel(theme), padding: previewMode === 'desktop' ? PANEL_PAD : 12 }}>
               <div
                 data-canvas-body
                 data-block-count={page.blocks.length}
@@ -151,6 +155,7 @@ export function SurveyCanvas({
                             if (selectedBlockId === block.id) setSelectedBlockId(null)
                           }}
                           onDuplicate={() => onDuplicate(block, page.id, index + 1)}
+                          onEditText={text => dispatch('survey.updateBlock', { id: block.id, updates: block.question ? { question: { title: text } } : { content: text } })}
                           startDrag={startDrag}
                         />
                       </div>
@@ -175,11 +180,12 @@ export function SurveyCanvas({
                   </span>
                 </div>
               </div>
+              </div>
               {routes.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1 rounded-md border-l-[3px] py-2 pl-3 pr-2 font-sans text-[13px]" style={{ borderColor: theme.accentColor, background: theme.cardBgColor, color: theme.textColor }}>
+                <div className="mt-2 flex flex-col gap-1 rounded-md border border-l-[3px] border-border border-l-accent bg-card py-2 pl-3 pr-2 font-sans text-[13px] text-foreground">
                   {routes.map((r, i) => (
                     <span key={i} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                      <CornerDownRight className="h-3.5 w-3.5 shrink-0" style={{ color: theme.accentColor }} aria-hidden />
+                      <CornerDownRight className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden />
                       <button type="button" onClick={e => (e.stopPropagation(), onOpenLogic())} className="cursor-pointer text-left hover:underline" title="Change it in Logic">
                         {r.lead}
                       </button>
@@ -192,16 +198,13 @@ export function SurveyCanvas({
                             setSelectedPageId(r.pageId!)
                             setSelectedBlockId(null)
                           }}
-                          className="cursor-pointer rounded-full px-2 py-px font-medium transition-colors"
-                          style={{ background: mix(theme.accentColor, 0.12) }}
+                          className="cursor-pointer rounded-full bg-accent/10 px-2 py-px font-medium transition-colors hover:bg-accent/20"
                           title="Go to that page"
                         >
                           {r.target}
                         </button>
                       ) : (
-                        <span className="rounded-full px-2 py-px font-medium" style={{ background: mix(theme.textColor, 0.08) }}>
-                          {r.target}
-                        </span>
+                        <span className="rounded-full bg-foreground/[0.07] px-2 py-px font-medium">{r.target}</span>
                       )}
                     </span>
                   ))}
@@ -216,23 +219,24 @@ export function SurveyCanvas({
             e.stopPropagation()
             dispatch('survey.addPage', { page: { blocks: [] } })
           }}
-          className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 border-dashed font-sans text-sm font-medium transition-colors hover:brightness-95"
-          style={{ borderColor: mix(theme.textColor, 0.22), color: mix(theme.textColor, 0.75), background: 'transparent' }}
+          className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border font-sans text-sm font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
         >
           <Plus className="h-4 w-4" aria-hidden /> Add a page
         </button>
         {/* What people see once they've sent the last page. */}
         <div onClick={e => (e.stopPropagation(), onOpenSettings())} className="cursor-pointer" title="Change it in Settings">
-          <div className="mb-2 flex items-center gap-2 px-1 font-sans text-[13px] font-semibold" style={{ color: mix(theme.textColor, 0.68) }}>
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full" style={{ background: mix(theme.textColor, 0.1), color: theme.textColor }}>
-              <Flag className="h-3 w-3" aria-hidden />
+          <div className="mb-2 flex items-center gap-2 px-1 font-sans text-sm font-semibold text-muted-foreground">
+            <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-full bg-foreground/[0.08] text-foreground">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
             </span>
-            When they finish
+            At the end
           </div>
+          <div className="rounded-xl border border-border" style={{ ...pagePanel(theme), padding: previewMode === 'desktop' ? PANEL_PAD : 12 }}>
           <div style={{ ...cardStyle(theme), maxWidth: undefined, textAlign: 'center', paddingTop: 40, paddingBottom: 40 }}>
             {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 16 }} />}
             <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.25, marginBottom: 8 }}>{thankYou.title}</div>
             <div style={{ opacity: 0.8, whiteSpace: 'pre-wrap' }}>{thankYou.message}</div>
+          </div>
           </div>
         </div>
 

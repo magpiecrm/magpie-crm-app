@@ -29,6 +29,8 @@ export interface SurveyRendererProps {
   honeypotRef?: React.RefObject<HTMLInputElement | null>
   /** Blocks answered for the respondent (e.g. Email, when the link identifies them) and not shown. */
   hiddenBlockIds?: string[]
+  /** Inside the builder's preview: no full-window height, the card at the top. */
+  framed?: boolean
 }
 
 /**
@@ -45,6 +47,7 @@ export function SurveyRenderer({
   embedded,
   honeypotRef,
   hiddenBlockIds,
+  framed,
 }: SurveyRendererProps) {
   const { theme, pages } = design
   const [answers, setAnswers] = useState<Answers>(initialAnswers ?? {})
@@ -135,7 +138,7 @@ export function SurveyRenderer({
       return next
     })
 
-  const outer = pageStyle(theme, embedded)
+  const outer = framed ? { ...pageStyle(theme, true), padding: '32px 16px', background: 'transparent' } : pageStyle(theme, embedded)
   const card = cardStyle(theme, embedded)
   const button = (primary: boolean): React.CSSProperties => ({
     padding: '11px 22px',
@@ -151,7 +154,7 @@ export function SurveyRenderer({
   })
 
   if (done || !page) {
-    return <SurveyMessage theme={theme} title={settings.thankYou.title} body={settings.thankYou.message} embedded={embedded} />
+    return <SurveyMessage theme={theme} title={settings.thankYou.title} body={settings.thankYou.message} embedded={embedded || framed} />
   }
 
   // Pages finished, out of the ones this person will see: logic can skip some,
@@ -279,7 +282,7 @@ export function cardStyle(theme: SurveyDesign['theme'], embedded?: boolean): Rea
 export function SurveyMessage({ theme, title, body, embedded }: { theme: SurveyDesign['theme']; title: string; body: string; embedded?: boolean }) {
   return (
     <div style={pageStyle(theme, embedded)} className="sv-root">
-      <div style={{ ...cardStyle(theme, embedded), textAlign: 'center', paddingTop: 44, paddingBottom: 48, borderTop: `4px solid ${theme.accentColor}` }}>
+      <div style={{ ...cardStyle(theme, embedded), textAlign: 'center', paddingTop: 48, paddingBottom: 48 }}>
         {theme.logoUrl && <img src={theme.logoUrl} alt="" style={{ maxHeight: 40, marginBottom: 20 }} />}
         <h1 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 700, lineHeight: 1.25 }}>{title}</h1>
         <p style={{ margin: 0, opacity: 0.8, whiteSpace: 'pre-wrap' }}>{body}</p>

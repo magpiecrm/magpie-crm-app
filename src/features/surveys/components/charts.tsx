@@ -10,11 +10,11 @@
  * colour is never the only channel.
  */
 
-export const BAR = 'bg-[#4b5262] dark:bg-[#aeb4bf]'
 /** The answer most people gave, picked out from the rest in the app's teal. */
 const LEAD = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
-/** Every other answer: a lighter ink, still 3:1 on the card. */
-const REST = 'bg-[#868d99] dark:bg-[#7d8491]'
+/** Every other bar, on every chart: one neutral ink, 3:1 on the card. */
+export const BAR = 'bg-[#868d99] dark:bg-[#7d8491]'
+const REST = BAR
 const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
 const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
 const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
@@ -59,7 +59,10 @@ export function Distribution({
   colorFor,
   labels,
   average,
+  leadMost = false,
 }: {
+  /** Mark the most-given value in teal (a scale's mode); NPS colours by group instead. */
+  leadMost?: boolean
   counts: number[]
   start: number
   /** Optional per-value class, e.g. NPS bands. */
@@ -74,21 +77,23 @@ export function Distribution({
   const avgAt = average === null || average === undefined ? null : ((average - start + 0.5) / counts.length) * 100
   return (
     <div>
-      <div className="relative flex h-36 items-end gap-[2px]">
-        {/* Faint lines at half and full height, so a column's size reads against something. */}
-        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-5 border-t border-dashed border-border" />
-        <span aria-hidden className="pointer-events-none absolute inset-x-0 top-[calc(50%+10px)] border-t border-dashed border-border" />
-        {avgAt !== null && (
-          <span aria-hidden className="pointer-events-none absolute bottom-0 top-0 z-[1] border-l-2 border-foreground/70" style={{ left: `${avgAt}%` }}>
-            <span className="absolute -top-0.5 left-1 whitespace-nowrap rounded bg-card px-1 text-xs font-medium text-foreground">average {average!.toFixed(1)}</span>
+      {avgAt !== null && (
+        // The average's label sits in its own row above the plot, clear of the counts on the columns.
+        <div className="relative mb-1 h-5" aria-hidden>
+          <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-card px-2 text-xs font-medium leading-[18px] text-foreground" style={{ left: `${avgAt}%` }}>
+            Average {average!.toFixed(1)}
           </span>
-        )}
+        </div>
+      )}
+      <div className="relative flex h-36 items-end gap-[2px]">
+        {avgAt !== null && <span aria-hidden className="pointer-events-none absolute bottom-0 top-0 z-[1] border-l-2 border-dashed border-foreground/60" style={{ left: `${avgAt}%` }} />}
         {counts.map((count, i) => {
           const value = start + i
+          const top = leadMost && count > 0 && count === max
           return (
             <div key={value} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${value}: ${count} (${pct(count, total)}%)`}>
               <span className="text-xs tabular-nums text-muted-foreground">{count || ''}</span>
-              <div className={`relative w-full max-w-9 rounded-t-[4px] ${colorFor?.(value) ?? BAR}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 4 : 0 }} />
+              <div className={`relative w-[62%] rounded-t-[4px] ${colorFor?.(value) ?? (top ? LEAD : BAR)}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 8 : 0 }} />
             </div>
           )
         })}

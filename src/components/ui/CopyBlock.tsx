@@ -4,7 +4,7 @@ import { useMoreBelow } from './Dialog'
 import { Button } from './Button'
 
 /** Something to copy, with one Copy button that says when it's done. */
-export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false, copyLabel }: { value: string; label: string; /** The button's words before it's pressed; "Copy code" for the main one, "Copy" otherwise. */ copyLabel?: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
+export function CopyBlock({ value, label, rows, mono = true, primary = false, wrap = false, copyLabel, inline = false }: { value: string; label: string; /** A one-line value (a link) with its button at the end of the field rather than above it. */ inline?: boolean; /** The button's words before it's pressed; "Copy code" for the main one, "Copy" otherwise. */ copyLabel?: string; /** Lines before it scrolls; all of it when left out. */ rows?: number; mono?: boolean; /** The dialog's main action. */ primary?: boolean; /** Wrap long lines (a link) rather than scroll sideways (code). */ wrap?: boolean }) {
   const [copied, setCopied] = useState(false)
   const pre = useRef<HTMLPreElement>(null)
   const more = useMoreBelow(pre)
@@ -27,13 +27,29 @@ export function CopyBlock({ value, label, rows, mono = true, primary = false, wr
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
   }
+  const button = (
+    <Button variant={primary ? 'primary' : 'secondary'} size={inline ? 'md' : 'sm'} onClick={copy} leftIcon={copied ? <Check className={`h-3.5 w-3.5 ${primary ? '' : 'text-emerald-600 dark:text-emerald-400'}`} /> : <Copy className="h-3.5 w-3.5" />} aria-live="polite" className={inline ? 'shrink-0' : ''}>
+      {copied ? 'Copied' : copyLabel ?? (primary ? 'Copy code' : 'Copy')}
+    </Button>
+  )
+  if (inline) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-foreground">{label}</span>
+        <div className="flex items-stretch gap-2">
+          <p className="flex min-w-0 flex-1 items-center rounded-md-s border border-border bg-muted/50 px-3 py-2 text-sm text-foreground [overflow-wrap:anywhere]" aria-label={label}>
+            {value}
+          </p>
+          {button}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-foreground">{label}</span>
-        <Button variant={primary ? 'primary' : 'secondary'} size="sm" onClick={copy} leftIcon={copied ? <Check className={`h-3.5 w-3.5 ${primary ? '' : 'text-emerald-600 dark:text-emerald-400'}`} /> : <Copy className="h-3.5 w-3.5" />} aria-live="polite">
-          {copied ? 'Copied' : copyLabel ?? (primary ? 'Copy code' : 'Copy')}
-        </Button>
+        {button}
       </div>
       <div className="relative">
         {/* Long tokens (addresses) break only where they must, so the code stays readable on a phone. */}

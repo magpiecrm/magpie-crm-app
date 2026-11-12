@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { CornerDownRight, Search } from 'lucide-react'
+import { ArrowDownWideNarrow, BarChart3, CornerDownRight, Search, Table2, TrendingUp } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { getSurveySummaryFn } from '../../../server/functions'
 import { Select } from '../../../components/ui/Select'
@@ -12,8 +12,9 @@ import { isQuestionType, SURVEY_BLOCK_TYPES } from '../../survey-builder/types'
 import { BlockChip } from '../../survey-builder/blockIcons'
 import { ago, whenShort } from '../../forms/format'
 import { BAR, BarList, Distribution, NpsSummary, NpsTrend, TRACK, npsBand } from './charts'
-import { SegmentedTabs } from '../../templates/components/SegmentedTabs'
 import { SOURCE_LABELS } from '../sources'
+import { AnswerFilterSelect } from './AnswerFilterSelect'
+import type { AnswerFilter } from '../../survey-builder/logic/answerFilter'
 
 export type Range = 'all' | '7' | '30' | '90'
 
@@ -27,7 +28,8 @@ function formatDuration(seconds: number | null) {
 export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.ReactNode }) {
   const [range, setRange] = useState<Range>('all')
   const [source, setSource] = useState('')
-  const filters = { days: range === 'all' ? undefined : Number(range), source: source || undefined }
+  const [answer, setAnswer] = useState<AnswerFilter | null>(null)
+  const filters = { days: range === 'all' ? undefined : Number(range), source: source || undefined, answer: answer ?? undefined }
   const { data: summary, isLoading } = useQuery({
     queryKey: queryKeys.surveys.summary(survey.id, filters),
     queryFn: () => getSurveySummaryFn({ data: { id: survey.id, ...filters } }),
@@ -50,7 +52,7 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
   }
   if (summary.total === 0) return <>{empty}</>
 
-  const filtered = range !== 'all' || !!source
+  const filtered = range !== 'all' || !!source || !!answer
   const multiPage = summary.pageReach.length > 1
 
   return (
@@ -72,8 +74,9 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
             ))}
           </Select>
         )}
+        <AnswerFilterSelect design={survey.design} value={answer} onChange={setAnswer} />
         {filtered && (
-          <Button variant="ghost" size="sm" onClick={() => (setRange('all'), setSource(''))}>
+          <Button variant="ghost" size="sm" onClick={() => (setRange('all'), setSource(''), setAnswer(null))}>
             Clear
           </Button>
         )}
@@ -156,56 +159,90 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
   )
 }
 
-/** NPS: the score and its groups, then every score or the score week by week. */
-function NpsBody({ q, labels }: { q: Extract<QuestionSummary, { kind: 'nps' }>; labels: [string | undefined, string | undefined] }) {
-  const [view, setView] = useState<'scores' | 'weeks'>('scores')
+type View = 'chart' | 'weeks' | 'table'
+
+/** A question's results as rows of a plain table: the same numbers as its chart, for reading out or copying. */
+function ResultTable({ rows, total }: { rows: Array<{ label: string; count: number; note?: string }>; total: number }) {
   return (
-    <div className="flex flex-col gap-5">
-      <NpsSummary score={q.score} detractors={q.detractors} passives={q.passives} promoters={q.promoters} />
-      {q.trend.length > 1 && (
-        <SegmentedTabs
-          label="Show"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: 'scores', label: 'Every score' },
-            { value: 'weeks', label: 'By week' },
-          ]}
-          className="self-start"
-        />
-      )}
-      {view === 'weeks' && q.trend.length > 1 ? <NpsTrend weeks={q.trend} /> : <Distribution counts={q.distribution} start={0} colorFor={npsBand} labels={labels} />}
-    </div>
+    <table className="w-full max-w-xl text-left text-sm">
+      <thead className="border-b border-border text-[13px] text-muted-foreground">
+        <tr>
+          <th scope="col" className="py-2 pr-4 font-medium">Answer</th>
+          <th scope="col" className="py-2 pr-4 text-right font-medium">People</th>
+          <th scope="col" className="py-2 text-right font-medium">Share</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-border/70">
+        {rows.map(r => (
+          <tr key={r.label}>
+            <td className="py-2 pr-4 text-foreground">
+              {r.label}
+              {r.note && <span className="text-muted-foreground"> · {r.note}</span>}
+            </td>
+            <td className="py-2 pr-4 text-right tabular-nums text-foreground">{r.count}</td>
+            <td className="py-2 text-right tabular-nums text-muted-foreground">{total ? Math.round((r.count / total) * 100) : 0}%</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
-/** A choice question's answers as bars, in the survey's order or most picked first. */
-function ChoiceBars({ q }: { q: Extract<QuestionSummary, { kind: 'choice' }> }) {
-  const [order, setOrder] = useState<'asked' | 'most'>('asked')
-  const rows = [...q.options.map(o => ({ label: o.label, count: o.count })), ...(q.other.length ? [{ label: 'Other', count: q.other.length }] : [])]
-  const shown = order === 'most' ? [...rows].sort((a, b) => b.count - a.count) : rows
+/** The small icon switches at a card's top right: how to show its result, and for choices their order. */
+function CardControls({ views, view, setView, sortable, sorted, setSorted }: { views: View[]; view: View; setView: (v: View) => void; sortable?: boolean; sorted?: boolean; setSorted?: (v: boolean) => void }) {
+  const LOOK: Record<View, { icon: typeof BarChart3; label: string }> = {
+    chart: { icon: BarChart3, label: 'Chart' },
+    weeks: { icon: TrendingUp, label: 'Week by week' },
+    table: { icon: Table2, label: 'Table' },
+  }
+  const btn = (active: boolean) =>
+    `inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+      active ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+    }`
   return (
-    <div className="flex flex-col gap-3">
-      {rows.length > 2 && (
-        <SegmentedTabs
-          label="Order"
-          value={order}
-          onChange={setOrder}
-          options={[
-            { value: 'asked', label: 'As asked' },
-            { value: 'most', label: 'Most picked first' },
-          ]}
-          className="self-start"
-        />
+    <div className="flex shrink-0 items-center gap-1.5">
+      {sortable && setSorted && (
+        <button type="button" aria-pressed={!!sorted} onClick={() => setSorted(!sorted)} className={`${btn(!!sorted)} border border-border`} title={sorted ? 'In the order asked' : 'Most picked first'} aria-label="Most picked first">
+          <ArrowDownWideNarrow className="h-4 w-4" />
+        </button>
       )}
-      <BarList rows={shown} total={q.answered} />
+      <div role="group" aria-label="Show as" className="flex gap-0.5 rounded-md-s bg-muted p-0.5">
+        {views.map(v => {
+          const { icon: Icon, label } = LOOK[v]
+          return (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={btn(view === v)} title={label} aria-label={label}>
+              <Icon className="h-4 w-4" />
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: SurveyBlock; n: number; started: number }) {
+  const [view, setView] = useState<View>('chart')
+  const [sorted, setSorted] = useState(false)
   const typeLabel = SURVEY_BLOCK_TYPES.find(t => t.type === block.type)?.label
   const scale = block.question?.scale
+  const labels: [string | undefined, string | undefined] = [scale?.minLabel, scale?.maxLabel]
+
+  const rows: Array<{ label: string; count: number; note?: string }> =
+    q.kind === 'choice'
+      ? [...q.options.map(o => ({ label: o.label, count: o.count })), ...(q.other.length ? [{ label: 'Other', count: q.other.length }] : [])]
+      : q.kind === 'yes_no'
+        ? [
+            { label: 'Yes', count: q.yes },
+            { label: 'No', count: q.no },
+          ]
+        : q.kind === 'nps'
+          ? q.distribution.map((c, i) => ({ label: String(i), count: c, note: i <= 6 ? 'detractor' : i <= 8 ? 'passive' : 'promoter' }))
+          : q.kind === 'scale'
+            ? q.distribution.map((c, i) => ({ label: String(q.min + i), count: c }))
+            : []
+  const shownRows = sorted ? [...rows].sort((a, b) => b.count - a.count) : rows
+  const views: View[] = q.kind === 'nps' && q.trend.length > 1 ? ['chart', 'weeks', 'table'] : rows.length ? ['chart', 'table'] : []
+
   return (
     <section className="rounded-md-m border border-border bg-card px-5 py-4 sm:px-6 sm:py-5" aria-labelledby={`q-${q.id}`}>
       <header className="mb-4 flex items-start gap-3">
@@ -218,12 +255,16 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
             {typeLabel} · {q.answered} of {started} answered
           </p>
         </div>
+        {q.answered > 0 && views.length > 0 && <CardControls views={views} view={view} setView={setView} sortable={q.kind === 'choice' && rows.length > 2 && view !== 'weeks'} sorted={sorted} setSorted={setSorted} />}
       </header>
 
       {q.answered === 0 ? (
         <p className="text-sm text-muted-foreground">Nobody has answered this yet.</p>
       ) : q.kind === 'nps' ? (
-        <NpsBody q={q} labels={[scale?.minLabel, scale?.maxLabel]} />
+        <div className="flex flex-col gap-5">
+          <NpsSummary score={q.score} detractors={q.detractors} passives={q.passives} promoters={q.promoters} />
+          {view === 'table' ? <ResultTable rows={rows} total={q.answered} /> : view === 'weeks' ? <NpsTrend weeks={q.trend} /> : <Distribution counts={q.distribution} start={0} colorFor={npsBand} labels={labels} />}
+        </div>
       ) : q.kind === 'scale' ? (
         <div className="flex flex-col gap-6">
           <dl className="grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border sm:max-w-xl">
@@ -239,16 +280,14 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
               </div>
             ))}
           </dl>
-          <Distribution counts={q.distribution} start={q.min} labels={[scale?.minLabel, scale?.maxLabel]} average={q.average} />
+          {view === 'table' ? <ResultTable rows={rows} total={q.answered} /> : <Distribution counts={q.distribution} start={q.min} labels={labels} average={q.average} leadMost />}
         </div>
-      ) : q.kind === 'choice' ? (
+      ) : q.kind === 'choice' || q.kind === 'yes_no' ? (
         <div className="flex flex-col gap-4">
-          <ChoiceBars q={q} />
+          {view === 'table' ? <ResultTable rows={shownRows} total={q.answered} /> : <BarList rows={shownRows} total={q.answered} />}
           {block.type === 'multiple_choice' && <p className="text-[13px] text-muted-foreground">People could pick more than one, so the shares add up to more than 100%.</p>}
-          {q.other.length > 0 && <OtherAnswers values={q.other} />}
+          {q.kind === 'choice' && q.other.length > 0 && <OtherAnswers values={q.other} />}
         </div>
-      ) : q.kind === 'yes_no' ? (
-        <BarList rows={[{ label: 'Yes', count: q.yes }, { label: 'No', count: q.no }]} total={q.answered} />
       ) : q.kind === 'number' ? (
         <dl className="grid max-w-md grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border">
           {[
