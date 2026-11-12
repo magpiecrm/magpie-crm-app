@@ -96,6 +96,18 @@ describe('suggestSearch', () => {
     expect(suggestion.criteria.industries).toEqual(['Truck Transportation'])
   })
 
+  it('passes on the signal that stops it, for a suggestion dismissed while it runs (aiRuns.ts)', async () => {
+    const stop = new AbortController()
+    let sent: AbortSignal | null | undefined
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      sent = init.signal
+      stop.abort()
+      return answer(good)
+    }) as unknown as typeof fetch
+    await suggestSearch({ websiteUrl: 'https://haulwise.test' }, { generate: (opts) => generate({ ...opts, fetchImpl }), signal: stop.signal }).catch(() => {})
+    expect(sent?.aborted).toBe(true)
+  })
+
   it("says why when there's no AI, or no web tools to read the website with", async () => {
     const ai = fakeAi()
     delete process.env.ANTHROPIC_API_KEY

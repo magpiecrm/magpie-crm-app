@@ -62,6 +62,13 @@ describe('draftPersonas', () => {
     expect(usageForMonth(monthOf(new Date())).personaDrafts).toBe(before + 1)
   })
 
+  it('passes on the signal that stops it, for a draft dismissed while it runs (aiRuns.ts)', async () => {
+    const generate = vi.fn(async (_opts: any) => ({ answer: { personas: [suggestion] }, web: true, model: 'm' }))
+    const stop = new AbortController()
+    await draftPersonas({ websiteUrl: 'https://haulwise.test' }, { generate: generate as any, signal: stop.signal })
+    expect(generate.mock.calls[0][0].signal).toBe(stop.signal)
+  })
+
   it("says why when there's no AI, or no web tools to read the website with", async () => {
     const generate = vi.fn()
     ai.state = { ok: false, reason: 'Add a key.' }

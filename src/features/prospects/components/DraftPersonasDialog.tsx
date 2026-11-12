@@ -1,55 +1,67 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Plus, Sparkles } from 'lucide-react'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { Button } from '../../../components/ui/Button'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { queryKeys } from '../../../queryKeys'
-import { createPersonaFn, draftPersonasFn } from '../../../server/functions'
 import type { AiAvailability } from '../../../server/copilot/availability'
+import type { PersonaDraftState } from '../useAiRun'
 import { CriteriaChips } from './CriteriaChips'
 
 // The AI reads the workspace's website and suggests personas
-// (server/prospecting/personaDraft.ts). Nothing is kept until one is added.
+// (server/prospecting/personaDraft.ts). It runs on the server, so this can be
+// closed while it does: the drafts wait for whoever comes back, and the bell
+// says when they're ready. Nothing is kept as a persona until it's added.
 
-export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpen: boolean; onClose: () => void; websiteUrl: string; ai: AiAvailability }) {
-  const queryClient = useQueryClient()
+export const hostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+export function DraftPersonasDialog({
+  isOpen,
+  onClose,
+  websiteUrl,
+  ai,
+  draft,
+}: {
+  isOpen: boolean
+  onClose: () => void
+  websiteUrl: string
+  ai: AiAvailability
+  draft: PersonaDraftState
+}) {
+  const { run, drafts, left, start, add, dismiss, lost } = draft
+  const running = run?.status === 'running'
   const [website, setWebsite] = useState(websiteUrl)
   const [note, setNote] = useState('')
-  // Which drafts have been added, by their place in the list.
-  const [added, setAdded] = useState<Set<number>>(new Set())
+  // Opened onto a draft: its own website and note, to draft again from.
   useEffect(() => {
-    if (isOpen) setWebsite((w) => w || websiteUrl)
-  }, [isOpen, websiteUrl])
+    if (!isOpen) return
+    if (run) {
+      setWebsite(run.input.websiteUrl)
+      setNote(run.input.note ?? '')
+    } else setWebsite((w) => w || websiteUrl)
+  }, [isOpen, run?.id, websiteUrl])
 
-  const draft = useMutation({
-    mutationFn: () => draftPersonasFn({ data: { websiteUrl: website, note: note.trim() || undefined } }),
-    onSuccess: () => setAdded(new Set()),
-  })
-  const add = useMutation({
-    mutationFn: async (which: number[]) => {
-      for (const i of which) {
-        await createPersonaFn({ data: draft.data![i] })
-        setAdded((s) => new Set(s).add(i))
-      }
-    },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.prospects.personas() }),
-  })
-
-  const drafts = draft.data ?? []
-  const left = drafts.map((_, i) => i).filter((i) => !added.has(i))
+  const begin = () => start.mutate({ websiteUrl: website, note: note.trim() || undefined })
   const close = () => {
-    if (draft.isPending) return
-    draft.reset()
+    start.reset()
     add.reset()
-    setAdded(new Set())
     onClose()
   }
+  const done = () => {
+    if (run) dismiss.mutate(run.id)
+    close()
+  }
 
-  // Reading the website takes Claude's web tools.
+  // Reading the website takes Claude's web tools. Drafts already made can still be added.
   const blocked = !ai.ok ? ai.reason : !ai.web ? "It reads your website with Claude's web tools, so it needs an Anthropic key: add one in Settings → Copilot." : null
-  if (blocked) {
+  if (blocked && !running && !drafts.length) {
     return (
       <Dialog isOpen={isOpen} onClose={close} title="Draft personas with AI" className="sm:max-w-md">
         <DialogBody>
@@ -74,23 +86,35 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
     >
       <DialogBody className="space-y-4">
         <Field label="Your website">
-          <input className={INPUT_CLASS} value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="e.g. acme.com" disabled={draft.isPending} />
+          <input
+            className={INPUT_CLASS}
+            value={running ? run.input.websiteUrl : website}
+            onChange={(e) => setWebsite(e.target.value)}
+            placeholder="e.g. acme.com"
+            disabled={running}
+          />
         </Field>
         <Field label="Anything it should know" hint="Optional. For example who your best customers are, or a market you don't sell to.">
           <textarea
             className={`${INPUT_CLASS} resize-y font-[inherit]`}
             rows={2}
             maxLength={1_000}
-            value={note}
+            value={running ? (run.input.note ?? '') : note}
             onChange={(e) => setNote(e.target.value)}
-            disabled={draft.isPending}
+            disabled={running}
             placeholder="e.g. We sell mostly to UK firms with a few hundred staff."
           />
         </Field>
-        {draft.isPending && <Notice>Reading your website. This takes a few minutes.</Notice>}
-        {draft.isError && <Notice level="error">{(draft.error as Error).message}</Notice>}
+        {running && (
+          <Notice title={`Reading ${hostOf(run.input.websiteUrl)} since ${timeOf(run.startedAt)}`}>
+            This takes a few minutes. You can close this and carry on: the drafts will wait here, and the bell will tell you when they're ready.
+          </Notice>
+        )}
+        {lost && !run && <Notice level="warning">The draft stopped before it finished. Draft personas again.</Notice>}
+        {run?.status === 'failed' && <Notice level="error">{run.error}</Notice>}
+        {start.isError && <Notice level="error">{(start.error as Error).message}</Notice>}
 
-        {drafts.length > 0 && !draft.isPending && (
+        {drafts.length > 0 && (
           <div className="space-y-3 pt-4 border-t border-border">
             {drafts.map((d, i) => (
               <div key={i} className="card border border-border rounded-md-m p-4 space-y-2.5">
@@ -99,7 +123,7 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
                     <h3 className="text-sm font-semibold text-foreground">{d.name}</h3>
                     {d.description && <p className="text-[13px] text-muted-foreground mt-0.5">{d.description}</p>}
                   </div>
-                  {added.has(i) ? (
+                  {run?.added?.includes(i) ? (
                     <span className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
                       <Check className="w-3.5 h-3.5" /> Added
                     </span>
@@ -129,9 +153,23 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
         )}
       </DialogBody>
       <DialogFooter>
-        {drafts.length > 0 && !draft.isPending ? (
+        {running ? (
           <>
-            <Button variant="ghost" className="sm:mr-auto" onClick={() => draft.mutate()} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+            <Button variant="ghost" className="sm:mr-auto" onClick={() => dismiss.mutate(run.id)}>
+              Stop drafting
+            </Button>
+            <Button onClick={close}>Close</Button>
+          </>
+        ) : drafts.length > 0 ? (
+          <>
+            <Button
+              variant="ghost"
+              className="sm:mr-auto"
+              onClick={begin}
+              isLoading={start.isPending}
+              disabled={!website.trim() || !!blocked}
+              leftIcon={<Sparkles className="w-4 h-4" />}
+            >
               Draft again
             </Button>
             {left.length > 0 ? (
@@ -146,7 +184,7 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
                 )}
               </>
             ) : (
-              <Button onClick={close}>Done</Button>
+              <Button onClick={done}>Done</Button>
             )}
           </>
         ) : (
@@ -154,7 +192,7 @@ export function DraftPersonasDialog({ isOpen, onClose, websiteUrl, ai }: { isOpe
             <Button variant="secondary" onClick={close}>
               Cancel
             </Button>
-            <Button onClick={() => draft.mutate()} isLoading={draft.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
+            <Button onClick={begin} isLoading={start.isPending} disabled={!website.trim()} leftIcon={<Sparkles className="w-4 h-4" />}>
               Draft personas
             </Button>
           </>

@@ -44,6 +44,9 @@ key), with the app's actions as tools.
     is held the same way: `verifiedPeopleSource.ts` `createCutShortBatches`), and `searchRuns.ts` holds a
     search while it runs, and for 1h if it finished with nobody there, so
     asking again joins it rather than running and charging a second one.
+    The AI's persona drafts and suggested searches run in `aiRuns.ts` the
+    same way, so their pop-ups can close and the page be left: held until
+    used or dismissed, or for a day, with no person in them.
     A batch of tiny companies is searched once with no job title, keeping
     those a title's own request would have (`PeopleFilters.noTitle`; a host
     can turn it off).

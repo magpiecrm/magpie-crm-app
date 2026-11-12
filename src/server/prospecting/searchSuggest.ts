@@ -37,16 +37,22 @@ const ANSWER = {
 /** The answer's shape, for tests. */
 export const suggestionAnswer = z.object(ANSWER.input)
 
-/** One search suggested from the website. Throws AiUnavailable (with why) or AiFailed. */
-export async function suggestSearch(input: { websiteUrl: string }, deps: { generate?: typeof generate } = {}): Promise<SearchSuggestion> {
+/** Throws AiUnavailable, saying why, where a search can't be suggested here. */
+export function requireSuggestAi(): void {
   const ai = aiAvailable()
   if (!ai.ok) throw new AiUnavailable(ai.reason)
   if (!ai.web) throw new AiUnavailable("Prospect search by AI reads your website with Claude's web tools, so it needs an Anthropic key: add one in Settings → Copilot.")
+}
+
+/** One search suggested from the website. Throws AiUnavailable (with why) or AiFailed. */
+export async function suggestSearch(input: { websiteUrl: string }, deps: { generate?: typeof generate; signal?: AbortSignal } = {}): Promise<SearchSuggestion> {
+  requireSuggestAi()
   const { answer } = await (deps.generate ?? generate)({
     system: SYSTEM,
     prompt: `Website: ${input.websiteUrl}`,
     answer: ANSWER,
     web: { searches: 2, fetches: 4 },
+    signal: deps.signal,
   })
   recordUsage({ searchSuggestions: 1 })
   // The website's host only: it's the workspace's own.

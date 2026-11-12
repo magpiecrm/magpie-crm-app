@@ -58,7 +58,7 @@ const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'local_db.json')
 
 type ApiKeyScope = 'api' | 'mcp'
 
-export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted' | 'sequence_paused' | 'sequence_reply'
+export type NotificationType = 'contact_added' | 'form_submission' | 'campaign_sent' | 'campaign_failed' | 'survey_response' | 'verifier_alert' | 'task_due' | 'proposal_viewed' | 'proposal_accepted' | 'sequence_paused' | 'sequence_reply' | 'ai_ready'
 
 type ContactRecord = DbSchema['contacts'][number]
 export type RecipientRecord = DbSchema['campaign_recipients'][number]

@@ -2,11 +2,13 @@ import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../../../queryKeys'
-import { Plus, UserCircle, Trash2, Pencil, Sparkles } from 'lucide-react'
+import { Plus, UserCircle, Trash2, Pencil, Sparkles, Loader2 } from 'lucide-react'
 import { getPersonasFn, getPersonaStatsFn, deletePersonaFn, personaDraftStatusFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
-import { DraftPersonasDialog } from '../../../features/prospects/components/DraftPersonasDialog'
+import { Notice } from '../../../components/ui/Notice'
+import { DraftPersonasDialog, hostOf } from '../../../features/prospects/components/DraftPersonasDialog'
+import { usePersonaDraft } from '../../../features/prospects/useAiRun'
 import type { Persona, PersonaCriteria } from '../../../features/prospects/types'
 import type { PersonaStats } from '../../../server/personaStats'
 import { confirmDialog } from '../../../components/ui/confirm'
@@ -58,11 +60,35 @@ function PersonasPage() {
 
   const [drafting, setDrafting] = useState(false)
   const { data: draftStatus } = useQuery({ queryKey: queryKeys.prospects.personaDraftStatus(), queryFn: () => personaDraftStatusFn() })
+  // The AI's draft runs on the server, so it can be left and come back to: this says how it's going.
+  const draft = usePersonaDraft()
+  const draftRunning = draft.run?.status === 'running'
+  const waiting = draft.left.length
   const draftButton = draftStatus && (
-    <Button variant="outline" onClick={() => setDrafting(true)} leftIcon={<Sparkles className="w-4 h-4" />}>
-      Draft with AI
+    <Button
+      variant="outline"
+      onClick={() => setDrafting(true)}
+      leftIcon={draftRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+    >
+      {draftRunning ? 'Drafting…' : waiting ? `Review drafts (${waiting})` : 'Draft with AI'}
     </Button>
   )
+  const draftNotice =
+    draftStatus && draft.run && (draftRunning || waiting > 0) ? (
+      <Notice
+        level={draftRunning ? 'info' : 'success'}
+        className="mb-6"
+        action={
+          <Button size="sm" variant="outline" onClick={() => setDrafting(true)}>
+            {draftRunning ? 'Open' : 'Review'}
+          </Button>
+        }
+      >
+        {draftRunning
+          ? `The AI is drafting personas from ${hostOf(draft.run.input.websiteUrl)}. You can leave this page: the bell will tell you when they're ready.`
+          : `The AI drafted ${draft.drafts.length} persona${draft.drafts.length === 1 ? '' : 's'} from ${hostOf(draft.run.input.websiteUrl)}${waiting < draft.drafts.length ? `, ${waiting} not added yet` : ''}.`}
+      </Notice>
+    ) : null
 
   const { data: stats = {} } = useQuery({
     queryKey: queryKeys.prospects.personaStats(),
@@ -105,6 +131,7 @@ function PersonasPage() {
         </div>
       </div>
 
+      {draftNotice}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -188,7 +215,7 @@ function PersonasPage() {
           ))}
         </div>
       )}
-      {draftStatus && <DraftPersonasDialog isOpen={drafting} onClose={() => setDrafting(false)} websiteUrl={draftStatus.websiteUrl} ai={draftStatus.ai} />}
+      {draftStatus && <DraftPersonasDialog isOpen={drafting} onClose={() => setDrafting(false)} websiteUrl={draftStatus.websiteUrl} ai={draftStatus.ai} draft={draft} />}
     </div>
   )
 }

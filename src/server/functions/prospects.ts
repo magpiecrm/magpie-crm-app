@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
 import { HEADCOUNT_BUCKETS, SIGNAL_KINDS, SENIORITY_LEVELS } from '../prospecting/types'
 import { websiteUrlInput } from '../prospecting/personaInput'
+import type { SearchSuggestion } from '../prospecting/searchSuggest'
 
 const EMAIL_STATUSES = ['verified', 'format_confirmed', 'catch_all_likely', 'risky', 'unverified', 'not_found'] as const
 
@@ -197,26 +198,60 @@ export const prospectJobFn = createServerFn({ method: 'GET' })
   })
 
 const suggestSearchInput = z.object({ websiteUrl: websiteUrlInput })
+const suggestionIdInput = z.object({ id: z.uuid() })
 
 /**
- * People search filters the AI suggests from the workspace's own website, and
- * why. It never searches: the page fills its filters with them, and the user
- * changes them or runs the search. Whether it can run here, and the website to
- * start from, come from personaDraftStatusFn.
+ * The search the AI is suggesting from the workspace's own website (running,
+ * or finished and waiting to be applied), or null. It runs on the server
+ * (prospecting/aiRuns.ts), so Prospect Search can be left and come back to.
+ * Whether it can run here, and the website to start from, come from
+ * personaDraftStatusFn.
  */
-export const suggestSearchFn = createServerFn({ method: 'POST' })
+export const searchSuggestionFn = createServerFn({ method: 'GET' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  await requireAuth()
+  const { getAiRun } = await import('../prospecting/aiRuns')
+  return getAiRun<SearchSuggestion>('search')
+})
+
+/**
+ * Starts the AI suggesting people search filters from the website, and why,
+ * or gives the suggestion already running. It never searches: the page fills
+ * its filters with it, and the user changes them or runs the search.
+ */
+export const startSearchSuggestionFn = createServerFn({ method: 'POST' })
   .inputValidator((d: z.input<typeof suggestSearchInput>) => suggestSearchInput.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
-    const { suggestSearch } = await import('../prospecting/searchSuggest')
-    const { AiFailed } = await import('../copilot/generate')
-    try {
-      return await suggestSearch(data)
-    } catch (err) {
-      if (err instanceof AiFailed) throw new Error(`The AI couldn't finish: ${err.message} Try again in a moment.`)
-      throw err
-    }
+    const { suggestSearch, requireSuggestAi } = await import('../prospecting/searchSuggest')
+    const { startAiRun } = await import('../prospecting/aiRuns')
+    const { notify } = await import('../notify')
+    requireSuggestAi()
+    return startAiRun<SearchSuggestion>('search', data, (signal) => suggestSearch(data, { signal }), {
+      onUnseen: (run) => {
+        // The website's host: it's the workspace's own.
+        const host = new URL(run.input.websiteUrl).hostname.replace(/^www\./, '')
+        notify(
+          'ai_ready',
+          run.status === 'done'
+            ? `The AI suggested a search from ${host}. Open Prospect search by AI on Prospect Search to apply it.`
+            : `Suggesting a search from ${host} didn't finish: ${run.error}`,
+          { url: '/collection/prospect-search' },
+        )
+      },
+    })
+  })
+
+/** Forgets the AI's suggested search (once it's applied, or not wanted), stopping it if it's still running. */
+export const dismissSearchSuggestionFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: z.input<typeof suggestionIdInput>) => suggestionIdInput.parse(d))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    await requireAuth()
+    const { clearAiRun } = await import('../prospecting/aiRuns')
+    clearAiRun('search', data.id)
+    return { success: true }
   })
 
 /** SocialFetch balance plus verification setup and proxy health, for the sidebar. */

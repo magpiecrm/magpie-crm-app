@@ -15,6 +15,7 @@ const DEFAULT_URLS: Record<NotificationType, string> = {
   proposal_accepted: '/sales/deals',
   sequence_paused: '/sales/sequences',
   sequence_reply: '/sales/sequences',
+  ai_ready: '/collection/personas',
 }
 
 /**

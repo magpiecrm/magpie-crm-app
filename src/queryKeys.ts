@@ -20,6 +20,8 @@ export const queryKeys = {
     persona: (id: string) => ['prospects', 'personas', id] as const,
     personaStats: () => ['prospects', 'personas', 'stats'] as const,
     personaDraftStatus: () => ['prospects', 'personaDraftStatus'] as const,
+    /** The AI's persona draft or suggested search, running on the server (aiRuns.ts). */
+    aiRun: (kind: 'personas' | 'search') => ['prospects', 'aiRun', kind] as const,
   },
   email: {
     lists: () => ['email', 'lists'] as const,

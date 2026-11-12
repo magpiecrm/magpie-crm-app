@@ -59,16 +59,25 @@ export function draftPrompt(websiteUrl: string, note?: string): string {
   return [`Website: ${websiteUrl}`, note?.trim() ? `What they added about who they sell to:\n${note.trim()}` : null].filter(Boolean).join('\n\n')
 }
 
-/** Up to three personas from the website. Throws AiUnavailable (with why) or AiFailed. */
-export async function draftPersonas(input: { websiteUrl: string; note?: string }, deps: { generate?: typeof generate } = {}): Promise<PersonaDraft[]> {
+/** Throws AiUnavailable, saying why, where personas can't be drafted here. */
+export function requireDraftAi(): void {
   const ai = aiAvailable()
   if (!ai.ok) throw new AiUnavailable(ai.reason)
   if (!ai.web) throw new AiUnavailable("Drafting personas reads your website with Claude's web tools, so it needs an Anthropic key: add one in Settings → Copilot.")
+}
+
+/** Up to three personas from the website. Throws AiUnavailable (with why) or AiFailed. */
+export async function draftPersonas(
+  input: { websiteUrl: string; note?: string },
+  deps: { generate?: typeof generate; signal?: AbortSignal } = {},
+): Promise<PersonaDraft[]> {
+  requireDraftAi()
   const { answer } = await (deps.generate ?? generate)({
     system: SYSTEM,
     prompt: draftPrompt(input.websiteUrl, input.note),
     answer: ANSWER,
     web: { searches: 2, fetches: 4 },
+    signal: deps.signal,
   })
   recordUsage({ personaDrafts: 1 })
   // The website's host only: it's the workspace's own.
