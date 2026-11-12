@@ -32,6 +32,13 @@
     });
   }
 
+  // A survey that loaded before this script told its height to nobody (the
+  // script is async, so it can arrive late): ask each one on the page again.
+  var shown = document.querySelectorAll('iframe[data-magpie-survey]');
+  for (var j = 0; j < shown.length; j++) {
+    try { shown[j].contentWindow.postMessage({ type: 'em-survey:measure' }, origin); } catch (err) {}
+  }
+
   function key(id) { return 'magpie-survey-popup:' + id; }
   function remember(id) { try { localStorage.setItem(key(id), String(Date.now())); } catch (err) {} }
   function seen(id) {

@@ -163,7 +163,15 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     const observer = new ResizeObserver(send)
     observer.observe(document.body)
     send()
-    return () => observer.disconnect()
+    // The embed script can load after the first height went out, so it asks again.
+    const onAsk = (e: MessageEvent) => {
+      if (e.source === window.parent && e.data?.type === 'em-survey:measure') send()
+    }
+    window.addEventListener('message', onAsk)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('message', onAsk)
+    }
   }, [search.embed, surveyId])
 
   if (!start) return <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
