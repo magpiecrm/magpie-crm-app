@@ -77,9 +77,10 @@ export function SurveyBlockFrame({
         }`}
         onClick={e => e.stopPropagation()}
       >
+        {/* The panel says why; here, just the lock. */}
         {locked && (
-          <span className="mx-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground" title="People have answered it, so it can't change type or be deleted">
-            <Lock className="h-3.5 w-3.5" aria-hidden /> Has responses
+          <span className={`${tool} cursor-help`} title="It has responses, so it can't change type or be deleted" aria-label="Has responses">
+            <Lock className="h-4 w-4" />
           </span>
         )}
         <button

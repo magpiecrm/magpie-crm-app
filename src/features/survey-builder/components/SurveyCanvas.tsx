@@ -103,7 +103,8 @@ export function SurveyCanvas({
                 style={{
                   ...cardStyle(theme),
                   maxWidth: undefined,
-                  boxShadow: pageRing ? `0 0 0 2px ${mix(theme.accentColor, 0.6)}` : cardStyle(theme).boxShadow,
+                  // The editor's own colour, never the survey's: a brand with a pale accent would lose it.
+                  boxShadow: pageRing ? '0 0 0 2px var(--color-accent)' : cardStyle(theme).boxShadow,
                 }}
               >
                 {theme.logoUrl && (

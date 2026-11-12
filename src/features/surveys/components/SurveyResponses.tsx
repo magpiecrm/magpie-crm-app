@@ -593,7 +593,7 @@ function ResponseDialog({
           </span>
           {logicHidden > 0 && (
             <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-foreground">
-              Show the {logicHidden} logic skipped
+              Show {logicHidden} skipped by logic
               <Switch label="Show questions logic skipped" checked={everyQuestion} onChange={setEveryQuestion} />
             </label>
           )}

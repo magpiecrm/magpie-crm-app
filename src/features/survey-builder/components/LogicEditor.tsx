@@ -169,13 +169,15 @@ function RuleRow({
   onDelete: () => void
 }) {
   const [draft, setDraft] = useState<LogicRule | null>(null)
-  const sentence = `If ${describeCondition(design, rule.when)}, go to ${describeTarget(design, rule.goTo, pageIndex)}`
   const iconButton =
     'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
   const header = (
     <div className="flex items-start gap-1">
-      <button type="button" onClick={() => setEditing(true)} className="min-w-0 flex-1 cursor-pointer pt-1.5 text-left text-[13px] font-medium leading-snug text-foreground hover:underline">
-        {sentence}
+      <button type="button" onClick={() => setEditing(true)} className="group min-w-0 flex-1 cursor-pointer pt-1.5 text-left text-[13px] leading-snug text-foreground">
+        <span className="block font-medium group-hover:underline">If {describeCondition(design, rule.when)}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground">
+          go to <span className="rounded-full bg-accent/10 px-2 py-px font-medium text-foreground">{describeTarget(design, rule.goTo, pageIndex)}</span>
+        </span>
       </button>
       {'questionId' in rule.when && (
         <button type="button" onClick={() => setEditing(true)} className={iconButton} aria-label="Change this rule" title="Change this rule">
