@@ -101,7 +101,7 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
               <div key={label} className="min-w-0 px-3.5 py-3 sm:px-5 sm:py-4">
                 <dt className="text-[13px] text-muted-foreground">{label}</dt>
                 <dd className="mt-0.5 text-base font-semibold leading-snug tabular-nums text-foreground sm:text-xl">{value}</dd>
-                {sub && <dd className="mt-0.5 text-[13px] text-muted-foreground max-sm:hidden">{sub}</dd>}
+                {sub && <dd className="mt-0.5 text-xs text-muted-foreground sm:text-[13px]">{sub}</dd>}
               </div>
             ))}
           </dl>
@@ -189,7 +189,7 @@ function ResultTable({ rows, total }: { rows: Array<{ label: string; count: numb
 }
 
 /** The small icon switches at a card's top right: how to show its result, and for choices their order. */
-function CardControls({ views, view, setView, sortable, sorted, setSorted }: { views: View[]; view: View; setView: (v: View) => void; sortable?: boolean; sorted?: boolean; setSorted?: (v: boolean) => void }) {
+function CardControls({ views, view, setView, sortable, sorted, setSorted, phoneRow }: { views: View[]; view: View; setView: (v: View) => void; sortable?: boolean; sorted?: boolean; setSorted?: (v: boolean) => void; /** On a phone, a row of its own under the title, so the title keeps the width. */ phoneRow?: boolean }) {
   const LOOK: Record<View, { icon: typeof BarChart3; label: string }> = {
     chart: { icon: BarChart3, label: 'Chart' },
     weeks: { icon: TrendingUp, label: 'Week by week' },
@@ -200,7 +200,7 @@ function CardControls({ views, view, setView, sortable, sorted, setSorted }: { v
       active ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
     }`
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className={`flex shrink-0 items-center gap-1.5 ${phoneRow ? 'max-sm:order-last max-sm:w-full max-sm:pl-10' : ''}`}>
       {sortable && setSorted && (
         <button type="button" aria-pressed={!!sorted} onClick={() => setSorted(!sorted)} className={`${btn(!!sorted)} border border-border`} title={sorted ? 'In the order asked' : 'Most picked first'} aria-label="Most picked first">
           <ArrowDownWideNarrow className="h-4 w-4" />
@@ -245,17 +245,27 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
 
   return (
     <section className="rounded-md-m border border-border bg-card px-5 py-4 sm:px-6 sm:py-5" aria-labelledby={`q-${q.id}`}>
-      <header className="mb-4 flex items-start gap-3">
+      <header className="mb-4 flex flex-wrap items-start gap-x-3 gap-y-3">
         <BlockChip type={block.type} label={`Q${n}`} />
         <div className="min-w-0 flex-1">
           <h2 id={`q-${q.id}`} className="text-[15px] font-semibold leading-snug text-foreground">
             {q.title}
           </h2>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            {typeLabel} · {q.answered} of {started} answered
+            {typeLabel} ·{' '}
+            {q.seen < started ? (
+              // Logic shows it to some people only, so it's judged against those who saw it.
+              <>
+                {q.answered} of the {q.seen} who saw it answered <span className="max-sm:hidden">· only shown when logic sends people there</span>
+              </>
+            ) : (
+              <>
+                {q.answered} of {started} answered
+              </>
+            )}
           </p>
         </div>
-        {q.answered > 0 && views.length > 0 && <CardControls views={views} view={view} setView={setView} sortable={q.kind === 'choice' && rows.length > 2 && view !== 'weeks'} sorted={sorted} setSorted={setSorted} />}
+        {q.answered > 0 && views.length > 0 && <CardControls phoneRow views={views} view={view} setView={setView} sortable={q.kind === 'choice' && rows.length > 2 && view !== 'weeks'} sorted={sorted} setSorted={setSorted} />}
       </header>
 
       {q.answered === 0 ? (
@@ -267,18 +277,22 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
         </div>
       ) : q.kind === 'scale' ? (
         <div className="flex flex-col gap-6">
-          <dl className="grid grid-cols-3 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border sm:max-w-xl">
-            {[
-              ['Average', q.average === null ? '—' : q.average.toFixed(1), `out of ${q.min + q.distribution.length - 1}${block.type === 'rating' ? ' stars' : ''}`],
-              ['Most given', String(q.min + q.distribution.indexOf(Math.max(...q.distribution))), `by ${Math.max(...q.distribution)} people`],
-              ['Answered', String(q.answered), `of ${started}`],
-            ].map(([label, value, sub]) => (
-              <div key={label} className="min-w-0 px-4 py-3">
-                <dt className="text-[13px] text-muted-foreground">{label}</dt>
-                <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{value}</dd>
-                <dd className="truncate text-[13px] text-muted-foreground">{sub}</dd>
-              </div>
-            ))}
+          <dl className="grid grid-cols-2 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border">
+            {(() => {
+              const most = Math.max(...q.distribution)
+              const modes = q.distribution.map((c, i) => (c === most ? q.min + i : null)).filter((v): v is number => v !== null)
+              const tiles: Array<[string, string, string]> = [
+                ['Average', q.average === null ? '—' : q.average.toFixed(1), `out of ${q.min + q.distribution.length - 1}${block.type === 'rating' ? ' stars' : ''}`],
+                [modes.length > 1 ? 'Most given (a tie)' : 'Most given', modes.join(' and '), `by ${most} ${modes.length > 1 ? 'people each' : 'people'}`],
+              ]
+              return tiles.map(([label, value, sub]) => (
+                <div key={label} className="min-w-0 px-4 py-3">
+                  <dt className="text-[13px] text-muted-foreground">{label}</dt>
+                  <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{value}</dd>
+                  <dd className="truncate text-[13px] text-muted-foreground">{sub}</dd>
+                </div>
+              ))
+            })()}
           </dl>
           {view === 'table' ? <ResultTable rows={rows} total={q.answered} /> : <Distribution counts={q.distribution} start={q.min} labels={labels} average={q.average} leadMost />}
         </div>
@@ -310,15 +324,25 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
 
 const SHOWN = 5
 
-/** The latest written answers, five at first, then all of them with a search. */
+/** The latest written answers, five at first, then all of them with a search; the same words from several people show once, with how many. */
 function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: string; email: string | null }>; total: number }) {
   const [all, setAll] = useState(false)
   const [search, setSearch] = useState('')
   const q = search.trim().toLowerCase()
-  const shown = (all ? answers : answers.slice(0, SHOWN)).filter(a => !q || a.value.toLowerCase().includes(q))
+  const grouped = useMemo(() => {
+    const byText = new Map<string, { value: string; at: string; email: string | null; n: number }>()
+    for (const a of answers) {
+      const key = a.value.trim().toLowerCase()
+      const hit = byText.get(key)
+      if (hit) hit.n += 1
+      else byText.set(key, { ...a, n: 1 })
+    }
+    return [...byText.values()]
+  }, [answers])
+  const shown = (all ? grouped : grouped.slice(0, SHOWN)).filter(a => !q || a.value.toLowerCase().includes(q))
   return (
     <div className="flex flex-col gap-3">
-      {all && answers.length > SHOWN && (
+      {all && grouped.length > SHOWN && (
         <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <input className={`${INPUT_CLASS} pl-9`} placeholder="Search answers" aria-label="Search answers" value={search} onChange={e => setSearch(e.target.value)} />
@@ -326,19 +350,20 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
       )}
       <ul className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
         {shown.map((a, i) => (
-          <li key={i} className="px-3.5 py-2.5">
-            <p className="whitespace-pre-wrap break-words text-sm text-foreground">{a.value}</p>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {a.email ?? 'Anonymous'} · {whenShort(a.at)}
-            </p>
+          <li key={i} className="flex items-start gap-3 px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">{a.value}</p>
+              <p className="mt-0.5 text-[13px] text-muted-foreground">{a.n > 1 ? `Latest: ${a.email ?? 'Anonymous'} · ${whenShort(a.at)}` : `${a.email ?? 'Anonymous'} · ${whenShort(a.at)}`}</p>
+            </div>
+            {a.n > 1 && <span className="shrink-0 rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium tabular-nums text-foreground">{a.n} people</span>}
           </li>
         ))}
         {shown.length === 0 && <li className="px-3.5 py-3 text-sm text-muted-foreground">No answers with “{search.trim()}”.</li>}
       </ul>
-      {answers.length > SHOWN && (
+      {grouped.length > SHOWN && (
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" size="sm" onClick={() => (setAll(v => !v), setSearch(''))}>
-            {all ? 'Show fewer' : answers.length < total ? `Show the latest ${answers.length}` : `Show all ${answers.length}`}
+            {all ? 'Show fewer' : answers.length < total ? `Show the latest ${answers.length}` : `Show all ${total}`}
           </Button>
           {total > answers.length && <span className="text-[13px] text-muted-foreground">Of {total}. Every answer is in the Responses tab and its export.</span>}
         </div>

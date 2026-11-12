@@ -204,22 +204,22 @@ function SurveysPage() {
   )
 }
 
-/** No surveys yet: what they're for, and a few to start from. */
+/** No surveys yet: what they're for, and a few to start from, laid out as on New survey. */
 function EmptySurveys() {
   const { pick, pending, error } = useCreateSurvey()
   return (
-    <div className="rounded-md-m border border-border bg-card px-5 py-10 sm:px-10 sm:py-14">
-      <div className="mx-auto flex max-w-xl flex-col items-center text-center">
-        <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
-          <ClipboardList className="h-6 w-6" aria-hidden />
+    <div>
+      <div className="mb-6 flex items-start gap-4 rounded-md-m border border-border bg-card px-5 py-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <ClipboardList className="h-5 w-5" aria-hidden />
         </span>
-        <h2 className="text-lg font-semibold text-foreground">Make your first survey</h2>
-        <p className="mt-1.5 text-muted-foreground">Measure NPS, ask how onboarding went, or qualify leads. Pick a starting point and change anything you like.</p>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Make your first survey</h2>
+          <p className="mt-1 text-muted-foreground">Measure NPS, ask how onboarding went, or qualify leads. Pick a starting point below and change anything you like.</p>
+        </div>
       </div>
-      <div className="mx-auto mt-8 max-w-4xl">
-        {error && <Notice level="error" className="mb-4">{error}</Notice>}
-        <StarterTiles onPick={pick} pending={pending} />
-      </div>
+      {error && <Notice level="error" className="mb-4">{error}</Notice>}
+      <StarterTiles onPick={pick} pending={pending} />
     </div>
   )
 }

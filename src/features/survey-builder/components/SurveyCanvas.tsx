@@ -106,8 +106,8 @@ export function SurveyCanvas({
                   boxShadow: pageRing ? `0 0 0 2px ${mix(theme.accentColor, 0.6)}` : cardStyle(theme).boxShadow,
                 }}
               >
-                {theme.logoUrl && pageIndex === 0 && (
-                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                {theme.logoUrl && (
+                  <div style={{ textAlign: 'left', marginBottom: 20 }}>
                     <img src={theme.logoUrl} alt="" style={{ maxHeight: 40 }} />
                   </div>
                 )}

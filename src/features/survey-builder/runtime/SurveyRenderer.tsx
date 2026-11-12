@@ -147,8 +147,11 @@ export function SurveyRenderer({
     fontFamily: theme.fontFamily,
     cursor: submitting ? 'wait' : 'pointer',
     borderRadius: theme.buttonRadius,
-    border: primary ? 'none' : `1px solid ${mix(theme.textColor, 0.42)}`,
+    // Back is a quiet text button, so the way on is the one that stands out.
+    border: primary ? 'none' : '1px solid transparent',
     background: primary ? theme.accentColor : 'transparent',
+    textDecoration: primary ? undefined : 'underline',
+    textUnderlineOffset: primary ? undefined : 3,
     color: primary ? theme.buttonTextColor : theme.textColor,
     opacity: submitting ? 0.7 : 1,
   })
@@ -170,7 +173,7 @@ export function SurveyRenderer({
       <SurveyStyles theme={theme} />
       <form style={card} onSubmit={handleNext} noValidate>
         {theme.logoUrl && (
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <div style={{ textAlign: 'left', marginBottom: 20 }}>
             <img src={theme.logoUrl} alt="" style={{ maxHeight: 40 }} />
           </div>
         )}

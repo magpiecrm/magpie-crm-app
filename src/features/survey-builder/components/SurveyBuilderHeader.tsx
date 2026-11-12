@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Eye, Laptop, MessageSquare, Rocket, Save, Smartphone } from 'lucide-react'
+import { ArrowLeft, Check, Eye, Laptop, MessageSquare, Rocket, Save, Share2, Smartphone } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import type { SurveyStatus } from '../types'
 import { SurveyStatusBadge } from '../../surveys/components/SurveyStatusBadge'
@@ -17,6 +17,7 @@ interface SurveyBuilderHeaderProps {
   isDirty: boolean
   isChatOpen: boolean
   setIsChatOpen: (open: boolean) => void
+  onShare: () => void
 }
 
 export function SurveyBuilderHeader({
@@ -33,6 +34,7 @@ export function SurveyBuilderHeader({
   isDirty,
   isChatOpen,
   setIsChatOpen,
+  onShare,
 }: SurveyBuilderHeaderProps) {
   const live = status === 'published'
   const device = (mode: 'desktop' | 'mobile', label: string, Icon: typeof Laptop) => (
@@ -109,9 +111,13 @@ export function SurveyBuilderHeader({
         </Button>
         {live ? (
           // A live survey changes for respondents as soon as it's saved, so saving is publishing.
-          isDirty && (
+          isDirty ? (
             <Button onClick={onSave} isLoading={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label="Publish changes" className="max-sm:!px-2.5">
               <span className="max-sm:hidden">Publish changes</span>
+            </Button>
+          ) : (
+            <Button onClick={onShare} leftIcon={<Share2 className="h-4 w-4" />} aria-label="Share" className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">Share</span>
             </Button>
           )
         ) : (

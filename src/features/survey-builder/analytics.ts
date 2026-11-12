@@ -3,7 +3,10 @@ import { CHOICE_TYPES, isQuestionType } from './types'
 import { answerToDisplay } from './logic/answers'
 import { scaleRange } from './logic/validate'
 
-export type QuestionSummary =
+/** Every question's summary carries how many responses reached its page, so logic-gated questions are judged against those who saw them. */
+type Seen = { seen: number }
+
+export type QuestionSummary = Seen & (
   | { kind: 'choice'; id: string; title: string; type: string; answered: number; options: Array<{ id: string; label: string; count: number }>; other: string[] }
   | {
       kind: 'nps'
@@ -22,7 +25,7 @@ export type QuestionSummary =
   | { kind: 'scale'; id: string; title: string; type: string; answered: number; average: number | null; min: number; distribution: number[] }
   | { kind: 'yes_no'; id: string; title: string; type: string; answered: number; yes: number; no: number }
   | { kind: 'number'; id: string; title: string; type: string; answered: number; average: number | null; min: number | null; max: number | null }
-  | { kind: 'text'; id: string; title: string; type: string; answered: number; latest: Array<{ value: string; at: string; email: string | null }> }
+  | { kind: 'text'; id: string; title: string; type: string; answered: number; latest: Array<{ value: string; at: string; email: string | null }> })
 
 export interface SurveySummary {
   started: number
@@ -56,8 +59,9 @@ function weekStart(iso: string): string {
   return d.toISOString().slice(0, 10)
 }
 
-function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): QuestionSummary {
-  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type }
+function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], pageId: string, firstPage: boolean): QuestionSummary {
+  const seen = responses.filter(r => r.path.includes(pageId) || r.current_page_id === pageId || (firstPage && r.path.length === 0)).length
+  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type, seen }
   const answered = responses.filter(r => r.answers[block.id] !== undefined && r.answers[block.id] !== null)
   const values = answered.map(r => r.answers[block.id])
 
@@ -164,6 +168,6 @@ export function computeSurveySummary(design: SurveyDesign, responses: SurveyResp
       branch: isBranchPage(design, i),
     })),
     bySource,
-    questions: design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses))),
+    questions: design.pages.flatMap((p, i) => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses, p.id, i === 0))),
   }
 }

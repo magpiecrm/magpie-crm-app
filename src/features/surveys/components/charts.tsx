@@ -10,11 +10,8 @@
  * colour is never the only channel.
  */
 
-/** The answer most people gave, picked out from the rest in the app's teal. */
-const LEAD = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
-/** Every other bar, on every chart: one neutral ink, 3:1 on the card. */
-export const BAR = 'bg-[#868d99] dark:bg-[#7d8491]'
-const REST = BAR
+/** Every bar outside NPS, on every chart: one neutral ink, 3:1 on the card. Teal means promoters and nothing else. */
+export const BAR = 'bg-[#868d99] dark:bg-[#8b919c]'
 const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
 const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
 const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
@@ -26,7 +23,8 @@ const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100)
  * Horizontal bars, one per row, each its share of everyone who answered, on a
  * track that is 100% and no wider than it needs to be, with its numbers right
  * after it. The label column is the same width on every card, so bars line up
- * down the page; the most-given answer is marked in teal.
+ * down the page. The most-given answer (all of them, if tied) is marked in
+ * words, not colour.
  */
 export function BarList({ rows, total, lead = true }: { rows: Array<{ label: string; count: number; note?: string }>; total: number; lead?: boolean }) {
   const top = Math.max(...rows.map(r => r.count))
@@ -35,15 +33,18 @@ export function BarList({ rows, total, lead = true }: { rows: Array<{ label: str
       {rows.map((row, i) => {
         const isLead = lead && row.count > 0 && row.count === top
         return (
-          <li key={i} className="grid items-center gap-x-3 gap-y-1 text-sm max-sm:grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,14rem)_minmax(0,34rem)_6rem]">
-            <span className={`min-w-0 truncate ${isLead ? 'font-medium text-foreground' : 'text-foreground'}`} title={row.note ? `${row.label}: ${row.note}` : row.label}>
+          <li key={i} className="grid items-center gap-x-3 gap-y-1 text-sm max-sm:grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,14rem)_minmax(0,34rem)_auto]">
+            <span className={`min-w-0 truncate ${isLead ? 'font-semibold text-foreground' : 'text-foreground'}`} title={row.note ? `${row.label}: ${row.note}` : row.label}>
               {row.label}
             </span>
-            <span className="tabular-nums text-muted-foreground max-sm:text-right sm:order-last">
-              <span className="font-semibold text-foreground">{pct(row.count, total)}%</span> · {row.count}
+            <span className="flex items-center gap-2 tabular-nums text-muted-foreground max-sm:justify-end sm:order-last">
+              <span>
+                <span className="font-semibold text-foreground">{pct(row.count, total)}%</span> · {row.count}
+              </span>
+              {isLead && <span className="rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium text-foreground">Most picked</span>}
             </span>
             <span className={`h-4 overflow-hidden rounded-r-[4px] max-sm:col-span-2 ${TRACK}`} title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
-              <span className={`block h-full rounded-r-[4px] ${isLead ? LEAD : REST}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
+              <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
             </span>
           </li>
         )
@@ -61,7 +62,7 @@ export function Distribution({
   average,
   leadMost = false,
 }: {
-  /** Mark the most-given value in teal (a scale's mode); NPS colours by group instead. */
+  /** Mark the most-given value's count in bold (a scale's mode); NPS colours by group instead. */
   leadMost?: boolean
   counts: number[]
   start: number
@@ -85,20 +86,20 @@ export function Distribution({
           </span>
         </div>
       )}
-      <div className="relative flex h-36 items-end gap-[2px]">
+      <div className="relative flex h-36 items-end gap-[2px] border-b border-foreground/25">
         {avgAt !== null && <span aria-hidden className="pointer-events-none absolute bottom-0 top-0 z-[1] border-l-2 border-dashed border-foreground/60" style={{ left: `${avgAt}%` }} />}
         {counts.map((count, i) => {
           const value = start + i
           const top = leadMost && count > 0 && count === max
           return (
             <div key={value} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${value}: ${count} (${pct(count, total)}%)`}>
-              <span className="text-xs tabular-nums text-muted-foreground">{count || ''}</span>
-              <div className={`relative w-[62%] rounded-t-[4px] ${colorFor?.(value) ?? (top ? LEAD : BAR)}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 8 : 0 }} />
+              <span className={`text-xs tabular-nums ${top ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{count || ''}</span>
+              <div className={`relative w-[62%] rounded-t-[4px] ${colorFor?.(value) ?? BAR}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 8 : 0 }} />
             </div>
           )
         })}
       </div>
-      <div className="mt-1 flex gap-[2px] border-t border-border pt-1.5">
+      <div className="mt-1.5 flex gap-[2px]">
         {counts.map((_, i) => (
           <span key={i} className="min-w-0 flex-1 text-center text-xs tabular-nums text-muted-foreground">
             {start + i}
@@ -118,8 +119,8 @@ export function Distribution({
 export const npsBand = (value: number) => (value <= 6 ? DETRACTOR : value <= 8 ? PASSIVE : PROMOTER)
 
 /**
- * An NPS result as a band of four aligned tiles (the score, then each group's
- * share and count) over the groups as one stacked bar.
+ * An NPS result as a band of four aligned tiles: the score, large, then each
+ * group's share and count beside it (the columns below carry the same colours).
  */
 export function NpsSummary({ score, detractors, passives, promoters }: { score: number | null; detractors: number; passives: number; promoters: number }) {
   const total = detractors + passives + promoters
@@ -130,10 +131,10 @@ export function NpsSummary({ score, detractors, passives, promoters }: { score: 
   ]
   return (
     <div className="flex flex-col gap-3">
-      <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-s border border-border max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-4 sm:divide-x">
+      <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-s border border-border max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-[1.3fr_1fr_1fr_1fr] sm:divide-x">
         <div className="px-4 py-3">
-          <dt className="text-[13px] text-muted-foreground">NPS</dt>
-          <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
+          <dt className="text-[13px] font-medium text-foreground">NPS</dt>
+          <dd className="text-[2.75rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
           <dd className="text-[13px] text-muted-foreground">from −100 to +100</dd>
         </div>
         {parts.map(p => (
@@ -142,22 +143,13 @@ export function NpsSummary({ score, detractors, passives, promoters }: { score: 
               <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${p.cls}`} aria-hidden />
               {p.label}
             </dt>
-            <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{pct(p.count, total)}%</dd>
+            <dd className="text-2xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{pct(p.count, total)}%</dd>
             <dd className="text-[13px] text-muted-foreground">
               {p.count} scored {p.range}
             </dd>
           </div>
         ))}
       </dl>
-      {/* The 2px gap is the surface showing between stacked segments. */}
-      <div className="flex h-3 gap-[2px]" aria-hidden>
-        {parts.map(
-          p =>
-            p.count > 0 && (
-              <div key={p.label} title={`${p.label} (${p.range}): ${p.count}, ${pct(p.count, total)}%`} className={`${p.cls} h-full first:rounded-l-[4px] last:rounded-r-[4px]`} style={{ width: `${(p.count / total) * 100}%` }} />
-            ),
-        )}
-      </div>
     </div>
   )
 }

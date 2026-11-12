@@ -3,7 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock, Mail, Search, Trash2, UserRound } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { deleteSurveyResponseFn, deleteSurveyResponsesFn, getSurveyResponsesFn } from '../../../server/functions'
+import { deleteSurveyResponseFn, deleteSurveyResponsesFn, getContactFieldsFn, getSurveyResponsesFn } from '../../../server/functions'
+import { BUILTIN_FIELD_LABELS, type ContactFieldDef } from '../../contacts/contactFields'
 import { Select } from '../../../components/ui/Select'
 import { Button } from '../../../components/ui/Button'
 import { INPUT_CLASS } from '../../../components/ui/Field'
@@ -34,8 +35,8 @@ const sourceText = (r: ResponseRow) => [SOURCE_LABELS[r.source] ?? r.source, r.c
 
 /** What a question's cell says when it has no answer: why not. */
 function missing(r: ResponseRow, q: Question): string {
-  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'No answer'
-  return r.status === 'completed' ? 'Skipped' : 'Not reached'
+  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'Left blank'
+  return r.status === 'completed' ? 'Not shown (logic)' : 'Stopped before this'
 }
 
 /** An answer drawn for a table cell or the response pop-up: an NPS score in its group's colour, stars for a rating, choices as pills. */
@@ -89,12 +90,12 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
   return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
 }
 
-/** No answer in a table cell, in the same words as the response pop-up: Skipped (by logic), No answer, Not reached. */
+/** No answer in a table cell: a quiet dash, the reason (the pop-up's words) on hover and for screen readers. */
 function MissingCell({ why }: { why: string }) {
-  const title = why === 'Skipped' ? 'Logic skipped this question for them' : why === 'Not reached' ? 'They stopped before this question' : 'They saw it and left it blank'
   return (
-    <span className="text-[13px] text-muted-foreground" title={title}>
-      {why}
+    <span className="text-muted-foreground/80" title={why}>
+      <span aria-hidden>—</span>
+      <span className="sr-only">{why}</span>
     </span>
   )
 }
@@ -127,6 +128,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   const [openId, setOpenId] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
 
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const { data: responses = [], isLoading } = useQuery({
     queryKey: queryKeys.surveys.responses(survey.id),
     queryFn: () => getSurveyResponsesFn({ data: { id: survey.id } }),
@@ -300,7 +302,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         <p className="text-[13px] text-muted-foreground" aria-live="polite">
           {filtered ? `${shown.length} match` : `${responses.length} response${responses.length === 1 ? '' : 's'}`}
           {' · '}
-          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown{scrolls ? ' · scroll sideways for more' : ''}
+          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown
         </p>
       </div>
 
@@ -338,7 +340,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         </ul>
 
         <div className="relative hidden md:block">
-        <div ref={scroller} className="overflow-x-auto" onScroll={measure}>
+        <div ref={scroller} className="overflow-x-auto [scrollbar-width:thin]" onScroll={measure} tabIndex={scrolls ? 0 : undefined} aria-label={scrolls ? 'Responses table, scrolls sideways' : undefined}>
           <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${35 + columns.length * 12.5}rem` }}>
             <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
               <tr>
@@ -478,6 +480,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         <ResponseDialog
           response={open}
           questions={questions}
+          contactFields={contactFields}
           position={`${openIndex + 1} of ${shown.length}`}
           onPrev={openIndex > 0 ? () => setOpenId(shown[openIndex - 1].id) : undefined}
           onNext={openIndex < shown.length - 1 ? () => setOpenId(shown[openIndex + 1].id) : undefined}
@@ -501,6 +504,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
 function ResponseDialog({
   response: r,
   questions,
+  contactFields,
   position,
   onPrev,
   onNext,
@@ -510,6 +514,7 @@ function ResponseDialog({
 }: {
   response: ResponseRow
   questions: Question[]
+  contactFields: ContactFieldDef[]
   position: string
   onPrev?: () => void
   onNext?: () => void
@@ -518,9 +523,19 @@ function ResponseDialog({
   deleting: boolean
 }) {
   const navigate = useNavigate()
-  const [onlyAnswered, setOnlyAnswered] = useState(false)
+  // Questions logic never showed them are left out unless asked for: they say nothing about this person.
+  const [everyQuestion, setEveryQuestion] = useState(false)
   const person = personOf(r)
-  const shownQuestions = onlyAnswered ? questions.filter(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null) : questions
+  const hiddenByLogic = (x: Question) => (r.answers[x.block.id] === undefined || r.answers[x.block.id] === null) && missing(r, x) === 'Not shown (logic)'
+  const shownQuestions = everyQuestion ? questions : questions.filter(x => !hiddenByLogic(x))
+  const logicHidden = questions.filter(hiddenByLogic).length
+  // What this response wrote onto the contact: the questions set to save, that they answered.
+  const savedFields = questions
+    .filter(x => x.block.question?.mapTo && r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null)
+    .map(x => {
+      const f = x.block.question!.mapTo!.field
+      return f.startsWith('custom:') ? (contactFields.find(c => c.key === f.slice(7))?.label ?? f.slice(7)) : (BUILTIN_FIELD_LABELS[f as keyof typeof BUILTIN_FIELD_LABELS] ?? f)
+    })
   const took = r.completed_at ? Math.max(0, (Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000) : null
   return (
     <Dialog
@@ -543,6 +558,14 @@ function ResponseDialog({
     >
       <DialogBody className="flex flex-col gap-4">
         <ul className="flex flex-col gap-2 rounded-md-s bg-muted/50 px-3.5 py-3 text-sm text-foreground">
+          {r.isContact && savedFields.length > 0 && (
+            <li className="flex items-start gap-2.5">
+              <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">
+                Saved to their contact: <span className="font-medium">{savedFields.join(', ')}</span>
+              </span>
+            </li>
+          )}
           <li className="flex items-start gap-2.5">
             <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             <span className="min-w-0">
@@ -568,10 +591,12 @@ function ResponseDialog({
           <span className="text-[13px] text-muted-foreground">
             {questions.filter(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null).length} of {questions.length} questions answered
           </span>
-          <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-foreground">
-            Hide unanswered
-            <Switch label="Hide unanswered questions" checked={onlyAnswered} onChange={setOnlyAnswered} />
-          </label>
+          {logicHidden > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-foreground">
+              Show the {logicHidden} logic skipped
+              <Switch label="Show questions logic skipped" checked={everyQuestion} onChange={setEveryQuestion} />
+            </label>
+          )}
         </div>
         <ol className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
           {shownQuestions.map(x => {

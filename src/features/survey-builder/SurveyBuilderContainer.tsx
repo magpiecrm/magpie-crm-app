@@ -23,6 +23,7 @@ import { SurveyCanvas } from './components/SurveyCanvas'
 import { SurveyBlockEditor } from './components/SurveyBlockEditor'
 import { BlockChip } from './blockIcons'
 import { SurveyRenderer } from './runtime/SurveyRenderer'
+import { SurveyShareDialog } from '../surveys/components/SurveyShareDialog'
 import { confirmDialog } from '../../components/ui/confirm'
 
 export interface SurveyBuilderProps {
@@ -79,6 +80,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [showPreview, setShowPreview] = useState(false)
   const [previewRun, setPreviewRun] = useState(0)
+  const [sharing, setSharing] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
@@ -278,7 +280,9 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isDirty={isDirty}
         isChatOpen={isChatOpen}
         setIsChatOpen={setIsChatOpen}
+        onShare={() => setSharing(true)}
       />
+      {sharing && <SurveyShareDialog survey={{ id: survey.id, name, status }} onClose={() => setSharing(false)} />}
 
       {notice && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-2 flex items-start gap-2 shrink-0">
@@ -413,7 +417,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         onClose={() => setShowPreview(false)}
         title="Preview"
         description={`As on ${canvasMode === 'mobile' ? 'a phone' : 'a computer'}. Answer it as a respondent would: logic and checks run, nothing is saved.`}
-        className="sm:max-w-5xl"
+        className="sm:max-w-6xl"
         headerActions={
           <div className="mr-8 flex items-center gap-2">
             <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setPreviewRun(n => n + 1)}>

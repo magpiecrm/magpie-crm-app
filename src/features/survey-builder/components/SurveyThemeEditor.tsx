@@ -16,6 +16,16 @@ const SURVEY_FONTS = [
   { label: 'Times (serif)', value: "'Times New Roman', Times, Georgia, serif" },
 ] as const
 
+/** Ready-made looks: colours that work together, each button text at 4.5:1 or better on its button. */
+const LOOKS: Array<{ name: string; theme: Pick<SurveyTheme, 'accentColor' | 'buttonTextColor' | 'pageBgColor' | 'cardBgColor' | 'textColor'> }> = [
+  { name: 'Plain', theme: { accentColor: '#27272a', buttonTextColor: '#ffffff', pageBgColor: '#f4f4f5', cardBgColor: '#ffffff', textColor: '#18181b' } },
+  { name: 'Teal', theme: { accentColor: '#0f766e', buttonTextColor: '#ffffff', pageBgColor: '#eef6f5', cardBgColor: '#ffffff', textColor: '#13201f' } },
+  { name: 'Indigo', theme: { accentColor: '#4f46e5', buttonTextColor: '#ffffff', pageBgColor: '#f1f1fb', cardBgColor: '#ffffff', textColor: '#1b1b2f' } },
+  { name: 'Amber', theme: { accentColor: '#b45309', buttonTextColor: '#ffffff', pageBgColor: '#faf6f0', cardBgColor: '#ffffff', textColor: '#2b2118' } },
+  { name: 'Rose', theme: { accentColor: '#be123c', buttonTextColor: '#ffffff', pageBgColor: '#fbf1f3', cardBgColor: '#ffffff', textColor: '#2a1419' } },
+  { name: 'Night', theme: { accentColor: '#22d3ee', buttonTextColor: '#0f172a', pageBgColor: '#0f172a', cardBgColor: '#1e293b', textColor: '#e2e8f0' } },
+]
+
 interface SurveyThemeEditorProps {
   theme: SurveyTheme
   setTheme: (updates: Partial<SurveyTheme>) => void
@@ -27,6 +37,30 @@ export function SurveyThemeEditor({ theme, setTheme }: SurveyThemeEditorProps) {
   const known = SURVEY_FONTS.some(f => f.value === theme.fontFamily)
   return (
     <div className="flex-1 space-y-7 overflow-y-auto p-5 custom-scrollbar">
+      <section className="space-y-3">
+        <h3 className={sectionLabelClass}>Looks</h3>
+        <div className="grid grid-cols-3 gap-2" role="group" aria-label="Ready-made looks">
+          {LOOKS.map(look => {
+            const on = (Object.keys(look.theme) as Array<keyof typeof look.theme>).every(k => theme[k].toLowerCase() === look.theme[k])
+            return (
+              <button
+                key={look.name}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setTheme(look.theme)}
+                className={`flex cursor-pointer flex-col items-stretch gap-1.5 rounded-md-s border p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${on ? 'border-accent ring-1 ring-accent' : 'border-border hover:border-foreground/30'}`}
+              >
+                <span aria-hidden className="flex h-9 items-center justify-center gap-1 rounded-[5px]" style={{ background: look.theme.pageBgColor }}>
+                  <span className="h-5 w-8 rounded-[3px]" style={{ background: look.theme.cardBgColor, boxShadow: '0 0 0 1px rgba(0,0,0,.06)' }} />
+                  <span className="h-5 w-5 rounded-[3px]" style={{ background: look.theme.accentColor }} />
+                </span>
+                <span className="px-0.5 text-xs font-medium text-foreground">{look.name}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
       <section className="space-y-4">
         <h3 className={sectionLabelClass}>Brand</h3>
         <SurveyImageField label="Logo" hint="Shown at the top of the first page and the thank-you." value={theme.logoUrl ?? ''} onChange={logoUrl => setTheme({ logoUrl: logoUrl || undefined })} />

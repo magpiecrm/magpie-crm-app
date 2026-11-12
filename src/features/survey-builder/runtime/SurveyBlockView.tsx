@@ -85,11 +85,11 @@ export function SurveyBlockView({ block, theme, value, onChange, error, disabled
             <EditableText value={q.title} onChange={onEditText} placeholder="Type the question" />
           ) : (
             // The asterisk is joined to the last word, so it never wraps onto a line of its own.
-            <QuestionTitle title={q.title} required={q.required} accent={theme.accentColor} />
+            <QuestionTitle title={q.title} required={q.required} />
           )}
           {onEditText && q.required && (
             // A word joiner, so the mark can't break away from the title being typed.
-            <span style={{ color: theme.accentColor, whiteSpace: 'nowrap' }} aria-hidden>
+            <span style={{ opacity: 0.6, whiteSpace: 'nowrap' }} aria-hidden>
               {'\u2060\u00a0*'}
             </span>
           )}
@@ -156,7 +156,7 @@ export function SurveyBlockView({ block, theme, value, onChange, error, disabled
 }
 
 /** A question's title with its required mark held to the last word by a no-break space. */
-function QuestionTitle({ title, required, accent }: { title: string; required: boolean; accent: string }) {
+function QuestionTitle({ title, required }: { title: string; required: boolean }) {
   if (!title) return <em style={{ opacity: 0.5 }}>Untitled question</em>
   if (!required) return <>{title}</>
   const cut = title.trimEnd().lastIndexOf(' ')
@@ -168,7 +168,7 @@ function QuestionTitle({ title, required, accent }: { title: string; required: b
       <span style={{ whiteSpace: 'nowrap' }}>
         {last}
         {'\u00a0'}
-        <span style={{ color: accent }} aria-hidden>
+        <span style={{ opacity: 0.6 }} aria-hidden>
           *
         </span>
         <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}> (required)</span>

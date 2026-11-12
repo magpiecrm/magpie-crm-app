@@ -168,6 +168,7 @@ function RuleRow({
   onChange: (rule: LogicRule) => void
   onDelete: () => void
 }) {
+  const [draft, setDraft] = useState<LogicRule | null>(null)
   const sentence = `If ${describeCondition(design, rule.when)}, go to ${describeTarget(design, rule.goTo, pageIndex)}`
   const iconButton =
     'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
@@ -197,15 +198,18 @@ function RuleRow({
     )
   }
 
-  const when = rule.when
+  // The pop-up changes a draft; Save keeps it, Cancel (or closing) leaves the rule as it was.
+  const draftRule = draft ?? rule
+  const when = ('questionId' in draftRule.when ? draftRule.when : rule.when) as typeof rule.when & { questionId: string }
   const question = questions.find(q => q.id === when.questionId)
   const ops = opsFor(question)
-  const setWhen = (patch: Partial<typeof when>) => onChange({ ...rule, when: { ...when, ...patch } })
+  const setWhen = (patch: Partial<typeof when>) => setDraft({ ...draftRule, when: { ...when, ...patch } })
+  const close = () => (setDraft(null), setEditing(false))
 
   return (
     <div className="rounded-md-s border border-border bg-background p-2.5">
       {header}
-      <Dialog isOpen={editing} onClose={() => setEditing(false)} title="Change this rule" description={sentence} className="sm:max-w-lg">
+      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftRule.when)}, go to ${describeTarget(design, draftRule.goTo, pageIndex)}`} className="sm:max-w-lg">
         <DialogBody className="flex flex-col gap-4">
           <div className="space-y-1.5">
             <span className={labelClass}>If the answer to</span>
@@ -248,11 +252,24 @@ function RuleRow({
           {question?.type === 'nps' && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
           <div className="space-y-1.5">
             <span className={labelClass}>Go to</span>
-            {targetSelect(rule.goTo, goTo => onChange({ ...rule, goTo }))}
+            {targetSelect(draftRule.goTo, goTo => setDraft({ ...draftRule, goTo }))}
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button onClick={() => setEditing(false)}>Done</Button>
+          <Button variant="ghost" leftIcon={<Trash2 className="h-4 w-4" />} className="sm:mr-auto !text-destructive hover:!bg-destructive/10" onClick={() => (close(), onDelete())}>
+            Delete rule
+          </Button>
+          <Button variant="secondary" onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              if (draft) onChange(draft)
+              close()
+            }}
+          >
+            Save rule
+          </Button>
         </DialogFooter>
       </Dialog>
     </div>
