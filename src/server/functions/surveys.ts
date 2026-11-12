@@ -146,6 +146,25 @@ export const getSurveyResponsesFn = createServerFn({ method: 'GET' })
       })
   })
 
+/** The team's tags and note on one response; neither is shown to the respondent. */
+export const updateSurveyResponseNotesFn = createServerFn({ method: 'POST' })
+  .inputValidator((d: { id: string; tags?: string[]; note?: string }) => ({
+    id: String(d.id),
+    tags: Array.isArray(d.tags) ? [...new Set(d.tags.map(t => String(t).trim().slice(0, 40)).filter(Boolean))].slice(0, 20) : undefined,
+    note: typeof d.note === 'string' ? d.note.slice(0, 4000) : undefined,
+  }))
+  .handler(async ({ data }) => {
+    const { requireAuth } = await import('../auth.server')
+    const { db } = await import('../db')
+    await requireAuth()
+    const response = db.getSurveyResponse(data.id)
+    if (!response) throw new Error('Response not found')
+    if (data.tags !== undefined) response.tags = data.tags
+    if (data.note !== undefined) response.note = data.note.trim() || undefined
+    db.saveSurveyResponse(response)
+    return { tags: response.tags ?? [], note: response.note ?? '' }
+  })
+
 export const deleteSurveyResponsesFn = createServerFn({ method: 'POST' })
   .inputValidator((d: { surveyId: string; ids: string[] }) => ({ surveyId: String(d.surveyId), ids: Array.isArray(d.ids) ? d.ids.map(String).slice(0, 5000) : [] }))
   .handler(async ({ data }) => {

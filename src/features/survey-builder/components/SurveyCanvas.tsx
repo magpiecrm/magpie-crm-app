@@ -30,6 +30,8 @@ interface SurveyCanvasProps {
   onDuplicate: (block: SurveyBlock, pageId: string, index: number) => void
   /** Add a question or content block at a place on a page, from a "+" between blocks. */
   onInsert: (type: SurveyBlockType, pageId: string, index: number) => void
+  /** The Add tab is open, so mark the page where a picked question will go. */
+  showAddTarget: boolean
 }
 
 type Spot = { pageId: string; index: number }
@@ -62,7 +64,7 @@ function InsertPoint({ at, open, setOpen, onPick }: { at: Spot; open: Spot | nul
         <Plus className="h-3.5 w-3.5" />
       </button>
       {isOpen && (
-        <div role="dialog" aria-label="Add a question here" className="absolute left-1/2 top-5 z-40 w-[22rem] -translate-x-1/2 rounded-md-m border border-border bg-popover p-3 text-foreground shadow-xl">
+        <div role="dialog" aria-label="Add a question here" className="absolute left-1/2 top-5 z-40 max-h-[min(30rem,calc(100dvh-14rem))] w-[22rem] -translate-x-1/2 overflow-y-auto rounded-md-m border border-border bg-popover p-3 text-foreground shadow-xl custom-scrollbar">
           <QuestionPicker
             autoFocus
             onPick={type => {
@@ -95,6 +97,7 @@ export function SurveyCanvas({
   thankYou,
   onDuplicate,
   onInsert,
+  showAddTarget,
 }: SurveyCanvasProps) {
   const { theme } = design
   const [picker, setPicker] = useState<Spot | null>(null)
@@ -135,7 +138,7 @@ export function SurveyCanvas({
                     {pageIndex + 1}
                   </span>
                   <span className="truncate font-semibold">{page.title || `Page ${pageIndex + 1}`}</span>
-                  {pageRing && <span className="shrink-0 rounded-full bg-accent/10 px-2 py-px text-xs font-medium text-foreground">Adding here</span>}
+                  {pageRing && showAddTarget && <span className="shrink-0 rounded-full bg-accent/15 px-2 py-px text-xs font-medium text-foreground">New questions go here</span>}
                 </span>
               </div>
               <div>

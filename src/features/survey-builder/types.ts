@@ -215,6 +215,10 @@ export interface SurveyResponse {
   updated_at: string
   completed_at: string | null
   meta?: { test?: boolean; referrer?: string; embed_origin?: string }
+  /** The team's own labels for it ("follow up", "churn risk"), set on the results page. */
+  tags?: string[]
+  /** The team's own note about it. */
+  note?: string
 }
 
 export const QUESTION_TYPES: QuestionType[] = [

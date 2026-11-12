@@ -138,7 +138,11 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
                           {i + 1}. {p.title}
                         </span>
                       </span>
-                      {p.branch && <span className="block text-[13px] text-muted-foreground">Only when logic sends people here</span>}
+                      {p.branch && (
+                        <span className="mt-0.5 inline-flex cursor-help items-center rounded-full border border-border px-1.5 py-px text-[11px] font-medium leading-4 text-muted-foreground" title="Only people logic sends here see this page.">
+                          Shown to some
+                        </span>
+                      )}
                     </span>
                     {/* Those who went on, then those who stopped here in amber, out of everyone who started. */}
                     <span className={`flex h-3 gap-[2px] overflow-hidden rounded-r-[4px] ${TRACK} max-sm:order-last max-sm:col-span-2`} title={`${p.reached - p.stopped} went on, ${p.stopped} stopped here`}>
@@ -200,7 +204,7 @@ function ResultTable({ rows, total }: { rows: Array<{ label: string; count: numb
 }
 
 /** The small icon switches at a card's top right: how to show its result, and for choices their order. */
-function CardControls({ views, view, setView, sortable, sorted, setSorted, phoneRow }: { views: View[]; view: View; setView: (v: View) => void; sortable?: boolean; sorted?: boolean; setSorted?: (v: boolean) => void; /** On a phone, a row of its own under the title, so the title keeps the width. */ phoneRow?: boolean }) {
+function CardControls({ views, view, setView, sortable, sorted, setSorted }: { views: View[]; view: View; setView: (v: View) => void; sortable?: boolean; sorted?: boolean; setSorted?: (v: boolean) => void }) {
   const LOOK: Record<View, { icon: typeof BarChart3; label: string }> = {
     chart: { icon: BarChart3, label: 'Chart' },
     weeks: { icon: TrendingUp, label: 'Week by week' },
@@ -211,7 +215,7 @@ function CardControls({ views, view, setView, sortable, sorted, setSorted, phone
       active ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
     }`
   return (
-    <div className={`flex shrink-0 items-center ${phoneRow ? 'max-sm:order-last max-sm:w-full max-sm:pl-10' : ''}`}>
+    <div className="flex shrink-0 items-center">
       {/* One group: the order (for choices), then how to show it; each with its name on hover. */}
       <div role="group" aria-label="Show as" className="flex items-center gap-0.5 rounded-md-s bg-muted p-0.5">
         {sortable && setSorted && (
@@ -271,7 +275,13 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
             {q.seen < started ? (
               // Logic shows it to some people only, so it's judged against those who saw it.
               <>
-                {q.answered} of the {q.seen} who saw it answered <span className="max-sm:hidden">· only shown when logic sends people there</span>
+                {q.answered} of the {q.seen} who saw it answered{' '}
+                <span
+                  className="ml-1 inline-flex cursor-help items-center rounded-full border border-border px-1.5 py-px align-[1px] text-[11px] font-medium leading-4 text-muted-foreground"
+                  title="Logic shows this question to some people only, so it's counted against those who saw it."
+                >
+                  Shown to some
+                </span>
               </>
             ) : (
               <>
@@ -280,7 +290,7 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
             )}
           </p>
         </div>
-        {q.answered > 0 && views.length > 0 && <CardControls phoneRow views={views} view={view} setView={setView} sortable={q.kind === 'choice' && rows.length > 2 && view !== 'weeks'} sorted={sorted} setSorted={setSorted} />}
+        {q.answered > 0 && views.length > 0 && <CardControls views={views} view={view} setView={setView} sortable={q.kind === 'choice' && rows.length > 2 && view !== 'weeks'} sorted={sorted} setSorted={setSorted} />}
       </header>
 
       {q.answered === 0 ? (

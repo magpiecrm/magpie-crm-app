@@ -79,20 +79,21 @@ export function SurveyBuilderHeader({
             <span className="shrink-0">
               <SurveyStatusBadge status={status} />
             </span>
-            <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground max-md:[&>svg]:hidden sm:text-[13px]" aria-live="polite">
-                {isSaving ? (
-            'Saving…'
-          ) : isDirty ? (
-            <>
-              <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
-              {live ? 'Changes not live yet' : 'Unsaved changes'}
-            </>
-          ) : (
-            <>
-              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
-              {live ? 'Respondents see this version' : 'Saved'}
-            </>
-          )}
+            {/* On a phone only the mark: a check when saved, a dot when not; the words come back on a wider screen. */}
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground sm:text-[13px] max-sm:[&>span:last-child]:sr-only" aria-live="polite">
+              {isSaving ? (
+                <span>Saving…</span>
+              ) : isDirty ? (
+                <>
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
+                  <span className="truncate">{live ? 'Changes not live yet' : 'Unsaved changes'}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <span className="truncate">{live ? 'Respondents see this version' : 'Saved'}</span>
+                </>
+              )}
             </span>
           </span>
         </div>

@@ -3,7 +3,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock, Mail, Search, Trash2, UserRound } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { deleteSurveyResponseFn, deleteSurveyResponsesFn, getContactFieldsFn, getSurveyResponsesFn } from '../../../server/functions'
+import { deleteSurveyResponseFn, deleteSurveyResponsesFn, getContactFieldsFn, getSurveyResponsesFn, updateSurveyResponseNotesFn } from '../../../server/functions'
+import { TagInput } from '../../../components/ui/TagInput'
 import { BUILTIN_FIELD_LABELS, type ContactFieldDef } from '../../contacts/contactFields'
 import { Select } from '../../../components/ui/Select'
 import { Button } from '../../../components/ui/Button'
@@ -126,6 +127,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   const [status, setStatus] = useState<'' | 'completed' | 'partial'>('')
   const [source, setSource] = useState('')
   const [answer, setAnswer] = useState<AnswerFilter | null>(null)
+  const [tag, setTag] = useState('')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
@@ -179,11 +181,13 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         (!status || r.status === status) &&
         (!source || r.source === source) &&
         (!answerBy || matchesAnswer(answerBy, r.answers[answerBy.id], answer!.value)) &&
-        (!q || [personOf(r), r.contact_email ?? '', ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].some(v => v.toLowerCase().includes(q))),
+        (!tag || (r.tags ?? []).includes(tag)) &&
+        (!q || [personOf(r), r.contact_email ?? '', r.note ?? '', ...(r.tags ?? []), ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].some(v => v.toLowerCase().includes(q))),
     )
     return rows.sort((a, b) => (sortDir === 'asc' ? a.updated_at.localeCompare(b.updated_at) : b.updated_at.localeCompare(a.updated_at)))
-  }, [responses, since, status, source, q, sortDir, questions, answerBy, answer])
+  }, [responses, since, status, source, q, sortDir, questions, answerBy, answer, tag])
   const sources = [...new Set(responses.map(r => r.source))]
+  const allTags = useMemo(() => [...new Set(responses.flatMap(r => r.tags ?? []))].sort((a, b) => a.localeCompare(b)), [responses])
   const pageRows = shown.slice((page - 1) * perPage, page * perPage)
   const scroller = useRef<HTMLDivElement>(null)
   const [moreRight, setMoreRight] = useState(false)
@@ -201,7 +205,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   })
   const openIndex = openId ? shown.findIndex(r => r.id === openId) : -1
   const open = openIndex >= 0 ? shown[openIndex] : null
-  const filtered = !!q || range !== 'all' || !!status || !!source || !!answer
+  const filtered = !!q || range !== 'all' || !!status || !!source || !!answer || !!tag
 
   const exportColumns = useMemo<ExportColumn<ResponseRow>[]>(
     () => [
@@ -211,6 +215,8 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
       { header: 'Came from', value: r => sourceText(r) },
       { header: 'Started', value: r => exactTime(r.started_at) },
       { header: 'Finished', value: r => (r.completed_at ? exactTime(r.completed_at) : '') },
+      { header: 'Tags', value: r => (r.tags ?? []).join(', ') },
+      { header: 'Note', value: r => r.note ?? '' },
       ...questions.map(x => ({ header: `Q${x.n}. ${x.block.question?.title || x.block.id}`, value: (r: ResponseRow) => answerToDisplay(x.block, r.answers[x.block.id]) })),
     ],
     [questions],
@@ -272,6 +278,16 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
             </Select>
           )}
           <AnswerFilterSelect design={survey.design} value={answer} onChange={a => (setAnswer(a), setPage(1))} />
+          {allTags.length > 0 && (
+            <Select className={`${INPUT_CLASS} sm:!w-auto`} value={tag} onChange={e => resetPage(setTag)(e.target.value)} aria-label="Tagged">
+              <option value="">Any tag</option>
+              {allTags.map(t => (
+                <option key={t} value={t}>
+                  Tagged {t}
+                </option>
+              ))}
+            </Select>
+          )}
           <div className="col-span-2 flex items-center justify-end gap-2 sm:ml-auto">
             <ColumnsMenu options={choosable} chosen={chosen} onChange={setChosen} />
             <ExportMenu filename={survey.name} rows={shown} columns={exportColumns} sheetName="Responses" />
@@ -375,9 +391,6 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                     {sortDir === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-foreground" aria-hidden /> : <ArrowDown className="h-3.5 w-3.5 text-foreground" aria-hidden />}
                   </button>
                 </th>
-                <th scope="col" className="w-[8rem] px-4 py-2.5 align-top font-medium">
-                  Status
-                </th>
                 {columns.map(c => {
                   const [num, ...rest] = c.label.split('. ')
                   return (
@@ -427,12 +440,25 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                         {person || 'Anonymous'}
                       </button>
                       <span className="block truncate text-[13px] text-muted-foreground">{r.contactName ? r.contact_email : SOURCE_LABELS[r.source] ?? r.source}</span>
+                      {(r.tags?.length ?? 0) > 0 && (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {r.tags!.slice(0, 2).map(t => (
+                            <span key={t} className="rounded-full bg-accent/10 px-2 py-px text-xs font-medium text-foreground">
+                              {t}
+                            </span>
+                          ))}
+                          {r.tags!.length > 2 && <span className="text-xs text-muted-foreground">+{r.tags!.length - 2}</span>}
+                        </span>
+                      )}
                     </td>
+                    {/* When, and under it only the ones not finished: most are, so they don't need saying. */}
                     <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(r.updated_at)}>
                       {whenShort(r.updated_at)}
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <StatusPill status={r.status} />
+                      {r.status !== 'completed' && (
+                        <span className="mt-1 block">
+                          <StatusPill status={r.status} />
+                        </span>
+                      )}
                     </td>
                     {columns.map(c => {
                       if (c.key === SOURCE_COLUMN) {
@@ -465,6 +491,11 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         {/* While more columns lie to the right, the edge fades, so the table is seen to go on. */}
         {moreRight && <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-card to-transparent" />}
         </div>
+        {shown.length > 0 && columns.some(col => col.key !== SOURCE_COLUMN) && (
+          <p className="border-t border-border/70 px-4 py-2 text-xs text-muted-foreground">
+            <span aria-hidden>—</span> left blank · an empty cell: logic didn't show it, or they stopped before it
+          </p>
+        )}
         {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-muted-foreground">{q ? <>Nothing matches “{query.trim()}”.</> : 'No responses match these filters.'}</p>}
         {shown.length > 25 && (
           <div className="border-t border-border/70 px-4 py-2">
@@ -485,6 +516,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
           response={open}
           questions={questions}
           contactFields={contactFields}
+          allTags={allTags}
           position={`${openIndex + 1} of ${shown.length}`}
           onPrev={openIndex > 0 ? () => setOpenId(shown[openIndex - 1].id) : undefined}
           onNext={openIndex < shown.length - 1 ? () => setOpenId(shown[openIndex + 1].id) : undefined}
@@ -505,10 +537,66 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   )
 }
 
+/** The team's tags and note on a response, saved as they change; respondents never see them. */
+function TeamNotes({ response, allTags }: { response: ResponseRow; allTags: string[] }) {
+  const queryClient = useQueryClient()
+  const [tags, setTags] = useState<string[]>(response.tags ?? [])
+  const [note, setNote] = useState(response.note ?? '')
+  const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const save = useMutation({
+    mutationFn: (patch: { tags?: string[]; note?: string }) => updateSurveyResponseNotesFn({ data: { id: response.id, ...patch } }),
+    onMutate: () => setSaved('saving'),
+    onSuccess: () => {
+      setSaved('saved')
+      queryClient.invalidateQueries({ queryKey: queryKeys.surveys.responses(response.survey_id) })
+    },
+    onError: () => setSaved('idle'),
+  })
+  // A different response opened (previous / next): start from its own.
+  useEffect(() => {
+    setTags(response.tags ?? [])
+    setNote(response.note ?? '')
+    setSaved('idle')
+  }, [response.id])
+  return (
+    <section aria-labelledby="team-notes" className="flex flex-col gap-3 rounded-md-s bg-muted/50 px-3.5 py-3 dark:bg-white/[0.03]">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 id="team-notes" className="text-[13px] font-semibold text-foreground">
+          Your team's notes
+        </h3>
+        <span className="text-xs text-muted-foreground" aria-live="polite">
+          {saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Only your team sees these'}
+        </span>
+      </div>
+      <TagInput
+        variant="field"
+        label="Tags"
+        tags={tags}
+        suggestions={allTags}
+        placeholder="Add a tag, like follow up"
+        onChange={next => {
+          setTags(next)
+          save.mutate({ tags: next })
+        }}
+      />
+      <textarea
+        aria-label="Note"
+        value={note}
+        rows={2}
+        placeholder="A note about this response"
+        onChange={e => setNote(e.target.value)}
+        onBlur={() => note !== (response.note ?? '') && save.mutate({ note })}
+        className={`${INPUT_CLASS} resize-y`}
+      />
+    </section>
+  )
+}
+
 function ResponseDialog({
   response: r,
   questions,
   contactFields,
+  allTags,
   position,
   onPrev,
   onNext,
@@ -519,6 +607,7 @@ function ResponseDialog({
   response: ResponseRow
   questions: Question[]
   contactFields: ContactFieldDef[]
+  allTags: string[]
   position: string
   onPrev?: () => void
   onNext?: () => void
@@ -617,6 +706,7 @@ function ResponseDialog({
             )
           })}
         </ol>
+        <TeamNotes response={r} allTags={allTags} />
       </DialogBody>
       <DialogFooter>
         <div className="mr-auto">

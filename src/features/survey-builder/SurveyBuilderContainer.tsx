@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, MousePointerClick, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, RotateCcw, X } from 'lucide-react'
+import { PageSettings } from './components/PageSettings'
 import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
@@ -249,6 +250,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
       setSettings={setSettings}
       dispatch={dispatch}
       selectedBlock={inspectorOpen ? undefined : selectedBlock}
+      selectedBlockId={selectedBlockId}
       setSelectedBlockId={setSelectedBlockId}
       selectedPageId={selectedPageId}
       setSelectedPageId={setSelectedPageId}
@@ -350,6 +352,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           }}
           thankYou={settings.thankYou}
           onInsert={(type, pageId, index) => addBlock(type, pageId, index)}
+          showAddTarget={activeMenu === 'content' && contentTab === 'blocks'}
           onDuplicate={(block, pageId, index) => {
             // A copy is a new question: new ids for it and its options, so responses never mix.
             const { id: _id, ...rest } = structuredClone(block)
@@ -389,11 +392,13 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
                 </div>
               </>
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-                <MousePointerClick className="h-6 w-6 text-muted-foreground" aria-hidden />
-                <p className="text-sm font-medium text-foreground">Select a question to change it</p>
-                <p className="text-[13px] leading-relaxed text-muted-foreground text-pretty">Click it on the page or in the outline. You can type its wording right on the page.</p>
-              </div>
+              <PageSettings
+                design={design}
+                pageId={selectedPageId}
+                dispatch={dispatch}
+                onOpenLogic={() => setActiveMenu('logic')}
+                onOpenStyle={() => setActiveMenu('style')}
+              />
             )}
           </aside>
         )}

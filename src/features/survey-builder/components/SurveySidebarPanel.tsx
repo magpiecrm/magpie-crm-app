@@ -1,5 +1,7 @@
 import type React from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
 import type { DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { ContactFieldDef } from '../../contacts/contactFields'
 import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings, SurveyTheme } from '../types'
@@ -27,6 +29,8 @@ interface SurveySidebarPanelProps {
   setSettings: (updates: Partial<SurveySettings>) => void
   dispatch: Dispatch
   selectedBlock: SurveyBlock | undefined
+  /** Which block is selected, even while its settings are open elsewhere (the wide screen's right column). */
+  selectedBlockId: string | null
   setSelectedBlockId: (id: string | null) => void
   selectedPageId: string | null
   setSelectedPageId: (id: string) => void
@@ -61,6 +65,7 @@ function ContentMenu({
   design,
   dispatch,
   selectedBlock,
+  selectedBlockId,
   setSelectedBlockId,
   selectedPageId,
   setSelectedPageId,
@@ -171,67 +176,16 @@ function ContentMenu({
               const rules = page.rules?.length ?? 0
               return (
                 <div key={page.id} className="space-y-1">
-                <div
-                  onClick={() => setSelectedPageId(page.id)}
-                  className={`flex cursor-pointer items-center gap-1 rounded-md-s border p-1.5 pl-2.5 ${selectedPageId === page.id ? 'border-accent bg-accent/5' : 'border-border hover:border-foreground/25'}`}
-                >
-                  <span className="w-5 shrink-0 text-[13px] font-semibold tabular-nums text-muted-foreground">{i + 1}</span>
-                  <input
-                    value={page.title ?? ''}
-                    placeholder={`Page ${i + 1}`}
-                    aria-label={`Name of page ${i + 1}`}
-                    onClick={e => e.stopPropagation()}
-                    onChange={e => dispatch('survey.updatePage', { id: page.id, updates: { title: e.target.value || undefined } })}
-                    className={inputClass}
-                  />
-                  <button
-                    disabled={i === 0}
-                    onClick={e => {
-                      e.stopPropagation()
-                      dispatch('survey.movePage', { id: page.id, direction: 'up' })
-                    }}
-                    className={pageTool}
-                    aria-label="Move page up"
-                    title="Move up"
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    disabled={i === design.pages.length - 1}
-                    onClick={e => {
-                      e.stopPropagation()
-                      dispatch('survey.movePage', { id: page.id, direction: 'down' })
-                    }}
-                    className={pageTool}
-                    aria-label="Move page down"
-                    title="Move down"
-                  >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    disabled={design.pages.length <= 1 || hasLocked}
-                    title={hasLocked ? 'It has questions with responses' : 'Delete page'}
-                    onClick={async e => {
-                      e.stopPropagation()
-                      const n = page.blocks.length
-                      if (
-                        n === 0 ||
-                        (await confirmDialog({
-                          title: `Delete ${page.title ? `“${page.title}”` : `page ${i + 1}`}?`,
-                          message: `Its ${n} ${n === 1 ? 'block goes' : 'blocks go'} with it.`,
-                          confirmLabel: 'Delete page',
-                          tone: 'danger',
-                        }))
-                      ) {
-                        dispatch('survey.deletePage', { id: page.id })
-                      }
-                    }}
-                    className={`${pageTool} hover:!text-destructive`}
-                    aria-label="Delete page"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                <PageRow
+                  page={page}
+                  index={i}
+                  count={design.pages.length}
+                  selected={selectedPageId === page.id}
+                  hasLocked={hasLocked}
+                  rules={rules}
+                  onSelect={() => setSelectedPageId(page.id)}
+                  dispatch={dispatch}
+                />
                 {/* The page's questions, as the outline of the survey: click one to change it. */}
                 <ul className="ml-3 border-l border-border pl-2">
                   {page.blocks.filter(b => isQuestionType(b.type)).map(b => {
@@ -241,7 +195,10 @@ function ContentMenu({
                         <button
                           type="button"
                           onClick={() => (setSelectedPageId(page.id), setSelectedBlockId(b.id))}
-                          className="flex w-full cursor-pointer items-center gap-2 rounded-md-s px-1.5 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                          aria-current={selectedBlockId === b.id ? 'true' : undefined}
+                          className={`flex w-full cursor-pointer items-center gap-2 rounded-md-s px-1.5 py-1.5 text-left text-[13px] text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                            selectedBlockId === b.id ? 'bg-accent/10 font-medium ring-1 ring-inset ring-accent/50' : 'hover:bg-muted/70'
+                          }`}
                         >
                           <BlockChip type={b.type} label={`Q${n}`} size="sm" />
                           <span className="min-w-0 flex-1 truncate">{b.question?.title || 'Untitled question'}</span>
@@ -250,7 +207,7 @@ function ContentMenu({
                     )
                   })}
                   {!page.blocks.some(b => isQuestionType(b.type)) && <li className="px-1.5 py-1.5 text-[13px] text-muted-foreground">No questions yet</li>}
-                  {rules > 0 && <li className="px-1.5 pb-1 text-[13px] text-muted-foreground">{rules} rule{rules === 1 ? '' : 's'} after this page</li>}
+
                 </ul>
                 </div>
               )
@@ -268,5 +225,55 @@ function ContentMenu({
   )
 }
 
-const pageTool =
-  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent'
+/**
+ * A page in the outline: its number and name as text, its rule count, and a
+ * "…" menu to rename, move or delete it. Renaming swaps the name for a field.
+ */
+function PageRow({ page, index, count, selected, hasLocked, rules, onSelect, dispatch }: { page: SurveyDesign['pages'][number]; index: number; count: number; selected: boolean; hasLocked: boolean; rules: number; onSelect: () => void; dispatch: SurveySidebarPanelProps['dispatch'] }) {
+  const [renaming, setRenaming] = useState(false)
+  const name = page.title || `Page ${index + 1}`
+  const remove = async () => {
+    const n = page.blocks.length
+    if (n === 0 || (await confirmDialog({ title: `Delete ${page.title ? `“${page.title}”` : `page ${index + 1}`}?`, message: `Its ${n} ${n === 1 ? 'block goes' : 'blocks go'} with it.`, confirmLabel: 'Delete page', tone: 'danger' }))) {
+      dispatch('survey.deletePage', { id: page.id })
+    }
+  }
+  return (
+    <div className={`group/page flex items-center gap-1 rounded-md-s py-1 pl-2 pr-1 ${selected ? 'bg-foreground/[0.06]' : 'hover:bg-muted/60'}`}>
+      <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-foreground/[0.08] px-1 text-[11px] font-semibold tabular-nums text-foreground">{index + 1}</span>
+      {renaming ? (
+        <input
+          autoFocus
+          defaultValue={page.title ?? ''}
+          placeholder={`Page ${index + 1}`}
+          aria-label={`Name of page ${index + 1}`}
+          onBlur={e => (dispatch('survey.updatePage', { id: page.id, updates: { title: e.target.value.trim() || undefined } }), setRenaming(false))}
+          onKeyDown={e => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Escape') setRenaming(false)
+          }}
+          className={inputClass}
+        />
+      ) : (
+        <button type="button" onClick={onSelect} onDoubleClick={() => setRenaming(true)} className="min-w-0 flex-1 cursor-pointer truncate py-1 text-left text-[13px] font-semibold text-foreground" title="Double-click to rename">
+          {name}
+        </button>
+      )}
+      {!renaming && rules > 0 && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 text-xs font-medium text-foreground">{rules} rule{rules === 1 ? '' : 's'}</span>}
+      {!renaming && (
+        <ActionMenu
+          label={`Actions for ${name}`}
+          width={180}
+          triggerClassName="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted"
+          items={[
+            { label: 'Rename', icon: Pencil, onSelect: () => setRenaming(true) },
+            { label: 'Move up', icon: ArrowUp, onSelect: () => dispatch('survey.movePage', { id: page.id, direction: 'up' }), disabled: index === 0 },
+            { label: 'Move down', icon: ArrowDown, onSelect: () => dispatch('survey.movePage', { id: page.id, direction: 'down' }), disabled: index === count - 1 },
+            'separator',
+            { label: hasLocked ? 'Has responses: can’t delete' : 'Delete page', icon: Trash2, tone: 'danger', onSelect: remove, disabled: count <= 1 || hasLocked },
+          ]}
+        />
+      )}
+    </div>
+  )
+}

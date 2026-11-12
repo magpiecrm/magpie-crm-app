@@ -1,5 +1,5 @@
 import type React from 'react'
-import { ArrowDown, ArrowUp, Copy, GripVertical, Lock, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Copy, GripVertical, Trash2 } from 'lucide-react'
 import type { DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlock, SurveyBlockType, SurveyTheme } from '../types'
 import { SurveyBlockView } from '../runtime/SurveyBlockView'
@@ -77,12 +77,6 @@ export function SurveyBlockFrame({
         }`}
         onClick={e => e.stopPropagation()}
       >
-        {/* The panel says why; here, just the lock. */}
-        {locked && (
-          <span className={`${tool} cursor-help`} title="It has responses, so it can't change type or be deleted" aria-label="Has responses">
-            <Lock className="h-4 w-4" />
-          </span>
-        )}
         <button
           onPointerDown={e => startDrag(e, { kind: 'move', index, pageId })}
           className={`${tool} cursor-grab active:cursor-grabbing touch-none`}

@@ -50,17 +50,19 @@
     wrap.setAttribute('aria-modal', slide ? 'false' : 'true');
     wrap.setAttribute('aria-label', title);
     wrap.setAttribute('data-magpie-survey-open', popup);
+    // On a narrow screen a slide-in is a sheet along the bottom; on a wide one it sits 24px in from the corner.
+    var narrow = window.innerWidth < 640;
     wrap.style.cssText = slide
-      ? 'position:fixed;right:16px;bottom:16px;z-index:2147483000;width:min(400px,calc(100vw - 32px))'
+      ? (narrow ? 'position:fixed;left:0;right:0;bottom:0;z-index:2147483000' : 'position:fixed;right:24px;bottom:24px;z-index:2147483000;width:min(400px,calc(100vw - 48px))')
       : 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(17,19,22,.45)';
     var panel = document.createElement('div');
-    panel.style.cssText = 'position:relative;width:100%;max-width:' + (slide ? '400px' : '560px') + ';max-height:calc(100vh - 32px);overflow:auto;background:#fff;border-radius:14px;padding:40px 8px 8px;box-shadow:0 24px 64px -12px rgba(0,0,0,.35);outline:none';
+    panel.style.cssText = 'position:relative;width:100%;max-width:' + (slide ? (narrow ? 'none' : '400px') : '560px') + ';max-height:' + (slide ? 'min(560px, 75vh)' : 'calc(100vh - 32px)') + ';overflow:auto;background:#fff;border-radius:' + (slide && narrow ? '16px 16px 0 0' : '14px') + ';padding:36px 0 0;box-shadow:0 24px 64px -12px rgba(0,0,0,.35);outline:none';
     panel.tabIndex = -1;
     var close = document.createElement('button');
     close.type = 'button';
     close.setAttribute('aria-label', 'Close');
     close.innerHTML = '&times;';
-    close.style.cssText = 'position:absolute;top:6px;right:8px;width:36px;height:36px;border:0;border-radius:999px;background:transparent;font:24px/1 system-ui,sans-serif;color:#5b616e;cursor:pointer';
+    close.style.cssText = 'position:absolute;top:2px;right:6px;width:36px;height:36px;border:0;border-radius:999px;background:transparent;font:24px/1 system-ui,sans-serif;color:#5b616e;cursor:pointer';
     close.addEventListener('mouseenter', function () { close.style.background = 'rgba(17,19,22,.06)'; });
     close.addEventListener('mouseleave', function () { close.style.background = 'transparent'; });
     var frame = document.createElement('iframe');
