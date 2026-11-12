@@ -44,6 +44,9 @@ export const Route = createFileRoute('/s/$surveyId')({
 type Stored = { resumeKey: string; answers: Answers; path: string[] }
 const storageKey = (id: string) => `em-survey:${id}`
 
+/** Inside an iframe the page itself has no background, so the customer's site shows through. */
+const EMBED_PAGE_CSS = 'html,body{background:transparent!important}'
+
 function readStored(id: string): Stored | null {
   try {
     const raw = localStorage.getItem(storageKey(id))
@@ -68,10 +71,29 @@ function PublicSurveyPage() {
   const search = Route.useSearch()
 
   const embedded = search.embed
-  if (data.state === 'not_found') return <SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />
-  if (data.state === 'closed') return <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />
+  // Embedded, these too sit on the customer's page rather than the app's grey.
+  const seeThrough = embedded ? <style>{EMBED_PAGE_CSS}</style> : null
+  if (data.state === 'not_found')
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />
+      </>
+    )
+  if (data.state === 'closed')
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />
+      </>
+    )
   if (data.state === 'invalid_link')
-    return <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />
+      </>
+    )
 
   return <OpenSurvey key={surveyId} data={data} surveyId={surveyId} search={search} />
 }
@@ -156,9 +178,9 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     return () => window.removeEventListener('keydown', onKey)
   }, [search.embed, surveyId])
 
-  // Let the embedding page size the iframe to the survey. The page's body is
-  // held at the window's height, so watch the survey itself and send its own
-  // height: it then grows and shrinks with each page, whenever it renders.
+  // Let the embedding page size the iframe to the survey. The document's height
+  // never falls below the iframe's own, so watch the survey itself and send its
+  // height: the frame then shrinks for a shorter page as well as growing.
   const embedRoot = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const root = embedRoot.current
@@ -212,8 +234,10 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
   )
 
   // Embedded, one element holds the survey from the first render, so its height can be watched (flow-root keeps its children's margins inside it).
+  // The page behind it is see-through, so the site around the iframe shows round the card, not the app's grey.
   return search.embed ? (
     <div ref={embedRoot} style={{ display: 'flow-root' }}>
+      <style>{EMBED_PAGE_CSS}</style>
       {page}
     </div>
   ) : (
