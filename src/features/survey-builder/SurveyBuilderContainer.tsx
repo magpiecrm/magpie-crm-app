@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, RotateCcw, X } from 'lucide-react'
+import { AlertTriangle, MousePointerClick, RotateCcw, X } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
@@ -74,7 +74,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const locked = useMemo(() => (lockBase ? lockedIds(lockBase) : { blocks: new Set<string>(), options: new Set<string>() }), [lockBase])
 
   const [activeMenu, setActiveMenu] = useState<SurveyMenu>('content')
-  const [contentTab, setContentTab] = useState<SurveyContentTab>('blocks')
+  const [contentTab, setContentTab] = useState<SurveyContentTab>('pages')
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [selectedPageId, setSelectedPageId] = useState<string | null>(survey.design.pages[0]?.id ?? null)
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
@@ -113,7 +113,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   // The canvas is the survey at its real size; it only shrinks when the window
   // is too narrow for it. A phone always shows the phone layout.
   const canvasMode = isDesktop ? previewMode : 'mobile'
-  const inspectorOpen = isWide && !!selectedBlockId
+  // On a wide screen the settings column is always there, so selecting a question never moves the page.
+  const inspectorOpen = isWide
   useEffect(() => {
     const handleResize = () => {
       const left = isDesktop ? 64 + 320 : 0
@@ -280,6 +281,15 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isChatOpen={isChatOpen}
         setIsChatOpen={setIsChatOpen}
         onShare={() => setSharing(true)}
+        onDiscard={async () => {
+          const ok = await confirmDialog({ title: 'Discard your changes?', message: status === 'published' ? 'The survey goes back to the version respondents see now.' : 'The survey goes back to how it was when you last saved it.', confirmLabel: 'Discard changes', tone: 'danger' })
+          if (!ok) return
+          const saved = JSON.parse(savedRef.current) as Snapshot
+          setName(saved.name)
+          setDesign(saved.design)
+          setSettingsState(saved.settings)
+          setSelectedBlockId(null)
+        }}
       />
       {sharing && <SurveyShareDialog survey={{ id: survey.id, name, status }} onClose={() => setSharing(false)} />}
 
@@ -339,6 +349,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
             setIsPanelOpen(true)
           }}
           thankYou={settings.thankYou}
+          onInsert={(type, pageId, index) => addBlock(type, pageId, index)}
           onDuplicate={(block, pageId, index) => {
             // A copy is a new question: new ids for it and its options, so responses never mix.
             const { id: _id, ...rest } = structuredClone(block)
@@ -349,31 +360,41 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           }}
         />
 
-        {inspectorOpen && selectedBlock && (
+        {inspectorOpen && (
           <aside aria-label="Question settings" className="sticky top-0 flex h-[calc(100dvh-64px)] w-80 shrink-0 flex-col border-l border-border bg-card" onClick={e => e.stopPropagation()}>
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-              <BlockChip type={selectedBlock.type} size="sm" />
-              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label}</h2>
-              <button
-                type="button"
-                onClick={() => setSelectedBlockId(null)}
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                aria-label="Close question settings"
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-              <SurveyBlockEditor
-                block={selectedBlock}
-                dispatch={dispatch}
-                locked={locked.blocks.has(selectedBlock.id)}
-                lockedOptionIds={locked.options}
-                contactFields={contactFields}
-                issues={issues.filter(i => i.blockId === selectedBlock.id)}
-              />
-            </div>
+            {selectedBlock ? (
+              <>
+                <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+                  <BlockChip type={selectedBlock.type} size="sm" />
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label}</h2>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBlockId(null)}
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Close question settings"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                  <SurveyBlockEditor
+                    block={selectedBlock}
+                    dispatch={dispatch}
+                    locked={locked.blocks.has(selectedBlock.id)}
+                    lockedOptionIds={locked.options}
+                    contactFields={contactFields}
+                    issues={issues.filter(i => i.blockId === selectedBlock.id)}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
+                <MousePointerClick className="h-6 w-6 text-muted-foreground" aria-hidden />
+                <p className="text-sm font-medium text-foreground">Select a question to change it</p>
+                <p className="text-[13px] leading-relaxed text-muted-foreground text-pretty">Click it on the page or in the outline. You can type its wording right on the page.</p>
+              </div>
+            )}
           </aside>
         )}
 

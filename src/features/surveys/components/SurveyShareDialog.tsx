@@ -6,7 +6,9 @@ import { Button } from '../../../components/ui/Button'
 import { Notice } from '../../../components/ui/Notice'
 import { CopyBlock } from '../../../components/ui/CopyBlock'
 import type { SurveyStatus } from '../../survey-builder/types'
-import { surveyEmbedCode, surveySignedEmbedExample } from '../embed'
+import { surveyEmbedCode, surveyPopupCode, surveySignedEmbedExample } from '../embed'
+import { Select } from '../../../components/ui/Select'
+import { INPUT_CLASS } from '../../../components/ui/Field'
 import { SurveyQrCode, surveyQrUrl } from './SurveyQrCode'
 
 type Tab = 'link' | 'email' | 'embed' | 'signed'
@@ -26,6 +28,8 @@ const TABS: Array<{ id: Tab; label: string; short: string; icon: typeof Code2 }>
 export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; name: string; status: SurveyStatus }; onClose: () => void }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('link')
+  const [mode, setMode] = useState<'inline' | 'popup' | 'slide'>('inline')
+  const [delay, setDelay] = useState(8)
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const link = `${origin}/s/${survey.id}`
   const open = `${link}${survey.status === 'draft' ? '?preview=1' : ''}`
@@ -86,10 +90,49 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
           )}
           {tab === 'embed' && (
             <>
+              <div role="radiogroup" aria-label="How it shows" className="grid gap-2 sm:grid-cols-3">
+                {(
+                  [
+                    ['inline', 'In the page', 'Where you paste it, as wide as its space.'],
+                    ['popup', 'Pop-up', 'Over the page, once per visitor.'],
+                    ['slide', 'Slide-in', 'In a corner, once per visitor.'],
+                  ] as const
+                ).map(([id, title, detail]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === id}
+                    onClick={() => setMode(id)}
+                    className={`flex cursor-pointer flex-col gap-2 rounded-md-s border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${mode === id ? 'border-accent bg-accent/5 ring-1 ring-accent' : 'border-border hover:bg-muted'}`}
+                  >
+                    <ModeSketch mode={id} />
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium text-foreground">{title}</span>
+                      <span className="text-[13px] leading-snug text-muted-foreground">{detail}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {mode !== 'inline' && (
+                <label className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                  Show it
+                  <Select className={`${INPUT_CLASS} !w-auto`} value={delay} onChange={e => setDelay(Number(e.target.value))} aria-label="When it shows">
+                    {[0, 3, 8, 15, 30, 60].map(n => (
+                      <option key={n} value={n}>
+                        {n ? `${n} seconds after the page opens` : 'as soon as the page opens'}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              )}
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Paste both lines into your page where the survey should go. It grows to fit each page of the survey, and changes you publish show up without pasting it again.
+                {mode === 'inline'
+                  ? 'Paste both lines where the survey should go. It grows to fit each page of the survey.'
+                  : 'Paste it once into your page, anywhere. Closing it or finishing the survey stops it showing to that visitor for 30 days.'}{' '}
+                Changes you publish show up without pasting it again.
               </p>
-              <CopyBlock primary wrap label="Embed code" value={surveyEmbedCode(origin, survey.id, survey.name)} />
+              <CopyBlock primary wrap label="Embed code" value={mode === 'inline' ? surveyEmbedCode(origin, survey.id, survey.name) : surveyPopupCode(origin, survey.id, survey.name, mode, delay)} />
               <p className="text-[13px] leading-relaxed text-muted-foreground">Works on WordPress, Webflow, Squarespace, Wix and plain HTML: use their “Custom HTML” or “Embed” block.</p>
             </>
           )}
@@ -113,5 +156,30 @@ export function SurveyShareDialog({ survey, onClose }: { survey: { id: string; n
         </Button>
       </DialogFooter>
     </Dialog>
+  )
+}
+
+/** A small drawing of a web page with the survey where each kind of embed puts it. */
+function ModeSketch({ mode }: { mode: 'inline' | 'popup' | 'slide' }) {
+  const line = 'block h-[3px] rounded-full bg-foreground/15'
+  return (
+    <span aria-hidden className="relative block h-14 overflow-hidden rounded-[5px] border border-border bg-background p-1.5">
+      <span className={`${line} w-2/3`} />
+      <span className={`${line} mt-1 w-1/2`} />
+      {mode === 'inline' && <span className="mt-1.5 block h-5 w-full rounded-[3px] border border-accent/60 bg-accent/15" />}
+      {mode === 'popup' && (
+        <>
+          <span className={`${line} mt-1 w-3/4`} />
+          <span className="absolute inset-0 bg-foreground/15" />
+          <span className="absolute left-1/2 top-1/2 h-7 w-12 -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-accent/60 bg-card" />
+        </>
+      )}
+      {mode === 'slide' && (
+        <>
+          <span className={`${line} mt-1 w-3/4`} />
+          <span className="absolute bottom-1 right-1 h-6 w-9 rounded-[3px] border border-accent/60 bg-card shadow-sm" />
+        </>
+      )}
+    </span>
   )
 }

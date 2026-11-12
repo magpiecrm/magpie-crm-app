@@ -4,7 +4,7 @@ import type { AnswerValue, Answers, SurveyDesign, SurveySettings } from '../type
 import { resolveNext } from '../logic/evaluate'
 import { validatePage } from '../logic/validate'
 import { SurveyBlockView } from './SurveyBlockView'
-import { SurveyStyles, mix } from './questions'
+import { SurveyStyles, contrastRatio, mix } from './questions'
 
 export type SubmitPageResult =
   | { ok: true; next: { kind: 'page'; pageId: string } | { kind: 'end' } }
@@ -147,12 +147,10 @@ export function SurveyRenderer({
     fontFamily: theme.fontFamily,
     cursor: submitting ? 'wait' : 'pointer',
     borderRadius: theme.buttonRadius,
-    // Back is a quiet text button, so the way on is the one that stands out.
-    border: primary ? 'none' : '1px solid transparent',
+    // Back is an outlined button in the survey's colour, the same size as Next, so the pair reads as one set.
+    border: primary ? `1px solid ${theme.accentColor}` : `1px solid ${mix(theme.accentColor, 0.55)}`,
     background: primary ? theme.accentColor : 'transparent',
-    textDecoration: primary ? undefined : 'underline',
-    textUnderlineOffset: primary ? undefined : 3,
-    color: primary ? theme.buttonTextColor : theme.textColor,
+    color: primary ? theme.buttonTextColor : contrastRatio(theme.accentColor, theme.cardBgColor)! >= 4.5 ? theme.accentColor : theme.textColor,
     opacity: submitting ? 0.7 : 1,
   })
 
@@ -250,11 +248,11 @@ function pageStyle(theme: SurveyDesign['theme'], embedded?: boolean): React.CSSP
   return {
     minHeight: embedded ? undefined : '100vh',
     boxSizing: 'border-box',
-    // A short page sits in the middle of the window; a long one starts near the top and scrolls.
+    // Every page starts at the same height, so the card doesn't jump as people go from page to page.
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: embedded ? 'flex-start' : 'center',
-    padding: embedded ? 0 : 'clamp(24px, 6vh, 64px) 16px',
+    justifyContent: 'flex-start',
+    padding: embedded ? 0 : 'clamp(24px, 10vh, 96px) 16px 48px',
     background: embedded ? 'transparent' : theme.bgImage ? `${theme.pageBgColor} url(${JSON.stringify(theme.bgImage)}) center/cover` : theme.pageBgColor,
     fontFamily: theme.fontFamily,
     lineHeight: theme.lineHeight,

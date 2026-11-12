@@ -9,6 +9,21 @@ export function surveyEmbedCode(origin: string, surveyId: string, name: string):
 }
 
 /**
+ * The code that shows the survey over a page, once per visitor: a pop-up in
+ * the middle, or a slide-in in the corner, after `delay` seconds.
+ */
+export function surveyPopupCode(origin: string, surveyId: string, name: string, mode: 'popup' | 'slide', delay: number): string {
+  const title = name.replace(/"/g, '&quot;')
+  return `<script
+  src="${origin}/surveys/embed.js"
+  data-magpie-survey-popup="${surveyId}"
+  data-mode="${mode}"
+  data-delay="${delay}"
+  data-title="${title}"
+  async></script>`
+}
+
+/**
  * Server-side example for embedding for signed-in users: the host app's
  * backend swaps its API key and the user's email for a personal iframe URL.
  */

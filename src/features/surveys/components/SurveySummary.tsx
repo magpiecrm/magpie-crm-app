@@ -54,18 +54,26 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
 
   const filtered = range !== 'all' || !!source || !!answer
   const multiPage = summary.pageReach.length > 1
+  // The survey's result leads: its NPS, or its first rating or scale's average.
+  const headline = summary.questions.find(q => q.kind === 'nps' && q.score !== null) ?? summary.questions.find(q => q.kind === 'scale' && q.average !== null)
+  const lead: [string, string, string] | null =
+    headline?.kind === 'nps'
+      ? ['NPS', `${headline.score! > 0 ? '+' : ''}${headline.score}`, `from ${headline.answered} answer${headline.answered === 1 ? '' : 's'} to Q${blocks.get(headline.id)?.n ?? 1}`]
+      : headline?.kind === 'scale'
+        ? ['Average', headline.average!.toFixed(1), `out of ${headline.min + headline.distribution.length - 1}, Q${blocks.get(headline.id)?.n ?? 1}`]
+        : null
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <Select className={`${INPUT_CLASS} !w-auto min-w-[9.5rem]`} value={range} onChange={e => setRange(e.target.value as Range)} aria-label="When">
+      <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+        <Select className={`${INPUT_CLASS} sm:!w-auto sm:min-w-[9.5rem]`} value={range} onChange={e => setRange(e.target.value as Range)} aria-label="When">
           <option value="all">All time</option>
           <option value="7">Last 7 days</option>
           <option value="30">Last 30 days</option>
           <option value="90">Last 90 days</option>
         </Select>
         {summary.sources.length > 1 && (
-          <Select className={`${INPUT_CLASS} !w-auto min-w-[10.5rem]`} value={source} onChange={e => setSource(e.target.value)} aria-label="Where from">
+          <Select className={`${INPUT_CLASS} sm:!w-auto sm:min-w-[10.5rem]`} value={source} onChange={e => setSource(e.target.value)} aria-label="Where from">
             <option value="">From anywhere</option>
             {summary.sources.map(s => (
               <option key={s} value={s}>
@@ -80,11 +88,9 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
             Clear
           </Button>
         )}
-        {filtered && (
-          <span className="text-[13px] text-muted-foreground sm:ml-auto">
-            {summary.started} of {summary.total} responses
-          </span>
-        )}
+        <span className="col-span-2 text-[13px] text-muted-foreground sm:ml-auto">
+          {filtered ? `${summary.started} of ${summary.total} responses` : summary.latestAt ? `Latest response ${ago(summary.latestAt)}` : ''}
+        </span>
       </div>
 
       {summary.started === 0 ? (
@@ -93,10 +99,11 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
         <>
           <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-m border border-border bg-card max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-4 sm:divide-x">
             {[
+              ...(lead ? [lead] : []),
               ['Responses', summary.started.toLocaleString('en-GB'), `${summary.thisWeek.toLocaleString('en-GB')} this week`],
               ['Finished', summary.completed.toLocaleString('en-GB'), summary.completionRate === null ? '' : `${summary.completionRate}% of those who started`],
               ['Median time', formatDuration(summary.medianSeconds), 'to finish'],
-              ['Latest', summary.latestAt ? ago(summary.latestAt).replace(/^on /, '') : '—', summary.latestAt ? whenShort(summary.latestAt) : ''],
+              ...(lead ? [] : [['Latest', summary.latestAt ? ago(summary.latestAt).replace(/^on /, '') : '—', summary.latestAt ? whenShort(summary.latestAt) : '']]),
             ].map(([label, value, sub]) => (
               <div key={label} className="min-w-0 px-3.5 py-3 sm:px-5 sm:py-4">
                 <dt className="text-[13px] text-muted-foreground">{label}</dt>
@@ -106,8 +113,15 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
             ))}
           </dl>
 
+          <div className="flex flex-col gap-4">
+            {summary.questions.map(q => {
+              const info = blocks.get(q.id)
+              return info ? <QuestionCard key={q.id} q={q} block={info.block} n={info.n} started={summary.started} /> : null
+            })}
+          </div>
           {multiPage && (
             <section className="rounded-md-m border border-border bg-card px-5 py-4" aria-labelledby="stopped-heading">
+              {/* Below the questions: where people stopped matters once the answers have been read. */}
               <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <h2 id="stopped-heading" className="text-[15px] font-semibold text-foreground">
                   Pages
@@ -150,12 +164,6 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
             </section>
           )}
 
-          <div className="flex flex-col gap-4">
-            {summary.questions.map(q => {
-              const info = blocks.get(q.id)
-              return info ? <QuestionCard key={q.id} q={q} block={info.block} n={info.n} started={summary.started} /> : null
-            })}
-          </div>
         </>
       )}
     </div>
@@ -203,13 +211,17 @@ function CardControls({ views, view, setView, sortable, sorted, setSorted, phone
       active ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
     }`
   return (
-    <div className={`flex shrink-0 items-center gap-1.5 ${phoneRow ? 'max-sm:order-last max-sm:w-full max-sm:pl-10' : ''}`}>
-      {sortable && setSorted && (
-        <button type="button" aria-pressed={!!sorted} onClick={() => setSorted(!sorted)} className={`${btn(!!sorted)} border border-border`} title={sorted ? 'In the order asked' : 'Most picked first'} aria-label="Most picked first">
-          <ArrowDownWideNarrow className="h-4 w-4" />
-        </button>
-      )}
-      <div role="group" aria-label="Show as" className="flex gap-0.5 rounded-md-s bg-muted p-0.5">
+    <div className={`flex shrink-0 items-center ${phoneRow ? 'max-sm:order-last max-sm:w-full max-sm:pl-10' : ''}`}>
+      {/* One group: the order (for choices), then how to show it; each with its name on hover. */}
+      <div role="group" aria-label="Show as" className="flex items-center gap-0.5 rounded-md-s bg-muted p-0.5">
+        {sortable && setSorted && (
+          <>
+            <button type="button" aria-pressed={!!sorted} onClick={() => setSorted(!sorted)} className={btn(!!sorted)} title={sorted ? 'Most picked first (press for the order asked)' : 'Most picked first'} aria-label="Most picked first">
+              <ArrowDownWideNarrow className="h-4 w-4" />
+            </button>
+            <span aria-hidden className="mx-0.5 h-5 w-px bg-border" />
+          </>
+        )}
         {views.map(v => {
           const { icon: Icon, label } = LOOK[v]
           return (
@@ -280,7 +292,7 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
         </div>
       ) : q.kind === 'scale' ? (
         <div className="flex flex-col gap-6">
-          <dl className="grid grid-cols-2 divide-x divide-border/70 overflow-hidden rounded-md-s border border-border">
+          <dl className="grid grid-cols-2 gap-2">
             {(() => {
               const most = Math.max(...q.distribution)
               const modes = q.distribution.map((c, i) => (c === most ? q.min + i : null)).filter((v): v is number => v !== null)
@@ -289,7 +301,7 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
                 [modes.length > 1 ? 'Most given (a tie)' : 'Most given', modes.join(' and '), `by ${most} ${modes.length > 1 ? 'people each' : 'people'}`],
               ]
               return tiles.map(([label, value, sub]) => (
-                <div key={label} className="min-w-0 px-4 py-3">
+                <div key={label} className="min-w-0 rounded-md-s bg-muted/60 px-4 py-3 dark:bg-white/[0.04]">
                   <dt className="text-[13px] text-muted-foreground">{label}</dt>
                   <dd className="text-3xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{value}</dd>
                   <dd className="truncate text-[13px] text-muted-foreground">{sub}</dd>
@@ -351,9 +363,9 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
           <input className={`${INPUT_CLASS} pl-9`} placeholder="Search answers" aria-label="Search answers" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       )}
-      <ul className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
+      <ul className="divide-y divide-border/70 border-y border-border/70">
         {shown.map((a, i) => (
-          <li key={i} className="flex items-start gap-3 px-3.5 py-2.5">
+          <li key={i} className="flex items-start gap-3 py-2.5">
             <div className="min-w-0 flex-1">
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{a.value}</p>
               <p className="mt-0.5 text-[13px] text-muted-foreground">{a.n > 1 ? `Latest: ${a.email ?? 'Anonymous'} · ${whenShort(a.at)}` : `${a.email ?? 'Anonymous'} · ${whenShort(a.at)}`}</p>
@@ -361,7 +373,7 @@ function TextAnswers({ answers, total }: { answers: Array<{ value: string; at: s
             {a.n > 1 && <span className="shrink-0 rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium tabular-nums text-foreground">Said by {a.n}</span>}
           </li>
         ))}
-        {shown.length === 0 && <li className="px-3.5 py-3 text-sm text-muted-foreground">No answers with “{search.trim()}”.</li>}
+        {shown.length === 0 && <li className="py-3 text-sm text-muted-foreground">No answers with “{search.trim()}”.</li>}
       </ul>
       {grouped.length > SHOWN && (
         <div className="flex flex-wrap items-center gap-3">

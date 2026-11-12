@@ -90,11 +90,15 @@ function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue
   return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
 }
 
-/** No answer in a table cell: a quiet dash, the reason (the pop-up's words) on hover and for screen readers. */
+/**
+ * No answer in a table cell. Left blank is a dash; a question logic never
+ * showed them, or that they never reached, is an empty cell, so the real
+ * answers stand out. The reason is on hover and for screen readers.
+ */
 function MissingCell({ why }: { why: string }) {
   return (
-    <span className="text-muted-foreground/80" title={why}>
-      <span aria-hidden>—</span>
+    <span className="block min-h-5 text-muted-foreground" title={why}>
+      {why === 'Left blank' && <span aria-hidden>—</span>}
       <span className="sr-only">{why}</span>
     </span>
   )
@@ -246,19 +250,19 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-64 sm:max-w-xs">
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <div className="relative col-span-2 min-w-0 flex-1 basis-64 sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <input className={`${INPUT_CLASS} pl-9`} placeholder="Search people and answers" aria-label="Search responses" value={query} onChange={e => resetPage(setQuery)(e.target.value)} />
           </div>
-          <Select className={`${INPUT_CLASS} !w-auto`} value={range} onChange={e => resetPage(setRange)(e.target.value as typeof range)} aria-label="When">
+          <Select className={`${INPUT_CLASS} sm:!w-auto`} value={range} onChange={e => resetPage(setRange)(e.target.value as typeof range)} aria-label="When">
             <option value="all">All time</option>
             <option value="7">Last 7 days</option>
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
           </Select>
           {sources.length > 1 && (
-            <Select className={`${INPUT_CLASS} !w-auto max-sm:hidden`} value={source} onChange={e => resetPage(setSource)(e.target.value)} aria-label="Where from">
+            <Select className={`${INPUT_CLASS} sm:!w-auto`} value={source} onChange={e => resetPage(setSource)(e.target.value)} aria-label="Where from">
               <option value="">From anywhere</option>
               {sources.map(s => (
                 <option key={s} value={s}>
@@ -268,7 +272,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
             </Select>
           )}
           <AnswerFilterSelect design={survey.design} value={answer} onChange={a => (setAnswer(a), setPage(1))} />
-          <div className="ml-auto flex items-center gap-2">
+          <div className="col-span-2 flex items-center justify-end gap-2 sm:ml-auto">
             <ColumnsMenu options={choosable} chosen={chosen} onChange={setChosen} />
             <ExportMenu filename={survey.name} rows={shown} columns={exportColumns} sheetName="Responses" />
           </div>
@@ -340,7 +344,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         </ul>
 
         <div className="relative hidden md:block">
-        <div ref={scroller} className="overflow-x-auto [scrollbar-width:thin]" onScroll={measure} tabIndex={scrolls ? 0 : undefined} aria-label={scrolls ? 'Responses table, scrolls sideways' : undefined}>
+        <div ref={scroller} className="overflow-x-auto pb-1 [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]" onScroll={measure} tabIndex={scrolls ? 0 : undefined} aria-label={scrolls ? 'Responses table, scrolls sideways' : undefined}>
           <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${35 + columns.length * 12.5}rem` }}>
             <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
               <tr>

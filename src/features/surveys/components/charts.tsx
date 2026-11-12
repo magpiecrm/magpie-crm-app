@@ -11,11 +11,11 @@
  */
 
 /** Every bar outside NPS, on every chart: one neutral ink, 3:1 on the card. Teal means promoters and nothing else. */
-export const BAR = 'bg-[#868d99] dark:bg-[#8b919c]'
+export const BAR = 'bg-[#4b5262] dark:bg-[#b4bac4]'
 const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
 const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
 const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
-export const TRACK = 'bg-foreground/[0.06] dark:bg-foreground/[0.1]'
+export const TRACK = 'bg-foreground/[0.05] dark:bg-foreground/[0.08]'
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0)
 
@@ -131,14 +131,15 @@ export function NpsSummary({ score, detractors, passives, promoters }: { score: 
   ]
   return (
     <div className="flex flex-col gap-3">
-      <dl className="grid grid-cols-2 divide-border/70 overflow-hidden rounded-md-s border border-border max-sm:[&>div:nth-child(-n+2)]:border-b max-sm:[&>div:nth-child(odd)]:border-r sm:grid-cols-[1.3fr_1fr_1fr_1fr] sm:divide-x">
-        <div className="px-4 py-3">
+      {/* Tinted tiles rather than boxes inside the card. */}
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr]">
+        <div className="rounded-md-s bg-muted/60 px-4 py-3 dark:bg-white/[0.04]">
           <dt className="text-[13px] font-medium text-foreground">NPS</dt>
           <dd className="text-[2.5rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
           <dd className="text-[13px] text-muted-foreground">from −100 to +100</dd>
         </div>
         {parts.map(p => (
-          <div key={p.label} className="px-4 py-3">
+          <div key={p.label} className="rounded-md-s bg-muted/60 px-4 py-3 dark:bg-white/[0.04]">
             <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${p.cls}`} aria-hidden />
               {p.label}

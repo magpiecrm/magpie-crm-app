@@ -148,6 +148,14 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     // Runs once per mount; the inputs come from the loader and URL.
   }, [])
 
+  // In a pop-up or slide-in, Escape closes it, as it does on the page around it.
+  useEffect(() => {
+    if (!search.embed) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && window.parent.postMessage({ type: 'em-survey:escape', id: surveyId }, '*')
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [search.embed, surveyId])
+
   // Let the embedding page size the iframe to the survey.
   useEffect(() => {
     if (!search.embed || typeof ResizeObserver === 'undefined') return
@@ -174,6 +182,8 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
       hiddenBlockIds={data.identified?.hiddenBlockIds}
       submitPage={async ({ pageId, answers }) => {
         const result = await post(pageId, answers)
+        // Finished inside an embed: a pop-up's script stops offering it to this visitor.
+        if (search.embed && result.ok && result.next.kind === 'end') window.parent.postMessage({ type: 'em-survey:done', id: surveyId }, '*')
         if (!search.t && resumeKeyRef.current) {
           if (result.ok && result.next.kind === 'end') writeStored(surveyId, null)
           else if (result.ok && result.next.kind === 'page') {

@@ -1,16 +1,16 @@
 import type React from 'react'
-import { useState } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import type { DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { ContactFieldDef } from '../../contacts/contactFields'
 import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings, SurveyTheme } from '../types'
-import { SURVEY_BLOCK_TYPES } from '../types'
+import { SURVEY_BLOCK_TYPES, isQuestionType } from '../types'
 import type { SurveyStarterTemplate } from '../templates/starters'
 import type { LintIssue } from '../logic/lint'
 import type { SurveyMenu } from './SurveySidebarMenu'
 import type { Dispatch } from './SurveyBlockEditor'
 import { SurveyBlockEditor, hintClass, inputClass, sectionLabelClass } from './SurveyBlockEditor'
-import { BLOCK_GROUPS, BLOCK_LOOK, BlockChip } from '../blockIcons'
+import { BlockChip } from '../blockIcons'
+import { QuestionPicker } from './QuestionPicker'
 import { SurveyThemeEditor } from './SurveyThemeEditor'
 import { LogicEditor } from './LogicEditor'
 import { SurveySettingsPanel } from './SurveySettingsPanel'
@@ -74,8 +74,9 @@ function ContentMenu({
   contactFields,
   issues,
 }: SurveySidebarPanelProps) {
-  const [search, setSearch] = useState('')
-  const q = search.trim().toLowerCase()
+  const numbers = new Map<string, number>()
+  let count = 0
+  for (const p of design.pages) for (const b of p.blocks) if (isQuestionType(b.type)) numbers.set(b.id, ++count)
 
   if (selectedBlock) {
     const label = SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label
@@ -110,9 +111,9 @@ function ContentMenu({
   }
 
   const tabs: Array<{ id: SurveyContentTab; label: string; count?: number }> = [
+    { id: 'pages', label: 'Outline' },
     { id: 'blocks', label: 'Add' },
     { id: 'templates', label: 'Templates' },
-    { id: 'pages', label: 'Pages', count: design.pages.length },
   ]
 
   return (
@@ -137,39 +138,8 @@ function ContentMenu({
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
         {contentTab === 'blocks' ? (
           <div className="space-y-5">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Find a question type" aria-label="Find a question type" className={`${inputClass} pl-8`} />
-            </div>
-            {BLOCK_GROUPS.map(group => {
-              const items = SURVEY_BLOCK_TYPES.filter(t => BLOCK_LOOK[t.type].group === group.id && (!q || t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)))
-              if (items.length === 0) return null
-              return (
-                <div key={group.id}>
-                  <h3 className={sectionLabelClass}>{group.label}</h3>
-                  <div className="mt-2 grid select-none grid-cols-2 gap-1.5 max-sm:grid-cols-2 sm:max-lg:grid-cols-3">
-                    {items.map(item => (
-                      <button
-                        key={item.type}
-                        title={item.description}
-                        onClick={() => {
-                          // A completed drag already inserted the block.
-                          if (didDrag.current) return
-                          addBlock(item.type)
-                        }}
-                        onPointerDown={e => startDrag(e, { kind: 'new', blockType: item.type })}
-                        className="flex min-h-10 cursor-grab touch-none items-center gap-1.5 rounded-md-s border border-border bg-card px-1.5 py-1.5 text-left text-[13px] font-medium tracking-[-0.005em] text-foreground transition-colors hover:border-foreground/25 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:cursor-grabbing"
-                      >
-                        <BlockChip type={item.type} size="sm" />
-                        <span className="min-w-0 truncate">{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-            {q && !SURVEY_BLOCK_TYPES.some(t => t.label.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)) && <p className={hintClass}>No question type called “{search.trim()}”.</p>}
-            <p className={hintClass}>Click one to add it to the page you're on, or drag it to where it should go.</p>
+            <QuestionPicker onPick={addBlock} startDrag={startDrag} didDrag={didDrag} />
+            <p className={hintClass}>Click one to add it to the end of the page you're on, drag it to where it should go, or use the + between questions on the page.</p>
           </div>
         ) : contentTab === 'templates' ? (
           <div className="space-y-5">
@@ -198,9 +168,10 @@ function ContentMenu({
           <div className="space-y-2">
             {design.pages.map((page, i) => {
               const hasLocked = page.blocks.some(b => lockedBlockIds.has(b.id))
+              const rules = page.rules?.length ?? 0
               return (
+                <div key={page.id} className="space-y-1">
                 <div
-                  key={page.id}
                   onClick={() => setSelectedPageId(page.id)}
                   className={`flex cursor-pointer items-center gap-1 rounded-md-s border p-1.5 pl-2.5 ${selectedPageId === page.id ? 'border-accent bg-accent/5' : 'border-border hover:border-foreground/25'}`}
                 >
@@ -260,6 +231,27 @@ function ContentMenu({
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
+                </div>
+                {/* The page's questions, as the outline of the survey: click one to change it. */}
+                <ul className="ml-3 border-l border-border pl-2">
+                  {page.blocks.filter(b => isQuestionType(b.type)).map(b => {
+                    const n = numbers.get(b.id) ?? 0
+                    return (
+                      <li key={b.id}>
+                        <button
+                          type="button"
+                          onClick={() => (setSelectedPageId(page.id), setSelectedBlockId(b.id))}
+                          className="flex w-full cursor-pointer items-center gap-2 rounded-md-s px-1.5 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                          <BlockChip type={b.type} label={`Q${n}`} size="sm" />
+                          <span className="min-w-0 flex-1 truncate">{b.question?.title || 'Untitled question'}</span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                  {!page.blocks.some(b => isQuestionType(b.type)) && <li className="px-1.5 py-1.5 text-[13px] text-muted-foreground">No questions yet</li>}
+                  {rules > 0 && <li className="px-1.5 pb-1 text-[13px] text-muted-foreground">{rules} rule{rules === 1 ? '' : 's'} after this page</li>}
+                </ul>
                 </div>
               )
             })}

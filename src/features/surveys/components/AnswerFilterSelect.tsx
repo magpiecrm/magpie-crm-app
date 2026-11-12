@@ -9,7 +9,7 @@ export function AnswerFilterSelect({ design, value, onChange }: { design: Survey
   if (questions.length === 0) return null
   return (
     <Select
-      className={`${INPUT_CLASS} !w-auto max-w-[17rem]`}
+      className={`${INPUT_CLASS} sm:!w-auto sm:max-w-[17rem]`}
       value={value ? `${value.questionId}|${value.value}` : ''}
       onChange={e => {
         const [questionId, v] = e.target.value.split('|')

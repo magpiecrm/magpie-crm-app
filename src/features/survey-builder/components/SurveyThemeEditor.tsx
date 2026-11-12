@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Check } from 'lucide-react'
 import type { SurveyTheme } from '../types'
 import { SurveyImageField } from './SurveyImageField'
 import { ColorField, NumberField, Toggle, hintClass, inputClass, labelClass, sectionLabelClass } from './SurveyBlockEditor'
@@ -41,20 +41,24 @@ export function SurveyThemeEditor({ theme, setTheme }: SurveyThemeEditorProps) {
         <h3 className={sectionLabelClass}>Looks</h3>
         <div className="grid grid-cols-3 gap-2" role="group" aria-label="Ready-made looks">
           {LOOKS.map(look => {
-            const on = (Object.keys(look.theme) as Array<keyof typeof look.theme>).every(k => theme[k].toLowerCase() === look.theme[k])
+            // A look is the one in use when its button colour is: the rest can be fine-tuned below.
+            const on = theme.accentColor.toLowerCase() === look.theme.accentColor
             return (
               <button
                 key={look.name}
                 type="button"
                 aria-pressed={on}
                 onClick={() => setTheme(look.theme)}
-                className={`flex cursor-pointer flex-col items-stretch gap-1.5 rounded-md-s border p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${on ? 'border-accent ring-1 ring-accent' : 'border-border hover:border-foreground/30'}`}
+                className={`flex cursor-pointer flex-col items-stretch gap-1.5 rounded-md-s border p-1.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${on ? 'border-accent ring-2 ring-accent' : 'border-border hover:border-foreground/30'}`}
               >
                 <span aria-hidden className="flex h-9 items-center justify-center gap-1 rounded-[5px]" style={{ background: look.theme.pageBgColor }}>
                   <span className="h-5 w-8 rounded-[3px]" style={{ background: look.theme.cardBgColor, boxShadow: '0 0 0 1px rgba(0,0,0,.06)' }} />
                   <span className="h-5 w-5 rounded-[3px]" style={{ background: look.theme.accentColor }} />
                 </span>
-                <span className="px-0.5 text-xs font-medium text-foreground">{look.name}</span>
+                <span className="flex items-center justify-between px-0.5 text-xs font-medium text-foreground">
+                  {look.name}
+                  {on && <Check className="h-3.5 w-3.5 text-accent" aria-hidden />}
+                </span>
               </button>
             )
           })}
@@ -63,7 +67,7 @@ export function SurveyThemeEditor({ theme, setTheme }: SurveyThemeEditorProps) {
 
       <section className="space-y-4">
         <h3 className={sectionLabelClass}>Brand</h3>
-        <SurveyImageField label="Logo" hint="Shown at the top of the first page and the thank-you." value={theme.logoUrl ?? ''} onChange={logoUrl => setTheme({ logoUrl: logoUrl || undefined })} />
+        <SurveyImageField label="Logo" hint="Shown at the top of every page and the thank-you." value={theme.logoUrl ?? ''} onChange={logoUrl => setTheme({ logoUrl: logoUrl || undefined })} />
         <ColorField label="Buttons and choices" value={theme.accentColor} onChange={v => setTheme({ accentColor: v ?? '#27272a' })} />
         <ColorField label="Button text" value={theme.buttonTextColor} onChange={v => setTheme({ buttonTextColor: v ?? '#ffffff' })} />
         {buttonContrast !== null && buttonContrast < 4.5 && (

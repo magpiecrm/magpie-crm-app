@@ -1,4 +1,6 @@
 import type React from 'react'
+import { useEffect, useState } from 'react'
+import { QuestionPicker } from './QuestionPicker'
 import { CheckCircle2, CornerDownRight, Plus } from 'lucide-react'
 import type { BlockDropTarget, DragPayload } from '../../email-builder/hooks/useBlockDrag'
 import type { SurveyBlock, SurveyBlockType, SurveyDesign, SurveySettings } from '../types'
@@ -26,6 +28,52 @@ interface SurveyCanvasProps {
   /** The thank-you, drawn after the last page. */
   thankYou: SurveySettings['thankYou']
   onDuplicate: (block: SurveyBlock, pageId: string, index: number) => void
+  /** Add a question or content block at a place on a page, from a "+" between blocks. */
+  onInsert: (type: SurveyBlockType, pageId: string, index: number) => void
+}
+
+type Spot = { pageId: string; index: number }
+
+/**
+ * A "+" in the gap above a block (or after the last), shown on hover; it opens
+ * the question picker there, and what's picked goes in at that spot.
+ */
+function InsertPoint({ at, open, setOpen, onPick }: { at: Spot; open: Spot | null; setOpen: (s: Spot | null) => void; onPick: (type: SurveyBlockType) => void }) {
+  const isOpen = open?.pageId === at.pageId && open.index === at.index
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isOpen, setOpen])
+  return (
+    <div className="group/insert absolute inset-x-0 -top-[13px] z-10 flex h-3 items-center justify-center font-sans" onClick={e => e.stopPropagation()}>
+      <span aria-hidden className={`pointer-events-none absolute inset-x-6 top-1/2 h-px bg-accent/50 ${isOpen ? 'opacity-100' : 'opacity-0 group-hover/insert:opacity-100'}`} />
+      <button
+        type="button"
+        onClick={() => setOpen(isOpen ? null : at)}
+        aria-label="Add a question here"
+        aria-expanded={isOpen}
+        title="Add a question here"
+        className={`relative inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-accent/60 bg-card text-accent shadow-sm transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+          isOpen ? 'opacity-100' : 'opacity-0 group-hover/insert:opacity-100'
+        }`}
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
+      {isOpen && (
+        <div role="dialog" aria-label="Add a question here" className="absolute left-1/2 top-5 z-40 w-[22rem] -translate-x-1/2 rounded-md-m border border-border bg-popover p-3 text-foreground shadow-xl">
+          <QuestionPicker
+            autoFocus
+            onPick={type => {
+              onPick(type)
+              setOpen(null)
+            }}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Every page stacked as its own card, so the whole survey is visible and editable at once. */
@@ -46,14 +94,16 @@ export function SurveyCanvas({
   onOpenSettings,
   thankYou,
   onDuplicate,
+  onInsert,
 }: SurveyCanvasProps) {
   const { theme } = design
+  const [picker, setPicker] = useState<Spot | null>(null)
 
   return (
     <div
       data-canvas-scroll
       className="flex-1 flex items-start justify-center bg-background px-2 pt-2 pb-24 lg:px-8 lg:pt-6 lg:pb-10 min-h-[calc(100dvh-64px)] overflow-y-auto"
-      onClick={() => setSelectedBlockId(null)}
+      onClick={() => (setSelectedBlockId(null), setPicker(null))}
     >
       <SurveyStyles theme={theme} />
       <div
@@ -127,8 +177,12 @@ export function SurveyCanvas({
                     {page.blocks.map((block, index) => (
                       <div
                         key={block.id}
+                        className="relative"
                         style={theme.cardMode ? { border: `1px solid ${mix(theme.textColor, 0.1)}`, borderRadius: theme.cardRadius ?? 12, padding: '4px 16px' } : undefined}
                       >
+                        {index > 0 && !dragging && block.id !== selectedBlockId && (
+                          <InsertPoint at={{ pageId: page.id, index }} open={picker} setOpen={setPicker} onPick={type => onInsert(type, page.id, index)} />
+                        )}
                         <SurveyBlockFrame
                           block={block}
                           index={index}
@@ -158,6 +212,11 @@ export function SurveyCanvas({
                 )}
                 {!!dragging && dropTarget?.pageId === page.id && dropTarget.index === page.blocks.length && page.blocks.length > 0 && (
                   <div className="h-0.5 bg-accent rounded-full pointer-events-none mt-1" />
+                )}
+                {!dragging && page.blocks.length > 0 && (
+                  <div className="relative mt-3 h-0">
+                    <InsertPoint at={{ pageId: page.id, index: page.blocks.length }} open={picker} setOpen={setPicker} onPick={type => onInsert(type, page.id, page.blocks.length)} />
+                  </div>
                 )}
                 <div className="flex justify-end gap-3 pointer-events-none select-none" aria-hidden style={{ marginTop: 28 }}>
                   <span

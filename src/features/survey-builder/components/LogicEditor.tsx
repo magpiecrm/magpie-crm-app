@@ -233,8 +233,9 @@ function RuleRow({
   return (
     <div className="rounded-md-s border border-border bg-background p-2.5">
       {header}
-      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftWhen)}, go to ${describeTarget(design, d.goTo, pageIndex)}`} className="sm:max-w-xl">
+      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftWhen)}, go to ${describeTarget(design, d.goTo, pageIndex)}`} className="sm:max-w-2xl">
         <DialogBody className="flex flex-col gap-4">
+          <span className={labelClass}>{d.conds.length > 1 ? 'Conditions' : 'If the answer to'}</span>
           {d.conds.length > 1 && (
             <div className="flex flex-wrap items-center gap-2 text-[13px] text-foreground">
               It applies when
@@ -257,44 +258,34 @@ function RuleRow({
               are true
             </div>
           )}
-          <ol className="flex flex-col gap-3">
+          {/* One line per condition, joined by an and/or pill; the NPS groups are explained once below. */}
+          <ol className="flex flex-col gap-2">
             {d.conds.map((c, i) => {
               const question = questions.find(q => q.id === c.questionId)
               const ops = opsFor(question)
               return (
-                <li key={i} className="flex flex-col gap-2 rounded-md-s border border-border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className={labelClass}>{i === 0 ? 'If the answer to' : d.join === 'all' ? 'and the answer to' : 'or the answer to'}</span>
-                    {d.conds.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setDraft({ ...d, conds: d.conds.filter((_, j) => j !== i) })}
-                        className={`${iconButton} hover:!text-destructive`}
-                        aria-label="Remove this condition"
-                        title="Remove this condition"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                  <Select
-                    aria-label="Question"
-                    value={c.questionId}
-                    onChange={e => {
-                      const q = questions.find(x => x.id === e.target.value)!
-                      const op = opsFor(q)[0]
-                      setCond(i, { questionId: q.id, op, value: defaultValue(q, op) })
-                    }}
-                    className={inputClass}
-                  >
-                    {!question && <option value={c.questionId}>(deleted question)</option>}
-                    {questions.map((q, k) => (
-                      <option key={q.id} value={q.id}>
-                        Q{k + 1}. {q.question?.title || 'Untitled question'}
-                      </option>
-                    ))}
-                  </Select>
-                  <div className={`grid gap-3 ${needsValue(c.op) && question ? 'sm:grid-cols-2' : ''}`}>
+                <li key={i} className="flex flex-col gap-2">
+                  {i > 0 && (
+                    <span className="self-start rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">{d.join === 'all' ? 'and' : 'or'}</span>
+                  )}
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_8.5rem_auto]">
+                    <Select
+                      aria-label="Question"
+                      value={c.questionId}
+                      onChange={e => {
+                        const q = questions.find(x => x.id === e.target.value)!
+                        const op = opsFor(q)[0]
+                        setCond(i, { questionId: q.id, op, value: defaultValue(q, op) })
+                      }}
+                      className={`${inputClass} max-sm:col-span-2`}
+                    >
+                      {!question && <option value={c.questionId}>(deleted question)</option>}
+                      {questions.map((q, k) => (
+                        <option key={q.id} value={q.id}>
+                          Q{k + 1}. {q.question?.title || 'Untitled question'}
+                        </option>
+                      ))}
+                    </Select>
                     <Select
                       value={c.op}
                       aria-label="Is"
@@ -310,13 +301,23 @@ function RuleRow({
                         </option>
                       ))}
                     </Select>
-                    {needsValue(c.op) && question && <ValueInput question={question} value={c.value} onChange={value => setCond(i, { value })} />}
+                    {needsValue(c.op) && question ? <ValueInput question={question} value={c.value} onChange={value => setCond(i, { value })} /> : <span className="max-sm:hidden" />}
+                    <button
+                      type="button"
+                      disabled={d.conds.length === 1}
+                      onClick={() => setDraft({ ...d, conds: d.conds.filter((_, j) => j !== i) })}
+                      className={`${iconButton} self-center hover:!text-destructive disabled:invisible`}
+                      aria-label="Remove this condition"
+                      title="Remove this condition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  {question?.type === 'nps' && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
                 </li>
               )
             })}
           </ol>
+          {d.conds.some(c => questions.find(q => q.id === c.questionId)?.type === 'nps') && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
           <div>
             <Button
               variant="secondary"
@@ -378,7 +379,7 @@ function ValueInput({
     )
   }
   if (question.type === 'nps') {
-    const group = (n: number) => (n === 6 ? ' (top detractor score)' : n === 8 ? ' (top passive score)' : n === 9 ? ' (first promoter score)' : '')
+    const group = (n: number) => (n === 6 ? ' · detractors' : n === 8 ? ' · passives' : n === 9 ? ' · promoters' : '')
     return (
       <Select value={String(value ?? '')} onChange={e => onChange(Number(e.target.value))} className={inputClass} aria-label="Score">
         {Array.from({ length: 11 }, (_, n) => (
