@@ -82,7 +82,7 @@ export const queryKeys = {
   surveys: {
     list: () => ['surveys'] as const,
     survey: (id: string) => ['surveys', id] as const,
-    summary: (id: string) => ['surveys', id, 'summary'] as const,
+    summary: (id: string, filters?: unknown) => ['surveys', id, 'summary', filters] as const,
     responses: (id: string, filters?: unknown) => ['surveys', id, 'responses', filters] as const,
   },
   templates: {

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle, RotateCcw, X } from 'lucide-react'
+import { PageSettings } from './components/PageSettings'
+import { Button } from '../../components/ui/Button'
 import { queryKeys } from '../../queryKeys'
 import { getContactFieldsFn, publishSurveyFn, updateSurveyFn } from '../../server/functions'
-import { useIsDesktop } from '../../hooks/useMediaQuery'
+import { useIsDesktop, useIsWide } from '../../hooks/useMediaQuery'
 import { useResizablePanel } from '../../hooks/useResizablePanel'
 import { Sheet } from '../../components/ui/Sheet'
 import { Dialog, DialogBody } from '../../components/ui/Dialog'
 import { AIChat } from '../copilot/components/AIChat'
 import { useBlockDrag, type BlockDropTarget, type DragPayload } from '../email-builder/hooks/useBlockDrag'
 import type { Survey, SurveyBlockType, SurveyDesign, SurveySettings } from './types'
-import { isQuestionType } from './types'
+import { SURVEY_BLOCK_TYPES, isQuestionType } from './types'
 import { applySurveyBuilderAction, checkStructureLock, findBlock, newBlockId } from './applyAction'
 import { lintSurvey } from './logic/lint'
 import { SURVEY_STARTER_TEMPLATES, type SurveyStarterTemplate } from './templates/starters'
@@ -19,7 +21,10 @@ import { SurveyBuilderHeader } from './components/SurveyBuilderHeader'
 import { SurveySidebarMenu, type SurveyMenu } from './components/SurveySidebarMenu'
 import { SurveySidebarPanel, type SurveyContentTab } from './components/SurveySidebarPanel'
 import { SurveyCanvas } from './components/SurveyCanvas'
+import { SurveyBlockEditor } from './components/SurveyBlockEditor'
+import { BlockChip } from './blockIcons'
 import { SurveyRenderer } from './runtime/SurveyRenderer'
+import { SurveyShareDialog } from '../surveys/components/SurveyShareDialog'
 import { confirmDialog } from '../../components/ui/confirm'
 
 export interface SurveyBuilderProps {
@@ -70,17 +75,21 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   const locked = useMemo(() => (lockBase ? lockedIds(lockBase) : { blocks: new Set<string>(), options: new Set<string>() }), [lockBase])
 
   const [activeMenu, setActiveMenu] = useState<SurveyMenu>('content')
-  const [contentTab, setContentTab] = useState<SurveyContentTab>('blocks')
+  const [contentTab, setContentTab] = useState<SurveyContentTab>('pages')
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null)
   const [selectedPageId, setSelectedPageId] = useState<string | null>(survey.design.pages[0]?.id ?? null)
   const [previewMode, setPreviewMode] = useState<'desktop' | 'mobile'>('desktop')
   const [showPreview, setShowPreview] = useState(false)
+  const [previewRun, setPreviewRun] = useState(0)
+  const [sharing, setSharing] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const { width: chatWidth, isResizing: isChatResizing, startResizing } = useResizablePanel()
   const isDesktop = useIsDesktop()
+  // Wide enough, a selected question's settings open in their own panel on the right, so the palette and pages stay put.
+  const isWide = useIsWide()
 
   const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
   const issues = useMemo(() => lintSurvey(design, settings, contactFields), [design, settings, contactFields])
@@ -102,19 +111,23 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
     if (!design.pages.some(p => p.id === selectedPageId)) setSelectedPageId(design.pages[0]?.id ?? null)
   }, [design.pages, selectedPageId])
 
-  // Auto zoom the canvas to fit, as the email builder does.
+  // The canvas is the survey at its real size; it only shrinks when the window
+  // is too narrow for it. A phone always shows the phone layout.
+  const canvasMode = isDesktop ? previewMode : 'mobile'
+  // On a wide screen the settings column is always there, so selecting a question never moves the page.
+  const inspectorOpen = isWide
   useEffect(() => {
     const handleResize = () => {
       const left = isDesktop ? 64 + 320 : 0
-      const right = isDesktop && isChatOpen ? chatWidth : 0
-      const available = window.innerWidth - left - right - (isDesktop ? 30 : 16)
-      const target = previewMode === 'desktop' ? design.theme.bodyWidth : 375
-      setZoomLevel(Math.max(0.4, Math.min(1.5, (available / target) * 0.92)))
+      const right = (isDesktop && isChatOpen ? chatWidth : 0) + (inspectorOpen ? 320 : 0)
+      const available = window.innerWidth - left - right - (isDesktop ? 64 : 16)
+      const target = canvasMode === 'desktop' ? design.theme.bodyWidth : 375
+      setZoomLevel(Math.max(0.5, Math.min(1, available / target)))
     }
     handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [design.theme.bodyWidth, previewMode, isChatOpen, chatWidth, isDesktop])
+  }, [design.theme.bodyWidth, canvasMode, isChatOpen, chatWidth, isDesktop, inspectorOpen])
 
   /** Apply one design action, refusing edits that would break the structure lock. */
   const dispatch = useCallback(
@@ -225,7 +238,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
   }
 
   const selectedBlock = selectedBlockId ? findBlock(design, selectedBlockId)?.block : undefined
-  const errorCount = issues.filter(i => i.level === 'error').length
+  const logicErrors = issues.filter(i => i.level === 'error' && (i.area === 'logic' || i.area === 'survey')).length
 
   const panel = (
     <SurveySidebarPanel
@@ -236,7 +249,8 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
       settings={settings}
       setSettings={setSettings}
       dispatch={dispatch}
-      selectedBlock={selectedBlock}
+      selectedBlock={inspectorOpen ? undefined : selectedBlock}
+      selectedBlockId={selectedBlockId}
       setSelectedBlockId={setSelectedBlockId}
       selectedPageId={selectedPageId}
       setSelectedPageId={setSelectedPageId}
@@ -268,7 +282,18 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isDirty={isDirty}
         isChatOpen={isChatOpen}
         setIsChatOpen={setIsChatOpen}
+        onShare={() => setSharing(true)}
+        onDiscard={async () => {
+          const ok = await confirmDialog({ title: 'Discard your changes?', message: status === 'published' ? 'The survey goes back to the version respondents see now.' : 'The survey goes back to how it was when you last saved it.', confirmLabel: 'Discard changes', tone: 'danger' })
+          if (!ok) return
+          const saved = JSON.parse(savedRef.current) as Snapshot
+          setName(saved.name)
+          setDesign(saved.design)
+          setSettingsState(saved.settings)
+          setSelectedBlockId(null)
+        }}
       />
+      {sharing && <SurveyShareDialog survey={{ id: survey.id, name, status }} onClose={() => setSharing(false)} />}
 
       {notice && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs px-4 py-2 flex items-start gap-2 shrink-0">
@@ -286,7 +311,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           setActiveMenu={setActiveMenu}
           setSelectedBlockId={setSelectedBlockId}
           onSelect={() => setIsPanelOpen(true)}
-          logicIssueCount={errorCount}
+          logicIssueCount={logicErrors}
         />
 
         {isDesktop ? (
@@ -295,7 +320,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           <Sheet
             isOpen={isPanelOpen}
             onClose={() => setIsPanelOpen(false)}
-            title={selectedBlock ? 'Edit block' : activeMenu[0].toUpperCase() + activeMenu.slice(1)}
+            title={selectedBlock ? (SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label ?? 'Block') : activeMenu === 'content' ? 'Add to the survey' : activeMenu[0].toUpperCase() + activeMenu.slice(1)}
             className="h-[75dvh]"
           >
             {panel}
@@ -304,7 +329,7 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
 
         <SurveyCanvas
           design={design}
-          previewMode={previewMode}
+          previewMode={canvasMode}
           zoomLevel={zoomLevel}
           selectedBlockId={selectedBlockId}
           setSelectedBlockId={setSelectedBlockId}
@@ -317,9 +342,66 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
           lockedBlockIds={locked.blocks}
           onOpenLogic={() => {
             setActiveMenu('logic')
+            setSelectedBlockId(null)
             setIsPanelOpen(true)
           }}
+          onOpenSettings={() => {
+            setActiveMenu('settings')
+            setSelectedBlockId(null)
+            setIsPanelOpen(true)
+          }}
+          thankYou={settings.thankYou}
+          onInsert={(type, pageId, index) => addBlock(type, pageId, index)}
+          showAddTarget={activeMenu === 'content' && contentTab === 'blocks'}
+          onDuplicate={(block, pageId, index) => {
+            // A copy is a new question: new ids for it and its options, so responses never mix.
+            const { id: _id, ...rest } = structuredClone(block)
+            if (rest.question?.options) rest.question.options = rest.question.options.map(({ id: _o, ...o }) => o) as typeof rest.question.options
+            if (rest.question) rest.question.title = rest.question.title ? `${rest.question.title} (copy)` : rest.question.title
+            const copy = { ...rest, id: newBlockId() }
+            if (dispatch('survey.addBlock', { pageId, index, block: copy })) setSelectedBlockId(copy.id)
+          }}
         />
+
+        {inspectorOpen && (
+          <aside aria-label="Question settings" className="sticky top-0 flex h-[calc(100dvh-64px)] w-80 shrink-0 flex-col border-l border-border bg-card" onClick={e => e.stopPropagation()}>
+            {selectedBlock ? (
+              <>
+                <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+                  <BlockChip type={selectedBlock.type} size="sm" />
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{SURVEY_BLOCK_TYPES.find(t => t.type === selectedBlock.type)?.label}</h2>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBlockId(null)}
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Close question settings"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                  <SurveyBlockEditor
+                    block={selectedBlock}
+                    dispatch={dispatch}
+                    locked={locked.blocks.has(selectedBlock.id)}
+                    lockedOptionIds={locked.options}
+                    contactFields={contactFields}
+                    issues={issues.filter(i => i.blockId === selectedBlock.id)}
+                  />
+                </div>
+              </>
+            ) : (
+              <PageSettings
+                design={design}
+                pageId={selectedPageId}
+                dispatch={dispatch}
+                onOpenLogic={() => setActiveMenu('logic')}
+                onOpenStyle={() => setActiveMenu('style')}
+              />
+            )}
+          </aside>
+        )}
 
         {isChatOpen && (
           <aside
@@ -359,13 +441,23 @@ export function SurveyBuilder({ survey, onClose, onSaved }: SurveyBuilderProps) 
         isOpen={showPreview}
         onClose={() => setShowPreview(false)}
         title="Preview"
-        description="Logic and validation run as they will for respondents. Nothing is saved."
-        className="sm:max-w-4xl"
+        description={`As on ${canvasMode === 'mobile' ? 'a phone' : 'a computer'}. Answer it as a respondent would: logic and checks run, nothing is saved.`}
+        className="sm:max-w-6xl"
+        headerActions={
+          <div className="mr-8 flex items-center gap-2">
+            <Button variant="secondary" size="sm" leftIcon={<RotateCcw className="h-3.5 w-3.5" />} onClick={() => setPreviewRun(n => n + 1)}>
+              Restart
+            </Button>
+          </div>
+        }
       >
         <DialogBody>
-          <div className="rounded-md-s overflow-hidden border border-border">
-            {/* Remount per open so every preview starts from page one. */}
-            {showPreview && <SurveyRenderer design={design} settings={settings} />}
+          <div className="flex justify-center rounded-md-s border border-border" style={{ background: design.theme.pageBgColor }}>
+            {/* As on a computer or a phone, whichever the top bar shows. */}
+            <div className="w-full transition-[max-width] duration-200" style={{ maxWidth: canvasMode === 'mobile' ? 390 : '100%' }}>
+              {/* Remount per open and per restart, so it starts from page one. */}
+              {showPreview && <SurveyRenderer key={previewRun} framed design={design} settings={settings} />}
+            </div>
           </div>
         </DialogBody>
       </Dialog>

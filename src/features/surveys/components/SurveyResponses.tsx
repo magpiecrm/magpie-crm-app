@@ -1,0 +1,727 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock, Mail, Search, Trash2, UserRound } from 'lucide-react'
+import { queryKeys } from '../../../queryKeys'
+import { deleteSurveyResponseFn, deleteSurveyResponsesFn, getContactFieldsFn, getSurveyResponsesFn, updateSurveyResponseNotesFn } from '../../../server/functions'
+import { TagInput } from '../../../components/ui/TagInput'
+import { BUILTIN_FIELD_LABELS, type ContactFieldDef } from '../../contacts/contactFields'
+import { Select } from '../../../components/ui/Select'
+import { Button } from '../../../components/ui/Button'
+import { INPUT_CLASS } from '../../../components/ui/Field'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { ExportMenu } from '../../../components/ui/ExportMenu'
+import { Pagination } from '../../../components/ui/Pagination'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
+import { ColumnsMenu, useStoredColumns } from '../../../components/ui/ColumnsMenu'
+import { Switch } from '../../../components/ui/Switch'
+import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
+import type { ExportColumn } from '../../../utils/export'
+import type { AnswerValue, Survey, SurveyBlock } from '../../survey-builder/types'
+import { isQuestionType } from '../../survey-builder/types'
+import { answerToDisplay } from '../../survey-builder/logic/answers'
+import { BlockChip } from '../../survey-builder/blockIcons'
+import { exactTime, whenShort } from '../../forms/format'
+import { SOURCE_LABELS, SOURCE_PHRASES } from '../sources'
+import { AnswerFilterSelect } from './AnswerFilterSelect'
+import { matchesAnswer, type AnswerFilter } from '../../survey-builder/logic/answerFilter'
+
+type ResponseRow = Awaited<ReturnType<typeof getSurveyResponsesFn>>[number]
+type Question = { block: SurveyBlock; n: number; pageId: string }
+
+const SOURCE_COLUMN = '__source'
+const personOf = (r: ResponseRow) => r.contactName || r.contact_email || ''
+const sourceText = (r: ResponseRow) => [SOURCE_LABELS[r.source] ?? r.source, r.campaignName].filter(Boolean).join(' · ')
+
+/** What a question's cell says when it has no answer: why not. */
+function missing(r: ResponseRow, q: Question): string {
+  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'Left blank'
+  return r.status === 'completed' ? 'Not shown (logic)' : 'Stopped before this'
+}
+
+/** An answer drawn for a table cell or the response pop-up: an NPS score in its group's colour, stars for a rating, choices as pills. */
+function Answer({ block, value, full }: { block: SurveyBlock; value: AnswerValue; full?: boolean }) {
+  if (block.type === 'nps' && typeof value === 'number') {
+    const band = value <= 6 ? ['Detractor', 'bg-[#d6453d]/12 text-[#a3302a] dark:bg-[#e8615a]/20 dark:text-[#f19590]'] : value <= 8 ? ['Passive', 'bg-foreground/[0.07] text-foreground/80'] : ['Promoter', 'bg-[#0a87a0]/12 text-[#066577] dark:bg-[#26a6b8]/20 dark:text-[#7fd3df]']
+    return (
+      <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[13px] font-semibold tabular-nums ${band[1]}`}>
+        {value}
+        {full && <span className="font-medium">· {band[0]}</span>}
+      </span>
+    )
+  }
+  if (block.type === 'rating' && typeof value === 'number') {
+    const max = block.question?.scale?.max ?? 5
+    return (
+      <span className="tabular-nums text-foreground" aria-label={`${value} of ${max}`}>
+        <span className="text-amber-500" aria-hidden>{'★'.repeat(value)}</span>
+        <span className="text-foreground/20" aria-hidden>{'★'.repeat(Math.max(0, max - value))}</span>
+        {full && <span className="ml-1.5 text-muted-foreground">{value} of {max}</span>}
+      </span>
+    )
+  }
+  if (value && typeof value === 'object' && !full) {
+    const labels = [...value.optionIds.map(id => block.question?.options?.find(o => o.id === id)?.label ?? id), ...(value.other ? [`Other: ${value.other}`] : [])]
+    return (
+      <span className="flex flex-wrap gap-1" title={labels.join(', ')}>
+        {labels.slice(0, 2).map(l => (
+          <span key={l} className="max-w-full truncate rounded-full border border-border px-2 py-px text-[13px] text-foreground">
+            {l}
+          </span>
+        ))}
+        {labels.length > 2 && <span className="px-1 text-[13px] text-muted-foreground">+{labels.length - 2}</span>}
+      </span>
+    )
+  }
+  if (value && typeof value === 'object' && full) {
+    const labels = value.optionIds.map(id => block.question?.options?.find(o => o.id === id)?.label ?? id)
+    return (
+      <span className="flex flex-wrap gap-1.5">
+        {labels.map(l => (
+          <span key={l} className="rounded-full border border-border px-2.5 py-0.5 text-[13px] text-foreground">
+            {l}
+          </span>
+        ))}
+        {value.other && <span className="rounded-full border border-border px-2.5 py-0.5 text-[13px] text-foreground">Other: {value.other}</span>}
+      </span>
+    )
+  }
+  const text = answerToDisplay(block, value)
+  return full ? <span className="whitespace-pre-wrap break-words text-sm text-foreground">{text}</span> : <span className="line-clamp-2 break-words" title={text}>{text}</span>
+}
+
+/**
+ * No answer in a table cell. Left blank is a dash; a question logic never
+ * showed them, or that they never reached, is an empty cell, so the real
+ * answers stand out. The reason is on hover and for screen readers.
+ */
+function MissingCell({ why }: { why: string }) {
+  return (
+    <span className="block min-h-5 text-muted-foreground" title={why}>
+      {why === 'Left blank' && <span aria-hidden>—</span>}
+      <span className="sr-only">{why}</span>
+    </span>
+  )
+}
+
+function StatusPill({ status }: { status: ResponseRow['status'] }) {
+  return status === 'completed' ? (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] text-foreground/85">
+      <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400" aria-hidden />
+      Finished
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] text-muted-foreground">
+      <span className="h-1.5 w-1.5 rounded-full border-[1.5px] border-foreground/50" aria-hidden />
+      Not finished
+    </span>
+  )
+}
+
+/** Every response to a survey: a table with a column per chosen question, filters, bulk actions, and one response at a time in a pop-up. */
+export function SurveyResponses({ survey, empty }: { survey: Survey; empty: React.ReactNode }) {
+  const queryClient = useQueryClient()
+  const [query, setQuery] = useState('')
+  const [range, setRange] = useState<'all' | '7' | '30' | '90'>('all')
+  const [status, setStatus] = useState<'' | 'completed' | 'partial'>('')
+  const [source, setSource] = useState('')
+  const [answer, setAnswer] = useState<AnswerFilter | null>(null)
+  const [tag, setTag] = useState('')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+
+  const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
+  const { data: responses = [], isLoading } = useQuery({
+    queryKey: queryKeys.surveys.responses(survey.id),
+    queryFn: () => getSurveyResponsesFn({ data: { id: survey.id } }),
+  })
+
+  const questions = useMemo<Question[]>(() => {
+    let n = 0
+    return survey.design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => ({ block: b, n: ++n, pageId: p.id })))
+  }, [survey.design])
+  const choosable = [...questions.map(q => ({ key: q.block.id, label: `Q${q.n}. ${q.block.question?.title || 'Untitled question'}` })), { key: SOURCE_COLUMN, label: 'Came from' }]
+  // By default every question shows: the table scrolls sideways with the person pinned, so no branch's answers are hidden.
+  const defaults = useMemo(() => [...questions.map(q => q.block.id), SOURCE_COLUMN], [questions])
+  const [chosen, setChosen] = useStoredColumns(`magpie-survey-columns:${survey.id}`, defaults)
+  const columns = choosable.filter(c => chosen.includes(c.key))
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.surveys.survey(survey.id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list(), exact: true })
+  }
+  const removeMany = useMutation({
+    mutationFn: (ids: string[]) => deleteSurveyResponsesFn({ data: { surveyId: survey.id, ids } }),
+    onSuccess: ({ deleted }) => {
+      invalidate()
+      setPicked(new Set())
+      toast.success(`Deleted ${deleted} response${deleted === 1 ? '' : 's'}`)
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (id: string) => deleteSurveyResponseFn({ data: { id } }),
+    onSuccess: () => {
+      invalidate()
+      setOpenId(null)
+      toast.success('Response deleted')
+    },
+  })
+
+  const q = query.trim().toLowerCase()
+  const answerBy = answer ? questions.find(x => x.block.id === answer.questionId)?.block : undefined
+  const since = range === 'all' ? '' : new Date(Date.now() - Number(range) * 86400e3).toISOString()
+  const shown = useMemo(() => {
+    const rows = responses.filter(
+      r =>
+        (!since || r.started_at >= since) &&
+        (!status || r.status === status) &&
+        (!source || r.source === source) &&
+        (!answerBy || matchesAnswer(answerBy, r.answers[answerBy.id], answer!.value)) &&
+        (!tag || (r.tags ?? []).includes(tag)) &&
+        (!q || [personOf(r), r.contact_email ?? '', r.note ?? '', ...(r.tags ?? []), ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].some(v => v.toLowerCase().includes(q))),
+    )
+    return rows.sort((a, b) => (sortDir === 'asc' ? a.updated_at.localeCompare(b.updated_at) : b.updated_at.localeCompare(a.updated_at)))
+  }, [responses, since, status, source, q, sortDir, questions, answerBy, answer, tag])
+  const sources = [...new Set(responses.map(r => r.source))]
+  const allTags = useMemo(() => [...new Set(responses.flatMap(r => r.tags ?? []))].sort((a, b) => a.localeCompare(b)), [responses])
+  const pageRows = shown.slice((page - 1) * perPage, page * perPage)
+  const scroller = useRef<HTMLDivElement>(null)
+  const [moreRight, setMoreRight] = useState(false)
+  const [scrolls, setScrolls] = useState(false)
+  const measure = () => {
+    const el = scroller.current
+    if (!el) return
+    setScrolls(el.scrollWidth > el.clientWidth + 4)
+    setMoreRight(el.scrollWidth - el.scrollLeft - el.clientWidth > 4)
+  }
+  useEffect(() => {
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  })
+  const openIndex = openId ? shown.findIndex(r => r.id === openId) : -1
+  const open = openIndex >= 0 ? shown[openIndex] : null
+  const filtered = !!q || range !== 'all' || !!status || !!source || !!answer || !!tag
+
+  const exportColumns = useMemo<ExportColumn<ResponseRow>[]>(
+    () => [
+      { header: 'Name', value: r => r.contactName ?? '' },
+      { header: 'Email', value: r => r.contact_email ?? '' },
+      { header: 'Status', value: r => (r.status === 'completed' ? 'Finished' : 'Not finished') },
+      { header: 'Came from', value: r => sourceText(r) },
+      { header: 'Started', value: r => exactTime(r.started_at) },
+      { header: 'Finished', value: r => (r.completed_at ? exactTime(r.completed_at) : '') },
+      { header: 'Tags', value: r => (r.tags ?? []).join(', ') },
+      { header: 'Note', value: r => r.note ?? '' },
+      ...questions.map(x => ({ header: `Q${x.n}. ${x.block.question?.title || x.block.id}`, value: (r: ResponseRow) => answerToDisplay(x.block, r.answers[x.block.id]) })),
+    ],
+    [questions],
+  )
+
+  if (!isLoading && responses.length === 0) return <>{empty}</>
+  const resetPage = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1))
+
+  return (
+    <div className="flex flex-col gap-3">
+      {picked.size > 0 ? (
+        <div className="flex min-h-[38px] flex-wrap items-center gap-2 rounded-md-s border border-accent/40 bg-accent/[0.06] px-3 py-1.5" role="region" aria-label="Selected responses">
+          <span className="text-sm font-medium text-foreground">{picked.size} selected</span>
+          <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>
+            Clear
+          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <ExportMenu filename={`${survey.name} (selected)`} rows={shown.filter(r => picked.has(r.id))} columns={exportColumns} sheetName="Responses" label="Export selected" />
+            <Button
+              variant="secondary"
+              leftIcon={<Trash2 className="h-4 w-4" />}
+              className="!text-destructive"
+              isLoading={removeMany.isPending}
+              onClick={async () => {
+                const n = picked.size
+                const ok = await confirmDialog({
+                  title: `Delete ${n} response${n === 1 ? '' : 's'}?`,
+                  message: "They're removed from the results. Answers already saved to contacts stay. This can't be undone.",
+                  confirmLabel: `Delete ${n}`,
+                  tone: 'danger',
+                })
+                if (ok) removeMany.mutate([...picked])
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <div className="relative col-span-2 min-w-0 flex-1 basis-64 sm:max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <input className={`${INPUT_CLASS} pl-9`} placeholder="Search people and answers" aria-label="Search responses" value={query} onChange={e => resetPage(setQuery)(e.target.value)} />
+          </div>
+          <Select className={`${INPUT_CLASS} sm:!w-auto`} value={range} onChange={e => resetPage(setRange)(e.target.value as typeof range)} aria-label="When">
+            <option value="all">All time</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </Select>
+          {sources.length > 1 && (
+            <Select className={`${INPUT_CLASS} sm:!w-auto`} value={source} onChange={e => resetPage(setSource)(e.target.value)} aria-label="Where from">
+              <option value="">From anywhere</option>
+              {sources.map(s => (
+                <option key={s} value={s}>
+                  {SOURCE_LABELS[s] ?? s}
+                </option>
+              ))}
+            </Select>
+          )}
+          <AnswerFilterSelect design={survey.design} value={answer} onChange={a => (setAnswer(a), setPage(1))} />
+          {allTags.length > 0 && (
+            <Select className={`${INPUT_CLASS} sm:!w-auto`} value={tag} onChange={e => resetPage(setTag)(e.target.value)} aria-label="Tagged">
+              <option value="">Any tag</option>
+              {allTags.map(t => (
+                <option key={t} value={t}>
+                  Tagged {t}
+                </option>
+              ))}
+            </Select>
+          )}
+          <div className="col-span-2 flex items-center justify-end gap-2 sm:ml-auto">
+            <ColumnsMenu options={choosable} chosen={chosen} onChange={setChosen} />
+            <ExportMenu filename={survey.name} rows={shown} columns={exportColumns} sheetName="Responses" />
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div role="tablist" aria-label="Finished or not" className="inline-flex gap-1 rounded-md-s bg-muted p-1">
+          {(
+            [
+              ['', 'All', responses.length],
+              ['completed', 'Finished', responses.filter(r => r.status === 'completed').length],
+              ['partial', 'Not finished', responses.filter(r => r.status === 'partial').length],
+            ] as const
+          ).map(([value, label, n]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={status === value}
+              onClick={() => resetPage(setStatus)(value)}
+              className={`inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md-xs px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
+                status === value ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {label}
+              <span className="tabular-nums text-muted-foreground">{n}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-[13px] text-muted-foreground" aria-live="polite">
+          {filtered ? `${shown.length} match` : `${responses.length} response${responses.length === 1 ? '' : 's'}`}
+          {' · '}
+          {columns.filter(c => c.key !== SOURCE_COLUMN).length} of {questions.length} questions shown
+        </p>
+      </div>
+
+      <div className="overflow-hidden rounded-md-m border border-border bg-card">
+        {/* A phone gets one card per response. */}
+        <ul className="divide-y divide-border/70 md:hidden">
+          {pageRows.map(r => {
+            const first = questions.find(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null)
+            return (
+              <li key={r.id}>
+                <button type="button" onClick={() => setOpenId(r.id)} className="flex w-full cursor-pointer flex-col gap-1 px-4 py-3 text-left active:bg-muted/50">
+                  <span className="flex w-full items-baseline justify-between gap-3">
+                    <span className={`min-w-0 truncate font-semibold ${personOf(r) ? 'text-foreground' : 'text-muted-foreground'}`}>{personOf(r) || 'Anonymous'}</span>
+                    <span className="flex shrink-0 items-center gap-1 text-[13px] tabular-nums text-muted-foreground">
+                      {whenShort(r.updated_at)}
+                      <ChevronRight className="h-4 w-4 self-center" aria-hidden />
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-3 text-[13px] text-muted-foreground">
+                    <StatusPill status={r.status} />
+                    <span className="truncate">{SOURCE_LABELS[r.source] ?? r.source}</span>
+                  </span>
+                  {first && (
+                    <span className="mt-0.5 flex min-w-0 items-center gap-2 text-[13px] text-foreground/85">
+                      <span className="shrink-0 text-muted-foreground">Q{first.n}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        <Answer block={first.block} value={r.answers[first.block.id]} />
+                      </span>
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+
+        <div className="relative hidden md:block">
+        <div ref={scroller} className="overflow-x-auto pb-1 [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]" onScroll={measure} tabIndex={scrolls ? 0 : undefined} aria-label={scrolls ? 'Responses table, scrolls sideways' : undefined}>
+          <table className="w-full table-fixed text-left text-sm" style={{ minWidth: `${35 + columns.length * 12.5}rem` }}>
+            <thead className="border-b border-border bg-muted/40 text-[13px] text-muted-foreground">
+              <tr>
+                <th scope="col" className="sticky left-0 z-10 w-11 bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-4">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    aria-label="Select all on this page"
+                    checked={pageRows.length > 0 && pageRows.every(r => picked.has(r.id))}
+                    ref={el => {
+                      if (el) el.indeterminate = pageRows.some(r => picked.has(r.id)) && !pageRows.every(r => picked.has(r.id))
+                    }}
+                    onChange={e =>
+                      setPicked(p => {
+                        const n = new Set(p)
+                        for (const r of pageRows) e.target.checked ? n.add(r.id) : n.delete(r.id)
+                        return n
+                      })
+                    }
+                  />
+                </th>
+                <th scope="col" className="sticky left-11 z-10 w-[13rem] align-top bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)] py-2.5 pl-2 pr-4 font-medium shadow-[1px_0_0_var(--color-border)]">
+                  Person
+                </th>
+                <th scope="col" aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'} className="w-[8.5rem] px-4 py-2.5 align-top font-medium">
+                  <button type="button" onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))} className="-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md-xs px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+                    Submitted
+                    {sortDir === 'asc' ? <ArrowUp className="h-3.5 w-3.5 text-foreground" aria-hidden /> : <ArrowDown className="h-3.5 w-3.5 text-foreground" aria-hidden />}
+                  </button>
+                </th>
+                {columns.map(c => {
+                  const [num, ...rest] = c.label.split('. ')
+                  return (
+                    <th key={c.key} scope="col" className="px-4 py-2.5 align-top font-medium">
+                      <span className="line-clamp-2" title={c.label}>
+                        {c.key === SOURCE_COLUMN ? c.label : (
+                          <>
+                            <span className="font-semibold text-foreground">{num}</span> {rest.join('. ')}
+                          </>
+                        )}
+                      </span>
+                    </th>
+                  )
+                })}
+                {columns.length === 0 && <th scope="col" />}
+                <th scope="col" className="w-10">
+                  <span className="sr-only">Open</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/70">
+              {pageRows.map(r => {
+                const person = personOf(r)
+                return (
+                  <tr key={r.id} onClick={() => setOpenId(r.id)} className={`group cursor-pointer transition-colors hover:bg-muted/40 ${picked.has(r.id) ? 'bg-accent/[0.05]' : ''}`}>
+                    <td className="sticky left-0 z-[1] bg-card py-3 pl-4 align-top group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-[18px] w-[18px]"
+                        aria-label={`Select ${person || 'this anonymous response'}`}
+                        checked={picked.has(r.id)}
+                        onChange={e =>
+                          setPicked(p => {
+                            const n = new Set(p)
+                            e.target.checked ? n.add(r.id) : n.delete(r.id)
+                            return n
+                          })
+                        }
+                      />
+                    </td>
+                    <td className="sticky left-11 z-[1] bg-card py-3 pl-2 pr-4 align-top shadow-[1px_0_0_var(--color-border)] group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]">
+                      <button
+                        type="button"
+                        onClick={e => (e.stopPropagation(), setOpenId(r.id))}
+                        className={`block max-w-full cursor-pointer truncate rounded-sm text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${person ? 'text-foreground' : 'text-muted-foreground'}`}
+                      >
+                        {person || 'Anonymous'}
+                      </button>
+                      <span className="block truncate text-[13px] text-muted-foreground">{r.contactName ? r.contact_email : SOURCE_LABELS[r.source] ?? r.source}</span>
+                      {(r.tags?.length ?? 0) > 0 && (
+                        <span className="mt-1 flex flex-wrap gap-1">
+                          {r.tags!.slice(0, 2).map(t => (
+                            <span key={t} className="rounded-full bg-accent/10 px-2 py-px text-xs font-medium text-foreground">
+                              {t}
+                            </span>
+                          ))}
+                          {r.tags!.length > 2 && <span className="text-xs text-muted-foreground">+{r.tags!.length - 2}</span>}
+                        </span>
+                      )}
+                    </td>
+                    {/* When, and under it only the ones not finished: most are, so they don't need saying. */}
+                    <td className="whitespace-nowrap px-4 py-3 align-top tabular-nums text-muted-foreground" title={exactTime(r.updated_at)}>
+                      {whenShort(r.updated_at)}
+                      {r.status !== 'completed' && (
+                        <span className="mt-1 block">
+                          <StatusPill status={r.status} />
+                        </span>
+                      )}
+                    </td>
+                    {columns.map(c => {
+                      if (c.key === SOURCE_COLUMN) {
+                        return (
+                          <td key={c.key} className="px-4 py-3 align-top text-foreground/85">
+                            <span className="block truncate" title={sourceText(r)}>
+                              {sourceText(r)}
+                            </span>
+                          </td>
+                        )
+                      }
+                      const x = questions.find(y => y.block.id === c.key)!
+                      const value = r.answers[c.key]
+                      return (
+                        <td key={c.key} className="px-4 py-3 align-top text-foreground/85">
+                          {value === undefined || value === null ? <MissingCell why={missing(r, x)} /> : <Answer block={x.block} value={value} />}
+                        </td>
+                      )
+                    })}
+                    {columns.length === 0 && <td />}
+                    <td className="py-3 pr-4 align-top text-muted-foreground">
+                      <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        {/* While more columns lie to the right, the edge fades, so the table is seen to go on. */}
+        {moreRight && <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-card to-transparent" />}
+        </div>
+        {shown.length > 0 && columns.some(col => col.key !== SOURCE_COLUMN) && (
+          <p className="border-t border-border/70 px-4 py-2 text-xs text-muted-foreground">
+            <span aria-hidden>—</span> left blank · an empty cell: logic didn't show it, or they stopped before it
+          </p>
+        )}
+        {shown.length === 0 && <p className="px-5 py-10 text-center text-sm text-muted-foreground">{q ? <>Nothing matches “{query.trim()}”.</> : 'No responses match these filters.'}</p>}
+        {shown.length > 25 && (
+          <div className="border-t border-border/70 px-4 py-2">
+            <Pagination
+              totalItems={shown.length}
+              itemsPerPage={perPage}
+              onItemsPerPageChange={n => (setPerPage(n), setPage(1))}
+              currentPage={page}
+              onPageChange={setPage}
+              itemsPerPageOptions={[25, 50, 100]}
+            />
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <ResponseDialog
+          response={open}
+          questions={questions}
+          contactFields={contactFields}
+          allTags={allTags}
+          position={`${openIndex + 1} of ${shown.length}`}
+          onPrev={openIndex > 0 ? () => setOpenId(shown[openIndex - 1].id) : undefined}
+          onNext={openIndex < shown.length - 1 ? () => setOpenId(shown[openIndex + 1].id) : undefined}
+          onClose={() => setOpenId(null)}
+          deleting={remove.isPending}
+          onDelete={async () => {
+            const ok = await confirmDialog({
+              title: 'Delete this response?',
+              message: "It's removed from the results. Answers already saved to the contact stay. This can't be undone.",
+              confirmLabel: 'Delete response',
+              tone: 'danger',
+            })
+            if (ok) remove.mutate(open.id)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/** The team's tags and note on a response, saved as they change; respondents never see them. */
+function TeamNotes({ response, allTags }: { response: ResponseRow; allTags: string[] }) {
+  const queryClient = useQueryClient()
+  const [tags, setTags] = useState<string[]>(response.tags ?? [])
+  const [note, setNote] = useState(response.note ?? '')
+  const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const save = useMutation({
+    mutationFn: (patch: { tags?: string[]; note?: string }) => updateSurveyResponseNotesFn({ data: { id: response.id, ...patch } }),
+    onMutate: () => setSaved('saving'),
+    onSuccess: () => {
+      setSaved('saved')
+      queryClient.invalidateQueries({ queryKey: queryKeys.surveys.responses(response.survey_id) })
+    },
+    onError: () => setSaved('idle'),
+  })
+  // A different response opened (previous / next): start from its own.
+  useEffect(() => {
+    setTags(response.tags ?? [])
+    setNote(response.note ?? '')
+    setSaved('idle')
+  }, [response.id])
+  return (
+    <section aria-labelledby="team-notes" className="flex flex-col gap-3 rounded-md-s bg-muted/50 px-3.5 py-3 dark:bg-white/[0.03]">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 id="team-notes" className="text-[13px] font-semibold text-foreground">
+          Your team's notes
+        </h3>
+        <span className="text-xs text-muted-foreground" aria-live="polite">
+          {saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Only your team sees these'}
+        </span>
+      </div>
+      <TagInput
+        variant="field"
+        label="Tags"
+        tags={tags}
+        suggestions={allTags}
+        placeholder="Add a tag, like follow up"
+        onChange={next => {
+          setTags(next)
+          save.mutate({ tags: next })
+        }}
+      />
+      <textarea
+        aria-label="Note"
+        value={note}
+        rows={2}
+        placeholder="A note about this response"
+        onChange={e => setNote(e.target.value)}
+        onBlur={() => note !== (response.note ?? '') && save.mutate({ note })}
+        className={`${INPUT_CLASS} resize-y`}
+      />
+    </section>
+  )
+}
+
+function ResponseDialog({
+  response: r,
+  questions,
+  contactFields,
+  allTags,
+  position,
+  onPrev,
+  onNext,
+  onClose,
+  onDelete,
+  deleting,
+}: {
+  response: ResponseRow
+  questions: Question[]
+  contactFields: ContactFieldDef[]
+  allTags: string[]
+  position: string
+  onPrev?: () => void
+  onNext?: () => void
+  onClose: () => void
+  onDelete: () => void
+  deleting: boolean
+}) {
+  const navigate = useNavigate()
+  // Questions logic never showed them are left out unless asked for: they say nothing about this person.
+  const [everyQuestion, setEveryQuestion] = useState(false)
+  const person = personOf(r)
+  const hiddenByLogic = (x: Question) => (r.answers[x.block.id] === undefined || r.answers[x.block.id] === null) && missing(r, x) === 'Not shown (logic)'
+  const shownQuestions = everyQuestion ? questions : questions.filter(x => !hiddenByLogic(x))
+  const logicHidden = questions.filter(hiddenByLogic).length
+  // What this response wrote onto the contact: the questions set to save, that they answered.
+  const savedFields = questions
+    .filter(x => x.block.question?.mapTo && r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null)
+    .map(x => {
+      const f = x.block.question!.mapTo!.field
+      return f.startsWith('custom:') ? (contactFields.find(c => c.key === f.slice(7))?.label ?? f.slice(7)) : (BUILTIN_FIELD_LABELS[f as keyof typeof BUILTIN_FIELD_LABELS] ?? f)
+    })
+  const took = r.completed_at ? Math.max(0, (Date.parse(r.completed_at) - Date.parse(r.started_at)) / 1000) : null
+  return (
+    <Dialog
+      isOpen
+      onClose={onClose}
+      title={person || 'Anonymous response'}
+      description={r.contactName && r.contact_email ? r.contact_email : r.status === 'completed' ? `Finished ${exactTime(r.completed_at!)}` : `Started ${exactTime(r.started_at)}, not finished`}
+      className="sm:max-w-xl"
+      headerActions={
+        <div className="mr-8 flex items-center gap-0.5" role="group" aria-label={`Response ${position}`}>
+          <Button variant="ghost" size="icon" onClick={onPrev} disabled={!onPrev} aria-label="Previous response" className="disabled:!opacity-35">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="min-w-[3.75rem] text-center text-[13px] tabular-nums text-muted-foreground">{position}</span>
+          <Button variant="ghost" size="icon" onClick={onNext} disabled={!onNext} aria-label="Next response" className="disabled:!opacity-35">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      }
+    >
+      <DialogBody className="flex flex-col gap-4">
+        <ul className="flex flex-col gap-2 rounded-md-s bg-muted/50 px-3.5 py-3 text-sm text-foreground">
+          {r.isContact && savedFields.length > 0 && (
+            <li className="flex items-start gap-2.5">
+              <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0">
+                Saved to their contact: <span className="font-medium">{savedFields.join(', ')}</span>
+              </span>
+            </li>
+          )}
+          <li className="flex items-start gap-2.5">
+            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              {SOURCE_PHRASES[r.source] ?? SOURCE_LABELS[r.source] ?? r.source}
+              {r.campaignName && <span className="text-muted-foreground"> · {r.campaignName}</span>}
+            </span>
+          </li>
+          <li className="flex items-start gap-2.5">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="min-w-0">
+              {r.status === 'completed' ? (
+                <>
+                  Finished {exactTime(r.completed_at!)}
+                  {took !== null && <span className="text-muted-foreground">, in {took < 60 ? `${Math.round(took)} seconds` : `${Math.round(took / 60)} minute${Math.round(took / 60) === 1 ? '' : 's'}`}</span>}
+                </>
+              ) : (
+                <>Started {exactTime(r.started_at)}, stopped before the end</>
+              )}
+            </span>
+          </li>
+        </ul>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[13px] text-muted-foreground">
+            {questions.filter(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null).length} of {questions.length} questions answered
+          </span>
+          {logicHidden > 0 && (
+            <label className="flex cursor-pointer items-center gap-2 text-[13px] font-medium text-foreground">
+              Show {logicHidden} skipped by logic
+              <Switch label="Show questions logic skipped" checked={everyQuestion} onChange={setEveryQuestion} />
+            </label>
+          )}
+        </div>
+        <ol className="divide-y divide-border/70 overflow-hidden rounded-md-s border border-border">
+          {shownQuestions.map(x => {
+            const value = r.answers[x.block.id]
+            const has = value !== undefined && value !== null
+            return (
+              <li key={x.block.id} className="flex gap-3 px-3.5 py-3">
+                <BlockChip type={x.block.type} label={`Q${x.n}`} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] text-muted-foreground">{x.block.question?.title || 'Untitled question'}</p>
+                  <div className="mt-1">{has ? <Answer block={x.block} value={value} full /> : <span className="text-sm text-muted-foreground">{missing(r, x)}</span>}</div>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+        <TeamNotes response={r} allTags={allTags} />
+      </DialogBody>
+      <DialogFooter>
+        <div className="mr-auto">
+          <ActionMenu
+            label="More for this response"
+            items={[{ label: deleting ? 'Deleting…' : 'Delete response', icon: Trash2, tone: 'danger', onSelect: onDelete, disabled: deleting }]}
+            triggerClassName="inline-flex h-[38px] w-[38px] cursor-pointer items-center justify-center rounded-md-s border border-control bg-card text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted dark:bg-white/[0.04]"
+          />
+        </div>
+        {r.isContact && r.contact_email && (
+          <Button variant="secondary" leftIcon={<UserRound className="h-4 w-4" />} onClick={() => navigate({ to: '/marketing/contacts', search: { contact: r.contact_email! } })}>
+            Open contact
+          </Button>
+        )}
+      </DialogFooter>
+    </Dialog>
+  )
+}

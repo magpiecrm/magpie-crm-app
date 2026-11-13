@@ -26,7 +26,8 @@ function inputStyle(theme: SurveyTheme): React.CSSProperties {
     fontFamily: theme.fontFamily,
     color: theme.textColor,
     background: theme.cardBgColor,
-    border: `1px solid ${mix(theme.textColor, 0.2)}`,
+    // 3:1 against the card, so the box itself can be seen (WCAG 1.4.11).
+    border: `1px solid ${mix(theme.textColor, 0.42)}`,
     borderRadius: Math.min(theme.buttonRadius, 12),
     outline: 'none',
   }
@@ -39,6 +40,56 @@ export function mix(hex: string, alpha: number): string {
   const h = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1]
   const n = parseInt(h, 16)
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
+}
+
+/**
+ * The few rules inline styles can't carry, for anything under `.sv-root` (the
+ * hosted page, an embed, the builder canvas): placeholders at a readable 4.5:1
+ * in the survey's own text colour, a visible keyboard focus ring, and long
+ * number scales (NPS 0–10) folding into two rows of 6 and 5 when the card is
+ * narrow, so every number stays a thumb's width.
+ */
+const SURVEY_CSS = `
+.sv-root input::placeholder, .sv-root textarea::placeholder { color: currentColor; opacity: .62; }
+.sv-root button:focus-visible, .sv-root input:focus-visible, .sv-root textarea:focus-visible, .sv-root select:focus-visible { outline: 2px solid var(--sv-accent); outline-offset: 2px; }
+.sv-root input:focus, .sv-root textarea:focus, .sv-root select:focus { border-color: var(--sv-accent) !important; }
+.sv-root [role=radio][aria-checked=false]:not(:disabled):hover, .sv-root [role=checkbox][aria-checked=false]:not(:disabled):hover { border-color: var(--sv-accent) !important; background: var(--sv-hover) !important; }
+.sv-root select { appearance: none; -webkit-appearance: none; padding-right: 40px !important; background-image: var(--sv-chevron); background-repeat: no-repeat; background-position: right 14px center; background-size: 14px; }
+.sv-editable:empty::before { content: attr(data-placeholder); opacity: .5; }
+.sv-editable:focus { box-shadow: 0 2px 0 var(--sv-accent); }
+.sv-scale { container-type: inline-size; }
+@container (max-width: 480px) {
+  .sv-scale-wide { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; row-gap: 6px !important; }
+}
+`
+
+export function SurveyStyles({ theme }: { theme: SurveyTheme }) {
+  const chevron = `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='${theme.textColor}' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>`)}")`
+  return <style>{`${SURVEY_CSS}.sv-root { --sv-accent: ${theme.accentColor}; --sv-hover: ${mix(theme.accentColor, 0.06)}; --sv-chevron: ${chevron}; }`}</style>
+}
+
+function rgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return null
+  const h = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1]
+  const n = parseInt(h, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/** WCAG contrast between two hex colours, or null when either isn't one. */
+export function contrastRatio(a: string, b: string): number | null {
+  const lum = (c: [number, number, number]) => {
+    const [r, g, bl] = c.map(v => {
+      const s = v / 255
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const x = rgb(a)
+  const y = rgb(b)
+  if (!x || !y) return null
+  const [hi, lo] = [lum(x), lum(y)].sort((p, q) => q - p)
+  return (hi + 0.05) / (lo + 0.05)
 }
 
 function pillStyle(theme: SurveyTheme, selected: boolean): React.CSSProperties {
@@ -55,7 +106,7 @@ function pillStyle(theme: SurveyTheme, selected: boolean): React.CSSProperties {
     cursor: 'pointer',
     color: selected ? theme.buttonTextColor : theme.textColor,
     background: selected ? theme.accentColor : theme.cardBgColor,
-    border: `1px solid ${selected ? theme.accentColor : mix(theme.textColor, 0.2)}`,
+    border: `1px solid ${selected ? theme.accentColor : mix(theme.textColor, 0.42)}`,
     borderRadius: Math.min(theme.buttonRadius, 12),
   }
 }
@@ -164,7 +215,7 @@ function Marker({ theme, selected, square }: { theme: SurveyTheme; selected: boo
         height: 16,
         flexShrink: 0,
         borderRadius: square ? 4 : 999,
-        border: `2px solid ${selected ? theme.buttonTextColor : mix(theme.textColor, 0.35)}`,
+        border: `2px solid ${selected ? theme.buttonTextColor : mix(theme.textColor, 0.5)}`,
         background: selected ? theme.buttonTextColor : 'transparent',
         boxShadow: selected ? `inset 0 0 0 2px ${theme.accentColor}` : undefined,
       }}
@@ -210,8 +261,8 @@ function ScaleInput({ block, theme, value, onChange, disabled }: QuestionInputPr
   }
 
   return (
-    <div>
-      <div role="radiogroup" style={{ display: 'grid', gridTemplateColumns: `repeat(${values.length}, minmax(0, 1fr))`, gap: 4 }}>
+    <div className="sv-scale">
+      <div role="radiogroup" className={values.length > 7 ? 'sv-scale-wide' : undefined} style={{ display: 'grid', gridTemplateColumns: `repeat(${values.length}, minmax(0, 1fr))`, gap: 4 }}>
         {values.map(n => {
           const selected = current === n
           return (
@@ -222,7 +273,7 @@ function ScaleInput({ block, theme, value, onChange, disabled }: QuestionInputPr
               aria-checked={selected}
               disabled={disabled}
               onClick={() => onChange(n)}
-              style={{ ...pillStyle(theme, selected), justifyContent: 'center', padding: '10px 0', fontWeight: 600 }}
+              style={{ ...pillStyle(theme, selected), justifyContent: 'center', padding: '11px 0', minHeight: 44, fontWeight: 600 }}
             >
               {n}
             </button>
@@ -230,7 +281,7 @@ function ScaleInput({ block, theme, value, onChange, disabled }: QuestionInputPr
         })}
       </div>
       {(scale?.minLabel || scale?.maxLabel) && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, opacity: 0.75, marginTop: 8 }}>
           <span>{scale?.minLabel}</span>
           <span>{scale?.maxLabel}</span>
         </div>
@@ -274,7 +325,7 @@ export function QuestionInput(props: QuestionInputProps) {
           rows={4}
           value={typeof value === 'string' ? value : ''}
           onChange={e => onChange(e.target.value)}
-          style={{ ...inputStyle(theme), resize: 'vertical' }}
+          style={{ ...inputStyle(theme), resize: 'none' }}
         />
       )
     case 'dropdown': {

@@ -1,107 +1,191 @@
 /**
  * Small result charts for the survey summary, in plain HTML.
  *
- * Palette (from the dataviz reference instance): single-series magnitude bars
- * are one hue — blue, with its own dark-mode step. NPS is a polarity split, so
- * it uses the diverging pair: red detractors, neutral-gray passives, blue
- * promoters. Values and labels always wear text colours, never the bar colour,
- * and every bar has a visible number so colour is never the only channel.
+ * Colour is kept for meaning. A question's counts are one series of plain
+ * magnitude, so they're drawn in one neutral ink. NPS is a polarity split, so
+ * it alone gets colour, the diverging pair checked with the dataviz validator
+ * in both themes: red detractors, a neutral grey midpoint for passives, the
+ * app's teal (stepped up for chroma) for promoters. Values and labels always
+ * wear text colours, and every bar has its number beside or above it, so
+ * colour is never the only channel.
  */
 
-const BAR = 'bg-[#2a78d6] dark:bg-[#3987e5]'
-const DETRACTOR = 'bg-[#e34948] dark:bg-[#e66767]'
-const PASSIVE = 'bg-[#d6d5d0] dark:bg-[#4a4a46]'
-const PROMOTER = BAR
+/** Every bar outside NPS, on every chart: one neutral ink, 3:1 on the card. Teal means promoters and nothing else. */
+export const BAR = 'bg-[#4b5262] dark:bg-[#b4bac4]'
+const DETRACTOR = 'bg-[#d6453d] dark:bg-[#e8615a]'
+const PASSIVE = 'bg-[#a8a7a1] dark:bg-[#64635d]'
+const PROMOTER = 'bg-[#0a87a0] dark:bg-[#26a6b8]'
+export const TRACK = 'bg-foreground/[0.05] dark:bg-foreground/[0.08]'
 
 const pct = (n: number, total: number) => (total ? Math.round((n / total) * 100) : 0)
 
-/** Horizontal bars, one per row, all scaled to the largest value. */
-export function BarList({ rows, total }: { rows: Array<{ label: string; count: number }>; total: number }) {
-  const max = Math.max(1, ...rows.map(r => r.count))
+/**
+ * Horizontal bars, one per row, each its share of everyone who answered, on a
+ * track that is 100% and no wider than it needs to be, with its numbers right
+ * after it. The label column is the same width on every card, so bars line up
+ * down the page. The most-given answer (all of them, if tied) is marked in
+ * words, not colour.
+ */
+export function BarList({ rows, total, lead = true }: { rows: Array<{ label: string; count: number; note?: string }>; total: number; lead?: boolean }) {
+  const top = Math.max(...rows.map(r => r.count))
   return (
-    <div className="space-y-2" role="list">
-      {rows.map((row, i) => (
-        <div key={i} role="listitem" className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-3 text-sm group">
-          <span className="truncate text-foreground" title={row.label}>
-            {row.label}
-          </span>
-          <div className="h-5 bg-muted/40 rounded-r" title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
-            <div
-              className={`h-full rounded-r ${BAR} transition-[width] duration-300 group-hover:brightness-110`}
-              style={{ width: `${(row.count / max) * 100}%`, minWidth: row.count ? 3 : 0 }}
-            />
-          </div>
-          <span className="tabular-nums text-muted-foreground text-xs w-20 text-right">
-            <span className="text-foreground font-semibold">{row.count}</span> · {pct(row.count, total)}%
-          </span>
-        </div>
-      ))}
-    </div>
+    <ul className="flex flex-col gap-2.5">
+      {rows.map((row, i) => {
+        const isLead = lead && row.count > 0 && row.count === top
+        return (
+          <li key={i} className="grid items-center gap-x-3 gap-y-1 text-sm max-sm:grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,14rem)_minmax(0,34rem)_auto]">
+            <span className={`min-w-0 truncate ${isLead ? 'font-semibold text-foreground' : 'text-foreground'}`} title={row.note ? `${row.label}: ${row.note}` : row.label}>
+              {row.label}
+            </span>
+            <span className="flex items-center gap-2 tabular-nums text-muted-foreground max-sm:justify-end sm:order-last">
+              <span>
+                <span className="font-semibold text-foreground">{pct(row.count, total)}%</span> · {row.count}
+              </span>
+              {isLead && <span className="rounded-full bg-foreground/[0.07] px-2 py-px text-xs font-medium text-foreground">Most picked</span>}
+            </span>
+            <span className={`h-4 overflow-hidden rounded-r-[4px] max-sm:col-span-2 ${TRACK}`} title={`${row.label}: ${row.count} (${pct(row.count, total)}%)`}>
+              <span className={`block h-full rounded-r-[4px] ${BAR}`} style={{ width: `${total ? Math.min(100, (row.count / total) * 100) : 0}%`, minWidth: row.count ? 4 : 0 }} />
+            </span>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
-/** A compact column chart for ordered scales (NPS 0–10, ratings). */
+/** A column chart for ordered scales (NPS 0–10, ratings), each column with its count above and its value below. */
 export function Distribution({
   counts,
   start,
   colorFor,
+  labels,
+  average,
+  leadMost = false,
 }: {
+  /** Mark the most-given value's count in bold (a scale's mode); NPS colours by group instead. */
+  leadMost?: boolean
   counts: number[]
   start: number
   /** Optional per-value class, e.g. NPS bands. */
   colorFor?: (value: number) => string
+  /** Words under the two ends, e.g. "Not likely" and "Very likely". */
+  labels?: [string | undefined, string | undefined]
+  /** Marks the average on the scale, between the columns it falls between. */
+  average?: number | null
 }) {
   const max = Math.max(1, ...counts)
+  const total = counts.reduce((a, b) => a + b, 0)
+  const avgAt = average === null || average === undefined ? null : ((average - start + 0.5) / counts.length) * 100
   return (
-    <div className="flex items-end gap-[2px] h-28" role="list">
-      {counts.map((count, i) => {
-        const value = start + i
-        return (
-          <div key={value} role="listitem" className="flex-1 flex flex-col items-center gap-1 h-full justify-end group" title={`${value}: ${count}`}>
-            <span className="text-[10px] tabular-nums text-muted-foreground">{count || ''}</span>
-            <div
-              className={`w-full max-w-6 rounded-t ${colorFor?.(value) ?? BAR} group-hover:brightness-110`}
-              style={{ height: `${(count / max) * 100}%`, minHeight: count ? 3 : 0 }}
-            />
-            <span className="text-[10px] tabular-nums text-muted-foreground">{value}</span>
-          </div>
-        )
-      })}
+    <div>
+      {avgAt !== null && (
+        // The average's label sits in its own row above the plot, clear of the counts on the columns.
+        <div className="relative mb-1 h-5" aria-hidden>
+          <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap rounded-full border border-border bg-card px-2 text-xs font-medium leading-[18px] text-foreground" style={{ left: `${avgAt}%` }}>
+            Average {average!.toFixed(1)}
+          </span>
+        </div>
+      )}
+      <div className="relative flex h-36 items-end gap-[2px] border-b border-foreground/25">
+        {avgAt !== null && <span aria-hidden className="pointer-events-none absolute bottom-0 top-0 z-[1] border-l-2 border-dashed border-foreground/60" style={{ left: `${avgAt}%` }} />}
+        {counts.map((count, i) => {
+          const value = start + i
+          const top = leadMost && count > 0 && count === max
+          return (
+            <div key={value} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${value}: ${count} (${pct(count, total)}%)`}>
+              <span className={`text-xs tabular-nums ${top ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>{count || ''}</span>
+              <div className={`relative w-[62%] rounded-t-[4px] ${colorFor?.(value) ?? BAR}`} style={{ height: `calc((100% - 20px) * ${count / max})`, minHeight: count ? 8 : 0 }} />
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-1.5 flex gap-[2px]">
+        {counts.map((_, i) => (
+          <span key={i} className="min-w-0 flex-1 text-center text-xs tabular-nums text-muted-foreground">
+            {start + i}
+          </span>
+        ))}
+      </div>
+      {labels && (labels[0] || labels[1]) && (
+        <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+          <span>{labels[0]}</span>
+          <span>{labels[1]}</span>
+        </div>
+      )}
     </div>
   )
 }
 
 export const npsBand = (value: number) => (value <= 6 ? DETRACTOR : value <= 8 ? PASSIVE : PROMOTER)
 
-/** Detractor / passive / promoter split as one stacked bar with a text legend. */
-export function NpsSplit({ detractors, passives, promoters }: { detractors: number; passives: number; promoters: number }) {
+/**
+ * An NPS result as a band of four aligned tiles: the score, large, then each
+ * group's share and count beside it (the columns below carry the same colours).
+ */
+export function NpsSummary({ score, detractors, passives, promoters }: { score: number | null; detractors: number; passives: number; promoters: number }) {
   const total = detractors + passives + promoters
   const parts = [
-    { label: 'Detractors (0–6)', count: detractors, cls: DETRACTOR },
-    { label: 'Passives (7–8)', count: passives, cls: PASSIVE },
-    { label: 'Promoters (9–10)', count: promoters, cls: PROMOTER },
+    { label: 'Detractors', range: '0–6', count: detractors, cls: DETRACTOR },
+    { label: 'Passives', range: '7–8', count: passives, cls: PASSIVE },
+    { label: 'Promoters', range: '9–10', count: promoters, cls: PROMOTER },
   ]
   return (
-    <div className="space-y-2">
-      {/* gap-[2px] is the surface spacer between stacked segments */}
-      <div className="flex h-5 gap-[2px]">
-        {parts.map(
-          p =>
-            p.count > 0 && (
-              <div
-                key={p.label}
-                title={`${p.label}: ${p.count} (${pct(p.count, total)}%)`}
-                className={`${p.cls} h-full first:rounded-l last:rounded-r`}
-                style={{ width: `${pct(p.count, total)}%` }}
-              />
-            ),
-        )}
-      </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+    <div className="flex flex-col gap-3">
+      {/* Tinted tiles rather than boxes inside the card. */}
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-[1.3fr_1fr_1fr_1fr]">
+        <div className="rounded-md-s bg-muted/60 px-4 py-3 dark:bg-white/[0.04]">
+          <dt className="text-[13px] font-medium text-foreground">NPS</dt>
+          <dd className="text-[2.5rem] font-semibold leading-none tracking-tight tabular-nums text-foreground">{score === null ? '—' : `${score > 0 ? '+' : ''}${score}`}</dd>
+          <dd className="text-[13px] text-muted-foreground">from −100 to +100</dd>
+        </div>
         {parts.map(p => (
-          <span key={p.label} className="flex items-center gap-1.5">
-            <span className={`w-2.5 h-2.5 rounded-sm ${p.cls}`} aria-hidden />
-            {p.label}: <span className="text-foreground font-semibold tabular-nums">{pct(p.count, total)}%</span>
+          <div key={p.label} className="rounded-md-s bg-muted/60 px-4 py-3 dark:bg-white/[0.04]">
+            <dt className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${p.cls}`} aria-hidden />
+              {p.label}
+            </dt>
+            <dd className="text-2xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{pct(p.count, total)}%</dd>
+            <dd className="text-[13px] text-muted-foreground">
+              {p.count} scored {p.range}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+/** NPS week by week: a column per week, up from zero for a positive score and down for a negative one, each labelled. */
+export function NpsTrend({ weeks }: { weeks: Array<{ week: string; score: number; answered: number }> }) {
+  const fmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const anyNegative = weeks.some(w => w.score < 0)
+  return (
+    <div>
+      <div className={`relative flex items-stretch gap-1 ${anyNegative ? 'h-40' : 'h-28'}`}>
+        <span aria-hidden className="pointer-events-none absolute inset-x-0 border-t border-border" style={{ top: anyNegative ? '50%' : '100%' }} />
+        {weeks.map(w => {
+          const h = (Math.abs(w.score) / 100) * (anyNegative ? 50 : 100)
+          return (
+            <div key={w.week} className="relative min-w-0 flex-1" title={`Week of ${fmt.format(new Date(w.week))}: NPS ${w.score > 0 ? '+' : ''}${w.score}, from ${w.answered} answer${w.answered === 1 ? '' : 's'}`}>
+              <div
+                className={`absolute inset-x-[15%] ${w.score >= 0 ? `rounded-t-[4px] ${PROMOTER}` : `rounded-b-[4px] ${DETRACTOR}`}`}
+                style={w.score >= 0 ? { bottom: anyNegative ? '50%' : 0, height: `${Math.max(h, 1)}%` } : { top: '50%', height: `${Math.max(h, 1)}%` }}
+              />
+              <span
+                className="absolute inset-x-0 text-center text-xs font-medium tabular-nums text-foreground"
+                style={w.score >= 0 ? { bottom: `calc(${anyNegative ? 50 : 0}% + ${h}% + 2px)` } : { top: `calc(50% + ${h}% + 2px)` }}
+              >
+                {w.score > 0 ? '+' : ''}
+                {w.score}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-1.5 flex gap-1">
+        {weeks.map(w => (
+          <span key={w.week} className="min-w-0 flex-1 truncate text-center text-xs tabular-nums text-muted-foreground">
+            {fmt.format(new Date(w.week))}
           </span>
         ))}
       </div>

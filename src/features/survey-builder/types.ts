@@ -215,6 +215,10 @@ export interface SurveyResponse {
   updated_at: string
   completed_at: string | null
   meta?: { test?: boolean; referrer?: string; embed_origin?: string }
+  /** The team's own labels for it ("follow up", "churn risk"), set on the results page. */
+  tags?: string[]
+  /** The team's own note about it. */
+  note?: string
 }
 
 export const QUESTION_TYPES: QuestionType[] = [
@@ -316,7 +320,8 @@ export const DEFAULT_SURVEY_THEME: SurveyTheme = {
   accentColor: '#27272a',
   buttonTextColor: '#ffffff',
   buttonRadius: 8,
-  fontFamily: 'Helvetica, Arial, sans-serif',
+  // The visitor's own interface font: modern on every device, nothing to load.
+  fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   lineHeight: 1.5,
   cardRadius: 12,
   showProgressBar: true,

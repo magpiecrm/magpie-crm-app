@@ -1,5 +1,5 @@
-import { ArrowLeft, Laptop, Smartphone, Eye, MessageSquare, Save, Rocket, Loader2 } from 'lucide-react'
-import { ThemeToggle } from '../../../components/ui/ThemeToggle'
+import { ArrowLeft, Check, Eye, Laptop, MessageSquare, Rocket, Save, Share2, Smartphone, Undo2 } from 'lucide-react'
+import { Button } from '../../../components/ui/Button'
 import type { SurveyStatus } from '../types'
 import { SurveyStatusBadge } from '../../surveys/components/SurveyStatusBadge'
 
@@ -17,6 +17,8 @@ interface SurveyBuilderHeaderProps {
   isDirty: boolean
   isChatOpen: boolean
   setIsChatOpen: (open: boolean) => void
+  onShare: () => void
+  onDiscard: () => void
 }
 
 export function SurveyBuilderHeader({
@@ -33,86 +35,115 @@ export function SurveyBuilderHeader({
   isDirty,
   isChatOpen,
   setIsChatOpen,
+  onShare,
+  onDiscard,
 }: SurveyBuilderHeaderProps) {
+  const live = status === 'published'
+  const device = (mode: 'desktop' | 'mobile', label: string, Icon: typeof Laptop) => (
+    <button
+      type="button"
+      onClick={() => setPreviewMode(mode)}
+      aria-label={label}
+      aria-pressed={previewMode === mode}
+      title={label}
+      className={`inline-flex h-8 w-9 cursor-pointer items-center justify-center rounded-md-xs transition-colors ${
+        previewMode === mode ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  )
+
   return (
-    <div className="h-16 border-b border-border bg-card px-2 sm:px-6 flex justify-between items-center gap-2 shrink-0">
-      <div className="flex items-center gap-2 sm:gap-4 flex-1 min-w-0">
-        <button onClick={onClose} aria-label="Close builder" className="p-2 hover:bg-muted text-muted-foreground hover:text-foreground rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5" />
+    <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-2 sm:px-4">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
+        <button
+          onClick={onClose}
+          aria-label="Back to the survey's results"
+          title="Back to results"
+          className="inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </button>
-        <div className="flex items-center gap-3 flex-1 min-w-0">
+        {/* On a phone, two lines: the name, then its status and whether it's saved. */}
+        <div className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-3">
           <input
             value={name}
             onChange={e => setName(e.target.value)}
             aria-label="Survey name"
-            className="text-sm font-bold text-foreground bg-transparent border border-transparent hover:border-border focus:border-border rounded px-1.5 py-1 min-w-0 flex-1 max-w-xs focus:outline-none"
+            title="Rename the survey"
+            style={{ width: `${Math.min(Math.max(name.length + 2, 10), 40)}ch` }}
+            className="min-w-0 max-w-full text-ellipsis rounded-md-s border border-transparent bg-transparent px-2 py-1 text-[15px] font-semibold text-foreground transition-colors hover:border-border focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20 sm:py-1.5"
           />
-          <span className="hidden sm:inline-flex">
-            <SurveyStatusBadge status={status} />
+          <span className="flex min-w-0 items-center gap-2 px-2 sm:px-0">
+            <span className="shrink-0">
+              <SurveyStatusBadge status={status} />
+            </span>
+            {/* On a phone only the mark: a check when saved, a dot when not; the words come back on a wider screen. */}
+            <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground sm:text-[13px] max-sm:[&>span:last-child]:sr-only" aria-live="polite">
+              {isSaving ? (
+                <span>Saving…</span>
+              ) : isDirty ? (
+                <>
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-hidden />
+                  <span className="truncate">{live ? 'Changes not live yet' : 'Unsaved changes'}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                  <span className="truncate">{live ? 'Respondents see this version' : 'Saved'}</span>
+                </>
+              )}
+            </span>
           </span>
-          {isDirty && <span className="hidden md:inline text-[10px] text-muted-foreground">Unsaved changes</span>}
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-        <span className="hidden sm:inline-flex"><ThemeToggle /></span>
-        <div className="flex border border-border rounded-lg p-0.5 bg-muted">
-          <button
-            onClick={() => setPreviewMode('desktop')}
-            aria-label="Desktop preview"
-            className={`p-1.5 rounded-md transition-colors ${previewMode === 'desktop' ? 'bg-card text-accent shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            <Laptop className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setPreviewMode('mobile')}
-            aria-label="Mobile preview"
-            className={`p-1.5 rounded-md transition-colors ${previewMode === 'mobile' ? 'bg-card text-accent shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            <Smartphone className="w-4 h-4" />
-          </button>
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div role="group" aria-label="Show it as on" className="hidden gap-0.5 rounded-md-s bg-muted p-0.5 lg:flex">
+          {device('desktop', 'A computer', Laptop)}
+          {device('mobile', 'A phone', Smartphone)}
         </div>
-
-        <button
-          onClick={onPreview}
-          aria-label="Preview"
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted transition-colors text-foreground"
-        >
-          <Eye className="w-4 h-4" />
-          <span className="hidden lg:inline">Preview</span>
-        </button>
-
-        <button
+        <Button variant="secondary" onClick={onPreview} leftIcon={<Eye className="h-4 w-4" />} aria-label="Preview" className="max-lg:!px-2.5">
+          <span className="max-lg:hidden">Preview</span>
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => setIsChatOpen(!isChatOpen)}
+          aria-pressed={isChatOpen}
           aria-label="AI Copilot"
-          className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-2 border rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-            isChatOpen ? 'bg-accent/15 border-accent/20 text-accent hover:bg-accent/25' : 'border-border bg-card text-foreground hover:bg-muted'
-          }`}
+          leftIcon={<MessageSquare className="h-4 w-4" />}
+          className={`max-lg:!px-2.5 ${isChatOpen ? '!border-accent/40 !bg-accent/10' : ''}`}
         >
-          <MessageSquare className="w-4 h-4" />
-          <span className="hidden lg:inline">AI Copilot</span>
-        </button>
-
-        <button
-          onClick={onSave}
-          disabled={isSaving}
-          aria-label="Save"
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted transition-colors text-foreground disabled:opacity-50"
-        >
-          {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          <span className="hidden sm:inline">Save</span>
-        </button>
-
-        {status !== 'published' && (
-          <button
-            onClick={onPublish}
-            disabled={isSaving}
-            aria-label="Publish"
-            className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 sm:px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/85 active:scale-95 transition-all shadow-sm/15 disabled:opacity-50"
-          >
-            <Rocket className="w-4 h-4" />
-            <span className="hidden sm:inline">Publish</span>
-          </button>
+          <span className="max-lg:hidden">AI Copilot</span>
+        </Button>
+        {isDirty && !isSaving && (
+          <Button variant="ghost" onClick={onDiscard} leftIcon={<Undo2 className="h-4 w-4" />} aria-label="Discard changes" className="max-sm:hidden">
+            <span className="max-xl:hidden">Discard</span>
+          </Button>
+        )}
+        {live ? (
+          // A live survey changes for respondents as soon as it's saved, so saving is publishing.
+          isDirty ? (
+            <Button onClick={onSave} isLoading={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label="Publish changes" className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">Publish changes</span>
+            </Button>
+          ) : (
+            <Button onClick={onShare} leftIcon={<Share2 className="h-4 w-4" />} aria-label="Share" className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">Share</span>
+            </Button>
+          )
+        ) : (
+          <>
+            {isDirty && (
+              <Button variant="secondary" onClick={onSave} disabled={isSaving} leftIcon={<Save className="h-4 w-4" />} aria-label="Save draft" className="max-sm:!px-2.5">
+                <span className="max-sm:hidden">Save draft</span>
+              </Button>
+            )}
+            <Button onClick={onPublish} disabled={isSaving} leftIcon={<Rocket className="h-4 w-4" />} aria-label={status === 'closed' ? 'Reopen' : 'Publish'} className="max-sm:!px-2.5">
+              <span className="max-sm:hidden">{status === 'closed' ? 'Save and reopen' : 'Publish'}</span>
+            </Button>
+          </>
         )}
       </div>
     </div>

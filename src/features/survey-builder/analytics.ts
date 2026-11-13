@@ -3,26 +3,46 @@ import { CHOICE_TYPES, isQuestionType } from './types'
 import { answerToDisplay } from './logic/answers'
 import { scaleRange } from './logic/validate'
 
-export type QuestionSummary =
+/** Every question's summary carries how many responses reached its page, so logic-gated questions are judged against those who saw them. */
+type Seen = { seen: number }
+
+export type QuestionSummary = Seen & (
   | { kind: 'choice'; id: string; title: string; type: string; answered: number; options: Array<{ id: string; label: string; count: number }>; other: string[] }
-  | { kind: 'nps'; id: string; title: string; type: string; answered: number; score: number | null; promoters: number; passives: number; detractors: number; distribution: number[] }
+  | {
+      kind: 'nps'
+      id: string
+      title: string
+      type: string
+      answered: number
+      score: number | null
+      promoters: number
+      passives: number
+      detractors: number
+      distribution: number[]
+      /** NPS for each week with answers (weeks start on Monday), oldest first, the last twelve at most. */
+      trend: Array<{ week: string; score: number; answered: number }>
+    }
   | { kind: 'scale'; id: string; title: string; type: string; answered: number; average: number | null; min: number; distribution: number[] }
   | { kind: 'yes_no'; id: string; title: string; type: string; answered: number; yes: number; no: number }
   | { kind: 'number'; id: string; title: string; type: string; answered: number; average: number | null; min: number | null; max: number | null }
-  | { kind: 'text'; id: string; title: string; type: string; answered: number; latest: Array<{ value: string; at: string; email: string | null }> }
+  | { kind: 'text'; id: string; title: string; type: string; answered: number; latest: Array<{ value: string; at: string; email: string | null }> })
 
 export interface SurveySummary {
   started: number
   completed: number
   completionRate: number | null
   medianSeconds: number | null
-  /** How many responses reached each page, in page order. */
-  pageReach: Array<{ pageId: string; title: string; reached: number }>
+  /**
+   * Each page in order: how many responses reached it, how many stopped there
+   * without finishing, and whether only a rule leads to it (so not reaching it
+   * isn't anyone leaving).
+   */
+  pageReach: Array<{ pageId: string; title: string; reached: number; stopped: number; branch: boolean }>
   bySource: Record<string, number>
   questions: QuestionSummary[]
 }
 
-const TEXT_SAMPLE = 50
+const TEXT_SAMPLE = 200
 
 function median(values: number[]): number | null {
   if (!values.length) return null
@@ -31,8 +51,17 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
-function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): QuestionSummary {
-  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type }
+/** The Monday (UTC) of the week a time falls in, as YYYY-MM-DD. */
+function weekStart(iso: string): string {
+  const d = new Date(iso)
+  d.setUTCHours(0, 0, 0, 0)
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+
+function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], pageId: string, firstPage: boolean): QuestionSummary {
+  const seen = responses.filter(r => r.path.includes(pageId) || r.current_page_id === pageId || (firstPage && r.path.length === 0)).length
+  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type, seen }
   const answered = responses.filter(r => r.answers[block.id] !== undefined && r.answers[block.id] !== null)
   const values = answered.map(r => r.answers[block.id])
 
@@ -56,7 +85,18 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): Que
     const detractors = nums.filter(n => n <= 6).length
     const passives = nums.length - promoters - detractors
     const score = nums.length ? Math.round(((promoters - detractors) / nums.length) * 100) : null
-    return { ...base, kind: 'nps', answered: nums.length, score, promoters, passives, detractors, distribution }
+    const weeks = new Map<string, number[]>()
+    for (const r of answered) {
+      const v = r.answers[block.id]
+      if (typeof v !== 'number') continue
+      const week = weekStart(r.started_at)
+      weeks.set(week, [...(weeks.get(week) ?? []), v])
+    }
+    const trend = [...weeks.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([week, vs]) => ({ week, answered: vs.length, score: Math.round(((vs.filter(n => n >= 9).length - vs.filter(n => n <= 6).length) / vs.length) * 100) }))
+    return { ...base, kind: 'nps', answered: nums.length, score, promoters, passives, detractors, distribution, trend }
   }
 
   if (block.type === 'rating' || block.type === 'scale') {
@@ -85,6 +125,21 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[]): Que
 }
 
 /**
+ * Whether a page is only reached when logic sends people there: some earlier
+ * page has a rule or a "go to" pointing at it, and the page before it doesn't
+ * simply carry on into it.
+ */
+function isBranchPage(design: SurveyDesign, index: number): boolean {
+  if (index === 0) return false
+  const page = design.pages[index]
+  const targets = (p: SurveyDesign['pages'][number]) => [...(p.rules ?? []).map(r => r.goTo), ...(p.defaultNext ? [p.defaultNext] : [])]
+  const pointedAt = design.pages.slice(0, index).some(p => targets(p).some(t => t.kind === 'page' && t.pageId === page.id))
+  const before = design.pages[index - 1]
+  const fallsThrough = !before.defaultNext || before.defaultNext.kind === 'next'
+  return pointedAt || !fallsThrough
+}
+
+/**
  * Aggregate results for the summary tab and the copilot's `getSurveyResults`.
  * Partial responses count towards per-question results — an NPS score answered
  * inline in an email is real data even if the follow-up page was skipped.
@@ -109,8 +164,10 @@ export function computeSurveySummary(design: SurveyDesign, responses: SurveyResp
       title: p.title || `Page ${i + 1}`,
       // `path` holds submitted pages; a partial response is also sitting on its current page.
       reached: responses.filter(r => r.path.includes(p.id) || r.current_page_id === p.id || (i === 0 && r.path.length === 0)).length,
+      stopped: responses.filter(r => r.status === 'partial' && (r.current_page_id ?? r.path[r.path.length - 1] ?? design.pages[0]?.id) === p.id).length,
+      branch: isBranchPage(design, i),
     })),
     bySource,
-    questions: design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses))),
+    questions: design.pages.flatMap((p, i) => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses, p.id, i === 0))),
   }
 }

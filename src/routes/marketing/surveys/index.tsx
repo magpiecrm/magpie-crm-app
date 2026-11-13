@@ -1,287 +1,253 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ArrowLeft, BarChart3, ClipboardList, Copy, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ClipboardList, Copy, Pencil, Play, Plus, Search, Share2, Square, Trash2 } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { createSurveyFn, deleteSurveyFn, duplicateSurveyFn, getSurveysFn } from '../../../server/functions'
-import { Badge } from '../../../components/ui/Badge'
-import { SURVEY_STARTER_TEMPLATES } from '../../../features/survey-builder/templates/starters'
-import { SurveyStatusBadge } from '../../../features/surveys/components/SurveyStatusBadge'
+import { closeSurveyFn, deleteSurveyFn, duplicateSurveyFn, getSurveysFn, publishSurveyFn } from '../../../server/functions'
+import { Button } from '../../../components/ui/Button'
+import { INPUT_CLASS } from '../../../components/ui/Field'
+import { ActionMenu } from '../../../components/ui/ActionMenu'
+import { Notice } from '../../../components/ui/Notice'
 import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
+import { ago } from '../../../features/forms/format'
+import { SurveyStatusBadge } from '../../../features/surveys/components/SurveyStatusBadge'
+import { SurveyShareDialog } from '../../../features/surveys/components/SurveyShareDialog'
+import { StarterTiles } from '../../../features/surveys/components/StarterTiles'
+import { HeadlineResult } from '../../../features/surveys/components/HeadlineResult'
+import { useCreateSurvey } from '../../../features/surveys/useCreateSurvey'
 
 export const Route = createFileRoute('/marketing/surveys/')({
   component: SurveysPage,
 })
 
-type SurveySummaryRow = Awaited<ReturnType<typeof getSurveysFn>>[number]
+type SurveyRow = Awaited<ReturnType<typeof getSurveysFn>>[number]
+type Sort = { by: 'name' | 'responses' | 'completed' | 'latest'; dir: 'asc' | 'desc' }
+
+const dayFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
+
+const COLUMNS = 'md:grid-cols-[minmax(0,1fr)_6rem_7.5rem_7.5rem_7rem_8.5rem_6.5rem]'
 
 function SurveysPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [showCreate, setShowCreate] = useState(false)
+  const [query, setQuery] = useState('')
+  const [sharing, setSharing] = useState<SurveyRow | null>(null)
+  const [sort, setSort] = useState<Sort>({ by: 'latest', dir: 'desc' })
 
-  const { data: surveys = [], isLoading } = useQuery({
-    queryKey: queryKeys.surveys.list(),
-    queryFn: () => getSurveysFn(),
-  })
-
+  const { data: surveys = [], isLoading } = useQuery({ queryKey: queryKeys.surveys.list(), queryFn: () => getSurveysFn() })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list() })
 
-  const openBuilder = (id: string) => navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: id } })
-
-  const createMutation = useMutation({
-    mutationFn: (data: { name: string; templateId: string }) => createSurveyFn({ data }),
-    onSuccess: survey => {
+  const duplicate = useMutation({
+    mutationFn: (s: SurveyRow) => duplicateSurveyFn({ data: { id: s.id } }),
+    onSuccess: copy => {
       invalidate()
-      setShowCreate(false)
-      openBuilder(survey.id)
+      navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: copy.id } })
     },
   })
-
-  const duplicateMutation = useMutation({
-    mutationFn: (id: string) => duplicateSurveyFn({ data: { id } }),
-    onSuccess: invalidate,
+  const setStatus = useMutation({
+    mutationFn: ({ s, to }: { s: SurveyRow; to: 'publish' | 'close' }) => (to === 'publish' ? publishSurveyFn({ data: { id: s.id } }) : closeSurveyFn({ data: { id: s.id } })),
+    onSuccess: (_, { s, to }) => {
+      invalidate()
+      toast.success(to === 'publish' ? `“${s.name}” is live` : `“${s.name}” is closed`, { description: to === 'close' ? 'It no longer takes responses. Reopen it any time.' : undefined })
+    },
+    onError: (err: Error) => toast.error('It can’t go live yet', { description: err.message }),
   })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteSurveyFn({ data: { id } }),
-    onSuccess: invalidate,
+  const remove = useMutation({
+    mutationFn: (s: SurveyRow) => deleteSurveyFn({ data: { id: s.id } }),
+    onSuccess: (_, s) => {
+      invalidate()
+      toast.success(`Deleted “${s.name}”`)
+    },
   })
-
-  const confirmDelete = async (survey: SurveySummaryRow) => {
-    const n = survey.responseCount
-    const warning = n ? `Its ${n} ${n === 1 ? 'response goes' : 'responses go'} too. ` : ''
-    const ok = await confirmDialog({ title: `Delete “${survey.name}”?`, message: `${warning}This can't be undone.`, confirmLabel: 'Delete survey', tone: 'danger' })
-    if (ok) deleteMutation.mutate(survey.id)
+  const confirmDelete = async (s: SurveyRow) => {
+    const n = s.responseCount
+    const ok = await confirmDialog({
+      title: `Delete “${s.name}”?`,
+      message: `Its links and embeds stop working${n ? `, and its ${n} response${n === 1 ? '' : 's'} go too` : ''}. Answers already saved to contacts stay. This can't be undone.`,
+      confirmLabel: 'Delete survey',
+      tone: 'danger',
+    })
+    if (ok) remove.mutate(s)
+  }
+  const confirmClose = async (s: SurveyRow) => {
+    const ok = await confirmDialog({ title: `Close “${s.name}”?`, message: 'It stops taking responses. You can reopen it later.', confirmLabel: 'Close survey' })
+    if (ok) setStatus.mutate({ s, to: 'close' })
   }
 
-  // Take over the page rather than opening a modal, as the Forms builder does.
-  if (showCreate) {
+  const q = query.trim().toLowerCase()
+  const matched = q ? surveys.filter(s => s.name.toLowerCase().includes(q)) : surveys
+  // Latest activity first unless a column says otherwise.
+  const key = (s: SurveyRow): string | number =>
+    sort.by === 'name' ? s.name.toLowerCase() : sort.by === 'responses' ? s.responseCount : sort.by === 'completed' ? (s.responseCount ? s.completedCount / s.responseCount : -1) : (s.lastResponseAt ?? s.updated_at)
+  const shown = [...matched].sort((a, b) => {
+    const x = key(a)
+    const y = key(b)
+    const d = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))
+    return sort.dir === 'asc' ? d : -d
+  })
+  const SortHead = ({ by, label, right }: { by: Sort['by']; label: string; right?: boolean }) => {
+    const active = sort.by === by
+    const Arrow = sort.dir === 'asc' ? ArrowUp : ArrowDown
     return (
-      <CreateSurveyView
-        onClose={() => setShowCreate(false)}
-        onCreate={data => createMutation.mutate(data)}
-        isSaving={createMutation.isPending}
-        error={createMutation.error?.message}
-      />
+      <button
+        type="button"
+        onClick={() => setSort(s => (s.by === by ? { by, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by, dir: by === 'name' ? 'asc' : 'desc' }))}
+        aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+        className={`-mx-1 inline-flex cursor-pointer items-center gap-1 rounded-md-xs px-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${right ? 'justify-self-end' : 'justify-self-start'} ${active ? 'text-foreground' : ''}`}
+      >
+        {label}
+        <Arrow className={`h-3.5 w-3.5 ${active ? '' : 'opacity-0'}`} aria-hidden />
+      </button>
     )
   }
 
   return (
-    <div className="p-4 lg:p-8">
-      <div className="flex justify-between items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-display text-foreground mb-2">Surveys</h1>
-          <p className="text-muted-foreground">
-            Build surveys, send them by email or embed them, and feed answers back to contact profiles.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md-s font-medium hover:bg-primary/85 active:scale-95 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          New Survey
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="card p-6 animate-pulse h-40 border border-border rounded-md-m" />
-          ))}
-        </div>
-      ) : surveys.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-4">
-            <ClipboardList className="w-8 h-8 text-accent" />
+    <div className="w-full p-4 lg:p-8">
+      <div className="mx-auto w-full max-w-6xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0 flex-1 basis-80">
+            <h1 className="mb-1.5 text-2xl font-display text-foreground">Surveys</h1>
+            <p className="text-muted-foreground">Ask your contacts and customers what they think. Send a survey by email, link or QR code, or put it on your site; answers can go onto their contact.</p>
           </div>
-          <h3 className="text-lg font-medium text-foreground mb-2">No surveys yet</h3>
-          <p className="text-muted-foreground mb-6 max-w-sm">Start from a template such as NPS or customer satisfaction.</p>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="bg-primary text-primary-foreground px-5 py-2.5 rounded-md-s font-medium hover:bg-primary/85 transition-all flex items-center gap-2 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" /> Create Survey
-          </button>
+          {surveys.length > 0 && (
+            <Button leftIcon={<Plus className="h-4 w-4" />} className="max-sm:w-full" onClick={() => navigate({ to: '/marketing/surveys/new' })}>
+              New survey
+            </Button>
+          )}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {surveys.map(survey => {
-            const rate = survey.responseCount ? Math.round((survey.completedCount / survey.responseCount) * 100) : null
-            return (
-              <div
-                key={survey.id}
-                className="card border border-border rounded-md-m p-6 flex flex-col gap-4 cursor-pointer hover:border-accent/50 transition-colors"
-                onClick={() => navigate({ to: '/marketing/surveys/$surveyId', params: { surveyId: survey.id } })}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-foreground truncate">{survey.name}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {survey.pageCount} page{survey.pageCount !== 1 ? 's' : ''} · updated {new Date(survey.updated_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    <IconButton title="Edit" onClick={() => openBuilder(survey.id)}>
-                      <Pencil className="w-3.5 h-3.5" />
-                    </IconButton>
-                    <IconButton title="Duplicate" onClick={() => duplicateMutation.mutate(survey.id)}>
-                      <Copy className="w-3.5 h-3.5" />
-                    </IconButton>
-                    <IconButton title="Delete" danger onClick={() => confirmDelete(survey)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </IconButton>
-                  </div>
-                </div>
 
-                <div className="flex flex-wrap gap-1.5">
-                  <SurveyStatusBadge status={survey.status} />
-                  {rate !== null && <Badge>{rate}% completion</Badge>}
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-auto">
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  <span>
-                    <span className="font-semibold text-foreground">{survey.completedCount}</span> completed ·{' '}
-                    {survey.responseCount} started
-                  </span>
-                  {survey.lastResponseAt && (
-                    <span className="ml-auto">last {new Date(survey.lastResponseAt).toLocaleDateString()}</span>
-                  )}
-                </div>
+        {isLoading ? (
+          <div className="overflow-hidden rounded-md-m border border-border bg-card" aria-busy="true">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 border-b border-border/70 px-5 py-4 last:border-0">
+                <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+                <div className="ml-auto h-4 w-24 animate-pulse rounded bg-muted" />
               </div>
-            )
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : surveys.length === 0 ? (
+          <EmptySurveys />
+        ) : (
+          <>
+            {surveys.length > 6 && (
+              <div className="relative mb-4 max-w-sm">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <input className={`${INPUT_CLASS} pl-9`} placeholder="Search surveys" value={query} onChange={e => setQuery(e.target.value)} aria-label="Search surveys" />
+              </div>
+            )}
+            <div className="overflow-hidden rounded-md-m border border-border bg-card">
+              <div className={`hidden ${COLUMNS} items-center gap-x-4 border-b border-border bg-muted/40 px-5 py-2.5 text-[13px] font-medium text-muted-foreground md:grid`}>
+                <SortHead by="name" label="Survey" />
+                <span>Status</span>
+                <SortHead by="responses" label="Responses" right />
+                <SortHead by="completed" label="Completed" right />
+                <span className="text-right">Result</span>
+                <span className="whitespace-nowrap pl-3">
+                  <SortHead by="latest" label="Latest" />
+                </span>
+                <span className="sr-only">Actions</span>
+              </div>
+              <ul className="divide-y divide-border/70">
+                {shown.map(s => {
+                  const rate = s.responseCount ? Math.round((s.completedCount / s.responseCount) * 100) : null
+                  return (
+                    <li key={s.id} data-survey-row className="group/row relative">
+                      <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1 px-5 py-4 transition-colors hover:bg-muted/40 ${COLUMNS} md:items-center`}>
+                        <div className="min-w-0">
+                          <Link
+                            to="/marketing/surveys/$surveyId"
+                            params={{ surveyId: s.id }}
+                            className="block truncate text-[15px] font-semibold text-foreground after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:rounded-md-s focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring/50"
+                            title={s.name}
+                          >
+                            {s.name}
+                          </Link>
+                          <p className="mt-0.5 text-[13px] text-muted-foreground md:line-clamp-2">
+                            {s.questionCount} question{s.questionCount === 1 ? '' : 's'}
+                            {s.pageCount > 1 && ` on ${s.pageCount} pages`}
+                            {' · '}
+                            {s.status === 'draft' ? `Draft, edited ${ago(s.updated_at)}` : s.status === 'closed' ? `Closed ${ago(s.updated_at)}` : s.published_at ? `Live since ${dayFmt.format(new Date(s.published_at))}` : 'Live'}
+                          </p>
+                          {/* On a phone the numbers go under the name. */}
+                          <p className="mt-2 flex items-center justify-between gap-3 text-[13px] text-muted-foreground md:hidden">
+                            <SurveyStatusBadge status={s.status} />
+                            <span className="truncate text-right">
+                              <span className="font-medium tabular-nums text-foreground">{s.responseCount}</span> response{s.responseCount === 1 ? '' : 's'}
+                              {s.headline && <> · <HeadlineResult headline={s.headline} inline /></>}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="hidden md:block">
+                          <SurveyStatusBadge status={s.status} />
+                        </div>
+                        <div className="hidden text-right md:block">
+                          <p className="text-[15px] font-semibold tabular-nums text-foreground">{s.responseCount.toLocaleString('en-GB')}</p>
+                          <p className="text-[13px] text-muted-foreground">{s.responsesThisWeek ? `${s.responsesThisWeek} this week` : s.status === 'draft' ? 'Not sent yet' : 'None this week'}</p>
+                        </div>
+                        <div className="hidden text-right md:block" title="Of the people who started it, how many finished">
+                          <p className="text-[15px] font-semibold tabular-nums text-foreground">{rate === null ? '—' : `${rate}%`}</p>
+                          <p className="text-[13px] text-muted-foreground">{rate === null ? 'No responses' : `${s.completedCount.toLocaleString('en-GB')} finished`}</p>
+                        </div>
+                        <div className="hidden text-right md:block">{s.headline ? <HeadlineResult headline={s.headline} /> : <span className="text-[15px] text-muted-foreground">—</span>}</div>
+                        <p className="hidden pl-4 text-sm text-muted-foreground md:block">{s.lastResponseAt ? ago(s.lastResponseAt).replace(/^on /, '') : 'None yet'}</p>
+                        <div className="relative z-10 flex items-center justify-end gap-1">
+                          {/* A draft can't take answers yet, so its quick action is to carry on editing it. */}
+                          {s.status === 'draft' ? (
+                            <Button variant="ghost" size="sm" onClick={() => navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: s.id } })} leftIcon={<Pencil className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
+                              Edit
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" onClick={() => setSharing(s)} leftIcon={<Share2 className="h-3.5 w-3.5" />} className="max-md:hidden !text-foreground/80">
+                              Share
+                            </Button>
+                          )}
+                          <ActionMenu
+                            label={`Actions for ${s.name}`}
+                            items={[
+                              { label: 'Edit survey', icon: Pencil, onSelect: () => navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: s.id } }) },
+                              { label: 'Share', icon: Share2, onSelect: () => setSharing(s) },
+                              { label: 'Duplicate', icon: Copy, onSelect: () => duplicate.mutate(s) },
+                              s.status === 'published'
+                                ? { label: 'Close survey', icon: Square, onSelect: () => confirmClose(s) }
+                                : { label: s.status === 'closed' ? 'Reopen' : 'Publish', icon: Play, onSelect: () => setStatus.mutate({ s, to: 'publish' }) },
+                              'separator',
+                              { label: 'Delete', icon: Trash2, tone: 'danger', onSelect: () => confirmDelete(s) },
+                            ]}
+                          />
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+                {shown.length === 0 && <li className="px-5 py-8 text-center text-sm text-muted-foreground">No surveys called “{query.trim()}”.</li>}
+              </ul>
+            </div>
+          </>
+        )}
 
+        {sharing && <SurveyShareDialog survey={sharing} onClose={() => setSharing(null)} />}
+      </div>
     </div>
   )
 }
 
-function IconButton({
-  title,
-  onClick,
-  danger,
-  children,
-}: {
-  title: string
-  onClick: () => void
-  danger?: boolean
-  children: React.ReactNode
-}) {
+/** No surveys yet: what they're for, and a few to start from, laid out as on New survey. */
+function EmptySurveys() {
+  const { pick, pending, error } = useCreateSurvey()
   return (
-    <button
-      title={title}
-      onClick={e => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className={`p-1.5 rounded-md-s text-muted-foreground transition-colors cursor-pointer ${
-        danger ? 'hover:text-destructive hover:bg-destructive/10' : 'hover:text-foreground hover:bg-muted'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function CreateSurveyView({
-  onClose,
-  onCreate,
-  isSaving,
-  error,
-}: {
-  onClose: () => void
-  onCreate: (data: { name: string; templateId: string }) => void
-  isSaving: boolean
-  error?: string
-}) {
-  const [name, setName] = useState('')
-  const [templateId, setTemplateId] = useState('blank')
-  const categories = [...new Set(SURVEY_STARTER_TEMPLATES.map(t => t.category))]
-
-  return (
-    <form
-      className="p-4 lg:p-8 max-w-5xl"
-      onSubmit={e => {
-        e.preventDefault()
-        const template = SURVEY_STARTER_TEMPLATES.find(t => t.id === templateId)
-        onCreate({ name: name.trim() || template?.name || 'Untitled survey', templateId })
-      }}
-    >
-      <div className="flex items-center gap-3 mb-8">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Back to surveys"
-          className="p-2 rounded-md-s hover:bg-muted text-muted-foreground cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
+    <div>
+      <div className="mb-6 flex items-start gap-4 rounded-md-m border border-border bg-card px-5 py-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <ClipboardList className="h-5 w-5" aria-hidden />
+        </span>
         <div>
-          <h1 className="text-2xl font-display text-foreground">New survey</h1>
-          <p className="text-muted-foreground text-sm">Name it and pick a starting point. You can change everything in the builder.</p>
+          <h2 className="text-lg font-semibold text-foreground">Make your first survey</h2>
+          <p className="mt-1 text-muted-foreground">Measure NPS, ask how onboarding went, or qualify leads. Pick a starting point below and change anything you like.</p>
         </div>
       </div>
-
-      <div className="space-y-8">
-        <label className="flex flex-col gap-1.5 text-sm max-w-md">
-          <span className="font-medium text-foreground">Name</span>
-          <input
-            autoFocus
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="e.g. Q3 customer feedback"
-            className="w-full bg-background border border-border rounded-md-s px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-          />
-        </label>
-
-        {categories.map(category => (
-          <div key={category} className="space-y-3">
-            <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{category}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {SURVEY_STARTER_TEMPLATES.filter(t => t.category === category).map(t => {
-                const pages = t.build()
-                const questions = pages.flatMap(p => p.blocks.filter(b => b.question))
-                return (
-                  <button
-                    type="button"
-                    key={t.id}
-                    onClick={() => setTemplateId(t.id)}
-                    onDoubleClick={() => onCreate({ name: name.trim() || t.name, templateId: t.id })}
-                    className={`card text-left p-5 rounded-md-m border transition-colors cursor-pointer flex flex-col gap-2 ${
-                      templateId === t.id ? 'border-accent ring-1 ring-accent bg-accent/5' : 'border-border hover:border-accent/50'
-                    }`}
-                  >
-                    <div className="font-medium text-foreground">{t.name}</div>
-                    <div className="text-xs text-muted-foreground">{t.description}</div>
-                    <div className="text-[11px] text-muted-foreground mt-auto pt-2">
-                      {pages.length} page{pages.length !== 1 ? 's' : ''} · {questions.length} question{questions.length !== 1 ? 's' : ''}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        ))}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <div className="flex justify-end gap-2 border-t border-border pt-6">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md-s border border-border hover:bg-muted cursor-pointer">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="bg-primary text-primary-foreground px-5 py-2 rounded-md-s text-sm font-medium hover:bg-primary/85 disabled:opacity-50 cursor-pointer"
-          >
-            {isSaving ? 'Creating…' : 'Create & open builder'}
-          </button>
-        </div>
-      </div>
-    </form>
+      {error && <Notice level="error" className="mb-4">{error}</Notice>}
+      <StarterTiles onPick={pick} pending={pending} />
+    </div>
   )
 }

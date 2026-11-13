@@ -46,6 +46,7 @@ import { Route as ApiUploadsIndexRouteImport } from './routes/api/uploads/index'
 import { Route as SalesSequencesIdRouteImport } from './routes/sales/sequences/$id'
 import { Route as SalesProposalsProposalIdRouteImport } from './routes/sales/proposals/$proposalId'
 import { Route as SalesDealsIdRouteImport } from './routes/sales/deals/$id'
+import { Route as MarketingSurveysNewRouteImport } from './routes/marketing/surveys/new'
 import { Route as MarketingListsNewRouteImport } from './routes/marketing/lists/new'
 import { Route as MarketingListsListIdRouteImport } from './routes/marketing/lists/$listId'
 import { Route as MarketingFormsNewRouteImport } from './routes/marketing/forms/new'
@@ -263,6 +264,11 @@ const SalesDealsIdRoute = SalesDealsIdRouteImport.update({
   path: '/sales/deals/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MarketingSurveysNewRoute = MarketingSurveysNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => MarketingSurveysRoute,
+} as any)
 const MarketingListsNewRoute = MarketingListsNewRouteImport.update({
   id: '/marketing/lists/new',
   path: '/marketing/lists/new',
@@ -460,6 +466,7 @@ export interface FileRoutesByFullPath {
   '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
+  '/marketing/surveys/new': typeof MarketingSurveysNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -523,6 +530,7 @@ export interface FileRoutesByTo {
   '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
+  '/marketing/surveys/new': typeof MarketingSurveysNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -592,6 +600,7 @@ export interface FileRoutesById {
   '/marketing/forms/new': typeof MarketingFormsNewRoute
   '/marketing/lists/$listId': typeof MarketingListsListIdRoute
   '/marketing/lists/new': typeof MarketingListsNewRoute
+  '/marketing/surveys/new': typeof MarketingSurveysNewRoute
   '/sales/deals/$id': typeof SalesDealsIdRoute
   '/sales/proposals/$proposalId': typeof SalesProposalsProposalIdRoute
   '/sales/sequences/$id': typeof SalesSequencesIdRoute
@@ -662,6 +671,7 @@ export interface FileRouteTypes {
     | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
+    | '/marketing/surveys/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -725,6 +735,7 @@ export interface FileRouteTypes {
     | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
+    | '/marketing/surveys/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -793,6 +804,7 @@ export interface FileRouteTypes {
     | '/marketing/forms/new'
     | '/marketing/lists/$listId'
     | '/marketing/lists/new'
+    | '/marketing/surveys/new'
     | '/sales/deals/$id'
     | '/sales/proposals/$proposalId'
     | '/sales/sequences/$id'
@@ -1132,6 +1144,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesDealsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/marketing/surveys/new': {
+      id: '/marketing/surveys/new'
+      path: '/new'
+      fullPath: '/marketing/surveys/new'
+      preLoaderRoute: typeof MarketingSurveysNewRouteImport
+      parentRoute: typeof MarketingSurveysRoute
+    }
     '/marketing/lists/new': {
       id: '/marketing/lists/new'
       path: '/marketing/lists/new'
@@ -1399,12 +1418,14 @@ const MarketingFormsRouteWithChildren = MarketingFormsRoute._addFileChildren(
 )
 
 interface MarketingSurveysRouteChildren {
+  MarketingSurveysNewRoute: typeof MarketingSurveysNewRoute
   MarketingSurveysIndexRoute: typeof MarketingSurveysIndexRoute
   MarketingSurveysSurveyIdEditRoute: typeof MarketingSurveysSurveyIdEditRoute
   MarketingSurveysSurveyIdIndexRoute: typeof MarketingSurveysSurveyIdIndexRoute
 }
 
 const MarketingSurveysRouteChildren: MarketingSurveysRouteChildren = {
+  MarketingSurveysNewRoute: MarketingSurveysNewRoute,
   MarketingSurveysIndexRoute: MarketingSurveysIndexRoute,
   MarketingSurveysSurveyIdEditRoute: MarketingSurveysSurveyIdEditRoute,
   MarketingSurveysSurveyIdIndexRoute: MarketingSurveysSurveyIdIndexRoute,

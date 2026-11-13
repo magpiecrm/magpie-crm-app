@@ -4,7 +4,8 @@ import { getPublicSurveyFn } from '../../server/functions'
 import type { Answers, ResponseSource, SurveyDesign } from '../../features/survey-builder/types'
 import { computePath, findQuestion } from '../../features/survey-builder/logic/evaluate'
 import { validateAnswer } from '../../features/survey-builder/logic/validate'
-import { SurveyRenderer, type SubmitPageResult } from '../../features/survey-builder/runtime/SurveyRenderer'
+import { SurveyMessage, SurveyRenderer, type SubmitPageResult } from '../../features/survey-builder/runtime/SurveyRenderer'
+import { DEFAULT_SURVEY_THEME } from '../../features/survey-builder/types'
 
 interface SurveySearch {
   /** Per-recipient token from an email. */
@@ -43,6 +44,9 @@ export const Route = createFileRoute('/s/$surveyId')({
 type Stored = { resumeKey: string; answers: Answers; path: string[] }
 const storageKey = (id: string) => `em-survey:${id}`
 
+/** Inside an iframe the page itself has no background, so the customer's site shows through. */
+const EMBED_PAGE_CSS = 'html,body{background:transparent!important}'
+
 function readStored(id: string): Stored | null {
   try {
     const raw = localStorage.getItem(storageKey(id))
@@ -61,25 +65,35 @@ function writeStored(id: string, value: Stored | null) {
   }
 }
 
-function Message({ title, body }: { title: string; body: string }) {
-  return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Helvetica, Arial, sans-serif', background: '#f4f4f5', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: '40px 28px', maxWidth: 480, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-        <h1 style={{ fontSize: 22, margin: '0 0 8px' }}>{title}</h1>
-        <p style={{ margin: 0, color: '#52525b' }}>{body}</p>
-      </div>
-    </div>
-  )
-}
-
 function PublicSurveyPage() {
   const data = Route.useLoaderData()
   const { surveyId } = Route.useParams()
   const search = Route.useSearch()
 
-  if (data.state === 'not_found') return <Message title="Survey not found" body="This survey doesn't exist or isn't published yet." />
-  if (data.state === 'closed') return <Message title={data.name} body="This survey is closed. Thank you for your interest." />
-  if (data.state === 'invalid_link') return <Message title={data.name} body="This survey link has expired or isn't valid. Reload the page you opened it from, or use the link from your email." />
+  const embedded = search.embed
+  // Embedded, these too sit on the customer's page rather than the app's grey.
+  const seeThrough = embedded ? <style>{EMBED_PAGE_CSS}</style> : null
+  if (data.state === 'not_found')
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />
+      </>
+    )
+  if (data.state === 'closed')
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />
+      </>
+    )
+  if (data.state === 'invalid_link')
+    return (
+      <>
+        {seeThrough}
+        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />
+      </>
+    )
 
   return <OpenSurvey key={surveyId} data={data} surveyId={surveyId} search={search} />
 }
@@ -156,32 +170,52 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     // Runs once per mount; the inputs come from the loader and URL.
   }, [])
 
-  // Let the embedding page size the iframe to the survey.
+  // In a pop-up or slide-in, Escape closes it, as it does on the page around it.
   useEffect(() => {
-    if (!search.embed || typeof ResizeObserver === 'undefined') return
-    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, height: document.documentElement.scrollHeight }, '*')
-    const observer = new ResizeObserver(send)
-    observer.observe(document.body)
-    send()
-    return () => observer.disconnect()
+    if (!search.embed) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && window.parent.postMessage({ type: 'em-survey:escape', id: surveyId }, '*')
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [search.embed, surveyId])
 
-  if (!start) return <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
+  // Let the embedding page size the iframe to the survey. The document's height
+  // never falls below the iframe's own, so watch the survey itself and send its
+  // height: the frame then shrinks for a shorter page as well as growing.
+  const embedRoot = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = embedRoot.current
+    if (!search.embed || !root || typeof ResizeObserver === 'undefined') return
+    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, height: Math.ceil(root.getBoundingClientRect().height) }, '*')
+    const observer = new ResizeObserver(send)
+    observer.observe(root)
+    send()
+    // The embed script can load after the first height went out, so it asks again.
+    const onAsk = (e: MessageEvent) => {
+      if (e.source === window.parent && e.data?.type === 'em-survey:measure') send()
+    }
+    window.addEventListener('message', onAsk)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('message', onAsk)
+    }
+  }, [search.embed, surveyId])
 
-  const finished = data.completed || start.done
-
-  return (
+  const page = !start ? (
+    <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
+  ) : (
     <SurveyRenderer
       design={design}
       settings={data.survey.settings}
       initialAnswers={start.answers}
-      initialPath={finished ? undefined : start.path}
-      initiallyCompleted={finished}
+      initialPath={data.completed || start.done ? undefined : start.path}
+      initiallyCompleted={data.completed || start.done}
       embedded={search.embed}
       honeypotRef={honeypotRef}
       hiddenBlockIds={data.identified?.hiddenBlockIds}
       submitPage={async ({ pageId, answers }) => {
         const result = await post(pageId, answers)
+        // Finished inside an embed: a pop-up's script stops offering it to this visitor.
+        if (search.embed && result.ok && result.next.kind === 'end') window.parent.postMessage({ type: 'em-survey:done', id: surveyId }, '*')
         if (!search.t && resumeKeyRef.current) {
           if (result.ok && result.next.kind === 'end') writeStored(surveyId, null)
           else if (result.ok && result.next.kind === 'page') {
@@ -197,5 +231,16 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
         return result
       }}
     />
+  )
+
+  // Embedded, one element holds the survey from the first render, so its height can be watched (flow-root keeps its children's margins inside it).
+  // The page behind it is see-through, so the site around the iframe shows round the card, not the app's grey.
+  return search.embed ? (
+    <div ref={embedRoot} style={{ display: 'flow-root' }}>
+      <style>{EMBED_PAGE_CSS}</style>
+      {page}
+    </div>
+  ) : (
+    page
   )
 }

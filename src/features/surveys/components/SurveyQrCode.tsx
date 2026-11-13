@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { Download } from 'lucide-react'
+import { Button } from '../../../components/ui/Button'
 
 /** The public link, tagged so scans are counted as their own source in results. */
 export const surveyQrUrl = (origin: string, surveyId: string) => `${origin}/s/${surveyId}?src=qr`
 
 /**
- * Black on white with a quiet zone and medium error correction: the
+ * Black on white with the full four-module quiet zone and medium error correction: the
  * combination every phone camera reads reliably, including from print.
  */
-const QR_OPTIONS = { errorCorrectionLevel: 'M' as const, margin: 2, color: { dark: '#000000', light: '#ffffff' } }
+const QR_OPTIONS = { errorCorrectionLevel: 'M' as const, margin: 4, color: { dark: '#000000', light: '#ffffff' } }
 
 function download(href: string, filename: string) {
   const a = document.createElement('a')
@@ -34,28 +35,23 @@ export function SurveyQrCode({ url, name }: { url: string; name: string }) {
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
   }
 
-  const buttonClass =
-    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md-s border border-border hover:bg-muted cursor-pointer'
-
   return (
-    <div className="flex flex-col sm:flex-row gap-5 items-start">
-      <div className="w-40 h-40 shrink-0 bg-white rounded-md-s border border-border flex items-center justify-center">
-        {preview ? <img src={preview} alt={`QR code for ${name}`} className="w-full h-full" /> : null}
+    <div className="flex flex-col items-start gap-4 sm:flex-row sm:gap-5">
+      <div className="flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-md-m border border-border bg-white p-1">
+        {preview ? <img src={preview} alt={`QR code that opens ${url}`} className="h-full w-full" /> : null}
       </div>
-      <div className="space-y-3">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Print it on posters, packaging, receipts or slides. Scans open the public survey and show as "QR code" in results.
-          Use the SVG for print — it stays sharp at any size.
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] leading-relaxed text-muted-foreground">
+          For posters, packaging, receipts or slides. Scans open the survey and show up as “QR code” in its results. The SVG stays sharp at any size, so use it for print.
         </p>
         <div className="flex gap-2">
-          <button type="button" onClick={downloadPng} className={buttonClass}>
-            <Download className="w-3.5 h-3.5" /> PNG
-          </button>
-          <button type="button" onClick={downloadSvg} className={buttonClass}>
-            <Download className="w-3.5 h-3.5" /> SVG
-          </button>
+          <Button variant="secondary" size="sm" leftIcon={<Download className="h-3.5 w-3.5" />} onClick={downloadSvg}>
+            SVG
+          </Button>
+          <Button variant="secondary" size="sm" leftIcon={<Download className="h-3.5 w-3.5" />} onClick={downloadPng}>
+            PNG
+          </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground font-mono break-all">{url}</p>
       </div>
     </div>
   )

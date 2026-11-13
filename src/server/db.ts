@@ -2234,6 +2234,13 @@ class JsonDb {
     this.save()
   }
 
+  /** Several at once, with one save. */
+  deleteSurveyResponses(ids: Set<string>) {
+    if (!this.data.survey_responses || ids.size === 0) return
+    this.data.survey_responses = this.data.survey_responses.filter(r => !ids.has(r.id))
+    this.save()
+  }
+
   getSurveyResponsesForContact(email: string): SurveyResponse[] {
     const normalized = email.toLowerCase().trim()
     return (this.data.survey_responses ?? [])

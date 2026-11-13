@@ -1,18 +1,23 @@
-import { ArrowDown, ArrowUp, Lock, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronRight, Lock, Plus, Trash2 } from 'lucide-react'
+import { Switch } from '../../../components/ui/Switch'
+import type { LintIssue } from '../logic/lint'
 import type { ContactFieldDef } from '../../contacts/contactFields'
 import { BUILTIN_FIELD_LABELS } from '../../contacts/contactFields'
-import { AltTextControl, PaddingControl } from '../../email-builder/components/BlockEditorControls'
-import { ImageUrlField } from '../../email-builder/components/ImageUrlField'
+import { SurveyImageField } from './SurveyImageField'
 import type { ContactFieldMapping, QuestionConfig, QuestionType, SurveyBlock } from '../types'
 import { BUILTIN_CONTACT_FIELDS, CHOICE_TYPES, SURVEY_BLOCK_TYPES, isQuestionType } from '../types'
 import { compatibleFieldTypes } from '../logic/answers'
 import { Select } from '../../../components/ui/Select'
 
+/** The builder panel's own field: the app's field, a little tighter for a 320px column. */
 export const inputClass =
-  'w-full px-2 py-1.5 bg-muted border border-border rounded-lg text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-accent'
-export const labelClass = 'block text-[10px] text-muted-foreground font-semibold uppercase tracking-wider'
-export const sectionLabelClass =
-  'block text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/50 pb-1.5'
+  'w-full min-h-9 max-sm:min-h-11 px-2.5 py-1.5 bg-card border border-input rounded-md-s text-[13px] max-sm:text-base text-foreground placeholder:text-muted-foreground/90 transition-[border-color,box-shadow] focus:outline-none focus:border-accent focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60'
+/** A field's label: sentence case, the same as every form in the app. */
+export const labelClass = 'block text-[13px] font-medium text-foreground'
+/** A group of fields' heading: sentence case like everything else, set apart by weight. */
+export const sectionLabelClass = 'block text-[13px] font-semibold text-foreground'
+/** A line of help under a field or group. */
+export const hintClass = 'text-[13px] leading-relaxed text-muted-foreground text-pretty'
 
 export type Dispatch = (action: string, args: any) => void
 
@@ -31,24 +36,29 @@ interface SurveyBlockEditorProps {
   /** Option ids that can't be deleted because responses may reference them. */
   lockedOptionIds: Set<string>
   contactFields: ContactFieldDef[]
+  /** Checks that failed on this block. */
+  issues?: LintIssue[]
 }
 
-export function SurveyBlockEditor({ block, dispatch, locked, lockedOptionIds, contactFields }: SurveyBlockEditorProps) {
+export function SurveyBlockEditor({ block, dispatch, locked, lockedOptionIds, contactFields, issues = [] }: SurveyBlockEditorProps) {
   const update = (updates: Partial<SurveyBlock>) => dispatch('survey.updateBlock', { id: block.id, updates })
   const updateQuestion = (updates: Partial<QuestionConfig>) => update({ question: updates as QuestionConfig })
-  const info = SURVEY_BLOCK_TYPES.find(t => t.type === block.type)
   const q = block.question
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-bold text-foreground">{info?.label}</span>
-        {locked && (
-          <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400" title="This question has responses">
-            <Lock className="w-3 h-3" /> Has responses
-          </span>
-        )}
-      </div>
+      {locked && (
+        <p className="flex items-center gap-1.5 text-[13px] text-muted-foreground" title="People have answered it, so its type can't change and it can't be deleted. Its wording and options can still change; duplicate the survey to change more.">
+          <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          Has responses: wording and options only
+        </p>
+      )}
+      {issues.map((issue, i) => (
+        <p key={i} className={`flex items-start gap-2 text-[13px] leading-relaxed ${issue.level === 'error' ? 'text-destructive' : 'text-amber-800 dark:text-amber-300'}`}>
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          {issue.message}
+        </p>
+      ))}
 
       {isQuestionType(block.type) && q ? (
         <>
@@ -68,7 +78,13 @@ export function SurveyBlockEditor({ block, dispatch, locked, lockedOptionIds, co
               className={inputClass}
             />
           </div>
-          <Toggle label="Required" checked={q.required} onChange={required => updateQuestion({ required })} />
+          <Toggle label="Required" hint="People can't go on without answering it." checked={q.required} onChange={required => updateQuestion({ required })} />
+
+          {block.type === 'email' ? (
+            <p className={hintClass}>With “Identify contacts” on in Settings, this answer links people who use the public link or an embed to their contact.</p>
+          ) : (
+            <ContactMappingControl block={block} contactFields={contactFields} onChange={mapTo => updateQuestion({ mapTo })} />
+          )}
 
           {['short_text', 'long_text', 'email', 'number', 'dropdown'].includes(block.type) && (
             <div className="space-y-2">
@@ -78,24 +94,27 @@ export function SurveyBlockEditor({ block, dispatch, locked, lockedOptionIds, co
           )}
 
           <QuestionTypeFields block={block} dispatch={dispatch} lockedOptionIds={lockedOptionIds} updateQuestion={updateQuestion} />
-
-          {block.type === 'email' ? (
-            <p className="text-[10px] text-muted-foreground leading-snug">
-              When "Identify contacts" is on in Settings, this answer links anonymous respondents to their contact profile.
-            </p>
-          ) : (
-            <ContactMappingControl block={block} contactFields={contactFields} onChange={mapTo => updateQuestion({ mapTo })} />
-          )}
         </>
       ) : (
-        <ContentFields block={block} update={update} />
+        <>
+          <ContentFields block={block} update={update} />
+          {/* Spacing and a fill are for content blocks; questions take theirs from the survey's style. */}
+          {block.type !== 'spacer' && (
+            <details className="group rounded-md-s border border-border">
+              <summary className="cursor-pointer list-none px-3 py-2.5 text-[13px] font-medium text-foreground marker:hidden">
+                <span className="inline-flex items-center gap-1.5">
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-90" aria-hidden />
+                  Spacing and background
+                </span>
+              </summary>
+              <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
+                <SpacingControl block={block} update={update} />
+                <ColorField label="Background" value={block.style?.bgColor} onChange={bgColor => update({ style: { bgColor } })} />
+              </div>
+            </details>
+          )}
+        </>
       )}
-
-      <div className="space-y-3 pt-2">
-        <span className={sectionLabelClass}>Layout</span>
-        <PaddingControl block={block} update={update} defaults={[8, 0, 8, 0]} />
-        <ColorField label="Background" value={block.style?.bgColor} onChange={bgColor => update({ style: { bgColor } })} />
-      </div>
     </div>
   )
 }
@@ -112,8 +131,9 @@ function QuestionTypeSwitcher({ block, locked, onChange }: { block: SurveyBlock;
             key={t}
             type="button"
             onClick={() => onChange(t)}
-            className={`px-2 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
-              block.type === t ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted-foreground hover:text-foreground'
+            aria-pressed={block.type === t}
+            className={`min-h-8 cursor-pointer rounded-md-s border px-2.5 text-[13px] font-medium transition-colors ${
+              block.type === t ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
             {SURVEY_BLOCK_TYPES.find(i => i.type === t)?.label}
@@ -241,6 +261,9 @@ function QuestionTypeFields({
   }
 }
 
+const iconButton =
+  'inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md-s text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent'
+
 function OptionListEditor({ block, dispatch, lockedOptionIds }: { block: SurveyBlock; dispatch: Dispatch; lockedOptionIds: Set<string> }) {
   const options = block.question?.options ?? []
   return (
@@ -250,13 +273,13 @@ function OptionListEditor({ block, dispatch, lockedOptionIds }: { block: SurveyB
         <button
           type="button"
           onClick={() => dispatch('survey.addOption', { blockId: block.id, option: { label: `Option ${options.length + 1}` } })}
-          className="flex items-center gap-1 text-[10px] text-accent hover:underline font-semibold"
+          className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md-s px-2 text-[13px] font-medium text-accent hover:bg-accent/10"
         >
-          <Plus className="w-3 h-3" /> Add
+          <Plus className="h-3.5 w-3.5" /> Add option
         </button>
       </div>
       {options.map((option, i) => (
-        <div key={option.id} className="flex gap-1 items-center">
+        <div key={option.id} className="flex items-center gap-0.5">
           <input
             value={option.label}
             onChange={e => dispatch('survey.updateOption', { blockId: block.id, optionId: option.id, updates: { label: e.target.value } })}
@@ -266,29 +289,31 @@ function OptionListEditor({ block, dispatch, lockedOptionIds }: { block: SurveyB
             type="button"
             disabled={i === 0}
             onClick={() => dispatch('survey.moveOption', { blockId: block.id, optionId: option.id, direction: 'up' })}
-            className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-            aria-label="Move up"
+            className={iconButton}
+            aria-label={`Move “${option.label}” up`}
+            title="Move up"
           >
-            <ArrowUp className="w-3 h-3" />
+            <ArrowUp className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             disabled={i === options.length - 1}
             onClick={() => dispatch('survey.moveOption', { blockId: block.id, optionId: option.id, direction: 'down' })}
-            className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
-            aria-label="Move down"
+            className={iconButton}
+            aria-label={`Move “${option.label}” down`}
+            title="Move down"
           >
-            <ArrowDown className="w-3 h-3" />
+            <ArrowDown className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             disabled={lockedOptionIds.has(option.id)}
-            title={lockedOptionIds.has(option.id) ? 'This option has responses' : 'Delete'}
+            title={lockedOptionIds.has(option.id) ? 'People have picked it, so it stays' : 'Delete'}
             onClick={() => dispatch('survey.deleteOption', { blockId: block.id, optionId: option.id })}
-            className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30"
-            aria-label="Delete option"
+            className={`${iconButton} hover:!text-destructive`}
+            aria-label={`Delete “${option.label}”`}
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       ))}
@@ -311,14 +336,14 @@ function ContactMappingControl({
   const customFields = contactFields.filter(f => compatible.includes(f.type))
 
   return (
-    <div className="space-y-2 pt-2">
-      <span className={sectionLabelClass}>Save to contact</span>
+    <div className="space-y-2">
+      <span className={labelClass}>Save the answer to their contact</span>
       <Select
         value={mapTo?.field ?? ''}
         onChange={e => onChange(e.target.value ? { field: e.target.value as ContactFieldMapping['field'], overwrite: mapTo?.overwrite ?? 'if_empty' } : undefined)}
         className={inputClass}
       >
-        <option value="">Don't save to the contact</option>
+        <option value="">Don't save it</option>
         {textOk && (
           <optgroup label="Contact fields">
             {BUILTIN_CONTACT_FIELDS.map(f => (
@@ -348,9 +373,7 @@ function ContactMappingControl({
           <option value="always">Always overwrite with the latest answer</option>
         </Select>
       )}
-      <p className="text-[10px] text-muted-foreground leading-snug">
-        Answers are written to the respondent's profile. Add custom fields in Settings → Contact fields.
-      </p>
+      <p className={hintClass}>{mapTo ? 'Written to the contact as they answer.' : 'Add your own fields in Settings → Contact fields.'}</p>
     </div>
   )
 }
@@ -386,8 +409,12 @@ function ContentFields({ block, update }: { block: SurveyBlock; update: (u: Part
     case 'image':
       return (
         <div className="space-y-4">
-          <ImageUrlField label="Image" value={block.content ?? ''} onChange={content => update({ content })} showPreview />
-          <AltTextControl block={block} update={update} />
+          <SurveyImageField label="Image" value={block.content ?? ''} onChange={content => update({ content })} />
+          <div className="space-y-1.5">
+            <label className={labelClass}>Description</label>
+            <input value={block.alt ?? ''} placeholder="What the image shows" onChange={e => update({ alt: e.target.value || undefined })} className={inputClass} />
+            <p className={hintClass}>Read out by screen readers, and shown if the image can't load.</p>
+          </div>
           <div className="space-y-2">
             <label className={labelClass}>Link (optional)</label>
             <input value={block.url ?? ''} onChange={e => update({ url: e.target.value || undefined })} className={inputClass} placeholder="https://" />
@@ -421,12 +448,16 @@ function ContentFields({ block, update }: { block: SurveyBlock; update: (u: Part
   }
 }
 
-export function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+/** An on/off setting: its label (and a line of help) on the left, a switch on the right. */
+export function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="flex items-center justify-between gap-3 text-xs text-foreground cursor-pointer">
-      <span>{label}</span>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="accent-accent w-4 h-4 cursor-pointer" />
-    </label>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 cursor-pointer" onClick={() => onChange(!checked)}>
+        <span className="block text-[13px] font-medium text-foreground">{label}</span>
+        {hint && <span className={`mt-0.5 block ${hintClass}`}>{hint}</span>}
+      </div>
+      <Switch label={label} checked={checked} onChange={onChange} />
+    </div>
   )
 }
 
@@ -449,7 +480,7 @@ export function ColorField({ label, value, onChange }: { label: string; value: s
     <div className="space-y-1">
       <label className={labelClass}>{label}</label>
       <div className="flex gap-2 items-center">
-        <input type="color" value={value ?? '#ffffff'} onChange={e => onChange(e.target.value)} className="w-8 h-8 border border-border rounded cursor-pointer bg-transparent" />
+        <input type="color" value={value ?? '#ffffff'} onChange={e => onChange(e.target.value)} aria-label={`${label}: pick a colour`} className="h-9 w-9 shrink-0 cursor-pointer rounded-md-s border border-input bg-transparent p-0.5" />
         <input value={value ?? ''} placeholder="Default" onChange={e => onChange(e.target.value || undefined)} className={`${inputClass} font-mono`} />
       </div>
     </div>
@@ -466,12 +497,43 @@ function AlignField({ value, onChange }: { value: 'left' | 'center' | 'right' | 
             key={a}
             type="button"
             onClick={() => onChange(a)}
-            className={`flex-1 py-1 rounded-lg text-[11px] font-semibold border capitalize ${
-              (value ?? 'left') === a ? 'border-accent bg-accent/10 text-accent' : 'border-border text-muted-foreground'
+            aria-pressed={(value ?? 'left') === a}
+            className={`min-h-8 flex-1 cursor-pointer rounded-md-s border text-[13px] font-medium capitalize transition-colors ${
+              (value ?? 'left') === a ? 'border-accent bg-accent/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'
             }`}
           >
             {a}
           </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Space around a content block, in pixels, side by side. */
+function SpacingControl({ block, update }: { block: SurveyBlock; update: (u: Partial<SurveyBlock>) => void }) {
+  const st = block.style ?? {}
+  const sides = [
+    ['paddingTop', 'Top', 8],
+    ['paddingBottom', 'Bottom', 8],
+    ['paddingLeft', 'Left', 0],
+    ['paddingRight', 'Right', 0],
+  ] as const
+  return (
+    <div className="space-y-1.5">
+      <span className={labelClass}>Space around it (px)</span>
+      <div className="grid grid-cols-4 gap-1.5">
+        {sides.map(([key, label, fallback]) => (
+          <label key={key} className="space-y-1">
+            <span className="block text-center text-xs text-muted-foreground">{label}</span>
+            <input
+              type="number"
+              min={0}
+              value={st[key] ?? st.padding ?? fallback}
+              onChange={e => update({ style: { [key]: e.target.value === '' ? undefined : Number(e.target.value) } })}
+              className={`${inputClass} text-center tabular-nums`}
+            />
+          </label>
         ))}
       </div>
     </div>

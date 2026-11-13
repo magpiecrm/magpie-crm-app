@@ -1,6 +1,7 @@
 import { db } from './db'
-import type { Survey, SurveyDesign, SurveySettings } from '../features/survey-builder/types'
-import { DEFAULT_SURVEY_SETTINGS, DEFAULT_SURVEY_THEME } from '../features/survey-builder/types'
+import type { Survey, SurveyDesign, SurveyResponse, SurveySettings } from '../features/survey-builder/types'
+import { DEFAULT_SURVEY_SETTINGS, DEFAULT_SURVEY_THEME, isQuestionType } from '../features/survey-builder/types'
+import { computeSurveySummary } from '../features/survey-builder/analytics'
 import { surveyDesignSchema, surveySettingsSchema } from '../features/survey-builder/schema'
 import { checkStructureLock } from '../features/survey-builder/applyAction'
 import { lintSurvey } from '../features/survey-builder/logic/lint'
@@ -12,6 +13,7 @@ import { SURVEY_STARTER_TEMPLATES } from '../features/survey-builder/templates/s
  */
 
 export function listSurveys() {
+  const weekAgo = new Date(Date.now() - 7 * 86400e3).toISOString()
   return db.getSurveys().map(s => {
     const responses = db.getSurveyResponses(s.id)
     const completed = responses.filter(r => r.status === 'completed')
@@ -23,11 +25,31 @@ export function listSurveys() {
       updated_at: s.updated_at,
       published_at: s.published_at,
       pageCount: s.design.pages.length,
+      questionCount: s.design.pages.reduce((n, p) => n + p.blocks.filter(b => isQuestionType(b.type)).length, 0),
       responseCount: responses.length,
       completedCount: completed.length,
-      lastResponseAt: responses[0]?.updated_at ?? null,
+      responsesThisWeek: responses.filter(r => r.started_at >= weekAgo).length,
+      lastResponseAt: responses.reduce<string | null>((latest, r) => (!latest || r.updated_at > latest ? r.updated_at : latest), null),
+      headline: headlineResult(s, responses),
     }
   })
+}
+
+/**
+ * The one number a survey's results lead with, for the list: its NPS, or the
+ * average of its first rating or scale question. Null when it has neither, or
+ * nobody has answered yet.
+ */
+function headlineResult(survey: Survey, responses: SurveyResponse[]): { kind: 'nps' | 'rating' | 'scale'; value: number; max?: number } | null {
+  if (!responses.length) return null
+  const questions = computeSurveySummary(survey.design, responses).questions
+  const nps = questions.find(q => q.kind === 'nps')
+  if (nps?.kind === 'nps' && nps.score !== null) return { kind: 'nps', value: nps.score }
+  const scale = questions.find(q => q.kind === 'scale')
+  if (scale?.kind === 'scale' && scale.average !== null) {
+    return { kind: scale.type === 'rating' ? 'rating' : 'scale', value: Math.round(scale.average * 10) / 10, max: scale.min + scale.distribution.length - 1 }
+  }
+  return null
 }
 
 export function getSurveyOrThrow(id: string): Survey {
