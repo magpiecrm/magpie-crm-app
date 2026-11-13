@@ -1,7 +1,7 @@
 import { db } from './db'
 import type { Survey, SurveyDesign, SurveyResponse, SurveySettings } from '../features/survey-builder/types'
 import { DEFAULT_SURVEY_SETTINGS, DEFAULT_SURVEY_THEME, isQuestionType } from '../features/survey-builder/types'
-import { computeSurveySummary } from '../features/survey-builder/analytics'
+import { headlineSummary } from '../features/survey-builder/analytics'
 import { surveyDesignSchema, surveySettingsSchema } from '../features/survey-builder/schema'
 import { checkStructureLock } from '../features/survey-builder/applyAction'
 import { lintSurvey } from '../features/survey-builder/logic/lint'
@@ -14,8 +14,10 @@ import { SURVEY_STARTER_TEMPLATES } from '../features/survey-builder/templates/s
 
 export function listSurveys() {
   const weekAgo = new Date(Date.now() - 7 * 86400e3).toISOString()
+  // Every survey's responses from one pass over them, not one scan per survey.
+  const bySurvey = db.getSurveyResponsesBySurvey()
   return db.getSurveys().map(s => {
-    const responses = db.getSurveyResponses(s.id)
+    const responses = bySurvey.get(s.id) ?? []
     const completed = responses.filter(r => r.status === 'completed')
     return {
       id: s.id,
@@ -36,18 +38,17 @@ export function listSurveys() {
 }
 
 /**
- * The one number a survey's results lead with, for the list: its NPS, or the
- * average of its first rating or scale question. Null when it has neither, or
- * nobody has answered yet.
+ * The one number a survey's results lead with, for the list (`pickHeadline`):
+ * its NPS, or the average of its first rating or scale question, taking the
+ * first that has answers, as the results page does. Only those questions are
+ * summarised. Null when it has neither, or nobody has answered yet.
  */
 function headlineResult(survey: Survey, responses: SurveyResponse[]): { kind: 'nps' | 'rating' | 'scale'; value: number; max?: number } | null {
   if (!responses.length) return null
-  const questions = computeSurveySummary(survey.design, responses).questions
-  const nps = questions.find(q => q.kind === 'nps')
-  if (nps?.kind === 'nps' && nps.score !== null) return { kind: 'nps', value: nps.score }
-  const scale = questions.find(q => q.kind === 'scale')
-  if (scale?.kind === 'scale' && scale.average !== null) {
-    return { kind: scale.type === 'rating' ? 'rating' : 'scale', value: Math.round(scale.average * 10) / 10, max: scale.min + scale.distribution.length - 1 }
+  const q = headlineSummary(survey.design, responses)
+  if (q?.kind === 'nps' && q.score !== null) return { kind: 'nps', value: q.score }
+  if (q?.kind === 'scale' && q.average !== null) {
+    return { kind: q.type === 'rating' ? 'rating' : 'scale', value: Math.round(q.average * 10) / 10, max: q.min + q.distribution.length - 1 }
   }
   return null
 }
@@ -87,8 +88,21 @@ export function updateSurvey(
     next.design = design
   }
   if (patch.settings) next.settings = surveySettingsSchema.parse({ ...survey.settings, ...patch.settings })
+  // A live survey's changes reach respondents as soon as they're saved, so they get the checks publishing does.
+  // Only problems this change brings are refused, so a survey can still be closed or renamed while it has an older one.
+  if (survey.status === 'published' && (next.design || next.settings)) {
+    const fields = db.getContactFields()
+    const before = new Set(lintErrors(survey.design, survey.settings, fields))
+    const added = lintErrors(next.design ?? survey.design, next.settings ?? survey.settings, fields).filter(m => !before.has(m))
+    if (added.length) throw new Error(`Fix these before publishing the changes:\n- ${added.join('\n- ')}`)
+  }
   return db.updateSurvey(id, next)!
 }
+
+const lintErrors = (design: SurveyDesign, settings: SurveySettings, fields: ReturnType<typeof db.getContactFields>) =>
+  lintSurvey(design, settings, fields)
+    .filter(i => i.level === 'error')
+    .map(i => i.message)
 
 export function publishSurvey(id: string): Survey {
   const survey = getSurveyOrThrow(id)

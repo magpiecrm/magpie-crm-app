@@ -5,6 +5,8 @@ import { computePath, evaluateCondition, resolveNext } from './evaluate'
 import { validateAnswer, validatePage, validateSubmission } from './validate'
 import { answerToDisplay, coerceForField } from './answers'
 import { lintSurvey } from './lint'
+import { matchesAnswer } from './answerFilter'
+import { describeCondition } from './describe'
 
 const nps: SurveyBlock = { id: 'nps', type: 'nps', question: { title: 'NPS', required: true } }
 const why: SurveyBlock = { id: 'why', type: 'long_text', question: { title: 'Why?', required: true } }
@@ -142,5 +144,21 @@ describe('lintSurvey', () => {
     expect(messages.some(m => m.includes('question that no longer exists'))).toBe(true)
     expect(messages.some(m => m.includes('contact field that no longer exists'))).toBe(true)
     expect(messages.some(m => m.includes('no Email question'))).toBe(true)
+  })
+})
+
+describe('matchesAnswer', () => {
+  it('counts "Other" only when something was written in it', () => {
+    expect(matchesAnswer(colour, { optionIds: [], other: 'Green' }, 'other')).toBe(true)
+    expect(matchesAnswer(colour, { optionIds: [], other: '  ' }, 'other')).toBe(false)
+    expect(matchesAnswer(colour, { optionIds: ['r'] }, 'other')).toBe(false)
+  })
+})
+
+describe('describeCondition', () => {
+  it('says what an empty group does', () => {
+    expect(describeCondition(design, { all: [] })).toBe('always (it has no conditions)')
+    expect(describeCondition(design, { any: [] })).toBe('never (it has no conditions)')
+    expect(describeCondition(design, { any: [{ questionId: 'nps', op: 'lte', value: 6 }, { questionId: 'nps', op: 'gte', value: 9 }] })).toBe('Q1 is at most 6 or Q1 is at least 9')
   })
 })

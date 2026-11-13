@@ -135,15 +135,17 @@ export const getSurveyResponsesFn = createServerFn({ method: 'GET' })
     const { db } = await import('../db')
     await requireAuth()
     const campaigns = new Map(db.data.campaigns.map(c => [c.id, c.name]))
-    return db
+    const rows = db
       .getSurveyResponses(data.id, { status: data.status })
       .filter(r => !data.source || r.source === data.source)
       .filter(r => data.campaignId === undefined || r.campaign_id === data.campaignId)
-      .map(r => {
-        const contact = r.contact_email ? db.getContact(r.contact_email) : null
-        const name = contact ? [contact.first_name, contact.last_name].filter(Boolean).join(' ') : ''
-        return { ...r, resume_key_hash: null, campaignName: r.campaign_id ? campaigns.get(r.campaign_id) ?? null : null, contactName: name || null, isContact: !!contact }
-      })
+    // Everyone's contact in one pass, not a scan of the contacts per response.
+    const contacts = db.getContactsByEmail(rows.flatMap(r => (r.contact_email ? [r.contact_email] : [])))
+    return rows.map(r => {
+      const contact = r.contact_email ? contacts.get(r.contact_email.toLowerCase().trim()) ?? null : null
+      const name = contact ? [contact.first_name, contact.last_name].filter(Boolean).join(' ') : ''
+      return { ...r, resume_key_hash: null, campaignName: r.campaign_id ? campaigns.get(r.campaign_id) ?? null : null, contactName: name || null, isContact: !!contact }
+    })
   })
 
 /** The team's tags and note on one response; neither is shown to the respondent. */

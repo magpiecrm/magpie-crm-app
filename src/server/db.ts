@@ -2197,6 +2197,18 @@ class JsonDb {
       .sort((a, b) => b.started_at.localeCompare(a.started_at))
   }
 
+  /** Every survey's real (non-test) responses, by survey, in one pass: for lists that would otherwise scan once per survey. */
+  getSurveyResponsesBySurvey(): Map<string, SurveyResponse[]> {
+    const bySurvey = new Map<string, SurveyResponse[]>()
+    for (const r of this.data.survey_responses ?? []) {
+      if (r.meta?.test) continue
+      const list = bySurvey.get(r.survey_id)
+      if (list) list.push(r)
+      else bySurvey.set(r.survey_id, [r])
+    }
+    return bySurvey
+  }
+
   /** Real (non-test) responses, which is what locks a survey's structure. */
   getSurveyResponseCount(surveyId: string): number {
     return (this.data.survey_responses ?? []).filter(r => r.survey_id === surveyId && !r.meta?.test).length
@@ -2357,6 +2369,23 @@ class JsonDb {
   getContact(email: string): ContactRecord | null {
     const normalized = email.toLowerCase().trim()
     return this.data.contacts.find(c => c.email.toLowerCase() === normalized) ?? null
+  }
+
+  /**
+   * The contacts with these addresses, keyed by lower-cased address, found in
+   * one pass over the contacts: for lists of rows that would otherwise call
+   * `getContact` (a scan) once each.
+   */
+  getContactsByEmail(emails: Iterable<string>): Map<string, ContactRecord> {
+    const wanted = new Set<string>()
+    for (const e of emails) wanted.add(e.toLowerCase().trim())
+    const found = new Map<string, ContactRecord>()
+    if (!wanted.size) return found
+    for (const c of this.data.contacts) {
+      const key = c.email.toLowerCase()
+      if (wanted.has(key) && !found.has(key)) found.set(key, c)
+    }
+    return found
   }
 
   /**

@@ -43,7 +43,8 @@ export function matchesAnswer(block: SurveyBlock, answer: AnswerValue | undefine
   if (block.type === 'nps' && typeof answer === 'number') return value === (answer <= 6 ? 'detractor' : answer <= 8 ? 'passive' : 'promoter')
   if ((block.type === 'rating' || block.type === 'scale') && typeof answer === 'number') return String(answer) === value
   if (block.type === 'yes_no' && typeof answer === 'boolean') return (answer ? 'yes' : 'no') === value
-  if (typeof answer === 'object') return value === 'other' ? answer.other !== undefined : answer.optionIds.includes(value)
+  // An "Other" left empty isn't an answer, as `isAnswered` has it.
+  if (typeof answer === 'object') return value === 'other' ? !!answer.other?.trim() : answer.optionIds.includes(value)
   return false
 }
 

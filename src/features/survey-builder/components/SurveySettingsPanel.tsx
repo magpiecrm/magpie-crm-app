@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
@@ -125,8 +124,10 @@ function endOfMonth(): string {
  * a time of your own; always said back in words, day first.
  */
 function CloseDateField({ value, onChange }: { value: string | null; onChange: (iso: string | null) => void }) {
-  const [custom, setCustom] = useState(!!value)
   const date = value ? new Date(value) : null
+  // A time set elsewhere (the copilot, or before the half-hour menu) is offered as it is, so it shows and isn't rounded.
+  const time = date ? `${pad(date.getHours())}:${pad(date.getMinutes())}` : ''
+  const times = time && !TIMES.includes(time) ? [...TIMES, time].sort() : TIMES
   return (
     <div className="space-y-1.5">
       <label className={labelClass} htmlFor="survey-closes">
@@ -134,12 +135,12 @@ function CloseDateField({ value, onChange }: { value: string | null; onChange: (
       </label>
       <Select
         id="survey-closes"
-        value={custom || value ? 'date' : 'never'}
+        value={value ? 'date' : 'never'}
         onChange={e => {
           const v = e.target.value
-          if (v === 'never') (setCustom(false), onChange(null))
-          else if (v === 'date') (setCustom(true), onChange(value ?? inDays(14)))
-          else (setCustom(true), onChange(v === 'month' ? endOfMonth() : inDays(Number(v))))
+          if (v === 'never') onChange(null)
+          else if (v === 'date') onChange(value ?? inDays(14))
+          else onChange(v === 'month' ? endOfMonth() : inDays(Number(v)))
         }}
         className={inputClass}
       >
@@ -167,7 +168,7 @@ function CloseDateField({ value, onChange }: { value: string | null; onChange: (
           />
           <Select
             aria-label="Time it closes"
-            value={`${pad(date.getHours())}:${date.getMinutes() < 30 ? '00' : '30'}`}
+            value={time}
             onChange={e => {
               const [h, min] = e.target.value.split(':').map(Number)
               const next = new Date(date)
@@ -176,7 +177,7 @@ function CloseDateField({ value, onChange }: { value: string | null; onChange: (
             }}
             className={inputClass}
           >
-            {TIMES.map(t => (
+            {times.map(t => (
               <option key={t} value={t}>
                 {t}
               </option>

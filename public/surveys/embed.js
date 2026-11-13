@@ -3,32 +3,37 @@
    as people move through it. With data-magpie-survey-popup on this script
    tag it shows the survey over the page instead, after data-delay seconds
    (8 if not set): data-mode="popup" in the middle, "slide" in the corner.
+   The pop-up loads out of sight and only shows once its survey says it's
+   open, so a closed, deleted or unreachable survey never covers the page.
    Closing it or finishing the survey stops it showing again for 30 days.
-   It only listens to the site it was loaded from. (Older embed codes carry
-   the resizing inline and keep working.) */
+   It only listens to the site it was loaded from, and only to its own
+   frames. (Older embed codes carry the resizing inline and keep working.) */
 (function () {
   var script = document.currentScript;
   if (!script) return;
   var origin = new URL(script.src).origin;
 
+  // The survey frame a message came from, if it's one of ours on this page.
+  function frameFor(e) {
+    var frames = document.querySelectorAll('iframe[data-magpie-survey]');
+    for (var i = 0; i < frames.length; i++) {
+      if (frames[i].contentWindow === e.source && frames[i].getAttribute('data-magpie-survey') === e.data.id) return frames[i];
+    }
+    return null;
+  }
+
   if (!window.__magpieSurveys) {
     window.__magpieSurveys = true;
     window.addEventListener('message', function (e) {
       if (e.origin !== origin || !e.data || typeof e.data.id !== 'string') return;
-      var id = e.data.id;
-      if (e.data.type === 'em-survey:done') { remember(id); return; }
-      if (e.data.type === 'em-survey:escape') {
-        var open = document.querySelector('[data-magpie-survey-open="' + id + '"]');
-        if (open && open.__shut) open.__shut();
-        return;
-      }
+      var frame = frameFor(e);
+      if (!frame) return;
+      if (e.data.type === 'em-survey:done') { remember(e.data.id); return; }
+      if (e.data.type === 'em-survey:escape') { if (frame.__magpieShut) frame.__magpieShut(); return; }
       if (e.data.type !== 'em-survey:height') return;
-      var frames = document.querySelectorAll('iframe[data-magpie-survey]');
-      for (var i = 0; i < frames.length; i++) {
-        if (frames[i].getAttribute('data-magpie-survey') === id && frames[i].contentWindow === e.source) {
-          frames[i].style.height = Math.max(200, Math.min(5000, Math.ceil(Number(e.data.height) || 0))) + 'px';
-        }
-      }
+      frame.style.height = Math.max(200, Math.min(5000, Math.ceil(Number(e.data.height) || 0))) + 'px';
+      // Pages from before `state` was sent only ever came from an open survey.
+      if (frame.__magpieReveal && (e.data.state === undefined || e.data.state === 'open')) frame.__magpieReveal();
     });
   }
 
@@ -48,20 +53,23 @@
   var popup = script.getAttribute('data-magpie-survey-popup');
   if (!popup || !/^[\w-]{1,80}$/.test(popup) || seen(popup)) return;
   var slide = script.getAttribute('data-mode') === 'slide';
-  var delay = Math.max(0, Math.min(120, Number(script.getAttribute('data-delay') || 8)));
+  var asked = script.getAttribute('data-delay');
+  var delay = asked === null || asked === '' || !isFinite(Number(asked)) ? 8 : Math.max(0, Math.min(120, Number(asked)));
   var title = script.getAttribute('data-title') || 'Survey';
 
-  setTimeout(function () {
+  function build() {
     var wrap = document.createElement('div');
     wrap.setAttribute('role', 'dialog');
     wrap.setAttribute('aria-modal', slide ? 'false' : 'true');
     wrap.setAttribute('aria-label', title);
     wrap.setAttribute('data-magpie-survey-open', popup);
+    // Out of sight, and out of the way, until the survey says it's there to answer.
+    wrap.setAttribute('aria-hidden', 'true');
     // On a narrow screen a slide-in is a sheet along the bottom; on a wide one it sits 24px in from the corner.
     var narrow = window.innerWidth < 640;
-    wrap.style.cssText = slide
+    wrap.style.cssText = (slide
       ? (narrow ? 'position:fixed;left:0;right:0;bottom:0;z-index:2147483000' : 'position:fixed;right:24px;bottom:24px;z-index:2147483000;width:min(400px,calc(100vw - 48px))')
-      : 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(17,19,22,.45)';
+      : 'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(17,19,22,.45)') + ';visibility:hidden;pointer-events:none';
     var panel = document.createElement('div');
     panel.style.cssText = 'position:relative;width:100%;max-width:' + (slide ? (narrow ? 'none' : '400px') : '560px') + ';max-height:' + (slide ? 'min(560px, 75vh)' : 'calc(100vh - 32px)') + ';overflow:auto;background:#fff;border-radius:' + (slide && narrow ? '16px 16px 0 0' : '14px') + ';padding:36px 0 0;box-shadow:0 24px 64px -12px rgba(0,0,0,.35);outline:none';
     panel.tabIndex = -1;
@@ -77,16 +85,31 @@
     frame.src = origin + '/s/' + popup + '?embed=1';
     frame.title = title;
     frame.style.cssText = 'width:100%;height:360px;border:0;display:block';
-    function shut() { remember(popup); wrap.remove(); document.removeEventListener('keydown', onKey); }
-    wrap.__shut = shut;
+    // A survey that never answers (the site is down) is taken away again rather than left loading out of sight.
+    var giveUp = setTimeout(function () { wrap.remove(); }, 60000);
     function onKey(e) { if (e.key === 'Escape') shut(); }
+    function shut() { remember(popup); wrap.remove(); document.removeEventListener('keydown', onKey); }
+    frame.__magpieShut = shut;
+    frame.__magpieReveal = function () {
+      frame.__magpieReveal = null;
+      clearTimeout(giveUp);
+      wrap.style.visibility = 'visible';
+      wrap.style.pointerEvents = '';
+      wrap.removeAttribute('aria-hidden');
+      document.addEventListener('keydown', onKey);
+      if (!slide) panel.focus();
+    };
     close.addEventListener('click', shut);
     if (!slide) wrap.addEventListener('click', function (e) { if (e.target === wrap) shut(); });
-    document.addEventListener('keydown', onKey);
     panel.appendChild(close);
     panel.appendChild(frame);
     wrap.appendChild(panel);
     document.body.appendChild(wrap);
-    if (!slide) panel.focus();
+  }
+
+  setTimeout(function () {
+    // With no delay, a script in the <head> can run before there's a body to add to.
+    if (document.body) build();
+    else document.addEventListener('DOMContentLoaded', build);
   }, delay * 1000);
 })();

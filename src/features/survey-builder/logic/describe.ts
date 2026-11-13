@@ -41,8 +41,9 @@ function describeValue(block: SurveyBlock | undefined, value: unknown): string {
 
 /** A condition as a short phrase: "Q1 is at most 6", "Q3 includes “Support”", or both joined with and/or. */
 export function describeCondition(design: SurveyDesign, c: Condition): string {
-  if ('all' in c) return c.all.map(x => describeCondition(design, x)).join(' and ')
-  if ('any' in c) return c.any.map(x => describeCondition(design, x)).join(' or ')
+  // An empty group (the copilot can write one) always holds for "all" and never for "any", so say so.
+  if ('all' in c) return c.all.length ? c.all.map(x => describeCondition(design, x)).join(' and ') : 'always (it has no conditions)'
+  if ('any' in c) return c.any.length ? c.any.map(x => describeCondition(design, x)).join(' or ') : 'never (it has no conditions)'
   const q = questionNumbers(design).get(c.questionId)
   const who = q ? `Q${q.n}` : 'a deleted question'
   const value = c.op === 'answered' || c.op === 'not_answered' ? '' : ` ${describeValue(q?.block, c.value)}`

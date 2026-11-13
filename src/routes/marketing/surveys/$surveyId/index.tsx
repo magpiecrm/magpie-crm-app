@@ -5,6 +5,7 @@ import { ArrowLeft, BarChart3, Copy, ExternalLink, Eye, Pencil, Play, Rocket, Sh
 import { queryKeys } from '../../../../queryKeys'
 import { closeSurveyFn, deleteSurveyFn, duplicateSurveyFn, getSurveyFn, publishSurveyFn } from '../../../../server/functions'
 import { Button } from '../../../../components/ui/Button'
+import { Notice } from '../../../../components/ui/Notice'
 import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { confirmDialog } from '../../../../components/ui/confirm'
 import { toast } from '../../../../components/ui/toast'
@@ -35,7 +36,7 @@ function SurveyResultsPage() {
   const queryClient = useQueryClient()
   const [sharing, setSharing] = useState(false)
 
-  const { data: survey, isLoading, isError } = useQuery({ queryKey: queryKeys.surveys.survey(surveyId), queryFn: () => getSurveyFn({ data: { id: surveyId } }), retry: false })
+  const { data: survey, isLoading, isError, error, refetch, isRefetching } = useQuery({ queryKey: queryKeys.surveys.survey(surveyId), queryFn: () => getSurveyFn({ data: { id: surveyId } }), retry: false })
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list() })
@@ -55,6 +56,7 @@ function SurveyResultsPage() {
       invalidate()
       navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: copy.id } })
     },
+    onError: (err: Error) => toast.error("Couldn't duplicate the survey", { description: err.message }),
   })
   const remove = useMutation({
     mutationFn: () => deleteSurveyFn({ data: { id: surveyId } }),
@@ -63,6 +65,7 @@ function SurveyResultsPage() {
       toast.success(`Deleted “${survey?.name}”`)
       navigate({ to: '/marketing/surveys' })
     },
+    onError: (err: Error) => toast.error("Couldn't delete the survey", { description: err.message }),
   })
 
   if (isLoading) {
@@ -71,6 +74,24 @@ function SurveyResultsPage() {
         <div className="mb-3 h-4 w-20 animate-pulse rounded bg-muted" />
         <div className="mb-6 h-8 w-72 animate-pulse rounded bg-muted" />
         <div className="h-64 animate-pulse rounded-md-m bg-muted" />
+      </div>
+    )
+  }
+  // Only a survey that isn't there is called deleted; anything else (the network, a restart) can be tried again.
+  if (isError && error?.message !== 'Survey not found') {
+    return (
+      <div className="mx-auto w-full max-w-lg p-8">
+        <Notice
+          level="error"
+          title="This survey didn't load"
+          action={
+            <Button variant="secondary" size="sm" isLoading={isRefetching} onClick={() => refetch()}>
+              Try again
+            </Button>
+          }
+        >
+          Nothing has been lost. Try again, or reload the page.
+        </Notice>
       </div>
     )
   }

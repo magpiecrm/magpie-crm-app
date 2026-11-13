@@ -16,7 +16,7 @@ const { submitSurveyPage, loadPublicSurvey } = await import('./surveyResponses')
 const { encodeSurveyToken, decodeSurveyToken, expandSurveyPlaceholders, referencedSurveyIds } = await import('./surveyLinks')
 const { createRateLimiter } = await import('./rateLimit')
 const { issueEmbedToken } = await import('./surveyEmbed')
-const { updateSurvey } = await import('./surveys')
+const { updateSurvey, listSurveys } = await import('./surveys')
 
 afterAll(() => {
   delete process.env.DATABASE_PATH
@@ -216,5 +216,41 @@ describe('signed-in embeds', () => {
     if (old.status === 200) expect(submitSurveyPage({ surveyId, t: old.body.token, source: 'embed', pageId: 'p1', answers: { nps: 5 } }).status).toBe(403)
     db.updateSurvey(surveyId, { status: 'draft' })
     expect(issueEmbedToken({ surveyId, email: 'a@b.co', appUrl: 'x' }).status).toBe(409)
+  })
+})
+
+describe('changing a live survey', () => {
+  it('refuses a change that breaks it, as publishing would', () => {
+    const broken = structuredClone(design)
+    broken.pages[0].rules = [{ id: 'r', when: { questionId: 'nps', op: 'lte', value: 6 }, goTo: { kind: 'page', pageId: 'gone' } }]
+    expect(() => updateSurvey(surveyId, { design: broken })).toThrow(/Fix these before publishing the changes/)
+    expect(db.getSurvey(surveyId)!.design.pages[0].rules![0].goTo).toEqual({ kind: 'page', pageId: 'p2' })
+  })
+
+  it('lets a draft be saved half-finished', () => {
+    db.updateSurvey(surveyId, { status: 'draft' })
+    const broken = structuredClone(design)
+    broken.pages[0].rules = [{ id: 'r', when: { questionId: 'nps', op: 'lte', value: 6 }, goTo: { kind: 'page', pageId: 'gone' } }]
+    expect(() => updateSurvey(surveyId, { design: broken })).not.toThrow()
+  })
+})
+
+describe('reading many responses at once', () => {
+  it('finds contacts by address in one go, whatever their case', () => {
+    const found = db.getContactsByEmail(['KNOWN@example.com ', 'nobody@example.com'])
+    expect([...found.keys()]).toEqual(['known@example.com'])
+  })
+
+  it("lists each survey with its own responses and headline, leaving test ones out", () => {
+    const base = { contact_email: null, source: 'link' as const, campaign_id: null, status: 'completed' as const, path: ['p1', 'p3'], current_page_id: null, resume_key_hash: null, started_at: new Date().toISOString(), updated_at: new Date().toISOString(), completed_at: new Date().toISOString() }
+    db.data.survey_responses!.push(
+      { ...base, id: 'a', survey_id: surveyId, answers: { nps: 10 } },
+      { ...base, id: 'b', survey_id: surveyId, answers: { nps: 9 } },
+      { ...base, id: 'c', survey_id: surveyId, answers: { nps: 0 }, meta: { test: true } },
+      { ...base, id: 'd', survey_id: 'another', answers: { nps: 0 } },
+    )
+    const row = listSurveys().find(s => s.id === surveyId)!
+    expect(row.responseCount).toBe(2)
+    expect(row.headline).toEqual({ kind: 'nps', value: 100 })
   })
 })

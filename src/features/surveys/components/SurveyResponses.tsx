@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Clock, Mail, Search, Trash2, UserRound } from 'lucide-react'
@@ -9,6 +9,7 @@ import { BUILTIN_FIELD_LABELS, type ContactFieldDef } from '../../contacts/conta
 import { Select } from '../../../components/ui/Select'
 import { Button } from '../../../components/ui/Button'
 import { INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import { Pagination } from '../../../components/ui/Pagination'
@@ -26,17 +27,18 @@ import { exactTime, whenShort } from '../../forms/format'
 import { SOURCE_LABELS, SOURCE_PHRASES } from '../sources'
 import { AnswerFilterSelect } from './AnswerFilterSelect'
 import { matchesAnswer, type AnswerFilter } from '../../survey-builder/logic/answerFilter'
+import { reachedPage } from '../../survey-builder/analytics'
 
 type ResponseRow = Awaited<ReturnType<typeof getSurveyResponsesFn>>[number]
-type Question = { block: SurveyBlock; n: number; pageId: string }
+type Question = { block: SurveyBlock; n: number; pageId: string; firstPage: boolean }
 
 const SOURCE_COLUMN = '__source'
 const personOf = (r: ResponseRow) => r.contactName || r.contact_email || ''
 const sourceText = (r: ResponseRow) => [SOURCE_LABELS[r.source] ?? r.source, r.campaignName].filter(Boolean).join(' · ')
 
-/** What a question's cell says when it has no answer: why not. */
+/** What a question's cell says when it has no answer: why not, counted as the summary counts who reached its page. */
 function missing(r: ResponseRow, q: Question): string {
-  if (r.path.includes(q.pageId) || r.current_page_id === q.pageId) return 'Left blank'
+  if (reachedPage(r, q.pageId, q.firstPage)) return 'Left blank'
   return r.status === 'completed' ? 'Not shown (logic)' : 'Stopped before this'
 }
 
@@ -132,17 +134,19 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [openId, setOpenId] = useState<string | null>(null)
+  // The rows the pop-up steps through with previous and next, as they were listed when it opened, so changing a response's tags doesn't close it.
+  const [openList, setOpenList] = useState<string[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
 
   const { data: contactFields = [] } = useQuery({ queryKey: queryKeys.email.contactFields(), queryFn: () => getContactFieldsFn() })
-  const { data: responses = [], isLoading } = useQuery({
+  const { data: responses = [], isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: queryKeys.surveys.responses(survey.id),
     queryFn: () => getSurveyResponsesFn({ data: { id: survey.id } }),
   })
 
   const questions = useMemo<Question[]>(() => {
     let n = 0
-    return survey.design.pages.flatMap(p => p.blocks.filter(b => isQuestionType(b.type)).map(b => ({ block: b, n: ++n, pageId: p.id })))
+    return survey.design.pages.flatMap((p, i) => p.blocks.filter(b => isQuestionType(b.type)).map(b => ({ block: b, n: ++n, pageId: p.id, firstPage: i === 0 })))
   }, [survey.design])
   const choosable = [...questions.map(q => ({ key: q.block.id, label: `Q${q.n}. ${q.block.question?.title || 'Untitled question'}` })), { key: SOURCE_COLUMN, label: 'Came from' }]
   // By default every question shows: the table scrolls sideways with the person pinned, so no branch's answers are hidden.
@@ -161,6 +165,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
       setPicked(new Set())
       toast.success(`Deleted ${deleted} response${deleted === 1 ? '' : 's'}`)
     },
+    onError: (err: Error) => toast.error("Couldn't delete the responses", { description: err.message }),
   })
   const remove = useMutation({
     mutationFn: (id: string) => deleteSurveyResponseFn({ data: { id } }),
@@ -169,9 +174,16 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
       setOpenId(null)
       toast.success('Response deleted')
     },
+    onError: (err: Error) => toast.error("Couldn't delete the response", { description: err.message }),
   })
 
-  const q = query.trim().toLowerCase()
+  // Typing stays quick on a long list: the filtering follows a moment behind the box.
+  const q = useDeferredValue(query).trim().toLowerCase()
+  // What search looks through for each response, made once per load rather than on every keystroke.
+  const searchText = useMemo(
+    () => new Map(responses.map(r => [r.id, [personOf(r), r.contact_email ?? '', r.note ?? '', ...(r.tags ?? []), ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].join('\n').toLowerCase()])),
+    [responses, questions],
+  )
   const answerBy = answer ? questions.find(x => x.block.id === answer.questionId)?.block : undefined
   const since = range === 'all' ? '' : new Date(Date.now() - Number(range) * 86400e3).toISOString()
   const shown = useMemo(() => {
@@ -182,13 +194,19 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
         (!source || r.source === source) &&
         (!answerBy || matchesAnswer(answerBy, r.answers[answerBy.id], answer!.value)) &&
         (!tag || (r.tags ?? []).includes(tag)) &&
-        (!q || [personOf(r), r.contact_email ?? '', r.note ?? '', ...(r.tags ?? []), ...questions.map(x => answerToDisplay(x.block, r.answers[x.block.id]))].some(v => v.toLowerCase().includes(q))),
+        (!q || !!searchText.get(r.id)?.includes(q)),
     )
     return rows.sort((a, b) => (sortDir === 'asc' ? a.updated_at.localeCompare(b.updated_at) : b.updated_at.localeCompare(a.updated_at)))
-  }, [responses, since, status, source, q, sortDir, questions, answerBy, answer, tag])
+  }, [responses, since, status, source, q, sortDir, answerBy, answer, tag, searchText])
   const sources = [...new Set(responses.map(r => r.source))]
   const allTags = useMemo(() => [...new Set(responses.flatMap(r => r.tags ?? []))].sort((a, b) => a.localeCompare(b)), [responses])
-  const pageRows = shown.slice((page - 1) * perPage, page * perPage)
+  // A delete can leave fewer pages than the one being looked at: show the last there is.
+  const pageCount = Math.max(1, Math.ceil(shown.length / perPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageRows = shown.slice((currentPage - 1) * perPage, currentPage * perPage)
+  // What's selected is what's listed: a row the filters hide, or one deleted from its pop-up, isn't exported or deleted with the rest.
+  const selected = useMemo(() => shown.filter(r => picked.has(r.id)), [shown, picked])
+  const byId = useMemo(() => new Map(responses.map(r => [r.id, r])), [responses])
   const scroller = useRef<HTMLDivElement>(null)
   const [moreRight, setMoreRight] = useState(false)
   const [scrolls, setScrolls] = useState(false)
@@ -203,8 +221,13 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
   })
-  const openIndex = openId ? shown.findIndex(r => r.id === openId) : -1
-  const open = openIndex >= 0 ? shown[openIndex] : null
+  const openRow = (id: string) => {
+    setOpenList(shown.map(r => r.id))
+    setOpenId(id)
+  }
+  const stepList = openList.filter(id => byId.has(id))
+  const openIndex = openId ? stepList.indexOf(openId) : -1
+  const open = openIndex >= 0 ? byId.get(openId!)! : null
   const filtered = !!q || range !== 'all' || !!status || !!source || !!answer || !!tag
 
   const exportColumns = useMemo<ExportColumn<ResponseRow>[]>(
@@ -222,33 +245,50 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
     [questions],
   )
 
+  if (isError && !responses.length) {
+    return (
+      <Notice
+        level="error"
+        title="The responses didn't load"
+        action={
+          <Button variant="secondary" size="sm" isLoading={isRefetching} onClick={() => refetch()}>
+            Try again
+          </Button>
+        }
+      >
+        Nothing has been lost. Try again, or reload the page.
+      </Notice>
+    )
+  }
   if (!isLoading && responses.length === 0) return <>{empty}</>
-  const resetPage = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1))
+  // A new filter starts from the first page, with nothing selected.
+  const resetPage = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1), setPicked(new Set()))
 
   return (
     <div className="flex flex-col gap-3">
-      {picked.size > 0 ? (
+      {selected.length > 0 ? (
         <div className="flex min-h-[38px] flex-wrap items-center gap-2 rounded-md-s border border-accent/40 bg-accent/[0.06] px-3 py-1.5" role="region" aria-label="Selected responses">
-          <span className="text-sm font-medium text-foreground">{picked.size} selected</span>
+          <span className="text-sm font-medium text-foreground">{selected.length} selected</span>
           <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>
             Clear
           </Button>
           <div className="ml-auto flex items-center gap-2">
-            <ExportMenu filename={`${survey.name} (selected)`} rows={shown.filter(r => picked.has(r.id))} columns={exportColumns} sheetName="Responses" label="Export selected" />
+            <ExportMenu filename={`${survey.name} (selected)`} rows={selected} columns={exportColumns} sheetName="Responses" label="Export selected" />
             <Button
               variant="secondary"
               leftIcon={<Trash2 className="h-4 w-4" />}
               className="!text-destructive"
               isLoading={removeMany.isPending}
               onClick={async () => {
-                const n = picked.size
+                const ids = selected.map(r => r.id)
+                const n = ids.length
                 const ok = await confirmDialog({
                   title: `Delete ${n} response${n === 1 ? '' : 's'}?`,
                   message: "They're removed from the results. Answers already saved to contacts stay. This can't be undone.",
                   confirmLabel: `Delete ${n}`,
                   tone: 'danger',
                 })
-                if (ok) removeMany.mutate([...picked])
+                if (ok) removeMany.mutate(ids)
               }}
             >
               Delete
@@ -278,10 +318,11 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
             </Select>
           )}
           <AnswerFilterSelect design={survey.design} value={answer} onChange={a => (setAnswer(a), setPage(1))} />
-          {allTags.length > 0 && (
+          {/* Kept while a tag is chosen, even once no response has it any more, so the filter can be cleared. */}
+          {(allTags.length > 0 || tag) && (
             <Select className={`${INPUT_CLASS} sm:!w-auto`} value={tag} onChange={e => resetPage(setTag)(e.target.value)} aria-label="Tagged">
               <option value="">Any tag</option>
-              {allTags.map(t => (
+              {(tag && !allTags.includes(tag) ? [...allTags, tag] : allTags).map(t => (
                 <option key={t} value={t}>
                   Tagged {t}
                 </option>
@@ -333,7 +374,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
             const first = questions.find(x => r.answers[x.block.id] !== undefined && r.answers[x.block.id] !== null)
             return (
               <li key={r.id}>
-                <button type="button" onClick={() => setOpenId(r.id)} className="flex w-full cursor-pointer flex-col gap-1 px-4 py-3 text-left active:bg-muted/50">
+                <button type="button" onClick={() => openRow(r.id)} className="flex w-full cursor-pointer flex-col gap-1 px-4 py-3 text-left active:bg-muted/50">
                   <span className="flex w-full items-baseline justify-between gap-3">
                     <span className={`min-w-0 truncate font-semibold ${personOf(r) ? 'text-foreground' : 'text-muted-foreground'}`}>{personOf(r) || 'Anonymous'}</span>
                     <span className="flex shrink-0 items-center gap-1 text-[13px] tabular-nums text-muted-foreground">
@@ -415,7 +456,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
               {pageRows.map(r => {
                 const person = personOf(r)
                 return (
-                  <tr key={r.id} onClick={() => setOpenId(r.id)} className={`group cursor-pointer transition-colors hover:bg-muted/40 ${picked.has(r.id) ? 'bg-accent/[0.05]' : ''}`}>
+                  <tr key={r.id} onClick={() => openRow(r.id)} className={`group cursor-pointer transition-colors hover:bg-muted/40 ${picked.has(r.id) ? 'bg-accent/[0.05]' : ''}`}>
                     <td className="sticky left-0 z-[1] bg-card py-3 pl-4 align-top group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
@@ -434,7 +475,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
                     <td className="sticky left-11 z-[1] bg-card py-3 pl-2 pr-4 align-top shadow-[1px_0_0_var(--color-border)] group-hover:bg-[color-mix(in_srgb,var(--color-card),var(--color-muted)_40%)]">
                       <button
                         type="button"
-                        onClick={e => (e.stopPropagation(), setOpenId(r.id))}
+                        onClick={e => (e.stopPropagation(), openRow(r.id))}
                         className={`block max-w-full cursor-pointer truncate rounded-sm text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${person ? 'text-foreground' : 'text-muted-foreground'}`}
                       >
                         {person || 'Anonymous'}
@@ -503,7 +544,7 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
               totalItems={shown.length}
               itemsPerPage={perPage}
               onItemsPerPageChange={n => (setPerPage(n), setPage(1))}
-              currentPage={page}
+              currentPage={currentPage}
               onPageChange={setPage}
               itemsPerPageOptions={[25, 50, 100]}
             />
@@ -517,9 +558,9 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
           questions={questions}
           contactFields={contactFields}
           allTags={allTags}
-          position={`${openIndex + 1} of ${shown.length}`}
-          onPrev={openIndex > 0 ? () => setOpenId(shown[openIndex - 1].id) : undefined}
-          onNext={openIndex < shown.length - 1 ? () => setOpenId(shown[openIndex + 1].id) : undefined}
+          position={`${openIndex + 1} of ${stepList.length}`}
+          onPrev={openIndex > 0 ? () => setOpenId(stepList[openIndex - 1]) : undefined}
+          onNext={openIndex < stepList.length - 1 ? () => setOpenId(stepList[openIndex + 1]) : undefined}
           onClose={() => setOpenId(null)}
           deleting={remove.isPending}
           onDelete={async () => {
@@ -537,35 +578,90 @@ export function SurveyResponses({ survey, empty }: { survey: Survey; empty: Reac
   )
 }
 
-/** The team's tags and note on a response, saved as they change; respondents never see them. */
+type Notes = { tags: string[]; note: string }
+const sameNotes = (a: Notes, b: Notes) => a.note.trim() === b.note.trim() && a.tags.join('\n') === b.tags.join('\n')
+/** How long after the last keystroke a note is saved. */
+const NOTE_SAVE_DELAY = 800
+
+/**
+ * The team's tags and note on a response, saved as they change: a tag at once,
+ * the note once typing stops, and anything still unsaved when the pop-up
+ * closes or moves to another response. Respondents never see them. One save
+ * goes at a time, carrying both, so a slow one can't land after a later one.
+ */
 function TeamNotes({ response, allTags }: { response: ResponseRow; allTags: string[] }) {
   const queryClient = useQueryClient()
   const [tags, setTags] = useState<string[]>(response.tags ?? [])
   const [note, setNote] = useState(response.note ?? '')
-  const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const save = useMutation({
-    mutationFn: (patch: { tags?: string[]; note?: string }) => updateSurveyResponseNotesFn({ data: { id: response.id, ...patch } }),
-    onMutate: () => setSaved('saving'),
-    onSuccess: () => {
-      setSaved('saved')
-      queryClient.invalidateQueries({ queryKey: queryKeys.surveys.responses(response.survey_id) })
-    },
-    onError: () => setSaved('idle'),
-  })
-  // A different response opened (previous / next): start from its own.
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
+  const current = useRef<Notes>({ tags, note })
+  const stored = useRef<Notes>({ tags: response.tags ?? [], note: response.note ?? '' })
+  const busy = useRef(false)
+  const again = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const mounted = useRef(true)
+
+  const flush = async () => {
+    clearTimeout(timer.current)
+    if (busy.current) {
+      again.current = true
+      return
+    }
+    const sending = current.current
+    if (sameNotes(sending, stored.current)) return
+    busy.current = true
+    if (mounted.current) setStatus('saving')
+    try {
+      const saved = await updateSurveyResponseNotesFn({ data: { id: response.id, ...sending } })
+      stored.current = sending
+      if (mounted.current) setStatus('saved')
+      // Change just this row in what's loaded, rather than fetch every response again.
+      queryClient.setQueryData<ResponseRow[]>(queryKeys.surveys.responses(response.survey_id), rows =>
+        rows?.map(row => (row.id === response.id ? { ...row, tags: saved.tags, note: saved.note || undefined } : row)),
+      )
+    } catch (err) {
+      if (mounted.current) setStatus('failed')
+      toast.error("Couldn't save the team's notes", { description: err instanceof Error ? err.message : undefined })
+    } finally {
+      busy.current = false
+      if (again.current) {
+        again.current = false
+        void flush()
+      }
+    }
+  }
+  // Closing the pop-up, or going to the previous or next response, saves what's left.
+  const flushRef = useRef(flush)
+  flushRef.current = flush
   useEffect(() => {
-    setTags(response.tags ?? [])
-    setNote(response.note ?? '')
-    setSaved('idle')
-  }, [response.id])
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      void flushRef.current()
+    }
+  }, [])
+
   return (
     <section aria-labelledby="team-notes" className="flex flex-col gap-3 rounded-md-s bg-muted/50 px-3.5 py-3 dark:bg-white/[0.03]">
       <div className="flex items-baseline justify-between gap-3">
         <h3 id="team-notes" className="text-[13px] font-semibold text-foreground">
           Your team's notes
         </h3>
-        <span className="text-xs text-muted-foreground" aria-live="polite">
-          {saved === 'saving' ? 'Saving…' : saved === 'saved' ? 'Saved' : 'Only your team sees these'}
+        <span className={`text-xs ${status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`} aria-live="polite">
+          {status === 'saving' ? (
+            'Saving…'
+          ) : status === 'saved' ? (
+            'Saved'
+          ) : status === 'failed' ? (
+            <>
+              Not saved ·{' '}
+              <button type="button" onClick={() => void flush()} className="cursor-pointer font-medium underline underline-offset-2 hover:text-foreground">
+                Try again
+              </button>
+            </>
+          ) : (
+            'Only your team sees these'
+          )}
         </span>
       </div>
       <TagInput
@@ -576,7 +672,8 @@ function TeamNotes({ response, allTags }: { response: ResponseRow; allTags: stri
         placeholder="Add a tag, like follow up"
         onChange={next => {
           setTags(next)
-          save.mutate({ tags: next })
+          current.current = { ...current.current, tags: next }
+          void flush()
         }}
       />
       <textarea
@@ -584,8 +681,13 @@ function TeamNotes({ response, allTags }: { response: ResponseRow; allTags: stri
         value={note}
         rows={2}
         placeholder="A note about this response"
-        onChange={e => setNote(e.target.value)}
-        onBlur={() => note !== (response.note ?? '') && save.mutate({ note })}
+        onChange={e => {
+          setNote(e.target.value)
+          current.current = { ...current.current, note: e.target.value }
+          clearTimeout(timer.current)
+          timer.current = setTimeout(() => void flush(), NOTE_SAVE_DELAY)
+        }}
+        onBlur={() => void flush()}
         className={`${INPUT_CLASS} resize-y`}
       />
     </section>
@@ -706,7 +808,7 @@ function ResponseDialog({
             )
           })}
         </ol>
-        <TeamNotes response={r} allTags={allTags} />
+        <TeamNotes key={r.id} response={r} allTags={allTags} />
       </DialogBody>
       <DialogFooter>
         <div className="mr-auto">

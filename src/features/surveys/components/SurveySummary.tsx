@@ -6,7 +6,8 @@ import { getSurveySummaryFn } from '../../../server/functions'
 import { Select } from '../../../components/ui/Select'
 import { INPUT_CLASS } from '../../../components/ui/Field'
 import { Button } from '../../../components/ui/Button'
-import type { QuestionSummary } from '../../survey-builder/analytics'
+import { Notice } from '../../../components/ui/Notice'
+import { pickHeadline, type QuestionSummary } from '../../survey-builder/analytics'
 import type { Survey, SurveyBlock } from '../../survey-builder/types'
 import { isQuestionType, SURVEY_BLOCK_TYPES } from '../../survey-builder/types'
 import { BlockChip } from '../../survey-builder/blockIcons'
@@ -30,7 +31,7 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
   const [source, setSource] = useState('')
   const [answer, setAnswer] = useState<AnswerFilter | null>(null)
   const filters = { days: range === 'all' ? undefined : Number(range), source: source || undefined, answer: answer ?? undefined }
-  const { data: summary, isLoading } = useQuery({
+  const { data: summary, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: queryKeys.surveys.summary(survey.id, filters),
     queryFn: () => getSurveySummaryFn({ data: { id: survey.id, ...filters } }),
     placeholderData: prev => prev,
@@ -42,6 +43,21 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
     return byId
   }, [survey.design])
 
+  if (isError && !summary) {
+    return (
+      <Notice
+        level="error"
+        title="The results didn't load"
+        action={
+          <Button variant="secondary" size="sm" isLoading={isRefetching} onClick={() => refetch()}>
+            Try again
+          </Button>
+        }
+      >
+        Nothing has been lost. Try again, or reload the page.
+      </Notice>
+    )
+  }
   if (isLoading || !summary) {
     return (
       <div className="flex flex-col gap-4" aria-busy="true">
@@ -54,8 +70,8 @@ export function SurveySummary({ survey, empty }: { survey: Survey; empty: React.
 
   const filtered = range !== 'all' || !!source || !!answer
   const multiPage = summary.pageReach.length > 1
-  // The survey's result leads: its NPS, or its first rating or scale's average.
-  const headline = summary.questions.find(q => q.kind === 'nps' && q.score !== null) ?? summary.questions.find(q => q.kind === 'scale' && q.average !== null)
+  // The survey's result leads: its NPS, or its first rating or scale's average (as the surveys list has it).
+  const headline = pickHeadline(summary.questions)
   const lead: [string, string, string] | null =
     headline?.kind === 'nps'
       ? ['NPS', `${headline.score! > 0 ? '+' : ''}${headline.score}`, `from ${headline.answered} answer${headline.answered === 1 ? '' : 's'} to Q${blocks.get(headline.id)?.n ?? 1}`]
@@ -272,7 +288,7 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
           </h2>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
             {typeLabel} ·{' '}
-            {q.seen < started ? (
+            {q.seen < started && q.skippable ? (
               // Logic shows it to some people only, so it's judged against those who saw it.
               <>
                 {q.answered} of the {q.seen} who saw it answered{' '}
@@ -282,6 +298,11 @@ function QuestionCard({ q, block, n, started }: { q: QuestionSummary; block: Sur
                 >
                   Shown to some
                 </span>
+              </>
+            ) : q.seen < started ? (
+              // No logic skips it: the others stopped before they got this far.
+              <>
+                {q.answered} of the {q.seen} who got this far answered
               </>
             ) : (
               <>

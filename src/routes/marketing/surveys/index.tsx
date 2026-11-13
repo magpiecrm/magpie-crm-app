@@ -35,7 +35,7 @@ function SurveysPage() {
   const [sharing, setSharing] = useState<SurveyRow | null>(null)
   const [sort, setSort] = useState<Sort>({ by: 'latest', dir: 'desc' })
 
-  const { data: surveys = [], isLoading } = useQuery({ queryKey: queryKeys.surveys.list(), queryFn: () => getSurveysFn() })
+  const { data: surveys = [], isLoading, isError, refetch, isRefetching } = useQuery({ queryKey: queryKeys.surveys.list(), queryFn: () => getSurveysFn() })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list() })
 
   const duplicate = useMutation({
@@ -44,6 +44,7 @@ function SurveysPage() {
       invalidate()
       navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: copy.id } })
     },
+    onError: (err: Error) => toast.error("Couldn't duplicate the survey", { description: err.message }),
   })
   const setStatus = useMutation({
     mutationFn: ({ s, to }: { s: SurveyRow; to: 'publish' | 'close' }) => (to === 'publish' ? publishSurveyFn({ data: { id: s.id } }) : closeSurveyFn({ data: { id: s.id } })),
@@ -59,6 +60,7 @@ function SurveysPage() {
       invalidate()
       toast.success(`Deleted “${s.name}”`)
     },
+    onError: (err: Error) => toast.error("Couldn't delete the survey", { description: err.message }),
   })
   const confirmDelete = async (s: SurveyRow) => {
     const n = s.responseCount
@@ -126,6 +128,18 @@ function SurveysPage() {
               </div>
             ))}
           </div>
+        ) : isError && !surveys.length ? (
+          <Notice
+            level="error"
+            title="Your surveys didn't load"
+            action={
+              <Button variant="secondary" size="sm" isLoading={isRefetching} onClick={() => refetch()}>
+                Try again
+              </Button>
+            }
+          >
+            Nothing has been lost. Try again, or reload the page.
+          </Notice>
         ) : surveys.length === 0 ? (
           <EmptySurveys />
         ) : (

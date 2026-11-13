@@ -45,13 +45,17 @@ const server = Bun.serve({
     if (request.method === 'GET' || request.method === 'HEAD') {
       const file = await clientFile(pathname)
       if (file) {
-        return new Response(file, {
-          headers: {
-            // Hashed build assets never change; everything else (the service
-            // worker, manifest, icons) must be re-checked.
-            'Cache-Control': pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
-          },
-        })
+        const headers = {
+          // Hashed build assets never change. The embed scripts run on every page view of every site they're
+          // pasted on, so browsers keep them for five minutes; everything else (the service worker, manifest,
+          // icons) is re-checked each time.
+          'Cache-Control': pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : pathname.endsWith('/embed.js') ? 'public, max-age=300' : 'no-cache',
+          'Last-Modified': new Date(file.lastModified).toUTCString(),
+        }
+        // A re-check of a file that hasn't changed since is answered without sending it again.
+        const since = Date.parse(request.headers.get('if-modified-since') ?? '')
+        if (since >= Math.floor(file.lastModified / 1000) * 1000) return new Response(null, { status: 304, headers })
+        return new Response(file, { headers })
       }
     }
     try {

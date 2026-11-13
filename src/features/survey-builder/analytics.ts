@@ -3,8 +3,12 @@ import { CHOICE_TYPES, isQuestionType } from './types'
 import { answerToDisplay } from './logic/answers'
 import { scaleRange } from './logic/validate'
 
-/** Every question's summary carries how many responses reached its page, so logic-gated questions are judged against those who saw them. */
-type Seen = { seen: number }
+/**
+ * Every question's summary carries how many responses reached its page, so it
+ * is judged against those who saw it, and whether logic can take people past
+ * that page (so not seeing it isn't only people stopping early).
+ */
+type Seen = { seen: number; skippable: boolean }
 
 export type QuestionSummary = Seen & (
   | { kind: 'choice'; id: string; title: string; type: string; answered: number; options: Array<{ id: string; label: string; count: number }>; other: string[] }
@@ -59,9 +63,19 @@ function weekStart(iso: string): string {
   return d.toISOString().slice(0, 10)
 }
 
-function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], pageId: string, firstPage: boolean): QuestionSummary {
-  const seen = responses.filter(r => r.path.includes(pageId) || r.current_page_id === pageId || (firstPage && r.path.length === 0)).length
-  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type, seen }
+/**
+ * Whether a response got as far as a page. `path` holds the pages it sent; a
+ * partial response is also sitting on its current page, and one that hasn't
+ * sent a page yet is on the first. The summary and the responses table both
+ * count by this, so they agree.
+ */
+export function reachedPage(r: Pick<SurveyResponse, 'path' | 'current_page_id'>, pageId: string, firstPage: boolean): boolean {
+  return r.path.includes(pageId) || r.current_page_id === pageId || (firstPage && r.path.length === 0)
+}
+
+/** One question's results. `seen` is how many reached its page, counted once per page by the caller. */
+function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], seen: number, skippable: boolean): QuestionSummary {
+  const base = { id: block.id, title: block.question?.title || 'Untitled question', type: block.type, seen, skippable }
   const answered = responses.filter(r => r.answers[block.id] !== undefined && r.answers[block.id] !== null)
   const values = answered.map(r => r.answers[block.id])
 
@@ -80,22 +94,28 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], page
   const nums = values.filter((v): v is number => typeof v === 'number')
 
   if (block.type === 'nps') {
-    const distribution = Array.from({ length: 11 }, (_, i) => nums.filter(n => n === i).length)
+    const distribution = Array.from({ length: 11 }, () => 0)
+    for (const n of nums) if (n >= 0 && n <= 10) distribution[n]++
     const promoters = nums.filter(n => n >= 9).length
     const detractors = nums.filter(n => n <= 6).length
     const passives = nums.length - promoters - detractors
     const score = nums.length ? Math.round(((promoters - detractors) / nums.length) * 100) : null
-    const weeks = new Map<string, number[]>()
+    // Counts per week rather than each week's answers, so a busy week costs no more than a quiet one.
+    const weeks = new Map<string, { answered: number; promoters: number; detractors: number }>()
     for (const r of answered) {
       const v = r.answers[block.id]
       if (typeof v !== 'number') continue
       const week = weekStart(r.started_at)
-      weeks.set(week, [...(weeks.get(week) ?? []), v])
+      const w = weeks.get(week) ?? { answered: 0, promoters: 0, detractors: 0 }
+      w.answered++
+      if (v >= 9) w.promoters++
+      else if (v <= 6) w.detractors++
+      weeks.set(week, w)
     }
     const trend = [...weeks.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
       .slice(-12)
-      .map(([week, vs]) => ({ week, answered: vs.length, score: Math.round(((vs.filter(n => n >= 9).length - vs.filter(n => n <= 6).length) / vs.length) * 100) }))
+      .map(([week, w]) => ({ week, answered: w.answered, score: Math.round(((w.promoters - w.detractors) / w.answered) * 100) }))
     return { ...base, kind: 'nps', answered: nums.length, score, promoters, passives, detractors, distribution, trend }
   }
 
@@ -124,19 +144,30 @@ function summarizeQuestion(block: SurveyBlock, responses: SurveyResponse[], page
   return { ...base, kind: 'text', answered: answered.length, latest }
 }
 
+/** Everywhere a page's logic can send people: its rules' destinations and its "everyone else goes to". */
+const targetsOf = (p: SurveyDesign['pages'][number]) => [...(p.rules ?? []).map(r => r.goTo), ...(p.defaultNext ? [p.defaultNext] : [])]
+
 /**
  * Whether a page is only reached when logic sends people there: some earlier
  * page has a rule or a "go to" pointing at it, and the page before it doesn't
- * simply carry on into it.
+ * carry on into it (by default, or by going to it).
  */
-function isBranchPage(design: SurveyDesign, index: number): boolean {
+export function isBranchPage(design: SurveyDesign, index: number): boolean {
   if (index === 0) return false
   const page = design.pages[index]
-  const targets = (p: SurveyDesign['pages'][number]) => [...(p.rules ?? []).map(r => r.goTo), ...(p.defaultNext ? [p.defaultNext] : [])]
-  const pointedAt = design.pages.slice(0, index).some(p => targets(p).some(t => t.kind === 'page' && t.pageId === page.id))
-  const before = design.pages[index - 1]
-  const fallsThrough = !before.defaultNext || before.defaultNext.kind === 'next'
-  return pointedAt || !fallsThrough
+  const pointedAt = design.pages.slice(0, index).some(p => targetsOf(p).some(t => t.kind === 'page' && t.pageId === page.id))
+  const next = design.pages[index - 1].defaultNext
+  const carriesOn = !next || next.kind === 'next' || (next.kind === 'page' && next.pageId === page.id)
+  return pointedAt && !carriesOn
+}
+
+/**
+ * Whether logic can take someone past a page: an earlier page has a rule or a
+ * "go to" that jumps beyond it, or to the end. Jumps only go forward.
+ */
+export function canSkipPage(design: SurveyDesign, index: number): boolean {
+  const indexOf = (id: string) => design.pages.findIndex(p => p.id === id)
+  return design.pages.slice(0, index).some(p => targetsOf(p).some(t => t.kind === 'end' || (t.kind === 'page' && indexOf(t.pageId) > index)))
 }
 
 /**
@@ -154,6 +185,9 @@ export function computeSurveySummary(design: SurveyDesign, responses: SurveyResp
   const bySource: Record<string, number> = {}
   for (const r of responses) bySource[r.source] = (bySource[r.source] ?? 0) + 1
 
+  // How many reached each page, counted once per page rather than once per question on it.
+  const reached = design.pages.map((p, i) => responses.filter(r => reachedPage(r, p.id, i === 0)).length)
+
   return {
     started: responses.length,
     completed: completed.length,
@@ -162,12 +196,47 @@ export function computeSurveySummary(design: SurveyDesign, responses: SurveyResp
     pageReach: design.pages.map((p, i) => ({
       pageId: p.id,
       title: p.title || `Page ${i + 1}`,
-      // `path` holds submitted pages; a partial response is also sitting on its current page.
-      reached: responses.filter(r => r.path.includes(p.id) || r.current_page_id === p.id || (i === 0 && r.path.length === 0)).length,
+      reached: reached[i],
       stopped: responses.filter(r => r.status === 'partial' && (r.current_page_id ?? r.path[r.path.length - 1] ?? design.pages[0]?.id) === p.id).length,
       branch: isBranchPage(design, i),
     })),
     bySource,
-    questions: design.pages.flatMap((p, i) => p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses, p.id, i === 0))),
+    questions: design.pages.flatMap((p, i) => {
+      const skippable = canSkipPage(design, i)
+      return p.blocks.filter(b => isQuestionType(b.type)).map(b => summarizeQuestion(b, responses, reached[i], skippable))
+    }),
   }
+}
+
+type NpsSummary = Extract<QuestionSummary, { kind: 'nps' }>
+type ScaleSummary = Extract<QuestionSummary, { kind: 'scale' }>
+
+/**
+ * The question a survey's results lead with: its first NPS question with a
+ * score, or failing that its first rating or scale question with an average.
+ * The results page and the surveys list both go by this.
+ */
+export function pickHeadline(questions: QuestionSummary[]): NpsSummary | ScaleSummary | undefined {
+  return (
+    questions.find((q): q is NpsSummary => q.kind === 'nps' && q.score !== null) ??
+    questions.find((q): q is ScaleSummary => q.kind === 'scale' && q.average !== null)
+  )
+}
+
+/**
+ * `pickHeadline` without summarising the whole survey: only the NPS, rating and
+ * scale questions it can come from, in order, stopping at the first that has
+ * answers. For the surveys list, which shows one number per survey.
+ */
+export function headlineSummary(design: SurveyDesign, responses: SurveyResponse[]): NpsSummary | ScaleSummary | undefined {
+  const located = design.pages.flatMap((p, i) => p.blocks.map(block => ({ block, pageId: p.id, first: i === 0, index: i })))
+  for (const kinds of [['nps'], ['rating', 'scale']]) {
+    for (const { block, pageId, first, index } of located) {
+      if (!kinds.includes(block.type)) continue
+      const seen = responses.filter(r => reachedPage(r, pageId, first)).length
+      const found = pickHeadline([summarizeQuestion(block, responses, seen, canSkipPage(design, index))])
+      if (found) return found
+    }
+  }
+  return undefined
 }

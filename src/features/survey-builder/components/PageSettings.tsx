@@ -31,10 +31,14 @@ export function PageSettings({ design, pageId, dispatch, onOpenLogic, onOpenStyl
           </label>
           <input
             id={`page-name-${page.id}`}
-            key={page.id}
+            // Drawn again when the name changes elsewhere (the outline, the copilot, Discard), so leaving it never writes an old name back.
+            key={`${page.id}:${page.title ?? ''}`}
             defaultValue={page.title ?? ''}
             placeholder={`Page ${index + 1}`}
-            onBlur={e => dispatch('survey.updatePage', { id: page.id, updates: { title: e.target.value.trim() || undefined } })}
+            onBlur={e => {
+              const title = e.target.value.trim() || undefined
+              if (title !== (page.title || undefined)) dispatch('survey.updatePage', { id: page.id, updates: { title } })
+            }}
             className={inputClass}
           />
           <p className={hintClass}>Only you see it: it names the page in the outline, the logic and the results.</p>

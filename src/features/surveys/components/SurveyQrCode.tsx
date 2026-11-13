@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { Download } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
+import { toast } from '../../../components/ui/toast'
 
 /** The public link, tagged so scans are counted as their own source in results. */
 export const surveyQrUrl = (origin: string, surveyId: string) => `${origin}/s/${surveyId}?src=qr`
@@ -20,25 +21,28 @@ function download(href: string, filename: string) {
 }
 
 export function SurveyQrCode({ url, name }: { url: string; name: string }) {
-  const [preview, setPreview] = useState('')
+  // Empty while it's drawn; null if drawing it failed.
+  const [preview, setPreview] = useState<string | null>('')
   const filename = `${name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'survey'}-qr`
 
   useEffect(() => {
-    QRCode.toDataURL(url, { ...QR_OPTIONS, width: 240 }).then(setPreview, () => setPreview(''))
+    QRCode.toDataURL(url, { ...QR_OPTIONS, width: 240 }).then(setPreview, () => setPreview(null))
   }, [url])
 
-  const downloadPng = async () => download(await QRCode.toDataURL(url, { ...QR_OPTIONS, width: 1024 }), `${filename}.png`)
-  const downloadSvg = async () => {
-    const svg = await QRCode.toString(url, { ...QR_OPTIONS, type: 'svg' })
-    const blobUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
-    download(blobUrl, `${filename}.svg`)
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
-  }
+  const failed = (err: unknown) => toast.error("Couldn't make the QR code", { description: err instanceof Error ? err.message : undefined })
+  const downloadPng = () =>
+    QRCode.toDataURL(url, { ...QR_OPTIONS, width: 1024 }).then(href => download(href, `${filename}.png`), failed)
+  const downloadSvg = () =>
+    QRCode.toString(url, { ...QR_OPTIONS, type: 'svg' }).then(svg => {
+      const blobUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+      download(blobUrl, `${filename}.svg`)
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    }, failed)
 
   return (
     <div className="flex flex-col items-start gap-4 sm:flex-row sm:gap-5">
       <div className="flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-md-m border border-border bg-white p-1">
-        {preview ? <img src={preview} alt={`QR code that opens ${url}`} className="h-full w-full" /> : null}
+        {preview === null ? <span className="px-3 text-center text-xs text-muted-foreground">The QR code couldn't be drawn</span> : preview ? <img src={preview} alt={`QR code that opens ${url}`} className="h-full w-full" /> : null}
       </div>
       <div className="flex flex-col gap-3">
         <p className="text-[13px] leading-relaxed text-muted-foreground">

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { getPublicSurveyFn } from '../../server/functions'
 import type { Answers, ResponseSource, SurveyDesign } from '../../features/survey-builder/types'
 import { computePath, findQuestion } from '../../features/survey-builder/logic/evaluate'
@@ -71,31 +71,60 @@ function PublicSurveyPage() {
   const search = Route.useSearch()
 
   const embedded = search.embed
-  // Embedded, these too sit on the customer's page rather than the app's grey.
-  const seeThrough = embedded ? <style>{EMBED_PAGE_CSS}</style> : null
+  // Embedded, these too sit on the customer's page and fit their frame; a pop-up never opens for them.
+  const framed = (node: ReactNode) =>
+    embedded ? (
+      <EmbedRoot surveyId={surveyId} state={data.state}>
+        {node}
+      </EmbedRoot>
+    ) : (
+      node
+    )
   if (data.state === 'not_found')
-    return (
-      <>
-        {seeThrough}
-        <SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />
-      </>
-    )
+    return framed(<SurveyMessage theme={DEFAULT_SURVEY_THEME} embedded={embedded} title="Survey not found" body="This survey doesn't exist, or hasn't been published yet." />)
   if (data.state === 'closed')
-    return (
-      <>
-        {seeThrough}
-        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />
-      </>
-    )
+    return framed(<SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This survey has closed and isn't taking answers any more. Thank you for your interest." />)
   if (data.state === 'invalid_link')
-    return (
-      <>
-        {seeThrough}
-        <SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />
-      </>
-    )
+    return framed(<SurveyMessage theme={data.theme} embedded={embedded} title={data.name} body="This link has expired or isn't valid. Reload the page you opened it from, or use the link in your email." />)
 
   return <OpenSurvey key={surveyId} data={data} surveyId={surveyId} search={search} />
+}
+
+/**
+ * Embedded, one element holds the page from its first render, and its height
+ * goes to the embedding page so the frame fits it. The document's height never
+ * falls below the iframe's own, so the element is watched rather than the page:
+ * the frame then shrinks for a shorter page as well as growing (flow-root keeps
+ * its children's margins inside it). The page behind it is see-through, so the
+ * site around the iframe shows round the card, not the app's grey. `state`
+ * tells the embed script whether there's a survey to answer: it opens a pop-up
+ * only for an open one. Older inline embed codes read only the height.
+ */
+function EmbedRoot({ surveyId, state, children }: { surveyId: string; state: 'open' | 'closed' | 'not_found' | 'invalid_link'; children: ReactNode }) {
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = root.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, state, height: Math.ceil(el.getBoundingClientRect().height) }, '*')
+    const observer = new ResizeObserver(send)
+    observer.observe(el)
+    send()
+    // The embed script can load after the first height went out, so it asks again.
+    const onAsk = (e: MessageEvent) => {
+      if (e.source === window.parent && e.data?.type === 'em-survey:measure') send()
+    }
+    window.addEventListener('message', onAsk)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('message', onAsk)
+    }
+  }, [surveyId, state])
+  return (
+    <div ref={root} style={{ display: 'flow-root' }}>
+      <style>{EMBED_PAGE_CSS}</style>
+      {children}
+    </div>
+  )
 }
 
 type OpenData = Extract<Awaited<ReturnType<typeof getPublicSurveyFn>>, { state: 'open' }>
@@ -178,28 +207,6 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     return () => window.removeEventListener('keydown', onKey)
   }, [search.embed, surveyId])
 
-  // Let the embedding page size the iframe to the survey. The document's height
-  // never falls below the iframe's own, so watch the survey itself and send its
-  // height: the frame then shrinks for a shorter page as well as growing.
-  const embedRoot = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const root = embedRoot.current
-    if (!search.embed || !root || typeof ResizeObserver === 'undefined') return
-    const send = () => window.parent.postMessage({ type: 'em-survey:height', id: surveyId, height: Math.ceil(root.getBoundingClientRect().height) }, '*')
-    const observer = new ResizeObserver(send)
-    observer.observe(root)
-    send()
-    // The embed script can load after the first height went out, so it asks again.
-    const onAsk = (e: MessageEvent) => {
-      if (e.source === window.parent && e.data?.type === 'em-survey:measure') send()
-    }
-    window.addEventListener('message', onAsk)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('message', onAsk)
-    }
-  }, [search.embed, surveyId])
-
   const page = !start ? (
     <div style={{ minHeight: search.embed ? 200 : '100vh', background: search.embed ? 'transparent' : design.theme.pageBgColor }} />
   ) : (
@@ -233,13 +240,10 @@ function OpenSurvey({ data, surveyId, search }: { data: OpenData; surveyId: stri
     />
   )
 
-  // Embedded, one element holds the survey from the first render, so its height can be watched (flow-root keeps its children's margins inside it).
-  // The page behind it is see-through, so the site around the iframe shows round the card, not the app's grey.
   return search.embed ? (
-    <div ref={embedRoot} style={{ display: 'flow-root' }}>
-      <style>{EMBED_PAGE_CSS}</style>
+    <EmbedRoot surveyId={surveyId} state="open">
       {page}
-    </div>
+    </EmbedRoot>
   ) : (
     page
   )

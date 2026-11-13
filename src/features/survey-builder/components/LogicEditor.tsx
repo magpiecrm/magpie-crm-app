@@ -78,6 +78,8 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
   const laterPages = design.pages.slice(index + 1)
 
   const [editing, setEditing] = useState<string | null>(null)
+  // A rule being added lives only in its pop-up until Add rule: Cancel leaves the page's logic as it was.
+  const [adding, setAdding] = useState<LogicRule | null>(null)
   const save = (nextRules: LogicRule[], defaultNext = page.defaultNext) =>
     dispatch('survey.setPageLogic', { pageId: page.id, rules: nextRules, defaultNext })
 
@@ -115,15 +117,32 @@ function PageLogic({ design, page, index, dispatch }: { design: SurveyDesign; pa
         />
       ))}
 
+      {adding && (
+        <RuleRow
+          key={adding.id}
+          isNew
+          design={design}
+          pageIndex={index}
+          rule={adding}
+          questions={questions}
+          targetSelect={targetSelect}
+          editing
+          setEditing={open => !open && setAdding(null)}
+          onChange={added => {
+            save([...rules, added])
+            setAdding(null)
+          }}
+          onDelete={() => setAdding(null)}
+        />
+      )}
+
       {questions.length > 0 && (
         <button
           type="button"
           onClick={() => {
             const q = questions[questions.length - 1]
             const op = opsFor(q)[0]
-            const id = newRuleId()
-            save([...rules, { id, when: { questionId: q.id, op, value: defaultValue(q, op) }, goTo: { kind: 'end' } }])
-            setEditing(id)
+            setAdding({ id: newRuleId(), when: { questionId: q.id, op, value: defaultValue(q, op) }, goTo: { kind: 'end' } })
           }}
           className="inline-flex min-h-8 cursor-pointer items-center gap-1 rounded-md-s px-2 text-[13px] font-medium text-accent hover:bg-accent/10"
         >
@@ -172,7 +191,10 @@ function RuleRow({
   setEditing,
   onChange,
   onDelete,
+  isNew = false,
 }: {
+  /** Not saved yet: the pop-up adds it, and there's nothing to delete. */
+  isNew?: boolean
   editing: boolean
   setEditing: (open: boolean) => void
   design: SurveyDesign
@@ -230,130 +252,137 @@ function RuleRow({
   const close = () => (setDraft(null), setEditing(false))
   const draftWhen = unflatten(d.join, d.conds)
 
-  return (
-    <div className="rounded-md-s border border-border bg-background p-2.5">
-      {header}
-      <Dialog isOpen={editing} onClose={close} title="Change this rule" description={`If ${describeCondition(design, draftWhen)}, go to ${describeTarget(design, d.goTo, pageIndex)}`} className="sm:max-w-2xl">
-        <DialogBody className="flex flex-col gap-4">
-          <span className={labelClass}>{d.conds.length > 1 ? 'Conditions' : 'If the answer to'}</span>
-          {d.conds.length > 1 && (
-            <div className="flex flex-wrap items-center gap-2 text-[13px] text-foreground">
-              It applies when
-              <div role="radiogroup" aria-label="Which conditions" className="inline-flex gap-0.5 rounded-md-s bg-muted p-0.5">
-                {(['all', 'any'] as const).map(j => (
-                  <button
-                    key={j}
-                    type="button"
-                    role="radio"
-                    aria-checked={d.join === j}
-                    onClick={() => setDraft({ ...d, join: j })}
-                    className={`inline-flex min-h-8 cursor-pointer items-center rounded-md-xs px-3 font-medium transition-colors ${
-                      d.join === j ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {j === 'all' ? 'all of these' : 'any of these'}
-                  </button>
-                ))}
-              </div>
-              are true
+  const dialog = (
+    <Dialog isOpen={editing} onClose={close} title={isNew ? 'Add a rule' : 'Change this rule'} description={`If ${describeCondition(design, draftWhen)}, go to ${describeTarget(design, d.goTo, pageIndex)}`} className="sm:max-w-2xl">
+      <DialogBody className="flex flex-col gap-4">
+        <span className={labelClass}>{d.conds.length > 1 ? 'Conditions' : 'If the answer to'}</span>
+        {d.conds.length > 1 && (
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-foreground">
+            It applies when
+            <div role="radiogroup" aria-label="Which conditions" className="inline-flex gap-0.5 rounded-md-s bg-muted p-0.5">
+              {(['all', 'any'] as const).map(j => (
+                <button
+                  key={j}
+                  type="button"
+                  role="radio"
+                  aria-checked={d.join === j}
+                  onClick={() => setDraft({ ...d, join: j })}
+                  className={`inline-flex min-h-8 cursor-pointer items-center rounded-md-xs px-3 font-medium transition-colors ${
+                    d.join === j ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.08)] dark:bg-white/10' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {j === 'all' ? 'all of these' : 'any of these'}
+                </button>
+              ))}
             </div>
-          )}
-          {/* One line per condition, joined by an and/or pill; the NPS groups are explained once below. */}
-          <ol className="flex flex-col gap-2">
-            {d.conds.map((c, i) => {
-              const question = questions.find(q => q.id === c.questionId)
-              const ops = opsFor(question)
-              return (
-                <li key={i} className="flex flex-col gap-2">
-                  {i > 0 && (
-                    <span className="self-start rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">{d.join === 'all' ? 'and' : 'or'}</span>
-                  )}
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_8.5rem_auto]">
-                    <Select
-                      aria-label="Question"
-                      value={c.questionId}
-                      onChange={e => {
-                        const q = questions.find(x => x.id === e.target.value)!
-                        const op = opsFor(q)[0]
-                        setCond(i, { questionId: q.id, op, value: defaultValue(q, op) })
-                      }}
-                      className={`${inputClass} max-sm:col-span-2`}
-                    >
-                      {!question && <option value={c.questionId}>(deleted question)</option>}
-                      {questions.map((q, k) => (
-                        <option key={q.id} value={q.id}>
-                          Q{k + 1}. {q.question?.title || 'Untitled question'}
-                        </option>
-                      ))}
-                    </Select>
-                    <Select
-                      value={c.op}
-                      aria-label="Is"
-                      onChange={e => {
-                        const op = e.target.value as ConditionOp
-                        setCond(i, { op, value: question ? defaultValue(question, op) : undefined })
-                      }}
-                      className={inputClass}
-                    >
-                      {ops.map(op => (
-                        <option key={op} value={op}>
-                          {OP_LABELS[op]}
-                        </option>
-                      ))}
-                    </Select>
-                    {needsValue(c.op) && question ? <ValueInput question={question} value={c.value} onChange={value => setCond(i, { value })} /> : <span className="max-sm:hidden" />}
-                    <button
-                      type="button"
-                      disabled={d.conds.length === 1}
-                      onClick={() => setDraft({ ...d, conds: d.conds.filter((_, j) => j !== i) })}
-                      className={`${iconButton} self-center hover:!text-destructive disabled:invisible`}
-                      aria-label="Remove this condition"
-                      title="Remove this condition"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
-          {d.conds.some(c => questions.find(q => q.id === c.questionId)?.type === 'nps') && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
-          <div>
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<Plus className="h-3.5 w-3.5" />}
-              onClick={() => {
-                const q = questions[questions.length - 1]
-                const op = opsFor(q)[0]
-                setDraft({ ...d, conds: [...d.conds, { questionId: q.id, op, value: defaultValue(q, op) }] })
-              }}
-            >
-              Add a condition
-            </Button>
+            are true
           </div>
-          <div className="space-y-1.5">
-            <span className={labelClass}>Then go to</span>
-            {targetSelect(d.goTo, goTo => setDraft({ ...d, goTo }))}
-          </div>
-        </DialogBody>
-        <DialogFooter>
+        )}
+        {/* One line per condition, joined by an and/or pill; the NPS groups are explained once below. */}
+        <ol className="flex flex-col gap-2">
+          {d.conds.map((c, i) => {
+            const question = questions.find(q => q.id === c.questionId)
+            const ops = opsFor(question)
+            return (
+              <li key={i} className="flex flex-col gap-2">
+                {i > 0 && (
+                  <span className="self-start rounded-full bg-foreground/[0.07] px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-foreground">{d.join === 'all' ? 'and' : 'or'}</span>
+                )}
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_8.5rem_auto]">
+                  <Select
+                    aria-label="Question"
+                    value={c.questionId}
+                    onChange={e => {
+                      const q = questions.find(x => x.id === e.target.value)!
+                      const op = opsFor(q)[0]
+                      setCond(i, { questionId: q.id, op, value: defaultValue(q, op) })
+                    }}
+                    className={`${inputClass} max-sm:col-span-2`}
+                  >
+                    {!question && <option value={c.questionId}>(deleted question)</option>}
+                    {questions.map((q, k) => (
+                      <option key={q.id} value={q.id}>
+                        Q{k + 1}. {q.question?.title || 'Untitled question'}
+                      </option>
+                    ))}
+                  </Select>
+                  <Select
+                    value={c.op}
+                    aria-label="Is"
+                    onChange={e => {
+                      const op = e.target.value as ConditionOp
+                      setCond(i, { op, value: question ? defaultValue(question, op) : undefined })
+                    }}
+                    className={inputClass}
+                  >
+                    {ops.map(op => (
+                      <option key={op} value={op}>
+                        {OP_LABELS[op]}
+                      </option>
+                    ))}
+                  </Select>
+                  {needsValue(c.op) && question ? <ValueInput question={question} value={c.value} onChange={value => setCond(i, { value })} /> : <span className="max-sm:hidden" />}
+                  <button
+                    type="button"
+                    disabled={d.conds.length === 1}
+                    onClick={() => setDraft({ ...d, conds: d.conds.filter((_, j) => j !== i) })}
+                    className={`${iconButton} self-center hover:!text-destructive disabled:invisible`}
+                    aria-label="Remove this condition"
+                    title="Remove this condition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+        {d.conds.some(c => questions.find(q => q.id === c.questionId)?.type === 'nps') && <p className={hintClass}>Detractors score 0–6, passives 7–8 and promoters 9–10.</p>}
+        <div>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Plus className="h-3.5 w-3.5" />}
+            onClick={() => {
+              const q = questions[questions.length - 1]
+              const op = opsFor(q)[0]
+              setDraft({ ...d, conds: [...d.conds, { questionId: q.id, op, value: defaultValue(q, op) }] })
+            }}
+          >
+            Add a condition
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          <span className={labelClass}>Then go to</span>
+          {targetSelect(d.goTo, goTo => setDraft({ ...d, goTo }))}
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        {!isNew && (
           <Button variant="ghost" leftIcon={<Trash2 className="h-4 w-4" />} className="sm:mr-auto !text-destructive hover:!bg-destructive/10" onClick={() => (close(), onDelete())}>
             Delete rule
           </Button>
-          <Button variant="secondary" onClick={close}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              onChange({ ...rule, when: draftWhen, goTo: d.goTo })
-              close()
-            }}
-          >
-            Save rule
-          </Button>
-        </DialogFooter>
-      </Dialog>
+        )}
+        <Button variant="secondary" onClick={close}>
+          Cancel
+        </Button>
+        <Button
+          onClick={() => {
+            onChange({ ...rule, when: draftWhen, goTo: d.goTo })
+            close()
+          }}
+        >
+          {isNew ? 'Add rule' : 'Save rule'}
+        </Button>
+      </DialogFooter>
+    </Dialog>
+  )
+  // A rule being added is only its pop-up: it joins the list once it's added.
+  if (isNew) return dialog
+  return (
+    <div className="rounded-md-s border border-border bg-background p-2.5">
+      {header}
+      {dialog}
     </div>
   )
 }

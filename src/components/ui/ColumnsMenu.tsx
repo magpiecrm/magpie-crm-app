@@ -8,7 +8,9 @@ export function useStoredColumns(key: string, defaults: string[]): [string[], (k
   useEffect(() => {
     try {
       const raw = localStorage.getItem(key)
-      setState(raw ? (JSON.parse(raw) as string[]) : null)
+      const stored: unknown = raw ? JSON.parse(raw) : null
+      // Anything but a list of column keys (an older or damaged value) falls back to the defaults.
+      setState(Array.isArray(stored) && stored.every(k => typeof k === 'string') ? stored : null)
     } catch {
       setState(null)
     }
