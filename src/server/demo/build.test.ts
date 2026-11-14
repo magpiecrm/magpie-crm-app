@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildDemo } from './build'
+import { buildDemoPlan } from './plan'
 import { fromProspectSearch, isUnconfirmedGuess } from '../prospecting/types'
 
 // The demo workspace (seed.ts): made up, on .example, and nothing in it can send.
@@ -39,5 +40,31 @@ describe('demo workspace', () => {
   it('makes the same people every time', () => {
     const again = buildDemo({ now: new Date('2026-12-01T09:00:00Z'), senderId: 3, owner: null })
     expect(again.contacts.map((c) => c.email).sort()).toEqual([...emails].sort())
+  })
+})
+
+describe('demo plan', () => {
+  const now = new Date('2026-11-14T12:00:00Z')
+  const { allowance, daily, monthly } = buildDemoPlan({ now, sentAt: demo.recipients.map((r) => r.sent_at) })
+
+  it('is a month under way, part-used, with an Upgrade link', () => {
+    expect(allowance.periodStart).toBe('2026-11-03T00:00:00.000Z')
+    expect(allowance.periodEnd).toBe('2026-12-03T00:00:00.000Z')
+    for (const kind of ['prospects', 'emailsSent', 'ai'] as const) {
+      expect(allowance.used[kind]).toBeGreaterThan(0)
+      expect(allowance.used[kind]).toBeLessThan(allowance.limits[kind]! * 0.7)
+    }
+    expect(allowance.upgradeUrl).toBe('https://magpiecrm.com/pricing')
+  })
+
+  it("counts the demo's own campaigns as emails sent, and nothing after now", () => {
+    const sent = demo.recipients.filter((r) => r.sent_at && r.sent_at >= allowance.periodStart && r.sent_at <= now.toISOString()).length
+    expect(allowance.used.emailsSent).toBe(sent)
+    expect(Object.keys(daily).every((day) => day <= '2026-11-14')).toBe(true)
+    expect(monthly['2026-11'].emailsSent).toBe(Object.entries(daily).filter(([d]) => d.startsWith('2026-11')).reduce((n, [, c]) => n + (c.emailsSent ?? 0), 0))
+  })
+
+  it('is counts only', () => {
+    expect(JSON.stringify({ allowance, daily, monthly })).not.toMatch(/@/)
   })
 })

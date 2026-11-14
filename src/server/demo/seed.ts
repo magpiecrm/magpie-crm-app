@@ -7,9 +7,10 @@
 // than the app's two sample ones, campaigns, sequences, deals, forms,
 // surveys, templates or personas) unless given --reset. Either way it
 // replaces the collections it seeds and leaves everything else as it is:
-// users, sessions, API keys, secrets, settings, prospecting caches, usage,
+// users, sessions, API keys, secrets, settings, prospecting caches,
 // mailboxes and sending domains. Its own sender and brand kit are added or
-// updated; anyone else's are kept.
+// updated; anyone else's are kept. Its plan and usage counts (plan.ts) replace
+// any there were, so the credits it shows start part-used again.
 //
 // Nothing it writes is due to send. Campaigns are 'sent' or 'draft', never
 // 'scheduled' or 'sending' (the email scheduler only picks up those two).
@@ -23,6 +24,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { buildDemo } from './build'
 import { WORKSPACE } from './content'
+import { buildDemoPlan } from './plan'
 
 /** The sample contacts the app adds to a fresh database (db.ts seedDefaultData): not anyone's data. */
 const APP_SAMPLES = new Set(['test@example.com', 'hello@example.com'])
@@ -65,7 +67,9 @@ const { db } = await import('../db')
 
 const sender = db.data.senders.find((s) => s.email.toLowerCase() === WORKSPACE.sender.email)
 const senderId = sender?.id ?? Math.max(0, ...db.data.senders.map((s) => s.id)) + 1
-const demo = buildDemo({ now: new Date(), senderId, owner: db.data.users[0]?.email ?? null })
+const now = new Date()
+const demo = buildDemo({ now, senderId, owner: db.data.users[0]?.email ?? null })
+const plan = buildDemoPlan({ now, sentAt: demo.recipients.map((r) => r.sent_at) })
 
 let stopsWritten = true
 db.transaction(() => {
@@ -96,6 +100,9 @@ db.transaction(() => {
     data.surveys = demo.surveys
     data.survey_responses = demo.surveyResponses
     data.notifications = demo.notifications
+    data.allowance = plan.allowance
+    data.usage = plan.monthly
+    data.usage_daily = plan.daily
     // Welcome emails still waiting were for contacts that are now gone.
     data.pending_emails = (data.pending_emails ?? []).filter((e) => e.sent)
   })
@@ -129,6 +136,13 @@ console.log(
     `${n(saved.personas)} personas, ${n(saved.email_templates)} templates, ${n(saved.forms)} forms (${n(saved.form_submissions)} submissions),`,
     `${n(saved.surveys)} survey (${n(saved.survey_responses)} responses), ${n(saved.notifications)} notifications,`,
     `${n(saved.contact_fields)} custom fields, ${stopsWritten ? n(demo.emailStops) : 0} email stops, sender ${demo.sender.email} (#${senderId}).`,
+    planLine(saved.allowance),
   ].join('\n'),
 )
+function planLine(a: typeof saved.allowance): string {
+  if (!a) return 'No plan.'
+  const of = (kind: 'prospects' | 'emailsSent') => `${a.used[kind].toLocaleString('en-GB')} of ${a.limits[kind]!.toLocaleString('en-GB')}`
+  const ai = Math.round((a.used.ai / a.limits.ai!) * 100)
+  return `Plan: ${of('prospects')} prospect credits and ${of('emailsSent')} emails used, ${ai}% of the AI budget, until ${a.periodEnd!.slice(0, 10)}.`
+}
 if (due.length) fail(`Something in the seeded data could send:\n${due.join('\n')}`)
