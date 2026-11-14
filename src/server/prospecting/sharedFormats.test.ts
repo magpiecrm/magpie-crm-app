@@ -47,6 +47,11 @@ describe('formatCounts', () => {
     expect(Object.fromEntries(counts)).toEqual({ 'acme.test': { '{first}.{last}': 2, '{f}{last}': 1 } })
     expect(JSON.stringify(Object.fromEntries(counts))).not.toMatch(/bob|jones|ann|jane/)
   })
+
+  it('leaves out example domains, such as a demo copy’s made-up contacts', () => {
+    const counts = formatCounts([at('bob.jones@copperwick.example', 'Bob Jones'), at('ann.lee@example.com', 'Ann Lee'), at('tom.hart@mail.example.org', 'Tom Hart')])
+    expect(counts.size).toBe(0)
+  })
 })
 
 describe('sharing formats with the host', () => {

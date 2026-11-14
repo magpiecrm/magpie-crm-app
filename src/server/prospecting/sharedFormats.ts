@@ -58,10 +58,14 @@ async function call(body: unknown, fetchImpl: typeof fetch): Promise<any | null>
   }
 }
 
+/** Names set aside for examples and tests (RFC 2606), like a demo copy's made-up contacts: never a company's. */
+const RESERVED_DOMAIN = /(^|\.)(example|invalid)$|(^|\.)example\.(com|net|org)$/
+
 /**
  * Per company domain, how many real addresses (known or engaged, as in
  * patternEvidence.ts) follow each format. Bounced guesses, addresses that
- * match no format and personal mailbox domains are left out.
+ * match no format, personal mailbox domains and reserved example domains are
+ * left out.
  */
 export function formatCounts(addresses: KnownAddress[]): Map<string, Counts> {
   const byDomain = new Map<string, Counts>()
@@ -70,7 +74,7 @@ export function formatCounts(addresses: KnownAddress[]): Map<string, Counts> {
     if (a.kind === 'bounced') continue
     const email = a.email.toLowerCase()
     const domain = email.split('@')[1]
-    if (!domain || FREE_MAIL.has(domain) || seen.has(email)) continue
+    if (!domain || FREE_MAIL.has(domain) || RESERVED_DOMAIN.test(domain) || seen.has(email)) continue
     seen.add(email)
     const pattern = inferPattern(email, a.firstName, a.lastName)
     if (!pattern) continue

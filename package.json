@@ -14,6 +14,7 @@
     "start": "bun serve.ts",
     "test": "vitest run",
     "knip": "knip",
+    "demo:seed": "bun src/server/demo/seed.ts",
     "verifier:up": "docker compose -f docker/reacher/docker-compose.yml --env-file .env up -d",
     "verifier:down": "docker compose -f docker/reacher/docker-compose.yml --env-file .env down",
     "verifier:logs": "docker compose -f docker/reacher/docker-compose.yml --env-file .env logs -f"
