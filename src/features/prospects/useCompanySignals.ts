@@ -10,18 +10,32 @@ import type { Signal } from '../../server/prospecting/types'
 // showing, so they never slow a search down. Companies still being looked up
 // are asked about again every few seconds, a few times.
 
-type HasCompany = { signals?: Signal[]; name?: string; company?: string; domain?: string | null; companyDomain?: string | null; country?: string | null }
+type HasCompany = {
+  signals?: Signal[]
+  name?: string
+  company?: string
+  domain?: string | null
+  companyDomain?: string | null
+  country?: string | null
+  ref?: string
+  companyRef?: string | null
+  masked?: boolean
+}
 
-const keyOf = (row: HasCompany) => signalKey({ domain: row.companyDomain ?? row.domain ?? null, name: row.company ?? row.name ?? '' })
+// In a demo copy a company's name and domain are starred, so it's asked about,
+// and answered, by its masked ref instead (server/prospecting/demoMask.ts).
+const keyOf = (row: HasCompany) =>
+  row.masked ? (row.companyRef ?? row.ref ?? null) : signalKey({ domain: row.companyDomain ?? row.domain ?? null, name: row.company ?? row.name ?? '' })
 const POLL_MS = 5_000
 const MAX_POLLS = 6
 
 export function useCompanySignals<T extends HasCompany>(rows: T[], enabled: boolean): T[] {
-  const companies = new Map<string, { name: string; domain: string | null; country: string | null }>()
+  const companies = new Map<string, { name: string; domain: string | null; country: string | null; ref?: string }>()
   for (const row of rows) {
     const key = keyOf(row)
     const name = (row.company ?? row.name ?? '').trim()
-    if (key && name && !companies.has(key) && companies.size < 50) companies.set(key, { name, domain: row.companyDomain ?? row.domain ?? null, country: row.country ?? null })
+    if (!key || !name || companies.has(key) || companies.size >= 50) continue
+    companies.set(key, row.masked ? { name, domain: null, country: row.country ?? null, ref: key } : { name, domain: row.companyDomain ?? row.domain ?? null, country: row.country ?? null })
   }
   const keys = [...companies.keys()].sort()
   // A few more asks for each set of companies, then it stops asking.

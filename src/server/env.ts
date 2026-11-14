@@ -172,6 +172,13 @@ export const env = {
    */
   sendingManaged: () => ['on', 'true', '1', 'yes'].includes(readEnv('SENDING_MANAGED')?.toLowerCase() ?? ''),
   /**
+   * DEMO_MODE=on: a copy for showing the product to people
+   * (prospecting/demoMask.ts). Prospect search runs for real but shows nobody:
+   * names, companies, emails and links are masked before they leave the
+   * server, and people found can't be saved. No email is sent from it.
+   */
+  demoMode: () => ['on', 'true', '1', 'yes'].includes(readEnv('DEMO_MODE')?.toLowerCase() ?? ''),
+  /**
    * Where the host keeps this copy's sending domains and their DKIM keys
    * (e.g. https://cloud.magpiecrm.com), reached with the SMTP login. Only
    * used when SENDING_MANAGED is on.

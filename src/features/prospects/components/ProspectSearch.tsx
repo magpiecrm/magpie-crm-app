@@ -7,6 +7,7 @@ import {
   Building2,
   Factory,
   Globe,
+  Info,
   Loader2,
   Plus,
   Search,
@@ -473,6 +474,8 @@ export function ProspectSearch() {
   // way to show them). Shares the sidebar's status query.
   // Run by the host: credits are the host's business, and verification outcomes stay short.
   const hosted = Boolean(status?.managed)
+  // A demo copy: who search finds is masked on the server, and can't be saved (server/prospecting/demoMask.ts).
+  const demo = Boolean(status?.demo)
   const verifiedOnly = status?.verification?.verifiedOnly ?? true
   // Settings → Prospect search: people whose email can't be verified are
   // hidden (the default), or listed and marked Unverifiable.
@@ -919,7 +922,13 @@ export function ProspectSearch() {
               {activeFilterCount > 0 && <span className="bg-accent text-accent-foreground rounded-full px-1.5 text-[10px] font-bold">{activeFilterCount}</span>}
             </button>
             {selected.size > 0 && (
-              <Button size="sm" leftIcon={<Plus className="w-3.5 h-3.5" />} onClick={() => setIsSaveOpen(true)}>
+              <Button
+                size="sm"
+                leftIcon={<Plus className="w-3.5 h-3.5" />}
+                onClick={() => setIsSaveOpen(true)}
+                disabled={demo}
+                title={demo ? 'People found in this demo can’t be saved' : undefined}
+              >
                 Save {selected.size} to list
               </Button>
             )}
@@ -957,6 +966,16 @@ export function ProspectSearch() {
             )}
           </div>
         </div>
+
+        {demo && (
+          <div className="px-4 sm:px-6 py-2 border-b border-border bg-accent/[0.07] dark:bg-accent/10 shrink-0 flex items-start gap-2 text-[11px] text-muted-foreground">
+            <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-px" />
+            <span>
+              <span className="font-semibold text-foreground">Demo workspace.</span> Searches are real, but names, companies and emails are hidden
+              (J*** S*** at A***), and people found here can’t be saved.
+            </span>
+          </div>
+        )}
 
         {mode === 'people' && hiddenCount > 0 && (
           <div className="px-6 py-2 border-b border-border bg-muted/40 shrink-0 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">

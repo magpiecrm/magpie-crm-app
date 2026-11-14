@@ -114,6 +114,8 @@ export interface CompanyResult {
   signals?: Signal[]
   /** `headcount` is the company page's own count, not the bottom of a size range: what growth is measured from. */
   headcountExact?: boolean
+  /** Shown masked in a demo copy (demoMask.ts): its ref is a token, its name and domain starred, and it has no link. */
+  masked?: boolean
 }
 
 /** One of the jobs someone holds now: its title and employer (name, company page). */
@@ -227,6 +229,12 @@ export interface PersonResult {
    * shown after the exact matches when a page would be short (relatedRoles).
    */
   related?: boolean
+  /**
+   * Shown masked in a demo copy (demoMask.ts): their name, company, domain
+   * and email are starred, and their profile link and company ref are tokens
+   * only this server can read back.
+   */
+  masked?: boolean
 }
 
 /**

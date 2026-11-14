@@ -57,7 +57,11 @@ export const setCompanyDomainFn = createServerFn({ method: 'POST' })
     const { requireAuth } = await import('../auth.server')
     const { db } = await import('../db')
     await requireAuth()
-    db.upsertProspectCompanies([{ ref: data.ref, name: data.name, domain: data.domain, domain_source: 'user' }])
+    // A demo copy's page has only a masked ref and name: kept under the real ones (demoMask.ts).
+    const { demoMode, unmaskCompanyRef } = await import('../prospecting/demoMask')
+    const company = demoMode() ? unmaskCompanyRef(data.ref) : { ref: data.ref, name: data.name }
+    if (!company.ref) throw new Error('That company has no company page to keep its website on.')
+    db.upsertProspectCompanies([{ ref: company.ref, name: company.name, domain: data.domain, domain_source: 'user' }])
     const { companyIsCatchAll } = await import('../prospecting/search')
     return { ref: data.ref, domain: data.domain, catchAll: companyIsCatchAll(data.domain, db) }
   })
@@ -103,6 +107,8 @@ const signalCompanyInput = z.object({
     .nullable()
     .optional(),
   country: z.string().trim().max(100).nullable().optional(),
+  /** In a demo copy, the company's masked ref: its name and domain are starred (demoMask.ts). */
+  ref: z.string().trim().max(200).optional(),
 })
 
 /**
@@ -115,7 +121,9 @@ export const companySignalsFn = createServerFn({ method: 'POST' })
     const { requireAuth } = await import('../auth.server')
     await requireAuth()
     const { companySignals } = await import('../prospecting/companySignals')
-    return companySignals(data.companies, { liveMax: 10, waitMs: 8_000 })
+    const { demoMode, demoCompanySignals } = await import('../prospecting/demoMask')
+    const opts = { liveMax: 10, waitMs: 8_000 }
+    return demoMode() ? demoCompanySignals(data.companies, (real) => companySignals(real, opts)) : companySignals(data.companies, opts)
   })
 
 // A person to reveal or save. Their signals and job start aren't read: zod
@@ -159,15 +167,19 @@ export const revealEmailFn = createServerFn({ method: 'POST' })
     const { db } = await import('../db')
     const { sharedEmail } = await import('../prospecting/sharedPeople')
     const { sharedDatabase } = await import('../prospecting/hostRules')
-    return revealEmail(data.person, {
-      source: getSource(),
-      finder: await getFinderDeps(),
-      db,
-      verifiedOnly: isVerifiedOnly(),
-      allowFormatConfirmed: allowsFormatConfirmed(),
-      sharedEmail,
-      sharedFree: Boolean(sharedDatabase()?.contributing),
-    })
+    const run = async (person: typeof data.person) =>
+      revealEmail(person, {
+        source: getSource(),
+        finder: await getFinderDeps(),
+        db,
+        verifiedOnly: isVerifiedOnly(),
+        allowFormatConfirmed: allowsFormatConfirmed(),
+        sharedEmail,
+        sharedFree: Boolean(sharedDatabase()?.contributing),
+      })
+    // A demo copy finds the real person's email, and shows it masked (demoMask.ts).
+    const { demoMode, demoReveal } = await import('../prospecting/demoMask')
+    return demoMode() ? demoReveal(data.person, run) : run(data.person)
   })
 
 const saveInput = z.object({
@@ -277,6 +289,8 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
     return {
       /** PROSPECTING_MANAGED: the host runs search and verification; hide their setup. */
       managed: env.prospectingManaged(),
+      /** DEMO_MODE: who search finds is masked, and they can't be saved (demoMask.ts). */
+      demo: env.demoMode(),
       socialfetch: { configured, balance, balanceHidden, prospectsThisMonth },
       verification: {
         provider: verifier?.provider ?? null,

@@ -106,6 +106,13 @@ export async function sendMail(options: SendMailOptions) {
     ...(options.references?.length ? { references: options.references.map(cleanHeader).filter(Boolean) } : {}),
   }
 
+  // A demo copy (DEMO_MODE) sends nothing, and says it went: its contacts are
+  // made up, and a throw would mark them bounced.
+  if (env.demoMode()) {
+    console.log(`[EMAIL DEMO] Not sent (demo copy): ${message.to.length} recipient(s).`)
+    return { messageId: `demo-${crypto.randomUUID()}` }
+  }
+
   // Retry transient network failures — callers treat a throw as a bounce,
   // so a momentary blip must not mark a recipient as bounced.
   const attemptSend = async () => {

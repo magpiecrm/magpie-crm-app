@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { providerError } from './providers/types'
 
 const managed = vi.hoisted(() => ({ on: false }))
+const demo = vi.hoisted(() => ({ on: false }))
 
 vi.mock('./db', () => ({ db: { query: () => ({ get: () => null }) } }))
-vi.mock('./env', () => ({ env: { sendingManaged: () => managed.on } }))
+vi.mock('./env', () => ({ env: { sendingManaged: () => managed.on, demoMode: () => demo.on } }))
 vi.mock('./emailSettings', () => ({
   getActiveProviderConfig: () => ({
     providerId: 'ses',
@@ -30,6 +31,7 @@ const { sendMail } = await import('./nodemailer')
 describe('send errors', () => {
   beforeEach(() => {
     managed.on = false
+    demo.on = false
   })
 
   it('name the provider when you run your own sending', async () => {
@@ -43,5 +45,11 @@ describe('send errors', () => {
     await expect(sendMail({ to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>' })).rejects.toThrow(
       /^Email sending failed for jane@example\.com: Email address is not verified\.$/,
     )
+  })
+
+  it('never reach the provider in a demo copy, which says it sent', async () => {
+    demo.on = true
+    const sent = await sendMail({ to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>' })
+    expect(sent.messageId).toMatch(/^demo-/)
   })
 })
