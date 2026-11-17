@@ -129,7 +129,7 @@ export function SendingHealth() {
     <>
       <SettingsBlock
         title="Daily limits"
-        description="Limits start low and go up each week your email is received well, because mail providers trust a sender that grows slowly."
+        description="Limits start low and go up each week your email is received well, because mail providers trust a sender that grows slowly. Sequence emails sent through a sender's own mailbox aren't counted here: each mailbox has its own limit, under Mailboxes."
       >
         <LimitsTable
           rows={[

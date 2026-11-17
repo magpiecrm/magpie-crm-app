@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Inbox, RefreshCw } from 'lucide-react'
-import { checkMailboxesNowFn, deleteMailboxFn, mailboxesFn, saveMailboxFn, warmupStandingFn } from '../../../server/functions'
+import { checkMailboxesNowFn, deleteMailboxFn, mailboxesFn, recheckMailboxSendingFn, saveMailboxFn, setMailboxSendingFn, warmupStandingFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
 import { Button } from '../../../components/ui/Button'
 import { Field, FieldGrid, INPUT_CLASS } from '../../../components/ui/Field'
@@ -13,7 +13,7 @@ import { queryKeys } from '../../../queryKeys'
 import { SettingsActions, SettingsMore, SettingsRow } from './SettingsBlock'
 import type { MailboxView } from '../../sequences/types'
 
-/** Mail services people use, with their IMAP server. */
+/** Mail services people use, with their IMAP server (their sending server goes with it: mailboxes/send.ts smtpServerFor). */
 const SERVICES = [
   { id: 'gmail', label: 'Gmail or Google Workspace', host: 'imap.gmail.com', port: 993, secure: true },
   { id: 'microsoft', label: 'Microsoft 365 or Outlook', host: 'outlook.office365.com', port: 993, secure: true },
@@ -58,20 +58,27 @@ export function InboxFooter() {
           </SettingsActions>
         </>
       )}
-    <SettingsMore summary="How reply detection works">
+    <SettingsMore summary="How connected inboxes work">
       <p>
         Replies to sequence emails go to the sender's own inbox. Connect it here and every few minutes the app looks for new messages from the
         people its sequences have emailed: a reply stops that person's sequence and lets you know. Out-of-office replies don't, a "stop" or
         "unsubscribe" reply unsubscribes them, and bounce reports count as bounces.
       </p>
       <p>
+        Connecting an inbox also checks it can send, with one email from it to itself. Once it can, the sender's sequence emails go out through
+        their own mailbox rather than the workspace's mail server: email from a person's own mailbox reaches the inbox more often. Each mailbox
+        sends at most its daily number, a few minutes apart, with no open or click tracking, and its emails ask for a reply of "stop" rather than
+        linking to an unsubscribe page. Campaigns always go through the workspace's mail server.
+      </p>
+      <p>
         You can read each reply and answer it in Sell → Inbox (or on the sequence's Replies tab). For that, the text of replies to sequence emails is
         kept here (not their attachments), along with answers to them sent from your inbox, and replies found before this was kept are looked up
-        once. An answer sent from here goes out from the sender address, and a copy is put in the inbox's Sent folder.
+        once. An answer sent from here goes out from the sender address, through the mailbox where its sequence emails do, and is in the inbox's Sent
+        folder.
       </p>
       <p>
         Of anything else in your inbox, only who a message is from and which email it answers are read, and none of it is kept. Apart from adding
-        those copies to Sent, the app never changes or deletes anything in your inbox.
+        copies of what it sends to Sent (where the mail service doesn't itself), the app never changes or deletes anything in your inbox.
         {warmup?.offered &&
           " A sender you warm up (Settings → Warmup) is the exception: its login also goes to the warmup pool, which files away and deletes the warmup mail in its inbox."}
       </p>
@@ -115,13 +122,14 @@ export function SenderInbox({
       : box.status === 'auth_failed'
         ? 'reconnect it'
         : `first failed ${ago(box.error_since)}`
+  const sends = !box ? null : box.sending?.active ? 'replies and sequence emails' : 'replies only'
 
   return (
     <SettingsRow
       icon={<Inbox className="h-4 w-4" />}
       title={sender.name || sender.email}
       // The address is the title when the sender has no name.
-      detail={[sender.name ? sender.email : null, state].filter(Boolean).join(' · ') || undefined}
+      detail={[sender.name ? sender.email : null, state, sends].filter(Boolean).join(' · ') || undefined}
       badge={extraBadge}
       // The inbox column: its state, or the button that connects it, at a fixed width so states line up down the list.
       actions={
@@ -182,11 +190,78 @@ export function SenderInbox({
               </Button>
             )}
           </SettingsActions>
+          <InboxSending box={box} onChange={refresh} />
         </div>
       ) : box || editing ? (
         <ConnectForm sender={sender} box={box} onDone={() => setEditing(false)} />
       ) : null}
     </SettingsRow>
+  )
+}
+
+/**
+ * How a connected inbox sends its sender's sequence emails: through it (the
+ * default once it has checked out), or the workspace's mail server, and why.
+ */
+function InboxSending({ box, onChange }: { box: MailboxView; onChange: () => void }) {
+  const s = box.sending
+  const [cap, setCap] = useState(s?.daily_cap ?? 40)
+  const set = useMutation({ mutationFn: (input: { useServer?: boolean; dailyCap?: number }) => setMailboxSendingFn({ data: { id: box.id, ...input } }), onSuccess: onChange })
+  const recheck = useMutation({ mutationFn: () => recheckMailboxSendingFn({ data: { id: box.id } }), onSuccess: onChange })
+  const error = (set.error ?? recheck.error) as Error | null
+  const stopped = !!s?.verified_at && !s.use_server && s.status !== 'ok'
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-3 text-sm">
+      <p className="font-medium text-foreground">Sequence emails</p>
+      {!s ? (
+        <p className="text-muted-foreground">Whether they can go out through this mailbox is checked in the next few minutes.</p>
+      ) : s.active ? (
+        <p className="text-muted-foreground">
+          They go out through this mailbox: {s.sent_24h} in the last 24 hours, a few minutes apart, across all of this sender's sequences.
+        </p>
+      ) : stopped ? (
+        <Notice level="error" className="break-words">
+          Sending through this mailbox has stopped, so this sender's sequences are paused: {s.last_error}
+        </Notice>
+      ) : s.use_server ? (
+        <p className="text-muted-foreground">They go through the workspace's mail server.</p>
+      ) : (
+        <Notice level="warning" className="break-words">
+          They go through the workspace's mail server for now: this mailbox couldn't send. {s.last_error}
+        </Notice>
+      )}
+      {s?.verified_at && (
+        <div className="flex items-start gap-3">
+          <Switch checked={!s.use_server} onChange={(on) => set.mutate({ useServer: !on })} disabled={set.isPending} label="Send sequence emails through this mailbox" />
+          <div>
+            <p className="text-foreground">Send them through this mailbox</p>
+            <p className="text-xs text-muted-foreground">Email from a person's own mailbox reaches the inbox more often. Off, they go through the workspace's mail server.</p>
+          </div>
+        </div>
+      )}
+      {s?.active && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Most a day" className="w-28">
+            <input type="number" min={1} max={150} value={cap} onChange={(e) => setCap(Math.max(1, Math.min(150, Number(e.target.value) || 1)))} className={`${INPUT_CLASS} tabular-nums`} />
+          </Field>
+          {cap !== s.daily_cap && (
+            <Button size="sm" isLoading={set.isPending} onClick={() => set.mutate({ dailyCap: cap })}>
+              Save
+            </Button>
+          )}
+          <p className="basis-full text-xs text-muted-foreground">Mail services limit what one mailbox sends: 30–50 cold emails a day keeps it in good standing.</p>
+        </div>
+      )}
+      {error && <Notice level="error">{error.message}</Notice>}
+      {s && (stopped || !s.verified_at) && (
+        <SettingsActions>
+          <Button size="sm" variant="outline" isLoading={recheck.isPending} onClick={() => recheck.mutate()}>
+            Check sending again
+          </Button>
+        </SettingsActions>
+      )}
+    </div>
   )
 }
 
@@ -200,6 +275,13 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
   const [user, setUser] = useState(box?.user ?? sender.email)
   const [password, setPassword] = useState('')
   const custom = service === 'other'
+  // Sending: the server that goes with the inbox unless one is typed in, and the inbox's login unless another is.
+  const [smtpOpen, setSmtpOpen] = useState(false)
+  const [smtpHost, setSmtpHost] = useState(box?.sending?.host ?? '')
+  const [smtpPort, setSmtpPort] = useState<587 | 465>(box?.sending?.port === 465 ? 465 : 587)
+  const [smtpUser, setSmtpUser] = useState(box?.sending?.user ?? '')
+  const [smtpPassword, setSmtpPassword] = useState('')
+  const typedSmtp = smtpOpen && smtpHost.trim() && smtpHost.trim() !== box?.sending?.host
   const save = useMutation({
     mutationFn: () =>
       saveMailboxFn({
@@ -210,6 +292,15 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
           secure: custom ? secure : preset.secure,
           user,
           password: password || undefined,
+          ...(smtpOpen
+            ? {
+                smtp: {
+                  ...(typedSmtp || smtpPort !== (box?.sending?.port ?? 587) ? { host: smtpHost.trim() || box?.sending?.host, port: smtpPort } : {}),
+                  user: smtpUser.trim(),
+                  ...(smtpPassword ? { password: smtpPassword } : {}),
+                },
+              }
+            : {}),
         },
       }),
     onSuccess: () => {
@@ -240,8 +331,8 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
 
       {service === 'microsoft' ? (
         <Notice>
-          Microsoft 365 and Outlook don't allow password logins to an inbox from other apps, so they can't be connected this way yet. Mark replies by
-          hand on the sequence's People tab for now.
+          Microsoft 365 and Outlook don't allow password logins to an inbox from other apps, so they can't be connected this way yet. Their sequence
+          emails go through the workspace's mail server, and replies are marked by hand on the sequence's People tab for now.
         </Notice>
       ) : (
         <>
@@ -294,7 +385,46 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
               <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder={box ? 'Leave empty to keep the saved one' : ''} />
             </Field>
           </FieldGrid>
+          <div>
+            <button type="button" className="text-sm text-accent hover:underline" aria-expanded={smtpOpen} onClick={() => setSmtpOpen((v) => !v)}>
+              {smtpOpen ? 'Hide sending settings' : 'Sending settings'}
+            </button>
+            {!smtpOpen && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {custom
+                  ? 'Its sending (SMTP) server is taken to be the IMAP server with smtp. in place of imap.; set it here if not.'
+                  : 'Sequence emails are sent through the same service, with the same login.'}
+              </p>
+            )}
+          </div>
+          {smtpOpen && (
+            <>
+              <FieldGrid cols={3}>
+                <Field label="Sending (SMTP) server" className="sm:col-span-2">
+                  <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder={custom ? 'smtp.example.com' : 'The one that goes with the inbox'} className={INPUT_CLASS} />
+                </Field>
+                <Field label="Port">
+                  <Select value={String(smtpPort)} onChange={(e) => setSmtpPort(e.target.value === '465' ? 465 : 587)} className={INPUT_CLASS}>
+                    <option value="587">587 (STARTTLS)</option>
+                    <option value="465">465 (SSL/TLS)</option>
+                  </Select>
+                </Field>
+              </FieldGrid>
+              <FieldGrid>
+                <Field label="Sending login" hint="Only if it isn't the inbox's.">
+                  <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder={user} className={INPUT_CLASS} autoComplete="off" />
+                </Field>
+                <Field label="Sending password">
+                  <SecretInput id={`smtp-pass-${sender.id}`} value={smtpPassword} onChange={setSmtpPassword} placeholder={box?.sending?.has_own_password ? 'Leave empty to keep the saved one' : "The inbox's, unless given"} />
+                </Field>
+              </FieldGrid>
+            </>
+          )}
           {save.error && <Notice level="error">{(save.error as Error).message}</Notice>}
+          <p className="text-xs text-muted-foreground">
+            Checking also sends one email from this mailbox to itself, to make sure {sender.email}'s sequence emails can go out through it. It can take
+            up to half a minute.
+          </p>
           <SettingsActions>
             <Button type="submit" size="sm" isLoading={save.isPending} disabled={!user || (!password && !box) || (custom && !host)}>
               Check and connect

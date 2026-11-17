@@ -57,6 +57,9 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
     return () => clearTimeout(t)
   }, [saved])
   const footerOk = /\{\{\s*unsubscribe\s*\}\}/i.test(s.footer)
+  const box = boxes.find((b) => String(b.sender_id) === senderId) ?? null
+  // Through the sender's own mailbox: no tracking, its own daily cap, and "reply stop" for the unsubscribe line.
+  const viaMailbox = !!box?.sending?.active
 
   return (
     <form
@@ -79,7 +82,7 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
             </option>
           ))}
         </Select>
-        <ReplyDetection box={boxes.find((b) => String(b.sender_id) === senderId) ?? null} />
+        <SendsThrough box={box} />
       </Field>
 
       <fieldset className="space-y-3">
@@ -141,7 +144,9 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
           <span className="text-muted-foreground">emails a day, spread through those hours.</span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Sending a few at a time, through the working day, is what keeps cold email out of spam. Start a new domain at 20–30 a day.
+          {viaMailbox
+            ? `Its mailbox also sends at most ${box!.sending!.daily_cap} a day across all of this sender's sequences, a few minutes apart. Sending a few at a time is what keeps cold email out of spam.`
+            : 'Sending a few at a time, through the working day, is what keeps cold email out of spam. Start a new domain at 20–30 a day.'}
         </p>
       </fieldset>
 
@@ -149,22 +154,37 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
         <textarea id="seq-set-signature" value={s.signature} onChange={(e) => set({ signature: e.target.value })} rows={3} maxLength={2000} placeholder={'Jo Smith\nFounder, Acme'} className={`${FIELD_CLASS} resize-y`} />
       </Field>
 
-      <Field label="Last line" htmlFor="seq-set-footer" hint='Must include {{ unsubscribe }}, which becomes the words "Unsubscribe here", linked. Unsubscribing stops the sequence for them.'>
+      <Field
+        label="Last line"
+        htmlFor="seq-set-footer"
+        hint={
+          viaMailbox
+            ? 'Must include {{ unsubscribe }}. Sent through the mailbox it becomes the words ‘just reply "stop"’, with no link: a reply saying so unsubscribes them and stops the sequence.'
+            : 'Must include {{ unsubscribe }}, which becomes the words "Unsubscribe here", linked. Unsubscribing stops the sequence for them.'
+        }
+      >
         <textarea id="seq-set-footer" value={s.footer} onChange={(e) => set({ footer: e.target.value })} rows={2} maxLength={1000} className={`${FIELD_CLASS} resize-y`} />
         {!footerOk && <p className="mt-1 text-xs text-destructive">Add {'{{ unsubscribe }}'}: the sequence can't run without an unsubscribe link.</p>}
       </Field>
 
       <fieldset className="space-y-3">
         <legend className="text-sm font-medium text-foreground">Tracking</legend>
+        {viaMailbox && (
+          <p className="text-xs text-muted-foreground max-w-lg">
+            Off while it sends through {box!.user}'s own mailbox: tracking would put links to this app's address in every email, which is what spam filters look for.
+          </p>
+        )}
         <Toggle
-          checked={s.track_opens}
+          checked={s.track_opens && !viaMailbox}
           onChange={(v) => set({ track_opens: v })}
+          disabled={viaMailbox}
           label="Track opens"
           hint="Adds a hidden image. It needs the person's consent under PECR, makes a personal email look like marketing, and Apple Mail opens everything anyway. Replies are the number that matters."
         />
         <Toggle
-          checked={s.track_clicks}
+          checked={s.track_clicks && !viaMailbox}
           onChange={(v) => set({ track_clicks: v })}
+          disabled={viaMailbox}
           label="Track link clicks"
           hint="Links go through this app first. Spam filters look harder at redirected links in cold email."
         />
@@ -181,16 +201,50 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
   )
 }
 
-/** Whether replies to this sender are noticed, with a way to set it up. */
-function ReplyDetection({ box }: { box: MailboxView | null }) {
+/**
+ * How this sender's emails go out (their own mailbox, or the workspace's mail
+ * server) and whether replies are noticed, with a way to set either up.
+ */
+function SendsThrough({ box }: { box: MailboxView | null }) {
   const link = (
     <Link to="/settings" search={{ tab: 'senders' }} className="text-accent hover:underline">
       Settings → Mailboxes
     </Link>
   )
-  if (!box) return <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Replies aren't detected for this sender: mark them by hand, or connect its inbox in {link}.</p>
-  if (box.status !== 'ok') return <p className="mt-1 text-xs text-destructive">Reply detection isn't working ({box.last_error}). Fix it in {link}.</p>
-  return <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">Replies are detected from {box.user}: a reply stops that person's emails.</p>
+  const TONES = { ok: 'text-emerald-700 dark:text-emerald-400', plain: 'text-muted-foreground', warn: 'text-amber-700 dark:text-amber-400', bad: 'text-destructive' }
+  const line = (tone: keyof typeof TONES, words: React.ReactNode) => <p className={`mt-1 text-xs ${TONES[tone]}`}>{words}</p>
+  if (!box) {
+    return line('warn', <>Sends through the workspace's mail server, and replies aren't detected. Connect this sender's inbox in {link} to send through its own mailbox, which reaches more inboxes, and to notice replies.</>)
+  }
+  const replies = box.status === 'ok' ? null : line('bad', <>Reply detection isn't working ({box.last_error}). Fix it in {link}.</>)
+  const sending = box.sending
+  if (sending?.active) {
+    return (
+      <>
+        {line('ok', <>Sends through {box.user}'s own mailbox, up to {sending.daily_cap} a day, and replies there stop that person's emails.</>)}
+        {replies}
+      </>
+    )
+  }
+  if (sending?.verified_at && !sending.use_server) {
+    return (
+      <>
+        {line('bad', <>Sending through {box.user} has stopped, so these emails wait. {sending.last_error} Fix it in {link}.</>)}
+        {replies}
+      </>
+    )
+  }
+  const why = sending?.use_server
+    ? 'Sends through the workspace\'s mail server, as chosen for this sender.'
+    : sending?.last_error
+      ? `Sends through the workspace's mail server for now: its mailbox couldn't send. ${sending.last_error}`
+      : "Sends through the workspace's mail server until its mailbox's sending has been checked."
+  return (
+    <>
+      {line(sending?.use_server ? 'plain' : 'warn', <>{why}{box.status === 'ok' ? ` Replies are detected from ${box.user}.` : ''} Change it in {link}.</>)}
+      {replies}
+    </>
+  )
 }
 
 function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {
@@ -205,10 +259,10 @@ function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: str
   )
 }
 
-function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
+function Toggle({ checked, onChange, label, hint, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string; disabled?: boolean }) {
   return (
     <div className="flex items-start gap-3">
-      <Switch checked={checked} onChange={onChange} label={label} />
+      <Switch checked={checked} onChange={onChange} label={label} disabled={disabled} />
       <div>
         <p className="text-sm text-foreground">{label}</p>
         <p className="text-xs text-muted-foreground max-w-lg">{hint}</p>
