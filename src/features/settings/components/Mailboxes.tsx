@@ -215,7 +215,11 @@ function InboxSending({ box, onChange }: { box: MailboxView; onChange: () => voi
     <div className="flex flex-col gap-3 border-t border-border pt-3 text-sm">
       <p className="font-medium text-foreground">Sequence emails</p>
       {!s ? (
-        <p className="text-muted-foreground">Whether they can go out through this mailbox is checked in the next few minutes.</p>
+        <p className="text-muted-foreground">
+          {box.status === 'ok'
+            ? 'Whether they can go out through this mailbox is checked in the next few minutes.'
+            : 'Whether they can go out through this mailbox is checked once its inbox can be read again.'}
+        </p>
       ) : s.active ? (
         <p className="text-muted-foreground">
           They go out through this mailbox: {s.sent_24h} in the last 24 hours, a few minutes apart, across all of this sender's sequences.
