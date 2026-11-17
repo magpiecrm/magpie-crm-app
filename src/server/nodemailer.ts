@@ -1,9 +1,11 @@
 // The single send choke point for the whole app.
 //
 // Despite the filename this is no longer SMTP-specific: it owns the shared
-// concerns (header hygiene, address validation, the sender whitelist, retries)
-// and delegates the actual transport to whichever provider is configured in
-// Settings. See src/server/providers/ for the implementations.
+// concerns (header hygiene, address validation, the sender whitelist, the
+// plan's allowance and usage, retries) and delegates the actual transport to
+// whichever provider is configured in Settings (src/server/providers/), or,
+// for a sequence email asked to go that way (`via`), to the sender's own
+// mailbox (src/server/mailboxes/send.ts).
 
 import { db } from './db'
 import { env } from './env'
@@ -13,6 +15,7 @@ import { ProviderSendError, type OutboundMessage } from './providers/types'
 import { recordUsage } from './usage'
 import { requireAllowance } from './allowance'
 import { requireSendingDomain } from './sendingDomains'
+import { sendThroughMailbox } from './mailboxes/send'
 
 export { resetSmtpTransport } from './providers'
 
@@ -30,6 +33,14 @@ export interface SendMailOptions {
   messageId?: string
   inReplyTo?: string
   references?: string[]
+  /**
+   * Through this connected mailbox's own SMTP rather than the provider: a
+   * sequence email, or an answer, from its sender (mailboxes/send.ts
+   * sequenceRoute decides). Never set for campaigns or welcome emails.
+   */
+  via?: { mailboxId: string }
+  /** With `via`: the opt-out as a mailto: List-Unsubscribe header, in place of a link. */
+  unsubscribeMailto?: string
 }
 
 function cleanHeader(val: string): string {
@@ -109,6 +120,14 @@ export async function sendMail(options: SendMailOptions) {
   // Retry transient network failures — callers treat a throw as a bounce,
   // so a momentary blip must not mark a recipient as bounced.
   const attemptSend = async () => {
+    // Through the sender's own mailbox: their address is theirs to send from (no sending domain
+    // needed here), and it counts against the plan's emails like any other.
+    if (options.via) {
+      requireAllowance('emailsSent', message.to.length)
+      const sent = await sendThroughMailbox(options.via.mailboxId, message, options.unsubscribeMailto)
+      recordUsage({ emailsSent: message.to.length })
+      return sent
+    }
     // A half-configured provider logs rather than throwing, which keeps local
     // development working and stops a missing key from bouncing a whole list.
     if (config.missingFields.length > 0 || config.credsUnreadable) {

@@ -5,15 +5,16 @@
 // order. The inbox lists them across sequences: a conversation needs a reply
 // while their message is the latest and nobody has marked it done. And
 // answering from the app: from the sequence's sender, threaded under their
-// latest message, with a copy put in the sender's inbox's Sent folder so the
-// conversation is whole there too.
+// latest message, through the sender's own mailbox where the sequence's
+// emails go that way, with a copy in the inbox's Sent folder (unless the mail
+// service keeps one itself) so the conversation is whole there too.
 
 import { randomUUID } from 'node:crypto'
-import MailComposer from 'nodemailer/lib/mail-composer'
 import { db, type DbSchema } from '../db'
 import { sendMail } from '../nodemailer'
-import { inboxOf, lastActivity } from '../mailboxes'
+import { copyToSent, inboxOf, lastActivity } from '../mailboxes'
 import { imapConnect, type Connect } from '../mailboxes/imap'
+import { mailboxFailed, sequenceRoute } from '../mailboxes/send'
 import { logActivity } from '../sales/deals'
 import { composeText, htmlDocument, renderStep, signedSettings, textHash, textToHtml, withSignature } from './render'
 import { stripRe } from './schedule'
@@ -193,7 +194,8 @@ export const conversations = {
       // The AI's own emails sign off (render.ts aiSignOff); those sent before they did are shown as they went.
       const signed = signedSettings(s.settings, own, sender?.name)
       const settings = own && send.text_hash && body !== undefined && send.text_hash === textHash(composeText(body, s.settings)) ? s.settings : signed
-      const text = body === undefined ? '' : renderStep({ subject: send.subject, body, contact: contact ?? { email: e.contact_email }, settings, unsubscribeUrl: '' }).text
+      const optOut = send.via === 'mailbox' ? ('reply' as const) : { url: '' }
+      const text = body === undefined ? '' : renderStep({ subject: send.subject, body, contact: contact ?? { email: e.contact_email }, settings, optOut }).text
       const edited = body === undefined || (!!send.text_hash && send.text_hash !== textHash(composeText(body, settings)))
       return {
         key: `send-${i}`,
@@ -316,9 +318,15 @@ export async function sendReply(
   }
   html = htmlDocument(html)
 
+  // The way the sequence's own emails go: the sender's mailbox, once it checked out.
+  const route = sequenceRoute(sender)
+  if (route.via === 'stopped') throw new Error(route.reason)
   sending.add(input.clientId)
   try {
-    await sendMail({ from, to, subject, text, html, messageId, inReplyTo: target.messageId, references })
+    await sendMail({ from, to, subject, text, html, messageId, inReplyTo: target.messageId, references, ...(route.via === 'mailbox' ? { via: { mailboxId: route.box.id } } : {}) })
+  } catch (err) {
+    if (route.via === 'mailbox') mailboxFailed(route.box, err, new Date())
+    throw err
   } finally {
     sending.delete(input.clientId)
   }
@@ -352,31 +360,12 @@ export async function sendReply(
     }
   })
 
-  const copied = copyToSent(sender.id, { from, to, subject, text, html, messageId, inReplyTo: target.messageId, references, date: new Date(message.at) }, connect).then((ok) => {
+  // Sent through a mailbox whose service keeps its own copy (Gmail): already in Sent.
+  const kept = route.via === 'mailbox' && route.box.sending?.sent_autosave === true
+  const copied = (kept ? Promise.resolve(true) : copyToSent(sender.id, { from, to, subject, text, html, messageId, inReplyTo: target.messageId, references, date: new Date(message.at) }, connect)).then((ok) => {
     if (ok !== null) db.mutate(() => void (message.sent_copy = ok))
     return ok
   })
   return { message, copied }
 }
 
-/** Puts a copy of an answer in the sender's inbox's Sent folder; null when no inbox is connected, false when it didn't work. */
-async function copyToSent(
-  senderId: number,
-  mail: { from: string; to: string; subject: string; text: string; html: string; messageId: string; inReplyTo: string; references: string[]; date: Date },
-  connect: Connect,
-): Promise<boolean | null> {
-  const box = inboxOf(senderId)
-  if (!box?.login || box.record.status === 'auth_failed') return null
-  try {
-    const raw = await new MailComposer(mail).compile().build()
-    const client = await connect(box.login)
-    try {
-      return await client.appendSent(raw)
-    } finally {
-      await client.close().catch(() => {})
-    }
-  } catch (err) {
-    console.warn(`[Replies] couldn't put an answer in the Sent folder at ${box.record.host}: ${(err as Error)?.message ?? err}`)
-    return false
-  }
-}

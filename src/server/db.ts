@@ -198,6 +198,8 @@ export interface DbSchema {
     complained_at?: string | null
     /** They replied to it (a sequence email). */
     replied_at?: string | null
+    /** Sent through the sender's own mailbox (a sequence email; mailboxes/send.ts), not the workspace's provider: not in its sending limits or reputation. */
+    via?: 'mailbox'
   }>
   users: Array<{
     email: string
@@ -572,8 +574,46 @@ export interface MailboxRecord {
   /** The last message read. */
   last_uid: number | null
   replies_found: number
+  /** Sending its sender's sequence emails through it, over SMTP (mailboxes/send.ts). Missing on inboxes connected before that was checked. */
+  sending?: MailboxSending
   created_at: string
   updated_at: string
+}
+
+/**
+ * A connected inbox's own way out: its SMTP server, and whether a sequence
+ * email through it checked out. Once it has, the sender's sequence emails go
+ * this way rather than through the workspace's provider (mailboxes/send.ts
+ * sequenceRoute), unless the sender chose the mail server instead.
+ */
+export interface MailboxSending {
+  host: string
+  /** 587 (STARTTLS) or 465 (TLS). */
+  port: number
+  /** Its own login, where it isn't the inbox's (Fastmail's app passwords can differ); else the inbox's is used. */
+  user?: string
+  /** Its own password, encrypted with CREDENTIALS_SECRET, with `user`. */
+  secret?: string
+  /** When an email sent through it reached the inbox from the sender's address (checkSending). Null: it never has. */
+  verified_at: string | null
+  /** The address it was checked sending as: a sender changed to another address goes back to the mail server. */
+  verified_for: string | null
+  /** The mail service puts what's sent through it in Sent itself (Gmail does), so the app doesn't add a copy. */
+  sent_autosave: boolean | null
+  /** The sender chose the workspace's mail server for their sequences instead. */
+  use_server?: boolean
+  /** Most sequence emails through it in any 24 hours. */
+  daily_cap: number
+  /** 'auth_failed': the login was refused; 'paused': the server refused the account (a sending limit), or too many bounced. */
+  status: 'ok' | 'auth_failed' | 'paused'
+  last_error: string | null
+  error_since: string | null
+  /** The server said to try later: nothing goes before this. */
+  paused_until?: string | null
+  /** The next email waits until this, so they go a few minutes apart. */
+  next_at?: string | null
+  /** Bounces are counted from here, so sending again after a pause for them starts afresh. */
+  counted_from?: string | null
 }
 
 interface DisclosureEntry {

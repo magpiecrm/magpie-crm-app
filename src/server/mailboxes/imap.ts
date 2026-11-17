@@ -43,6 +43,13 @@ export interface OpenedFolder {
   uidNext: number
 }
 
+/** Where a message (by its Message-ID) is: in the folder read, in Sent, and who it says it's from. */
+export interface FoundMessage {
+  from: string | null
+  inRead: boolean
+  inSent: boolean
+}
+
 export interface MailClient {
   /** Opens the folder to read (Gmail's All Mail, so archived replies count; else INBOX), read-only. */
   open(): Promise<OpenedFolder>
@@ -54,6 +61,8 @@ export interface MailClient {
   text(uid: number, maxChars: number): Promise<MessageText>
   /** Puts a copy of a message sent from the app in the Sent folder, as read; false when there's no Sent folder. */
   appendSent(raw: Buffer): Promise<boolean>
+  /** Looks for a message by its Message-ID in the folder read and in Sent (the sending check, mailboxes/send.ts). */
+  find?(messageId: string): Promise<FoundMessage>
   close(): Promise<void>
 }
 
@@ -196,6 +205,23 @@ export const imapConnect: Connect = async (login) => {
       if (!sent) return false
       await imap.append(sent.path, raw, ['\\Seen'], new Date())
       return true
+    },
+    async find(messageId) {
+      const folders = await imap.list()
+      const read = folders.find((f) => f.specialUse === '\\All')?.path ?? 'INBOX'
+      const sent = folders.find((f) => f.specialUse === '\\Sent')?.path
+      // IMAP's header search matches part of the value, so the id goes without its brackets.
+      const bare = messageId.replace(/^<|>$/g, '')
+      const look = async (path: string) => {
+        await imap.mailboxOpen(path, { readOnly: true })
+        const uids = await imap.search({ header: { 'message-id': bare } }, { uid: true })
+        if (!uids || !uids.length) return null
+        const msg = await imap.fetchOne(String(uids[0]), { envelope: true }, { uid: true })
+        return { from: (msg && msg.envelope?.from?.[0]?.address?.toLowerCase()) || null }
+      }
+      const inRead = await look(read)
+      const inSent = sent && sent !== read ? await look(sent) : null
+      return { from: inRead?.from ?? inSent?.from ?? null, inRead: !!inRead, inSent: !!inSent }
     },
     async close() {
       await imap.logout().catch(() => imap.close())

@@ -28,6 +28,7 @@ import type { SequenceSettings, SequenceStep } from '../../features/sequences/ty
 import { contentFindings, linkHosts, type ContentInput } from './content'
 import { senderFindings } from './sender'
 import { isColdSend, recipientFindings, type RecipientsInput } from './recipients'
+import { sequenceRoute } from '../mailboxes/send'
 
 /** Worst first: what makes it high on its own, then by points; notes last. */
 const byWeight = (a: SpamFinding, b: SpamFinding) => Number(Boolean(b.hard)) - Number(Boolean(a.hard)) || b.points - a.points
@@ -78,12 +79,12 @@ async function warmupOf(address: string) {
   return standing.byAddress[address] ?? null
 }
 
-/** The people a send would reach, counted. */
-function recipientsOf(data: DbSchema, emails: Iterable<string>): RecipientsInput {
+/** The people a send would reach, counted; through a sender's own mailbox, the mail server's cold limit isn't theirs. */
+function recipientsOf(data: DbSchema, emails: Iterable<string>, viaMailbox = false): RecipientsInput {
   const wanted = new Set(emails)
   const people = data.contacts.filter((c) => wanted.has(c.email) && c.status === 'subscribed')
   const kind = kindResolver()
-  const limits = dailyLimits()
+  const limits = viaMailbox ? null : dailyLimits()
   const cold = limits?.cold
   return {
     total: people.length,
@@ -94,8 +95,12 @@ function recipientsOf(data: DbSchema, emails: Iterable<string>): RecipientsInput
   }
 }
 
-/** The sender's findings, or none until a sender is chosen. */
-async function senderPart(senderId: number | null | undefined, linkedTo: string[], cold: boolean, deps: DnsAuthDeps): Promise<SpamFinding[]> {
+/**
+ * The sender's findings, or none until a sender is chosen. Through the
+ * sender's own mailbox (a sequence's), it's their mail service that sends:
+ * the host's records and readiness don't come into it, their own SPF does.
+ */
+async function senderPart(senderId: number | null | undefined, linkedTo: string[], cold: boolean, deps: DnsAuthDeps, viaMailbox = false): Promise<SpamFinding[]> {
   const sender = db.data.senders.find((s) => s.id === senderId)
   if (!sender) return []
   const email = sender.email.trim().toLowerCase()
@@ -104,11 +109,11 @@ async function senderPart(senderId: number | null | undefined, linkedTo: string[
   const [dns, dbl, warmup] = await Promise.all([authRecords(domain, deps), dblListed([domain, ...linkedTo].slice(0, 12), deps), warmupOf(email)])
   return senderFindings({
     fromEmail: email,
-    managed: env.sendingManaged(),
-    domainReady: canSendFrom(email),
+    managed: env.sendingManaged() && !viaMailbox,
+    domainReady: viaMailbox || canSendFrom(email),
     dns,
     dbl,
-    freeMail: freeMailElsewhere(domain),
+    freeMail: !viaMailbox && freeMailElsewhere(domain),
     reputation: reputationOf(domain),
     warmup,
     cold,
@@ -162,10 +167,13 @@ export async function sequenceSpamScore(id: string, draft: SequenceDraft = {}, d
   const steps = draft.steps ?? s.steps
   const settings = { ...s.settings, ...draft.settings }
 
+  // Through the sender's own mailbox: no tracking, its own limits, its own records (mailboxes/send.ts).
+  const sender = data.senders.find((x) => x.id === s.sender_id)
+  const viaMailbox = !!sender && sequenceRoute(sender, data).via !== 'server'
   // Who it still has to email: those in progress, or everyone enrolled before it starts.
   const enrolled = (data.sequence_enrollments ?? []).filter((e) => e.sequence_id === id)
   const current = enrolled.filter((e) => e.status === 'active' || e.status === 'paused')
-  const recipients = recipientsOf(data, (current.length ? current : enrolled).map((e) => e.contact_email))
+  const recipients = recipientsOf(data, (current.length ? current : enrolled).map((e) => e.contact_email), viaMailbox)
   const cold = isColdSend(recipients)
   // The AI writes each person's emails, and its own always sign off.
   const personalised = !!s.steps[0]?.personalise
@@ -178,12 +186,12 @@ export async function sequenceSpamScore(id: string, draft: SequenceDraft = {}, d
     body: st.body,
     signOffAdded: personalised,
     cold,
-    trackOpens: settings.track_opens,
-    trackClicks: settings.track_clicks,
+    trackOpens: settings.track_opens && !viaMailbox,
+    trackClicks: settings.track_clicks && !viaMailbox,
     unsubscribe: /\{\{\s*unsubscribe\s*\}\}/i.test(settings.footer),
   }))
   const shared = [
-    ...(await senderPart(s.sender_id, [...new Set(contents.flatMap(linkHosts))], cold, deps)),
+    ...(await senderPart(s.sender_id, [...new Set(contents.flatMap(linkHosts))], cold, deps, viaMailbox)),
     ...recipientFindings(recipients),
   ]
   const scored: SpamStepScore[] = contents.map((c, i) => {

@@ -75,7 +75,8 @@ export const limitsApply = () => env.sendingManaged()
 function rampState(kind: MailKind, now: Date): RampState {
   const saved = db.data.sending_ramp?.[kind]
   if (!saved) {
-    const first = db.data.campaign_recipients.reduce<string | null>((min, r) => (r.sent_at && (!min || r.sent_at < min) ? r.sent_at : min), null)
+    // Mail through senders' own mailboxes isn't the mail server's sending.
+    const first = db.data.campaign_recipients.reduce<string | null>((min, r) => (r.sent_at && r.via !== 'mailbox' && (!min || r.sent_at < min) ? r.sent_at : min), null)
     const weeks = first ? Math.floor((now.getTime() - Date.parse(first)) / STEP_MS) : 0
     const state: RampState = { level: kind === 'optIn' ? Math.min(Math.max(weeks, 0), topLevel('optIn')) : 0, since: now.toISOString() }
     db.mutate((d) => (d.sending_ramp = { ...d.sending_ramp, [kind]: state }))
@@ -95,12 +96,12 @@ function rampState(kind: MailKind, now: Date): RampState {
   return state
 }
 
-/** Emails of each kind sent in the last 24 hours (sequence emails included). */
+/** Emails of each kind sent in the last 24 hours (sequence emails included; not those through senders' own mailboxes, which have their own caps). */
 function sentLastDay(now: Date): Record<MailKind, number> {
   const since = new Date(now.getTime() - DAY_MS).toISOString()
   const kind = kindResolver()
   const sent: Record<MailKind, number> = { cold: 0, optIn: 0 }
-  for (const r of db.data.campaign_recipients) if (r.sent_at && r.sent_at >= since) sent[kind(r.contact_email)]++
+  for (const r of db.data.campaign_recipients) if (r.sent_at && r.sent_at >= since && r.via !== 'mailbox') sent[kind(r.contact_email)]++
   return sent
 }
 

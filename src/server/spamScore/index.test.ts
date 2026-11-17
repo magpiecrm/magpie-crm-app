@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = {
   managed: false,
+  ready: true,
   data: {} as any,
   dns: { spf: true, dmarc: true },
   listed: [] as string[],
@@ -11,7 +12,7 @@ const state = {
 vi.mock('../db', () => ({ db: { get data() { return state.data } } }))
 vi.mock('../env', () => ({ env: { sendingManaged: () => state.managed } }))
 vi.mock('../emailService', () => ({ withoutBuilderData: (html: string) => html.replace(/<!-- BLOCKS_DATA: [\s\S]*? -->/g, '') }))
-vi.mock('../sendingDomains', () => ({ canSendFrom: () => true }))
+vi.mock('../sendingDomains', () => ({ canSendFrom: () => state.ready }))
 vi.mock('../sendingReputation', () => ({
   domainReputations: () => [],
   kindResolver: () => (email: string) => (state.data.contacts.find((c: any) => c.email === email)?.source ? 'cold' : 'optIn'),
@@ -30,6 +31,7 @@ const settings = { track_opens: false, track_clicks: false, days: [1], start_hou
 
 beforeEach(() => {
   state.managed = false
+  state.ready = true
   state.dns = { spf: true, dmarc: true }
   state.listed = []
   state.provider = { providerId: 'smtp', creds: { host: 'smtp.acme.test' } }
@@ -130,5 +132,22 @@ describe('a sequence', () => {
     const s = await sequenceSpamScore('s1')
     // Only a@x.test is in progress: one cold, verified person.
     expect(s.findings.map((x) => x.code)).not.toContain('many_catch_all')
+  })
+})
+
+describe("a sequence sent through the sender's own mailbox", () => {
+  it("isn't judged on the mail server's readiness, a free address sent elsewhere, or tracking it won't carry", async () => {
+    state.managed = true
+    state.ready = false
+    state.data.sequences[0].sender_id = 2
+    state.data.sequences[0].settings = { ...settings, track_opens: true, track_clicks: true }
+    const codes = (x: Awaited<ReturnType<typeof sequenceSpamScore>>) => [...x.findings, ...(x.steps ?? []).flatMap((st) => st.findings)].map((f) => f.code)
+    expect(codes(await sequenceSpamScore('s1'))).toEqual(expect.arrayContaining(['free_mail', 'domain_not_ready', 'open_tracking_cold']))
+
+    state.data.mailboxes = [
+      { id: 'mb1', sender_id: 2, user: 'jo@gmail.com', sending: { host: 'smtp.gmail.com', port: 587, verified_at: '2026-11-16T09:00:00Z', verified_for: 'jo@gmail.com', status: 'ok', daily_cap: 40 } },
+    ]
+    const through = codes(await sequenceSpamScore('s1'))
+    for (const code of ['free_mail', 'domain_not_ready', 'open_tracking_cold', 'click_tracking_cold']) expect(through).not.toContain(code)
   })
 })

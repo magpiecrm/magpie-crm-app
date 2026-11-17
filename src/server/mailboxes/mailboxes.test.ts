@@ -24,10 +24,15 @@ vi.mock('../notify', () => ({ notify: (type: string, message: string) => notices
 
 const { db } = await import('../db')
 const { sequences } = await import('../sequences')
-const { runSequences } = await import('../sequences/engine')
-const { mailboxes, pollMailboxes } = await import('.')
+const { runSequences, recoverClaims } = await import('../sequences/engine')
+const { mailboxes, pollMailboxes, checkEarlierInboxes } = await import('.')
+const { sendMail } = await import('../nodemailer')
 const { classifyInbound, isStopRequest, leadingText, parseBounce, buildIndex, matchReply } = await import('./classify')
 const { parseHeaderBlock, idsIn, zohoHosts, imapConnect, describeError, readStructure } = await import('./imap')
+
+/** Connecting checks the mailbox can send (send.ts checkSending); here it's said to, without sending anything. */
+const checked: Array<{ host: string; port: number; user: string }> = []
+const sendsFine = async (_sender: unknown, smtp: { host: string; port: number; user: string }) => (checked.push(smtp), { ok: true as const, sentAutosave: true })
 const { encryptToken } = await import('../crypto')
 const { env } = await import('../env')
 type Msg = import('./imap').InboundMessage
@@ -282,8 +287,10 @@ describe('reading an inbox', () => {
       return { open: async () => ({ path: 'INBOX', uidValidity: '1', uidNext: 1 }), fetch: async () => [], source: async () => '', text: async () => ({ text: '', truncated: false, attachments: 0 }), appendSent: async () => false, close: async () => {} }
     }) as any
     const eu = async () => ['mx.zoho.eu', 'mx2.zoho.eu']
-    const saved = await mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, zoho, eu)
+    const saved = await mailboxes.save({ senderId: 1, host: 'imap.zoho.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, zoho, eu, sendsFine)
     expect(saved).toMatchObject({ status: 'ok', host: 'imappro.zoho.eu' })
+    // It sends through the Zoho server that goes with the one that worked.
+    expect(checked.at(-1)).toMatchObject({ host: 'smtppro.zoho.eu', port: 587, user: 'jo@acme.test' })
     // Where the address's own mail goes says the region: the US servers aren't tried at all.
     expect(tried).toEqual(['imappro.zoho.eu'])
 
@@ -314,10 +321,10 @@ describe('reading an inbox', () => {
     const bad = fakeInbox([], { fail: Object.assign(new Error('Invalid credentials'), { authenticationFailed: true }) })
     await expect(mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'wrong' }, bad.connect)).rejects.toThrow(/app password/)
     const good = fakeInbox([])
-    const saved = await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, good.connect)
+    const saved = await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, good.connect, undefined, sendsFine)
     expect(saved).toMatchObject({ status: 'ok', folder: '[Gmail]/All Mail' })
     expect(saved).not.toHaveProperty('secret')
-    await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test' }, good.connect)
+    await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test' }, good.connect, undefined, sendsFine)
     expect(good.calls.connects).toBe(2)
     await expect(mailboxes.save({ senderId: 1, host: 'outlook.office365.com', port: 993, secure: true, user: 'jo@acme.test', password: 'x' }, good.connect)).rejects.toThrow(/Microsoft 365/)
   })
@@ -492,5 +499,210 @@ describe("reading a message's structure", () => {
       }),
     ).toEqual({ plain: '1.1.1', html: '1.1.2', attachments: 3 })
     expect(readStructure({ type: 'multipart/alternative', childNodes: [{ part: '1', type: 'text/html' }] })).toEqual({ plain: null, html: '1', attachments: 0 })
+  })
+})
+
+describe("sending through the sender's own mailbox", () => {
+  type Sent = { to: string; subject: string; text?: string; html?: string; via?: { mailboxId: string }; unsubscribeMailto?: string; campaignId?: number; unsubscribeUrl?: string; messageId?: string }
+  const last = () => sent.at(-1) as Sent
+  const iso = (ms: number) => new Date(ms).toISOString()
+
+  /** The connected inbox, its sending checked out (or as given). */
+  function canSend(over: Partial<import('../db').MailboxSending> = {}, inbox: Partial<import('../db').MailboxRecord> = {}) {
+    connectInbox({
+      last_polled_at: iso(Date.now()),
+      ...inbox,
+      sending: {
+        host: 'smtp.gmail.com', port: 587, verified_at: iso(Date.now() - 86_400_000), verified_for: 'jo@acme.test', sent_autosave: true,
+        daily_cap: 40, status: 'ok', last_error: null, error_since: null, ...over,
+      },
+    })
+  }
+  const sendingOf = () => db.data.mailboxes![0].sending!
+  // Each test's emails are its own: an earlier test's recipient row for the same step would stand in for one.
+  beforeEach(() =>
+    db.mutate((d) => {
+      d.campaigns = []
+      d.campaign_recipients = []
+    }),
+  )
+
+  it('sends through it once it has checked out, with "reply stop" in place of a link, and no tracking', async () => {
+    contact('ava@larkspur.test')
+    const id = sequenceFor(['ava@larkspur.test'])
+    sequences.update(id, { settings: { track_opens: true, track_clicks: true } })
+    canSend()
+    await runSequences(new Date(), () => 0)
+    expect(last()).toMatchObject({ to: 'ava@larkspur.test', via: { mailboxId: 'mb1' }, unsubscribeMailto: 'mailto:jo@acme.test?subject=unsubscribe' })
+    expect(last()).not.toHaveProperty('campaignId')
+    expect(last()).not.toHaveProperty('unsubscribeUrl')
+    expect(last().text).toMatch(/Not interested\? Just reply "stop" and I won't email you again\./)
+    for (const part of [last().text, last().html]) expect(part).not.toMatch(/https?:|<img|<a /)
+    const e = enrollment('ava@larkspur.test')
+    expect(e.sends[0]).toMatchObject({ via: 'mailbox' })
+    expect(db.data.campaign_recipients.find((r) => r.contact_email === 'ava@larkspur.test')).toMatchObject({ status: 'sent', via: 'mailbox' })
+    // The next waits a few minutes, whichever sequence it's in.
+    expect(Date.parse(sendingOf().next_at!)).toBeGreaterThan(Date.now() + 60_000)
+  })
+
+  it('goes through the mail server as chosen, or until the mailbox has checked out', async () => {
+    contact('ava@larkspur.test')
+    contact('ben@larkspur.test')
+    sequenceFor(['ava@larkspur.test', 'ben@larkspur.test'])
+    const t0 = Date.now()
+    canSend({ use_server: true })
+    await runSequences(new Date(t0), () => 0)
+    expect(last()).not.toHaveProperty('via')
+    expect(last()).toMatchObject({ campaignId: expect.any(Number), unsubscribeUrl: expect.stringContaining('/api/unsubscribe?t=') })
+    expect(last().text).toMatch(/Unsubscribe here \(https:\/\/app\.example\.test\/api\/unsubscribe/)
+    canSend({ verified_at: null, verified_for: null, last_error: "couldn't log in" })
+    await runSequences(new Date(t0 + 21 * 60_000), () => 0)
+    expect(sent).toHaveLength(2)
+    expect(last()).not.toHaveProperty('via')
+  })
+
+  it("needs no ready sending domain on a hosted copy: that's for the mail server", async () => {
+    process.env.SENDING_MANAGED = 'on'
+    try {
+      contact('ava@larkspur.test')
+      const id = sequenceFor(['ava@larkspur.test'])
+      canSend()
+      await runSequences(new Date(), () => 0)
+      expect(last()).toMatchObject({ via: { mailboxId: 'mb1' } })
+      // Through the mail server, the same sender would need its domain set up first.
+      contact('ben@larkspur.test')
+      sequences.enroll(id, ['ben@larkspur.test'], {}, null)
+      db.mutate(() => (sendingOf().use_server = true))
+      await runSequences(new Date(Date.now() + 21 * 60_000), () => 0)
+      expect(sent).toHaveLength(1)
+      expect(sequences.get(id).sequence).toMatchObject({ status: 'paused', auto_paused: 'sending_domain' })
+    } finally {
+      delete process.env.SENDING_MANAGED
+    }
+  })
+
+  it('pauses its sequences when the mailbox refuses the account, without using up an attempt, until it checks out again', async () => {
+    contact('ava@larkspur.test')
+    const id = sequenceFor(['ava@larkspur.test'])
+    canSend()
+    vi.mocked(sendMail).mockRejectedValueOnce(Object.assign(new Error('smtp.gmail.com: Message failed'), { code: 'EMESSAGE', responseCode: 550, response: '550 5.4.5 Daily user sending limit exceeded.' }))
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    expect(enrollment('ava@larkspur.test')).toMatchObject({ claim: null, attempts: 0, status: 'active' })
+    expect(sendingOf()).toMatchObject({ status: 'paused', last_error: expect.stringMatching(/Daily user sending limit/) })
+    expect(sequences.get(id).sequence).toMatchObject({ status: 'paused', auto_paused: 'mailbox' })
+    expect(notices.at(-1)).toMatch(/"Intro" paused: Sending through jo@acme.test is paused/)
+
+    // Still refused: it waits rather than going through the mail server.
+    await runSequences(new Date(t0 + 60_000), () => 0)
+    expect(sent).toHaveLength(0)
+
+    await mailboxes.recheckSending('mb1', sendsFine)
+    await runSequences(new Date(t0 + 2 * 60_000), () => 0)
+    expect(sequences.get(id).sequence.status).toBe('active')
+    expect(last()).toMatchObject({ to: 'ava@larkspur.test', via: { mailboxId: 'mb1' } })
+  })
+
+  it("keeps to the mailbox's own daily cap, across the sender's sequences", async () => {
+    contact('ava@larkspur.test')
+    contact('ben@larkspur.test')
+    sequenceFor(['ava@larkspur.test'])
+    sequenceFor(['ben@larkspur.test'])
+    canSend({ daily_cap: 1 })
+    const t0 = Date.now()
+    await runSequences(new Date(t0), () => 0)
+    await runSequences(new Date(t0 + 10 * 60_000), () => 0)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('records an email a restart cut off as sent the way it was going', async () => {
+    contact('ava@larkspur.test')
+    sequenceFor(['ava@larkspur.test'])
+    canSend()
+    vi.mocked(sendMail).mockImplementationOnce(() => new Promise(() => {}))
+    void runSequences(new Date(), () => 0)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(enrollment('ava@larkspur.test').claim).toMatchObject({ via: 'mailbox' })
+    recoverClaims()
+    expect(enrollment('ava@larkspur.test').sends[0]).toMatchObject({ uncertain: true, via: 'mailbox' })
+    expect(db.data.campaign_recipients.find((r) => r.contact_email === 'ava@larkspur.test')).toMatchObject({ via: 'mailbox' })
+  })
+
+  it("doesn't add a follow-up it sent, found again in All Mail, to the conversation", async () => {
+    contact('ava@larkspur.test')
+    sequenceFor(['ava@larkspur.test'])
+    const t0 = Date.now()
+    canSend({}, { last_polled_at: iso(t0) })
+    await runSequences(new Date(t0), () => 0)
+    db.mutate(() => (db.data.mailboxes![0].last_polled_at = iso(t0 + 25 * 60 * 60_000)))
+    await runSequences(new Date(t0 + 25 * 60 * 60_000), () => 0)
+    const [first, follow] = enrollment('ava@larkspur.test').sends
+    expect(follow).toMatchObject({ via: 'mailbox' })
+    const inbox = fakeInbox([msg({ uid: 5, from: 'jo@acme.test', messageId: follow.message_id, inReplyTo: first.message_id, references: [first.message_id], subject: 'Re: Quick question' })])
+    await pollMailboxes(new Date(t0 + 25 * 60 * 60_000 + 60_000), inbox.connect)
+    expect(enrollment('ava@larkspur.test').messages ?? []).toHaveLength(0)
+  })
+
+  it("unsubscribes someone who presses their mail app's Unsubscribe, without counting it as a reply", async () => {
+    contact('ava@larkspur.test')
+    contact('ben@larkspur.test')
+    sequenceFor(['ava@larkspur.test', 'ben@larkspur.test'])
+    const t0 = Date.now()
+    canSend({ daily_cap: 10 })
+    await runSequences(new Date(t0), () => 0)
+    await runSequences(new Date(t0 + 21 * 60_000), () => 0)
+    const benFirst = enrollment('ben@larkspur.test').sends[0].message_id
+    // Ben replied earlier; then both press Unsubscribe (Gmail's carries Auto-Submitted, and no words of theirs).
+    await pollMailboxes(new Date(t0 + 30 * 60_000), fakeInbox([msg({ uid: 1, from: 'ben@larkspur.test', inReplyTo: benFirst, references: [benFirst] })]).connect)
+    expect(enrollment('ben@larkspur.test').status).toBe('replied')
+    notices.length = 0
+    const unsubscribe = (uid: number, from: string) => msg({ uid, from, subject: 'unsubscribe', messageId: `<u${uid}@x>`, headers: { 'auto-submitted': 'auto-generated' } })
+    await pollMailboxes(
+      new Date(t0 + 60 * 60_000),
+      fakeInbox([unsubscribe(2, 'ava@larkspur.test'), unsubscribe(3, 'ben@larkspur.test')], { sources: { 2: 'Content-Type: text/plain\r\n\r\n', 3: 'Content-Type: text/plain\r\n\r\nThis message was automatically generated by Gmail.' } }).connect,
+    )
+    for (const who of ['ava@larkspur.test', 'ben@larkspur.test']) {
+      expect(db.getContact(who)?.status).toBe('unsubscribed')
+      expect(db.emailStop(who)?.reason).toBe('unsubscribed')
+    }
+    expect(enrollment('ava@larkspur.test')).toMatchObject({ status: 'unsubscribed', reply: null, replied_at: null })
+    expect(enrollment('ava@larkspur.test').messages ?? []).toHaveLength(0)
+    expect(notices.filter((n) => n.startsWith('sequence_reply'))).toHaveLength(0)
+  })
+
+  it('checks inboxes connected before sending was, once, and says when their sequences move to the mailbox', async () => {
+    connectInbox()
+    await checkEarlierInboxes(async () => ({ ok: false, error: "couldn't log in", authFailed: true }))
+    expect(db.data.mailboxes![0].sending).toMatchObject({ host: 'smtp.gmail.com', verified_at: null, status: 'ok', last_error: "couldn't log in" })
+    expect(notices).toHaveLength(0)
+    // Checked once: it isn't tried again by itself.
+    let asked = 0
+    await checkEarlierInboxes(async () => (asked++, { ok: true, sentAutosave: true }))
+    expect(asked).toBe(0)
+
+    connectInbox()
+    await checkEarlierInboxes(sendsFine)
+    expect(db.data.mailboxes![0].sending).toMatchObject({ verified_for: 'jo@acme.test', status: 'ok', daily_cap: 40 })
+    expect(notices).toEqual([expect.stringMatching(/Sequence emails from jo@acme.test now go out through its own mailbox/)])
+    expect(mailboxes.list()[0].sending).toMatchObject({ active: true, daily_cap: 40, sent_24h: 0 })
+  })
+
+  it('connects an inbox that reads but can’t send, for replies only, and keeps the sender’s choices when it’s checked again', async () => {
+    const good = fakeInbox([])
+    const cantSend = async () => ({ ok: false as const, error: 'smtp.gmail.com refused the login for sending.', authFailed: true })
+    const saved = await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, good.connect, undefined, cantSend)
+    expect(saved).toMatchObject({ status: 'ok', sending: { active: false, verified_at: null, last_error: expect.stringMatching(/refused the login/) } })
+    mailboxes.setSending(saved.id, { dailyCap: 25 })
+    const again = await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }, good.connect, undefined, sendsFine)
+    expect(again.sending).toMatchObject({ active: true, daily_cap: 25, last_error: null })
+    mailboxes.setSending(saved.id, { useServer: true })
+    expect(mailboxes.list()[0].sending).toMatchObject({ active: false, use_server: true })
+
+    // Its own sending login: kept encrypted, never shown.
+    await mailboxes.save({ senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', smtp: { user: 'jo.send@acme.test', password: 'own-pass' } }, good.connect, undefined, sendsFine)
+    expect(checked.at(-1)).toMatchObject({ user: 'jo.send@acme.test' })
+    const shown = JSON.stringify(mailboxes.list())
+    expect(shown).not.toMatch(/own-pass|app-pass|right|"secret"/)
+    expect(mailboxes.list()[0].sending).toMatchObject({ user: 'jo.send@acme.test', has_own_password: true })
   })
 })

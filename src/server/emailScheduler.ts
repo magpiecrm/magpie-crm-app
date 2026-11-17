@@ -46,13 +46,15 @@ export async function sendDueCampaigns(now = new Date()) {
   }
 }
 
-/** Reads connected inboxes for replies (mailboxes/); never two reads at once. */
+/** Reads connected inboxes for replies (mailboxes/), and checks the sending of any connected before that was checked; never two at once. */
 async function pollDueMailboxes() {
   if (g.__mailboxPollBusy) return
   g.__mailboxPollBusy = true
   try {
-    const { pollMailboxes } = await import('./mailboxes')
+    const { pollMailboxes, checkEarlierInboxes } = await import('./mailboxes')
     await pollMailboxes()
+    // An inbox connected before connecting one also checked its sending: checked now, one at a time.
+    await checkEarlierInboxes()
   } catch (err) {
     console.error('[EmailScheduler] Reading inboxes failed:', err)
   } finally {

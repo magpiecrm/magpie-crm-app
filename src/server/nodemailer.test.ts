@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { providerError } from './providers/types'
 
 const managed = vi.hoisted(() => ({ on: false }))
+const config = vi.hoisted(() => ({ missingFields: [] as string[] }))
 
 vi.mock('./db', () => ({ db: { query: () => ({ get: () => null }) } }))
 vi.mock('./env', () => ({ env: { sendingManaged: () => managed.on } }))
@@ -10,7 +11,7 @@ vi.mock('./emailSettings', () => ({
     providerId: 'ses',
     creds: {},
     defaultSender: 'Acme <hello@acme.com>',
-    missingFields: [],
+    missingFields: config.missingFields,
     credsUnreadable: false,
   }),
 }))
@@ -24,8 +25,13 @@ vi.mock('./providers', () => ({
 vi.mock('./usage', () => ({ recordUsage: vi.fn() }))
 vi.mock('./allowance', () => ({ requireAllowance: vi.fn() }))
 vi.mock('./sendingDomains', () => ({ requireSendingDomain: vi.fn() }))
+vi.mock('./mailboxes/send', () => ({ sendThroughMailbox: vi.fn(async () => ({ messageId: '<m1@acme.com>' })) }))
 
 const { sendMail } = await import('./nodemailer')
+const { sendThroughMailbox } = await import('./mailboxes/send')
+const { requireSendingDomain } = await import('./sendingDomains')
+const { requireAllowance } = await import('./allowance')
+const { recordUsage } = await import('./usage')
 
 describe('send errors', () => {
   beforeEach(() => {
@@ -43,5 +49,48 @@ describe('send errors', () => {
     await expect(sendMail({ to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>' })).rejects.toThrow(
       /^Email sending failed for jane@example\.com: Email address is not verified\.$/,
     )
+  })
+})
+
+describe("through the sender's own mailbox", () => {
+  beforeEach(() => {
+    vi.mocked(sendThroughMailbox).mockClear()
+    vi.mocked(requireSendingDomain).mockClear()
+    vi.mocked(requireAllowance).mockClear()
+    vi.mocked(recordUsage).mockClear()
+    config.missingFields = []
+  })
+
+  it("goes through the mailbox, not the provider: counted, but no sending domain needed", async () => {
+    managed.on = true
+    const sent = await sendMail({
+      from: 'Acme <hello@acme.com>',
+      to: 'jane@example.com',
+      subject: 'Hi',
+      html: '<p>Hi</p>',
+      text: 'Hi',
+      campaignId: 7,
+      via: { mailboxId: 'mb1' },
+      unsubscribeMailto: 'mailto:hello@acme.com?subject=unsubscribe',
+    })
+    expect(sent).toEqual({ messageId: '<m1@acme.com>' })
+    const [id, message, mailto] = vi.mocked(sendThroughMailbox).mock.calls[0]
+    expect(id).toBe('mb1')
+    expect(message).toMatchObject({ fromEmail: 'hello@acme.com', to: ['jane@example.com'], subject: 'Hi', text: 'Hi' })
+    expect(mailto).toBe('mailto:hello@acme.com?subject=unsubscribe')
+    expect(requireSendingDomain).not.toHaveBeenCalled()
+    expect(requireAllowance).toHaveBeenCalledWith('emailsSent', 1)
+    expect(recordUsage).toHaveBeenCalledWith({ emailsSent: 1 })
+  })
+
+  it("isn't swallowed when the workspace's own provider isn't set up", async () => {
+    config.missingFields = ['apiKey']
+    await sendMail({ from: 'hello@acme.com', to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>', via: { mailboxId: 'mb1' } })
+    expect(sendThroughMailbox).toHaveBeenCalledTimes(1)
+  })
+
+  it('still refuses a From that is no sender of the workspace', async () => {
+    await expect(sendMail({ from: 'someone@else.com', to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>', via: { mailboxId: 'mb1' } })).rejects.toThrow(/Unauthorized sender/)
+    expect(sendThroughMailbox).not.toHaveBeenCalled()
   })
 })

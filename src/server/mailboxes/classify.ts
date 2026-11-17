@@ -89,6 +89,15 @@ export function parseBounce(source: string): { recipient: string; hard: boolean 
 const STOP =
   /^(stop|unsubscribe( me)?|remove( me)?|take me off( (your|the) list)?|opt[- ]?out|please (stop|remove me|unsubscribe( me)?)|(do not|don'?t) (contact|email) me( again)?)[\s.!]*$/i
 
+/**
+ * A message a mail app sends for its own Unsubscribe button, where the
+ * email's List-Unsubscribe was a mailto: (one sent through the sender's own
+ * mailbox): to the sender, with the subject "unsubscribe", not in a thread.
+ */
+export function isUnsubscribeMail(msg: { subject: string; inReplyTo: string | null }): boolean {
+  return /^\s*unsubscribe\s*$/i.test(msg.subject) && !msg.inReplyTo
+}
+
 /** Whether a reply's first words ask not to be emailed again ("stop", "unsubscribe", "remove me"…). */
 export function isStopRequest(text: string): boolean {
   const first = text

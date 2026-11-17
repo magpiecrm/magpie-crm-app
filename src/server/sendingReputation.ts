@@ -196,6 +196,8 @@ export function kindResolver(): (email: string) => MailKind {
 /**
  * The last WINDOW_DAYS of sending, added up by sending domain and by kind of
  * mail. Sequence emails count: each step's are recorded as a campaign's.
+ * Those sent through a sender's own mailbox don't: they say nothing of how
+ * the mail server's mail is received.
  */
 export function sendingStats(now = new Date()): { byDomain: Map<string, SendingStats>; byKind: Record<MailKind, SendingStats> } {
   const since = new Date(now.getTime() - WINDOW_DAYS * 86_400_000).toISOString()
@@ -205,7 +207,7 @@ export function sendingStats(now = new Date()): { byDomain: Map<string, SendingS
   const byDomain = new Map<string, SendingStats>()
   const byKind: Record<MailKind, SendingStats> = { cold: emptyStats(), optIn: emptyStats() }
   for (const r of db.data.campaign_recipients) {
-    if (!r.sent_at || r.sent_at < since) continue
+    if (!r.sent_at || r.sent_at < since || r.via === 'mailbox') continue
     const campaign = campaigns.get(r.campaign_id)
     const domain = (campaign?.sender_id != null && senderDomain.get(campaign.sender_id)) || ''
     if (domain && !byDomain.has(domain)) byDomain.set(domain, emptyStats())

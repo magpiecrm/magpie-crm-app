@@ -38,8 +38,9 @@ export function engagementByEmail(data: DbSchema): Map<string, Engagement> {
     person.replied.last = later(person.replied.last, r.replied_at)
 
     const sent = r.status.startsWith('bounced') ? null : (r.sent_at ?? campaign?.sent_at)
-    const tracksOpens = sequence ? sequence.settings.track_opens : campaign?.track_opens !== false
-    const tracksClicks = sequence ? sequence.settings.track_clicks : true
+    // Nothing through a sender's own mailbox is tracked (sequences/engine.ts).
+    const tracksOpens = r.via === 'mailbox' ? false : sequence ? sequence.settings.track_opens : campaign?.track_opens !== false
+    const tracksClicks = r.via === 'mailbox' ? false : sequence ? sequence.settings.track_clicks : true
     if (tracksOpens) person.opened.eligible = later(person.opened.eligible, sent)
     if (tracksClicks) person.clicked.eligible = later(person.clicked.eligible, sent)
     if (sequence?.sender_id != null && watched.has(sequence.sender_id)) person.replied.eligible = later(person.replied.eligible, sent)

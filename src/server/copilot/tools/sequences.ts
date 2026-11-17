@@ -86,8 +86,12 @@ const toSettings = (s: z.infer<typeof settingsInput>) => ({
 /** A sequence as tools return it: its emails, settings, numbers and anything stopping it from running. */
 async function describe(id: string) {
   const { sequences } = await import('../../sequences')
+  const { db } = await import('../../db')
+  const { sequenceRoute } = await import('../../mailboxes/send')
   const { sequence: s, summary, notReady } = sequences.get(id)
   const stats = sequences.stepStats(id)
+  const from = db.data.senders.find((x) => x.id === s.sender_id)
+  const route = from ? sequenceRoute(from) : null
   return {
     id: s.id,
     name: s.name,
@@ -95,6 +99,14 @@ async function describe(id: string) {
     pausedReason: s.paused_reason,
     notReady,
     sender: summary.sender,
+    // Through the sender's own mailbox: no open or click tracking (whatever the settings say), and people opt out by replying "stop".
+    sendsThrough: !route
+      ? null
+      : route.via === 'server'
+        ? 'the mail server'
+        : route.via === 'mailbox'
+          ? "the sender's own mailbox (no tracking; people opt out by replying \"stop\")"
+          : `the sender's own mailbox, which has stopped: ${route.reason}`,
     emails: s.steps.map((st, i) => ({
       step: i + 1,
       waitDays: st.delay_days,

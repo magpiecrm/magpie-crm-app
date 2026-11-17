@@ -135,26 +135,37 @@ describe('the email', () => {
   const settings = { signature: 'Jo', footer: 'Unsubscribe: {{ unsubscribe }}', track_opens: false, track_clicks: false }
 
   it('is plain text with the sign-off and unsubscribe link, and the same words as escaped HTML', () => {
-    const r = renderStep({ ...base, settings, unsubscribeUrl: 'https://app/u?t=1' }, { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` })
+    const r = renderStep({ ...base, settings, optOut: { url: 'https://app/u?t=1' } }, { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` })
     expect(r.subject).toBe('Hi Ava')
     expect(r.text).toBe('Hello <b>Ava</b>, see https://acme.example/a?b=1.\n\nJo\n\nUnsubscribe: unsubscribe here (https://app/u?t=1)')
     expect(r.html).toContain('Hello &lt;b&gt;Ava&lt;/b&gt;, see <a href="https://acme.example/a?b=1">https://acme.example/a?b=1</a>.<br>')
     // The link is words, not its long address.
     expect(r.html).toContain('Unsubscribe: <a href="https://app/u?t=1">unsubscribe here</a>')
     expect(r.html).not.toContain('>https://app/u?t=1<')
-    const preview = renderStep({ ...base, settings: { ...settings, footer: "Not interested? {{ unsubscribe }} and I won't email you again." }, unsubscribeUrl: '' })
+    const preview = renderStep({ ...base, settings: { ...settings, footer: "Not interested? {{ unsubscribe }} and I won't email you again." }, optOut: { url: '' } })
     expect(preview.text).toMatch(/Not interested\? Unsubscribe here and I won't email you again\.$/)
     expect(r.html).not.toContain('https://app/o')
     expect(r.html).not.toContain('https://app/c')
   })
 
   it('tracks opens and clicks only when the sequence does, and never in the text or the unsubscribe link', () => {
-    const r = renderStep({ ...base, settings: { ...settings, track_opens: true, track_clicks: true }, unsubscribeUrl: 'https://app/u?t=1' }, { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` })
+    const r = renderStep({ ...base, settings: { ...settings, track_opens: true, track_clicks: true }, optOut: { url: 'https://app/u?t=1' } }, { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` })
     expect(r.html).toContain('<a href="https://app/c?u=https://acme.example/a?b=1">')
     expect(r.html).toContain('<img src="https://app/o"')
     expect(r.html).toContain('<a href="https://app/u?t=1">')
     expect(r.text).toContain('https://acme.example/a?b=1')
     expect(r.text).not.toContain('app/c')
+  })
+  it('asks for a reply instead, sent through the sender’s own mailbox: no link to the app, no tracking, their own links left alone', () => {
+    const r = renderStep(
+      { ...base, settings: { ...settings, footer: "Not interested? {{ unsubscribe }} and I won't email you again.", track_opens: true, track_clicks: true }, optOut: 'reply' },
+      { openUrl: 'https://app/o', clickUrl: (u) => `https://app/c?u=${u}` },
+    )
+    expect(r.text).toMatch(/Not interested\? Just reply "stop" and I won't email you again\.$/)
+    expect(r.html).toContain('Not interested? Just reply &quot;stop&quot; and I won&#039;t email you again.')
+    expect(r.html).toContain('<a href="https://acme.example/a?b=1">')
+    expect(r.html).not.toMatch(/app\/(o|c|u)|<img/)
+    expect(renderStep({ ...base, settings, optOut: 'reply' }).text).toMatch(/Unsubscribe: just reply "stop"$/)
   })
 })
 

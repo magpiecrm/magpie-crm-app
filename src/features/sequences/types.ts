@@ -67,7 +67,7 @@ export interface Sequence {
   /** Why it paused itself (out of emails this month, sending domain not ready…); null when paused by hand. */
   paused_reason: string | null
   /** Paused itself for something that may clear (out of emails, sending domain not ready): resumes by itself once it has. */
-  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | 'ai' | null
+  auto_paused?: 'allowance' | 'sending_domain' | 'reply_detection' | 'ai' | 'mailbox' | null
   steps: SequenceStep[]
   settings: SequenceSettings
   guess_gate: SequenceGuessGate | null
@@ -91,6 +91,8 @@ export interface EnrollmentSend {
   uncertain?: true
   /** A fingerprint of its words as written (render.ts textHash), so the Replies tab can tell when the step has changed since. */
   text_hash?: string
+  /** Sent through the sender's own mailbox, so its opt-out was "reply stop" rather than a link. */
+  via?: 'mailbox'
 }
 
 export interface Enrollment {
@@ -104,7 +106,7 @@ export interface Enrollment {
   next_step: number
   next_send_at: string | null
   /** A send in progress (engine.ts), so it's never sent twice. */
-  claim: { step_id: string; message_id: string; at: string } | null
+  claim: { step_id: string; message_id: string; at: string; via?: 'mailbox' } | null
   sends: EnrollmentSend[]
   attempts: number
   replied_at: string | null
@@ -367,4 +369,24 @@ export interface MailboxView {
   last_polled_at: string | null
   folder: string | null
   replies_found: number
+  /** Sending sequence emails through it; null for an inbox connected before that was checked (it's checked soon after). */
+  sending: MailboxSendingView | null
+}
+
+/** A connected inbox's sending, as Settings shows it (never the password). */
+export interface MailboxSendingView {
+  host: string
+  port: number
+  /** Its own login, where it isn't the inbox's. */
+  user: string | null
+  has_own_password: boolean
+  /** The sender's sequence emails go through it now. */
+  active: boolean
+  verified_at: string | null
+  use_server: boolean
+  daily_cap: number
+  status: 'ok' | 'auth_failed' | 'paused'
+  last_error: string | null
+  /** Sequence emails through it in the last 24 hours. */
+  sent_24h: number
 }

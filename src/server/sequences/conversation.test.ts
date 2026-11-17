@@ -202,6 +202,36 @@ describe('answering a reply', () => {
     expect(await (await sendReply(e.id, { text: 'And another thing.', clientId: 'c-3' }, null, sentFolder().connect)).copied).toBeNull()
   })
 
+  it("goes through the sender's own mailbox where its sequence emails do, with a Sent copy only where the service keeps none", async () => {
+    const { e } = await started()
+    connectInbox()
+    const canSend = (over: Partial<import('../db').MailboxSending> = {}) =>
+      db.mutate(() => {
+        db.data.mailboxes![0].sending = {
+          host: 'smtp.gmail.com', port: 587, verified_at: new Date().toISOString(), verified_for: 'jo@acme.test', sent_autosave: true,
+          daily_cap: 40, status: 'ok', last_error: null, error_since: null, ...over,
+        }
+      })
+    canSend()
+    const inbox = sentFolder()
+    const { copied } = await sendReply(e.id, { text: 'Thursday works.', clientId: 'c-m1' }, null, inbox.connect)
+    expect(sent[0]).toMatchObject({ via: { mailboxId: 'mb1' } })
+    // One person's answer: no opt-out of any kind.
+    expect(sent[0]).not.toHaveProperty('unsubscribeMailto')
+    // Gmail keeps what's sent through it in Sent already.
+    expect(await copied).toBe(true)
+    expect(inbox.appended).toHaveLength(0)
+
+    canSend({ sent_autosave: false })
+    expect(await (await sendReply(e.id, { text: 'Or Friday.', clientId: 'c-m2' }, null, inbox.connect)).copied).toBe(true)
+    expect(inbox.appended).toHaveLength(1)
+
+    // Its sending refused since: it says so, rather than going out another way.
+    canSend({ status: 'auth_failed', last_error: 'Gmail refused the login for sending.' })
+    await expect(sendReply(e.id, { text: 'Hello?', clientId: 'c-m3' }, null, inbox.connect)).rejects.toThrow(/refused the login for sending/)
+    expect(sent).toHaveLength(2)
+  })
+
   it("won't answer someone who hasn't replied, has unsubscribed or bounced, or with nothing written", async () => {
     const { e } = await started({ replied: false })
     expect(conversations.get(e.id).cannot_reply).toMatch(/haven't replied yet/)

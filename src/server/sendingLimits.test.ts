@@ -122,6 +122,18 @@ describe('a campaign over the daily limit', () => {
     expect(hasDailyRoom('prospect39@acme.test')).toBe(true)
   })
 
+  it("leaves out sequence emails sent through senders' own mailboxes: they have their own caps, and say nothing of the mail server", () => {
+    const at = new Date(Date.now() - 60 * 60_000).toISOString()
+    db.mutate((d) => {
+      for (const email of people('mailbox', 25)) {
+        if (!d.contacts.some((c) => c.email === email)) d.contacts.push({ email, first_name: '', last_name: '', job_title: '', company: '', status: 'subscribed', created_at: at, source: 'socialfetch' } as any)
+        d.campaign_recipients.push({ campaign_id: 901, contact_email: email, sent_at: at, clicked_at: null, opened_at: null, status: email.endsWith('0@acme.test') ? 'bounced_hard' : 'sent', via: 'mailbox' })
+      }
+    })
+    expect(dailyLimits()!.cold).toMatchObject({ sent: 0, left: 30 })
+    expect(domainReputations()).toEqual([])
+  })
+
   it("has no daily limit where the host's mail server isn't sending", async () => {
     delete process.env.SENDING_MANAGED
     const emails = people('self', 70)

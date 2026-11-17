@@ -2,7 +2,9 @@
 // filled in, the sign-off, and the unsubscribe line, as plain text (what it
 // is) and as minimal HTML (the same words, links clickable) so mail clients
 // that prefer HTML show it the same. Open and click tracking go in only when
-// the sequence has them on; the plain-text part never carries them.
+// the sequence has them on; the plain-text part never carries them. Sent
+// through the sender's own mailbox, the unsubscribe line asks for a reply
+// instead of linking anywhere (optOut 'reply').
 
 import { createHash } from 'node:crypto'
 import type { SequenceSettings } from '../../features/sequences/types'
@@ -22,6 +24,14 @@ const UNSUB = /\{\{\s*unsubscribe\s*\}\}/gi
 export function unsubscribeWords(before: string): string {
   return /(^|[.!?])\s*$/.test(before) ? 'Unsubscribe here' : 'unsubscribe here'
 }
+
+/** What `{{ unsubscribe }}` says in an email sent through the sender's own mailbox, which carries no link: a reply does it (mailboxes/ reads it). */
+function replyStopWords(before: string): string {
+  return /(^|[.!?])\s*$/.test(before) ? 'Just reply "stop"' : 'just reply "stop"'
+}
+
+/** How someone opts out of a sequence email: its unsubscribe link (none in a preview), or by replying, when it's sent through the sender's own mailbox. */
+export type OptOut = { url: string } | 'reply'
 
 /** The whole email as text, with `{{ unsubscribe }}` still in it. */
 export function composeText(body: string, settings: Pick<SequenceSettings, 'signature' | 'footer'>): string {
@@ -98,7 +108,7 @@ export function renderStep(
     body: string
     contact: MergeContact
     settings: Pick<SequenceSettings, 'signature' | 'footer' | 'track_opens' | 'track_clicks'>
-    unsubscribeUrl: string
+    optOut: OptOut
   },
   tracking: { openUrl?: string; clickUrl?: (url: string) => string } = {},
 ): RenderedStep {
@@ -106,11 +116,16 @@ export function renderStep(
   const filled = mergeContact(composeText(input.body, input.settings), input.contact, { html: false })
   // Plain text can't link words, so the address follows them there (none in a preview, which has no address).
   const parts = filled.split(UNSUB)
-  const text = parts.reduce((out, part, i) => out + unsubscribeWords(parts[i - 1]) + (input.unsubscribeUrl ? ` (${input.unsubscribeUrl})` : '') + part)
+  const byReply = input.optOut === 'reply'
+  const url = input.optOut === 'reply' ? '' : input.optOut.url
+  const words = byReply ? replyStopWords : unsubscribeWords
+  const text = parts.reduce((out, part, i) => out + words(parts[i - 1]) + (url ? ` (${url})` : '') + part)
+  // Through the sender's own mailbox nothing links to this copy's address: no tracking either.
+  const tracked = byReply ? {} : tracking
 
   // HTML: the same text, escaped, line breaks kept and links made clickable.
   const link = (url: string) => {
-    const href = input.settings.track_clicks && tracking.clickUrl ? tracking.clickUrl(url) : url
+    const href = input.settings.track_clicks && tracked.clickUrl ? tracked.clickUrl(url) : url
     return `<a href="${escapeHtml(href)}">${escapeHtml(url)}</a>`
   }
   const lines = parts.map((part) => {
@@ -122,10 +137,10 @@ export function renderStep(
     }
     return out + escapeHtml(part.slice(last))
   })
-  const unsubscribeLink = (words: string) => `<a href="${escapeHtml(input.unsubscribeUrl)}">${escapeHtml(words)}</a>`
-  let bodyHtml = lines.reduce((out, line, i) => out + unsubscribeLink(unsubscribeWords(parts[i - 1])) + line).replace(/\r?\n/g, '<br>\n')
-  if (input.settings.track_opens && tracking.openUrl) {
-    bodyHtml += `<img src="${escapeHtml(tracking.openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
+  const optOutHtml = (said: string) => (byReply ? escapeHtml(said) : `<a href="${escapeHtml(url)}">${escapeHtml(said)}</a>`)
+  let bodyHtml = lines.reduce((out, line, i) => out + optOutHtml(words(parts[i - 1])) + line).replace(/\r?\n/g, '<br>\n')
+  if (input.settings.track_opens && tracked.openUrl) {
+    bodyHtml += `<img src="${escapeHtml(tracked.openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0">`
   }
   return { subject, text, html: htmlDocument(bodyHtml) }
 }

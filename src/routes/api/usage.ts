@@ -37,7 +37,13 @@ export const Route = createFileRoute('/api/usage')({
         const storage = db.storageStats()
         const { dailyLimits } = await import('../../server/sendingLimits')
         const { domainReputations } = await import('../../server/sendingReputation')
-        const sending = { limits: dailyLimits(), domains: domainReputations().map(({ domain, status, score, stats, reasons }) => ({ domain, status, score, stats, reasons: reasons.map((r) => r.text) })) }
+        const { mailboxSummaries } = await import('../../server/mailboxes/send')
+        // The limits and domains are the mail server's sending; what went through senders' own mailboxes is apart (emailsSent counts both).
+        const sending = {
+          limits: dailyLimits(),
+          domains: domainReputations().map(({ domain, status, score, stats, reasons }) => ({ domain, status, score, stats, reasons: reasons.map((r) => r.text) })),
+          mailboxes: mailboxSummaries(),
+        }
         const params = new URL(request.url).searchParams
         const from = params.get('from')
         const to = params.get('to')

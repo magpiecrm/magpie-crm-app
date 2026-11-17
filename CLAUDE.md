@@ -162,6 +162,27 @@ key), with the app's actions as tools.
     and looks up the text of replies found before it did, a few per read.
     Answers go through `sendMail` from the sequence's sender, threaded under
     their latest message, with a copy put in the inbox's Sent folder.
+  - `mailboxes/send.ts` — sequence emails (and answers to their replies)
+    through the sender's own mailbox, over its SMTP server, rather than the
+    workspace's provider: cold email from a person's own Gmail or Zoho
+    reaches the inbox where the shared mail server's goes to spam. Connecting
+    an inbox checks it can send (one email to itself, found by Message-ID:
+    `checkSending`), and from then on it's the default way for that sender's
+    sequences (`sequenceRoute`), with nothing to switch on; the sender can
+    choose the mail server instead. Never campaigns or welcome emails. It goes
+    through `sendMail` with `via`, so the plan's allowance and usage still
+    count it, but not the sending domain, `sendingLimits.ts` or
+    `sendingReputation.ts` (rows marked `via: 'mailbox'`): each mailbox has its
+    own daily cap and gap between emails (`mailboxRoom`), and pauses itself
+    when its server refuses the account or too many bounce (`bounceGuard`).
+    Those emails carry no tracking and no link to this copy: `{{ unsubscribe }}`
+    reads 'just reply "stop"', List-Unsubscribe is a mailto: the inbox reader
+    acts on (`isUnsubscribeMail`). A mailbox that checked out and is refused
+    since pauses its sequences (`auto_paused: 'mailbox'`); they never move to
+    the mail server unasked. Logins are always forced (`forceAuth`), only to
+    ports 587/465 on public addresses. Inboxes connected before this are
+    checked once by the scheduler (`checkEarlierInboxes`). Microsoft 365
+    isn't supported (password logins).
   - `functions/` — `createServerFn` endpoints split by domain (`prospects`,
     `contacts`, `lists`, `campaigns`, `copilot`, and others). They are
     re-exported from `functions/index.ts`. Add new endpoints to the matching

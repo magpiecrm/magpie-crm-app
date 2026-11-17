@@ -1,19 +1,29 @@
 // Connected inboxes: each sender can connect theirs over IMAP so replies to
 // sequence emails stop the sequence (and bounces and "stop" replies count),
 // and the conversation that follows is kept for the inbox (Sell → Inbox, and
-// the sequence's Replies tab).
+// the sequence's Replies tab). Connecting one also checks it can send
+// (send.ts): once it can, the sender's sequence emails go out through it.
 // The email scheduler polls them every few minutes (pollMailboxes). The
 // password is stored encrypted (CREDENTIALS_SECRET) and never shown again.
 
 import { randomUUID } from 'node:crypto'
 import { resolveMx } from 'node:dns/promises'
-import { db, type DbSchema, type MailboxRecord } from '../db'
+import MailComposer from 'nodemailer/lib/mail-composer'
+import { db, type DbSchema, type MailboxRecord, type MailboxSending } from '../db'
 import { decryptToken, encryptToken } from '../crypto'
 import { env } from '../env'
 import { notify } from '../notify'
 import { REPLY_TEXT_MAX, type Enrollment, type MailboxView, type ThreadMessage } from '../../features/sequences/types'
 import { describeError, imapConnect, isAuthFailure, isZohoHost, zohoHosts, type Connect, type InboundMessage, type MailboxLogin, type MailClient } from './imap'
-import { buildIndex, bareId, classifyInbound, isStopRequest, leadingText, matchReply, parseBounce } from './classify'
+import { buildIndex, bareId, classifyInbound, isStopRequest, isUnsubscribeMail, leadingText, matchReply, parseBounce } from './classify'
+import { afterCheck, checkSending, dropTransport, MAX_DAILY_CAP, sendingView, smtpServerFor, type SendingCheck, type SmtpLogin } from './send'
+
+/** Checks a mailbox can send (send.ts checkSending); tests pass their own. */
+export type CheckSending = (sender: { name: string; email: string }, smtp: SmtpLogin, imap: MailboxLogin) => Promise<SendingCheck>
+const realCheck =
+  (connect: Connect): CheckSending =>
+  (sender, smtp, imap) =>
+    checkSending(sender, smtp, imap, { connect })
 
 /** How far back the first read of an inbox looks, and the most messages read in one go. */
 const FIRST_LOOK_MS = 7 * 86_400_000
@@ -35,8 +45,9 @@ const now = () => new Date().toISOString()
 
 function view(data: DbSchema, m: MailboxRecord): MailboxView {
   const sender = data.senders.find((s) => s.id === m.sender_id)
-  const { secret: _secret, uid_validity: _v, last_uid: _u, created_at: _c, updated_at: _up, error_notified: _n, ...rest } = m
-  return { ...rest, sender: sender ? (sender.name ? `${sender.name} <${sender.email}>` : sender.email) : `Sender ${m.sender_id}` }
+  // Never the passwords, the inbox's or its sending login's.
+  const { secret: _secret, sending: _sending, uid_validity: _v, last_uid: _u, created_at: _c, updated_at: _up, error_notified: _n, ...rest } = m
+  return { ...rest, sender: sender ? (sender.name ? `${sender.name} <${sender.email}>` : sender.email) : `Sender ${m.sender_id}`, sending: sendingView(m, data) }
 }
 
 function loginOf(m: MailboxRecord): MailboxLogin | null {
@@ -86,11 +97,13 @@ export const mailboxes = {
    * server or address, say).
    */
   save: async (
-    input: { senderId: number; host: string; port: number; secure: boolean; user: string; password?: string },
+    input: { senderId: number; host: string; port: number; secure: boolean; user: string; password?: string; smtp?: SmtpInput },
     connect: Connect = imapConnect,
     mailHosts: (domain: string) => Promise<string[]> = mailHostsOf,
+    check: CheckSending = realCheck(connect),
   ): Promise<MailboxView> => {
-    if (!db.data.senders.some((s) => s.id === input.senderId)) throw new Error('Sender not found')
+    const sender = db.data.senders.find((s) => s.id === input.senderId)
+    if (!sender) throw new Error('Sender not found')
     const existing = db.data.mailboxes?.find((m) => m.sender_id === input.senderId)
     const password = input.password || (existing ? loginOf(existing)?.password : undefined)
     if (!password) throw new Error('Enter the password (for Gmail, an app password).')
@@ -115,6 +128,9 @@ export const mailboxes = {
       return last!
     })()
     if (!tested.ok) throw new Error(tested.error)
+    // The same inbox carries on (its sending too, unless that's changed); a different one starts afresh.
+    const same = !!existing && existing.host === login.host && existing.user === login.user
+    const sending = await sendingFor(input.smtp, login, sender, same ? existing!.sending : undefined, check)
     const saved = db.mutate((data) => {
       const at = now()
       const record: MailboxRecord = {
@@ -134,25 +150,137 @@ export const mailboxes = {
         uid_validity: existing && existing.host === login.host && existing.user === login.user ? existing.uid_validity : null,
         last_uid: existing && existing.host === login.host && existing.user === login.user ? existing.last_uid : null,
         replies_found: existing?.replies_found ?? 0,
+        sending,
         created_at: existing?.created_at ?? at,
         updated_at: at,
       }
       data.mailboxes = [...(data.mailboxes ?? []).filter((m) => m.sender_id !== input.senderId), record]
       return view(data, record)
     })
+    if (existing) dropTransport(existing.id)
     // A warming sender's pool gets the new login too.
     if (input.password) void warmupFollows(input.senderId, true)
     return saved
   },
 
+  /**
+   * A sender's choices about sending through their inbox: the mail server
+   * for their sequences instead, and the most a day through it.
+   */
+  setSending: (id: string, input: { useServer?: boolean; dailyCap?: number }): MailboxView => {
+    const m = db.data.mailboxes?.find((x) => x.id === id)
+    if (!m?.sending) throw new Error('That inbox has no sending to change. Check and connect it again.')
+    return db.mutate((data) => {
+      const s = m.sending!
+      if (input.useServer !== undefined) s.use_server = input.useServer || undefined
+      if (input.dailyCap !== undefined) s.daily_cap = Math.max(1, Math.min(MAX_DAILY_CAP, Math.round(input.dailyCap)))
+      m.updated_at = now()
+      return view(data, m)
+    })
+  },
+
+  /** Checks again that an inbox can send (after fixing it, or a pause), with the login it has. */
+  recheckSending: async (id: string, check: CheckSending = realCheck(imapConnect)): Promise<MailboxView> => {
+    const m = db.data.mailboxes?.find((x) => x.id === id)
+    const sender = m && db.data.senders.find((s) => s.id === m.sender_id)
+    const login = m && loginOf(m)
+    if (!m || !sender || !login) throw new Error("That inbox's login can't be read. Check and connect it again.")
+    const sending = await sendingFor(undefined, login, sender, m.sending, check)
+    dropTransport(m.id)
+    return db.mutate((data) => {
+      m.sending = sending
+      m.updated_at = now()
+      return view(data, m)
+    })
+  },
+
   remove: (id: string) => {
     const senderId = db.data.mailboxes?.find((m) => m.id === id)?.sender_id
+    dropTransport(id)
     db.mutate((data) => {
       data.mailboxes = (data.mailboxes ?? []).filter((m) => m.id !== id)
     })
     // Without its inbox a sender can't warm: its login comes out of the pool.
     if (senderId !== undefined) void warmupFollows(senderId, false)
   },
+}
+
+/** A sending server and login typed in (Sending settings), where the one that goes with the inbox won't do. */
+export interface SmtpInput {
+  host?: string
+  port?: number
+  user?: string
+  password?: string
+}
+
+/**
+ * An inbox's sending, checked: through the server typed in, else the one it
+ * had, else the one that goes with its IMAP server (smtp.gmail.com for
+ * imap.gmail.com), with the inbox's own login unless another was given.
+ */
+async function sendingFor(
+  input: SmtpInput | undefined,
+  imap: MailboxLogin,
+  sender: { name: string; email: string },
+  previous: MailboxSending | undefined,
+  check: CheckSending,
+): Promise<MailboxSending> {
+  const typed = input?.host?.trim().toLowerCase()
+  const server = typed ? { host: typed, port: input?.port ?? 587 } : previous?.host ? { host: previous.host, port: previous.port } : smtpServerFor(imap.host)
+  // Its own login: one typed in that isn't the inbox's, or the one it had.
+  const typedUser = input?.user?.trim()
+  const user = typedUser !== undefined ? (typedUser && typedUser.toLowerCase() !== imap.user.toLowerCase() ? typedUser : undefined) : previous?.user
+  const ownSecret = user ? (input?.password ? encryptToken({ password: input.password }, env.credentialsSecret()) : user === previous?.user ? previous?.secret : undefined) : undefined
+  const ownPassword = ownSecret ? decryptToken(ownSecret, env.credentialsSecret())?.password : undefined
+  const result: SendingCheck = !server
+    ? { ok: false, error: `Enter the sending (SMTP) server for ${imap.user} under Sending settings to send sequence emails through it.`, authFailed: false }
+    : user && !ownPassword
+      ? { ok: false, error: `Enter the password for ${user}.`, authFailed: false }
+      : await check(sender, { host: server.host, port: server.port, user: user ?? imap.user, password: ownPassword ? String(ownPassword) : imap.password }, imap)
+  return afterCheck(previous, { host: server?.host ?? '', port: server?.port ?? 587, user, secret: ownSecret }, result, sender.email, new Date())
+}
+
+/**
+ * Inboxes connected before connecting one also checked its sending: each is
+ * checked once (one email to itself), and when it passes, its sender's
+ * sequences go through it from then on, which they're told. Run by the
+ * email scheduler, one inbox at a time.
+ */
+export async function checkEarlierInboxes(check: CheckSending = realCheck(imapConnect)): Promise<void> {
+  const m = (db.data.mailboxes ?? []).find((x) => !x.sending && x.status === 'ok')
+  const sender = m && db.data.senders.find((s) => s.id === m.sender_id)
+  const login = m && loginOf(m)
+  if (!m || !sender || !login) return
+  const sending = await sendingFor(undefined, login, sender, undefined, check)
+  db.mutate(() => {
+    m.sending = sending
+    m.updated_at = now()
+  })
+  if (sending.verified_at) {
+    notify('sequence_paused', `Sequence emails from ${sender.email} now go out through its own mailbox, which reaches inboxes better. Change it in Settings → Mailboxes.`, { url: '/settings?tab=senders' })
+  }
+}
+
+/** Puts a copy of an email sent from the app in the sender's inbox's Sent folder; null when no inbox is connected, false when it didn't work. */
+export async function copyToSent(
+  senderId: number,
+  mail: { from: string; to: string; subject: string; text: string; html: string; messageId: string; inReplyTo?: string; references?: string[]; date: Date },
+  connect: Connect = imapConnect,
+): Promise<boolean | null> {
+  const box = inboxOf(senderId)
+  if (!box?.login || box.record.status === 'auth_failed') return null
+  try {
+    const raw = await new MailComposer(mail).compile().build()
+    const client = await connect(box.login)
+    try {
+      return await client.appendSent(raw)
+    } finally {
+      await client.close().catch(() => {})
+    }
+  } catch (err) {
+    console.warn(`[Mailboxes] couldn't put a copy in the Sent folder at ${box.record.host}: ${(err as Error)?.message ?? err}`)
+    return false
+  }
 }
 
 /** Tells inbox warmup a sender's inbox changed (inboxWarmup.ts); a failure is logged, not the user's to see here. */
@@ -190,8 +318,21 @@ function repliesToLookUp(data: DbSchema, senderId: number): Enrollment[] {
     .slice(0, LOOKUPS)
 }
 
-/** Whether a message is already in someone's conversation (an answer from the app, found again in Sent, say). */
-const kept = (e: Enrollment, messageId: string | null) => !!messageId && (e.messages ?? []).some((m) => m.message_id && bareId(m.message_id) === bareId(messageId))
+/**
+ * Whether a message is already in someone's conversation: an answer from the
+ * app, or a sequence email, found again in Sent (or Gmail's All Mail, where
+ * what's sent through the mailbox itself lands).
+ */
+const kept = (e: Enrollment, messageId: string | null) =>
+  !!messageId && [...e.sends.map((s) => s.message_id), ...(e.messages ?? []).flatMap((m) => (m.message_id ? [m.message_id] : []))].some((id) => bareId(id) === bareId(messageId))
+
+/** Everyone a sender's sequences have emailed, with the last email's campaign: who a mail app's Unsubscribe could come from. */
+function emailedBy(data: DbSchema, senderId: number): Map<string, number | undefined> {
+  const sequences = new Set((data.sequences ?? []).filter((s) => s.sender_id === senderId).map((s) => s.id))
+  const out = new Map<string, number | undefined>()
+  for (const e of data.sequence_enrollments ?? []) if (sequences.has(e.sequence_id) && e.sends.length) out.set(e.contact_email, e.sends.at(-1)?.campaign_id)
+  return out
+}
 
 /** A message read from the inbox, as kept in the conversation. */
 async function toThreadMessage(client: MailClient, msg: InboundMessage, direction: 'in' | 'out', at: Date): Promise<ThreadMessage> {
@@ -258,8 +399,15 @@ async function pollOne(m: MailboxRecord, at: Date, connect: Connect): Promise<nu
       return message
     }
     const own = [sender.email, m.user]
-    const { replyReceived, laterReply } = await import('../sequences')
+    const { replyReceived, laterReply, unsubscribedByMail } = await import('../sequences')
+    let emailed: Map<string, number | undefined> | null = null
     for (const msg of messages) {
+      // A mail app's own Unsubscribe button, on an email sent through this mailbox (its opt-out is a mailto: here): not a reply.
+      if (isUnsubscribeMail(msg) && msg.from && !own.some((o) => o.toLowerCase() === msg.from)) {
+        emailed ??= emailedBy(db.data, m.sender_id)
+        if (emailed.has(msg.from)) unsubscribedByMail(msg.from, emailed.get(msg.from))
+        continue
+      }
       const kind = classifyInbound(msg, own)
       if (kind === 'warmup' || kind === 'auto_reply') continue
       if (kind === 'own') {

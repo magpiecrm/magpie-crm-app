@@ -13,6 +13,12 @@
 //
 // A personalised first email (personalise.ts) waits until the AI has written
 // it, then goes as written, or as the step's own email when it couldn't be.
+//
+// Where the sender's own mailbox has checked out, the emails go through it
+// (mailboxes/send.ts sequenceRoute): under its own daily cap and a few
+// minutes apart rather than the workspace's sending limits, with no tracking
+// and "reply stop" for the unsubscribe line, so nothing in them links to this
+// copy's address. A mailbox that's then refused pauses its sequences.
 
 import { mergeTagProblem } from './index'
 import { randomUUID } from 'node:crypto'
@@ -31,6 +37,8 @@ import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { dailyRoom } from '../sendingLimits'
+import { copyToSent } from '../mailboxes'
+import { bounceGuard, mailboxFailed, mailboxRoom, noteMailboxSent, sequenceRoute, unsubscribeMailto, type SequenceRoute } from '../mailboxes/send'
 import { composeText, renderStep, signedSettings, textHash } from './render'
 import { aiCleared } from './personalise'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
@@ -112,7 +120,7 @@ function cannotEmail(contact: Contact | undefined): { status: Enrollment['status
  * batch goes; then they wait until the bounces are in, and carry on only if
  * few bounced. Advances the sequence's gate as it goes.
  */
-async function guessAllowed(s: Sequence, now: Date): Promise<boolean> {
+async function guessAllowed(s: Sequence, now: Date, route: SequenceRoute): Promise<boolean> {
   const rules = prospectingRules()
   const gate = s.guess_gate
   if (gate?.status === 'released') return true
@@ -129,6 +137,8 @@ async function guessAllowed(s: Sequence, now: Date): Promise<boolean> {
   if (Date.parse(gate.release_at) > now.getTime()) return false
   const { bouncesCaughtUp } = await import('../emailService')
   if (!(await bouncesCaughtUp(gate.release_at, now))) return false
+  // Through the sender's mailbox, the bounces come back to its inbox: it has to have been read since.
+  if (route.via === 'mailbox' && !(route.box.last_polled_at && route.box.last_polled_at >= gate.release_at)) return false
   const firstStep = s.steps[0]?.campaign_id
   const bounces = firstStep ? db.unconfirmedHardBounces(firstStep) : 0
   const passed = firstBatchPassed(gate, bounces)
@@ -148,6 +158,7 @@ function maybeResume(s: Sequence) {
   if (s.status !== 'paused' || !s.auto_paused) return
   const sender = db.data.senders.find((x) => x.id === s.sender_id)
   const box = db.data.mailboxes?.find((m) => m.sender_id === s.sender_id)
+  const route = sender ? sequenceRoute(sender) : null
   const cleared =
     s.auto_paused === 'allowance'
       ? remaining('emailsSent') > 0
@@ -155,7 +166,10 @@ function maybeResume(s: Sequence) {
         ? !box || box.status === 'ok'
         : s.auto_paused === 'ai'
           ? aiCleared(s)
-          : !!sender && (!env.sendingManaged() || canSendFrom(sender.email))
+          : s.auto_paused === 'mailbox'
+            ? !!route && route.via !== 'stopped'
+            : // The sending domain: not needed through the sender's own mailbox.
+              !!route && (route.via === 'mailbox' || !env.sendingManaged() || canSendFrom(sender!.email))
   if (!cleared) return
   db.mutate(() => {
     s.status = 'active'
@@ -190,6 +204,17 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     .filter((e) => e.status === 'active' && !e.claim && e.next_send_at && Date.parse(e.next_send_at) <= now.getTime())
     // Follow-ups first, then whoever's been waiting longest.
     .sort((a, b) => Number(b.next_step > 0) - Number(a.next_step > 0) || a.next_send_at!.localeCompare(b.next_send_at!))
+
+  // Through the sender's own mailbox once it has checked out; one that's refused since holds them.
+  let route = sequenceRoute(sender)
+  // Too many of its emails bounced: the mailbox stops, and so do they.
+  if (route.via === 'mailbox' && due.length && bounceGuard(route.box, now)) route = sequenceRoute(sender)
+  if (route.via === 'stopped') {
+    if (due.length) pause(s, route.reason, 'mailbox')
+    return false
+  }
+  // Its own cap, and a few minutes between emails, across all the sender's sequences.
+  if (route.via === 'mailbox' && !mailboxRoom(route.box, now)) return false
 
   // Replies are read from the sender's inbox, when it's connected.
   const box = db.data.mailboxes?.find((m) => m.sender_id === s.sender_id)
@@ -232,13 +257,14 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
         continue
       }
     }
-    if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now))) continue
+    if (e.next_step === 0 && isUnconfirmedGuess(contact as any) && !(await guessAllowed(s, now, route))) continue
     // Today's sending limit for this kind of contact is used up (sendingLimits.ts): they wait, others may still go.
-    if (!(room ??= dailyRoom(now))(e.contact_email)) continue
+    // The workspace's limits are for its mail server; a mailbox has its own (mailboxRoom, above).
+    if (route.via === 'server' && !(room ??= dailyRoom(now))(e.contact_email)) continue
 
     try {
       requireAllowance('emailsSent', 1, 'Sending this sequence')
-      requireSendingDomain(sender.email)
+      if (route.via === 'server') requireSendingDomain(sender.email)
     } catch (err) {
       if (err instanceof AllowanceError) pause(s, 'Your plan has no emails left this month.', 'allowance')
       else pause(s, (err as Error).message, 'sending_domain')
@@ -248,9 +274,10 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     // Claim it, so a restart can never send it twice.
     const domain = sender.email.split('@')[1] ?? 'localhost'
     const messageId = `<${randomUUID()}@${domain}>`
+    const mailbox = route.via === 'mailbox' ? route.box : null
     const cid = db.mutate((data) => {
       const id = stepCampaign(data, s, e.next_step)
-      e.claim = { step_id: step.id, message_id: messageId, at: now.toISOString() }
+      e.claim = { step_id: step.id, message_id: messageId, at: now.toISOString(), ...(mailbox ? { via: 'mailbox' as const } : {}) }
       return id
     })
 
@@ -259,26 +286,20 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
     const settings = signedSettings(s.settings, !!own, sender.name)
     const unsubscribeUrl = `${appUrl}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`
     const rendered = renderStep(
-      { subject: thread.subject, body: own?.body ?? step.body, contact: contact!, settings, unsubscribeUrl },
+      { subject: thread.subject, body: own?.body ?? step.body, contact: contact!, settings, optOut: mailbox ? 'reply' : { url: unsubscribeUrl } },
       {
         openUrl: `${appUrl}/api/track/open?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid }))}`,
         clickUrl: (url) => `${appUrl}/api/track/click?t=${encodeURIComponent(encryptToken({ email: e.contact_email, campaignId: cid, url }))}`,
       },
     )
+    const mail = { from, to: e.contact_email, subject: rendered.subject, html: rendered.html, text: rendered.text, messageId, inReplyTo: thread.inReplyTo, references: thread.references }
 
     try {
-      await sendMail({
-        from,
-        to: e.contact_email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        campaignId: cid,
-        unsubscribeUrl,
-        messageId,
-        inReplyTo: thread.inReplyTo,
-        references: thread.references,
-      })
+      await sendMail(
+        mailbox
+          ? { ...mail, via: { mailboxId: mailbox.id }, unsubscribeMailto: unsubscribeMailto(sender.email) }
+          : { ...mail, campaignId: cid, unsubscribeUrl },
+      )
     } catch (err) {
       if (err instanceof AllowanceError) {
         db.mutate(() => (e.claim = null))
@@ -286,6 +307,14 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
         return false
       }
       console.error(`[Sequences] Failed to send "${s.name}" email ${e.next_step + 1} to ${e.contact_email}:`, err)
+      // The mailbox refusing the account (its login, a sending limit) or asking to wait isn't this email's fault: it isn't an attempt.
+      const kind = mailbox ? mailboxFailed(mailbox, err, now) : null
+      if (kind === 'auth' || kind === 'account' || kind === 'later') {
+        db.mutate(() => (e.claim = null))
+        const stopped = sequenceRoute(sender)
+        if (stopped.via === 'stopped') pause(s, stopped.reason, 'mailbox')
+        return false
+      }
       db.mutate(() => {
         e.claim = null
         e.attempts += 1
@@ -293,7 +322,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       })
       if (isUnknownRecipient(err)) {
         // Recorded against the step like a campaign's; stopEmail ends the enrollment.
-        db.mutate((data) => data.campaign_recipients.push({ campaign_id: cid, contact_email: e.contact_email, status: 'bounced_soft', opened_at: null, clicked_at: null, sent_at: now.toISOString() }))
+        db.mutate((data) => data.campaign_recipients.push({ campaign_id: cid, contact_email: e.contact_email, status: 'bounced_soft', opened_at: null, clicked_at: null, sent_at: now.toISOString(), ...(mailbox ? { via: 'mailbox' as const } : {}) }))
         db.updateRecipientBounceStatus(e.contact_email, 'hard', String(cid))
       } else if (e.attempts >= MAX_ATTEMPTS) {
         end(e, 'stopped', `Couldn't send: ${(err as Error)?.message ?? err}`)
@@ -301,7 +330,12 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       return false
     }
 
-    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString(), textHash: textHash(composeText(own?.body ?? step.body, settings)) })
+    commit(e, s, { cid, messageId, subject: rendered.subject, at: now.toISOString(), textHash: textHash(composeText(own?.body ?? step.body, settings)), ...(mailbox ? { via: 'mailbox' as const } : {}) })
+    if (mailbox) {
+      noteMailboxSent(mailbox, now, random)
+      // A mail service that doesn't keep what's sent through it (Gmail does) gets a copy in Sent.
+      if (mailbox.sending?.sent_autosave === false) void copyToSent(sender.id, { ...mail, date: now })
+    }
     const left = Math.max(1, s.settings.daily_cap - today - 1)
     db.mutate(() => (s.next_slot_at = new Date(now.getTime() + nextGapMs(minutesLeft(now, s.settings), left, random)).toISOString()))
     return true
@@ -320,7 +354,7 @@ function skip(e: Enrollment, s: Sequence, now: Date) {
 }
 
 /** Records a send and moves the enrollment on to its next email (unless a reply stopped it meanwhile). */
-function commit(e: Enrollment, s: Sequence, sent: { cid: number; messageId: string; subject: string; at: string; uncertain?: true; textHash?: string }) {
+function commit(e: Enrollment, s: Sequence, sent: { cid: number; messageId: string; subject: string; at: string; uncertain?: true; textHash?: string; via?: 'mailbox' }) {
   db.mutate((data) => {
     const stepId = e.claim?.step_id ?? s.steps[e.next_step]?.id ?? ''
     e.sends.push({
@@ -331,11 +365,12 @@ function commit(e: Enrollment, s: Sequence, sent: { cid: number; messageId: stri
       at: sent.at,
       ...(sent.uncertain ? { uncertain: true as const } : {}),
       ...(sent.textHash ? { text_hash: sent.textHash } : {}),
+      ...(sent.via ? { via: sent.via } : {}),
     })
     e.claim = null
     e.attempts = 0
     if (!data.campaign_recipients.some((r) => r.campaign_id === sent.cid && r.contact_email === e.contact_email)) {
-      data.campaign_recipients.push({ campaign_id: sent.cid, contact_email: e.contact_email, status: 'sent', opened_at: null, clicked_at: null, sent_at: sent.at })
+      data.campaign_recipients.push({ campaign_id: sent.cid, contact_email: e.contact_email, status: 'sent', opened_at: null, clicked_at: null, sent_at: sent.at, ...(sent.via ? { via: sent.via } : {}) })
     }
     if (e.status !== 'active') return
     const sentIndex = s.steps.findIndex((st) => st.id === stepId)
@@ -387,6 +422,6 @@ export function recoverClaims() {
       continue
     }
     const thread = threadFor(step, e.sends, s.steps)
-    commit(e, s, { cid: step.campaign_id, messageId: e.claim.message_id, subject: thread.subject, at: e.claim.at, uncertain: true })
+    commit(e, s, { cid: step.campaign_id, messageId: e.claim.message_id, subject: thread.subject, at: e.claim.at, uncertain: true, ...(e.claim.via ? { via: e.claim.via } : {}) })
   }
 }

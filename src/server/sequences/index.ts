@@ -537,6 +537,16 @@ export function replyReceived(enrollmentId: string, reply: { at: string; matched
   )
 }
 
+/**
+ * Someone who pressed their mail app's Unsubscribe on a sequence email sent
+ * through the sender's own mailbox (its opt-out is a mailto: there, read
+ * from the inbox): unsubscribed as the link would, without counting as a reply.
+ */
+export function unsubscribedByMail(email: string, lastCampaign: number | undefined) {
+  if (db.data.contacts.find((x) => x.email === email)?.status === 'unsubscribed') return
+  unsubscribeOnRequest(email, lastCampaign)
+}
+
 /** A reply asking not to be emailed again: unsubscribes them, as the link in the email would. */
 function unsubscribeOnRequest(email: string, lastCampaign: number | undefined) {
   db.mutate((data) => {
