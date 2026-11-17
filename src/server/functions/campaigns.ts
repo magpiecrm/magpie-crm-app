@@ -36,8 +36,14 @@ export const getSendersFn = createServerFn({ method: 'GET' })
     return emailService.getSenders()
   })
 
+/** A sender's name and address: any address, now its domain needn't be set up first (emailService.createSender). */
+const senderInput = z.object({
+  name: z.string().trim().max(200),
+  email: z.string().trim().toLowerCase().max(320).email("That isn't an email address."),
+})
+
 export const createSenderFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { name: string; email: string }) => d)
+  .inputValidator((d: { name: string; email: string }) => senderInput.parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const emailService = await import('../emailService')
@@ -46,7 +52,7 @@ export const createSenderFn = createServerFn({ method: 'POST' })
   })
 
 export const updateSenderFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { id: number; name: string; email: string }) => d)
+  .inputValidator((d: { id: number; name: string; email: string }) => senderInput.extend({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const emailService = await import('../emailService')

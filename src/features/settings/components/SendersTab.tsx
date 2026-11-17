@@ -291,7 +291,14 @@ export function SendersTab() {
           {senders.length > 0 && <InboxFooter />}
         </SettingsBlock>
 
-        <SettingsBlock title="Add a sender" description="The name and address people see your campaigns come from.">
+        <SettingsBlock
+          title="Add a sender"
+          description={
+            managed
+              ? "The name and address people see your emails come from. Campaigns need its domain set up under Sending; its sequences can go through its own mailbox once its inbox is connected here."
+              : 'The name and address people see your emails come from.'
+          }
+        >
           <form onSubmit={handleAddSender} className="flex flex-col gap-3">
             <FieldGrid>
               <Field label="Display name">

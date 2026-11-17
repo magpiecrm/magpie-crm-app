@@ -267,7 +267,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       if (route.via === 'server') requireSendingDomain(sender.email)
     } catch (err) {
       if (err instanceof AllowanceError) pause(s, 'Your plan has no emails left this month.', 'allowance')
-      else pause(s, (err as Error).message, 'sending_domain')
+      else pause(s, `${(err as Error).message} Or connect ${sender.email}'s inbox in Settings → Mailboxes, to send these through its own mailbox.`, 'sending_domain')
       return false
     }
 

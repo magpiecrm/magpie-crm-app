@@ -25,6 +25,8 @@ vi.mock('./nodemailer', () => ({
 }))
 const notices: string[] = []
 vi.mock('./notify', () => ({ notify: (_type: string, message: string) => notices.push(`${_type}: ${message}`) }))
+// Sending domains are the host's to check; not what's tested here.
+vi.mock('./sendingDomains', () => ({ canSendFrom: () => true, requireSendingDomain: () => {} }))
 
 const { db } = await import('./db')
 const emailService = await import('./emailService')

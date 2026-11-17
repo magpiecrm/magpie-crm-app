@@ -565,8 +565,8 @@ describe("sending through the sender's own mailbox", () => {
     process.env.SENDING_MANAGED = 'on'
     try {
       contact('ava@larkspur.test')
-      const id = sequenceFor(['ava@larkspur.test'])
       canSend()
+      const id = sequenceFor(['ava@larkspur.test'])
       await runSequences(new Date(), () => 0)
       expect(last()).toMatchObject({ via: { mailboxId: 'mb1' } })
       // Through the mail server, the same sender would need its domain set up first.
@@ -576,6 +576,19 @@ describe("sending through the sender's own mailbox", () => {
       await runSequences(new Date(Date.now() + 21 * 60_000), () => 0)
       expect(sent).toHaveLength(1)
       expect(sequences.get(id).sequence).toMatchObject({ status: 'paused', auto_paused: 'sending_domain' })
+    } finally {
+      delete process.env.SENDING_MANAGED
+    }
+  })
+
+  it("won't start through the mail server from a sender whose domain isn't set up, but will through its mailbox", () => {
+    process.env.SENDING_MANAGED = 'on'
+    try {
+      contact('ava@larkspur.test')
+      expect(() => sequenceFor(['ava@larkspur.test'])).toThrow(/acme.test isn't set up to send from yet\. Connect jo@acme.test's inbox in Settings → Mailboxes/)
+      canSend()
+      const id = sequenceFor(['ava@larkspur.test'])
+      expect(sequences.get(id)).toMatchObject({ sequence: { status: 'active' }, notReady: null })
     } finally {
       delete process.env.SENDING_MANAGED
     }

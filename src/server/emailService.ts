@@ -713,6 +713,16 @@ export async function sendCampaign(id: number, opts: { resume?: boolean; release
     }
   }
 
+  // A sender whose domain isn't set up for sending (one that sends its sequences through its
+  // own mailbox): the campaign waits for the domain, rather than failing at every recipient.
+  if (senderEmail) {
+    try {
+      requireSendingDomain(senderEmail)
+    } catch (err) {
+      throw new Error(`Campaign not sent: ${(err as Error).message}`)
+    }
+  }
+
   // Everything above passed: claim it. From here it's 'sending', which a
   // scheduled send and a manual one can't both do (db.claimCampaignForSending).
   if (!db.claimCampaignForSending(id, { resume: opts.resume, release: releasing })) throw new Error('This campaign is already being sent.')
@@ -1129,8 +1139,13 @@ export async function getSenders() {
   return { senders: formatted }
 }
 
+/**
+ * A sender needn't be on a domain set up for sending: its sequences can go
+ * through its own mailbox once that checks out (mailboxes/send.ts), and a
+ * campaign from it waits for the domain (sendCampaign). Nothing goes out as
+ * an address that hasn't proved it's theirs either way.
+ */
 export async function createSender(name: string, email: string) {
-  requireSendingDomain(email)
   const existing = db.query('SELECT id FROM senders WHERE LOWER(email) = ?').get(email.toLowerCase()) as any
   if (existing) {
     throw new Error('A sender with this email already exists')
@@ -1141,7 +1156,6 @@ export async function createSender(name: string, email: string) {
 }
 
 export async function updateSender(id: number, name: string, email: string) {
-  requireSendingDomain(email)
   const existing = db.data.senders.find(s => s.id === id)
   if (!existing) {
     throw new Error('Sender not found')

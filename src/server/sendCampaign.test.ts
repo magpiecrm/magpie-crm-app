@@ -90,6 +90,7 @@ vi.mock('./db', () => ({
 vi.mock('./nodemailer', () => ({ sendMail: vi.fn().mockResolvedValue({ messageId: 'x' }) }))
 vi.mock('./notify', () => ({ notify: vi.fn() }))
 vi.mock('./crypto', () => ({ encryptToken: () => 'tok' }))
+vi.mock('./sendingDomains', () => ({ canSendFrom: () => true, requireSendingDomain: vi.fn() }))
 
 const emailService = await import('./emailService')
 const { hashesFor } = await import('./prospecting/suppression')
@@ -211,6 +212,19 @@ describe('sendCampaign happy path still works', () => {
     expect(state.runs.some((r) => /UPDATE campaigns SET status = 'sent'/.test(r.sql))).toBe(true)
     // Contact rows are still untouched on the success path.
     expect(state.contacts.map((c) => c.status)).toEqual(['subscribed', 'unsubscribed'])
+  })
+
+  it("waits, before sending to anyone, for a sender whose domain isn't set up (one that sends sequences through its own mailbox)", async () => {
+    const { sendMail } = await import('./nodemailer')
+    const { requireSendingDomain } = await import('./sendingDomains')
+    vi.mocked(sendMail).mockClear()
+    listOf({ email: 'yes@b.com', status: 'subscribed' })
+    vi.mocked(requireSendingDomain).mockImplementationOnce(() => {
+      throw new Error("gmail.com isn't a verified sending domain yet. Add it in Settings → Sending and put its DNS records in place.")
+    })
+    await expect(emailService.sendCampaign(1)).rejects.toThrow(/^Campaign not sent: gmail.com isn't a verified sending domain yet/)
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(state.runs.some((r) => /status = 'sending'|status = 'sent'/.test(r.sql))).toBe(false)
   })
 
   it('sends a plain-text part with the HTML, whichever provider sends it', async () => {

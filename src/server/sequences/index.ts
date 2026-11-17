@@ -28,6 +28,9 @@ import { optedOutAt, signedUpSince } from '../prospecting/suppression'
 import { dueAfter, firstSendable, isTimeZone, remapStep } from './schedule'
 import { logActivity } from '../sales/deals'
 import { notify } from '../notify'
+import { env } from '../env'
+import { canSendFrom } from '../sendingDomains'
+import { sequenceRoute } from '../mailboxes/send'
 
 const now = () => new Date().toISOString()
 const normEmail = (e: string) => e.toLowerCase().trim()
@@ -115,7 +118,13 @@ export function mergeTagProblem(data: DbSchema, s: Sequence): string | null {
 }
 
 export function notReady(data: DbSchema, s: Sequence): string | null {
-  if (!data.senders.some((x) => x.id === s.sender_id)) return 'Choose who it sends from.'
+  const sender = data.senders.find((x) => x.id === s.sender_id)
+  if (!sender) return 'Choose who it sends from.'
+  // Through the host's mail server the sender's domain has to be set up there; through its own mailbox it needn't be.
+  if (env.sendingManaged() && sequenceRoute(sender, data).via === 'server' && !canSendFrom(sender.email)) {
+    const domain = sender.email.split('@')[1] ?? sender.email
+    return `${domain} isn't set up to send from yet. Connect ${sender.email}'s inbox in Settings → Mailboxes to send through its own mailbox, or set ${domain} up in Settings → Sending.`
+  }
   if (!s.steps.length) return 'Add at least one email.'
   if (!s.steps[0].subject?.trim()) return 'The first email needs a subject.'
   // Where the AI writes each person's emails, a follow-up may be left to it entirely.
