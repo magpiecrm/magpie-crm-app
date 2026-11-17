@@ -55,6 +55,15 @@ export function resetSmtpTransport(): void {
   cached = null
 }
 
+/** Copies an SMTP error's code and the server's reply onto the error thrown in its place. */
+export function withSmtpReply<T extends Error>(wrapped: T, err: any): T {
+  const out = wrapped as any
+  out.code = err?.code
+  if (Number.isInteger(err?.responseCode)) out.responseCode = err.responseCode
+  if (typeof err?.response === 'string') out.response = err.response
+  return wrapped
+}
+
 const EVENT_TYPES = new Set(['hard', 'soft', 'complaint'])
 
 /**
@@ -108,10 +117,10 @@ export const smtpProvider: EmailProvider = {
       return { messageId: info.messageId || '' }
     } catch (err: any) {
       // Preserve nodemailer's error `code` so the shared retry loop can still
-      // classify ECONNECTION/ETIMEDOUT/ESOCKET/ECONNRESET as transient.
-      const wrapped = providerError('smtp', msg.to.join(', '), err?.message || String(err))
-      ;(wrapped as any).code = err?.code
-      throw wrapped
+      // classify ECONNECTION/ETIMEDOUT/ESOCKET/ECONNRESET as transient, and the
+      // server's reply (550, "5.1.1 … does not exist") so isUnknownRecipient
+      // can tell a missing address from any other refusal.
+      throw withSmtpReply(providerError('smtp', msg.to.join(', '), err?.message || String(err)), err)
     }
   },
 }
