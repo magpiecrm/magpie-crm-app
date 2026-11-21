@@ -399,8 +399,11 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
             <Field label="Login">
               <input value={user} onChange={(e) => setUser(e.target.value)} className={INPUT_CLASS} autoComplete="off" />
             </Field>
-            <Field label={service === 'gmail' ? 'App password' : service === 'zoho' ? 'Password, or app password with two-factor' : 'Password'}>
-              <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder={box ? 'Leave empty to keep the saved one' : ''} />
+            <Field
+              label={service === 'gmail' ? 'App password' : service === 'zoho' ? 'Password, or app password with two-factor' : 'Password'}
+              hint={box ? 'Left empty, the saved one is kept.' : undefined}
+            >
+              <SecretInput id={`pass-${sender.id}`} value={password} onChange={setPassword} placeholder="" />
             </Field>
           </FieldGrid>
           <div>
@@ -436,8 +439,8 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
                 <Field label="Sending login" hint="Only if it isn't the inbox's.">
                   <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder={user} className={INPUT_CLASS} autoComplete="off" />
                 </Field>
-                <Field label="Sending password">
-                  <SecretInput id={`smtp-pass-${sender.id}`} value={smtpPassword} onChange={setSmtpPassword} placeholder={box?.sending?.has_own_password ? 'Leave empty to keep it' : "Same as the inbox's"} />
+                <Field label="Sending password" hint={box?.sending?.has_own_password ? 'Left empty, the saved one is kept.' : "Left empty, the inbox's."}>
+                  <SecretInput id={`smtp-pass-${sender.id}`} value={smtpPassword} onChange={setSmtpPassword} placeholder="" />
                 </Field>
               </FieldGrid>
             </>
