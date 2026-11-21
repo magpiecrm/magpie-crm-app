@@ -1,31 +1,121 @@
-# MagpieCRM
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+    <img src="public/logo.svg" alt="MagpieCRM" width="72" height="72">
+  </picture>
+</p>
 
-A web app for sourcing B2B prospects, managing contact lists, and building &
-sending email campaigns. Built with [TanStack Start](https://tanstack.com/start)
-(React 19 + TanStack Router/Query), Tailwind CSS v4, and a self-hosted server
-layer:
+<h1 align="center">MagpieCRM</h1>
 
-- Contacts, lists, and campaigns live in the app's own JSON DB
-  (`src/server/db.ts`) and send over plain SMTP (`nodemailer.ts`) — no
-  third-party ESP.
-- **[SocialFetch](https://www.socialfetch.dev/)** — the only source of company and
-  people data for prospect search. Emails are generated from name + company
-  domain and, optionally, verified with a self-hosted email verification
-  server (an open-source SMTP verifier; see [docs/proxies.md](docs/proxies.md)).
+<p align="center">
+  <strong>Find B2B prospects, get their verified work emails, and reach them with campaigns and sequences.</strong><br>
+  One open-source app you can run on your own server.
+</p>
 
-There is also a copilot, an agent running on Claude or OpenAI models with
-your own API key, that can search prospects, create lists/campaigns/personas,
-edit the email builder canvas, and more. The same tools are available to outside
-AI apps (Claude Code and Desktop, ChatGPT/OpenAI, Cursor, …) over MCP.
+<p align="center">
+  <a href="https://github.com/magpiecrm/magpie-crm-app/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/magpiecrm/magpie-crm-app?label=release&color=0d7285"></a>
+  <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-0d7285"></a>
+  <a href="https://github.com/magpiecrm/magpie-crm-app/pkgs/container/magpie-crm-app"><img alt="Docker image on ghcr.io" src="https://img.shields.io/badge/docker-ghcr.io-0d7285?logo=docker&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <a href="#getting-started"><strong>Install</strong></a> ·
+  <a href="https://magpiecrm.com/pricing?utm_source=github&utm_medium=readme"><strong>MagpieCRM Cloud</strong></a> ·
+  <a href="https://magpiecrm.com">Website</a> ·
+  <a href="#configuration">Configuration</a>
+</p>
+
+> [!TIP]
+> **Don't want to self-host? [Try MagpieCRM Cloud →](https://magpiecrm.com/pricing?utm_source=github&utm_medium=readme)**<br>
+> The same app, run for you. Prospect data, email verification, sending and the
+> AI copilot are included, so there's no server, API key or mail setup to look after.
+
+<p align="center">
+  <img src=".github/assets/demo.gif" width="100%" alt="MagpieCRM in use: a search for founders, CEOs and CTOs, one person's email revealed and verified, five people saved to a new list with verified emails, then a campaign to that list opened in the email builder">
+</p>
+
+## What it does
+
+- **Prospect search.** Find people by job title, seniority, industry, company
+  size and country, or everyone with a given title inside one company. Results
+  show who's new in their role, and nothing is stored until you save someone.
+- **Verified emails.** Each person's work email is worked out from their name
+  and company, then checked with their mail server before it's saved.
+  Catch-all domains are flagged rather than guessed at.
+- **Contacts, companies and lists.** Import from CSV, add your own fields, and
+  build lists from filters over your contacts.
+- **Campaigns.** A drag-and-drop email builder with templates, a spam score
+  before you send, scheduling, opens and clicks, and bounces and unsubscribes
+  handled for you.
+- **Sequences and replies.** Multi-step outreach whose follow-ups stop when
+  someone replies, emails the AI can write for each person, and an inbox to
+  answer replies in.
+- **Sales.** Deals, a pipeline, proposals and tasks.
+- **Forms and surveys.** Hosted pages, or embeds on your own site; people who
+  sign up through a form go straight onto your lists.
+- **AI copilot.** Runs on your own Anthropic or OpenAI key and can search,
+  build lists and campaigns, and edit designs. The same tools work from
+  Claude, ChatGPT/Codex and Cursor over [MCP](#copilot-and-ai-apps-mcp).
+- **Privacy built in.** A public opt-out page, an opt-out list kept only as
+  hashes, and a log of where each prospect's details came from.
+
+### Self-hosted or Cloud
+
+| | Self-hosted (this repo) | [MagpieCRM Cloud](https://magpiecrm.com/pricing?utm_source=github&utm_medium=readme) |
+|---|---|---|
+| Price | Free, [AGPL-3.0](LICENSE) | Monthly plan |
+| Prospect data | Your own [SocialFetch](https://www.socialfetch.dev/) API key | Included |
+| Email verification | Your own verification server (needs outbound port 25) | Included |
+| Sending | Your SMTP server or email provider | Our mail server, from your own domain |
+| AI copilot | Your own Anthropic or OpenAI API key | Included |
+| Where it runs | Your server, your data | Hosted for you |
 
 ## Getting started
+
+### Install with one command
+
+On a Linux server, or a Mac, with [Docker](https://docs.docker.com/get-docker/):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/magpiecrm/magpie-crm-app/main/install.sh | sh
+```
+
+It asks for your email, then makes a `magpiecrm` folder with a
+`docker-compose.yml`, a `.env` holding new secrets and your login, and `data/`
+for the database. It starts the latest release on http://localhost:3000 and
+prints your password. Run the same command again to upgrade: your settings and
+data stay. [Read the script](install.sh) before you run it if you like;
+`MAGPIE_PORT` and `MAGPIE_DIR` change the port and the folder. The image is
+built for x86-64, so on Apple silicon Docker runs it under emulation.
+
+Then, in the app:
+
+1. **Settings → Sending**: connect your SMTP server or an email provider.
+2. **Settings → Data source**: add a SocialFetch API key for prospect search.
+3. **Settings → Email verification** (optional): point it at a verification
+   server. `bun run verifier:up` in a clone of this repo starts one; see
+   [docs/proxies.md](docs/proxies.md). Without one, emails are saved as
+   unverified best guesses.
+4. Before you send, serve it over https on your own domain (any reverse proxy,
+   such as Caddy) and set `PUBLIC_URL` in `.env`, so the unsubscribe and
+   tracking links in your emails work.
+
+### Run from source
+
+With [Bun](https://bun.sh):
 
 ```bash
 bun install
 bun run dev          # dev server on http://localhost:3000
 ```
 
-Create a `.env` file in the project root:
+and a `.env` in the project root (below; at least `AUTH_EMAIL` and
+`AUTH_PASSWORD`). For production, `bun run build && bun run start`.
+
+## Configuration
+
+Everything is set in `.env`: the one the installer made, or the one in the
+project root when you run from source. Every setting:
 
 ```bash
 SMTP_HOST=...            # optional — SMTP sending; or set any provider in
@@ -249,6 +339,14 @@ contacts, and that is the only point where emails are looked up.
 
 Self-hosting this makes you the data controller for prospected contacts under
 UK GDPR and PECR, and you must also comply with SocialFetch's terms.
+
+## How it's built
+
+[TanStack Start](https://tanstack.com/start) (React 19, TanStack Router and
+Query) with Tailwind CSS v4, served by Bun. Contacts, lists and campaigns live
+in the app's own JSON database (`src/server/db.ts`), and email goes out over
+SMTP or the provider you choose in Settings → Sending. Prospect search reads
+company and people data from SocialFetch (`src/server/prospecting/`).
 
 ## Scripts
 
