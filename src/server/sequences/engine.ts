@@ -38,7 +38,7 @@ import { prospectingRules } from '../prospecting/hostRules'
 import { firstBatchPassed, newHold } from '../guessedRecipients'
 import { dailyRoom } from '../sendingLimits'
 import { copyToSent } from '../mailboxes'
-import { bounceGuard, mailboxFailed, mailboxRoom, noteMailboxSent, sequenceRoute, unsubscribeMailto, type SequenceRoute } from '../mailboxes/send'
+import { bounceGuard, inboxState, mailboxFailed, mailboxRoom, noteMailboxSent, sequenceRoute, unsubscribeMailto, type SequenceRoute } from '../mailboxes/send'
 import { composeText, renderStep, signedSettings, textHash } from './render'
 import { aiCleared } from './personalise'
 import { dueAfter, inSendWindow, minutesLeft, nextGapMs, sentToday, threadFor } from './schedule'
@@ -91,6 +91,14 @@ function pause(s: Sequence, reason: string, auto: Sequence['auto_paused'] = null
     s.updated_at = new Date().toISOString()
   })
   notify('sequence_paused', `"${s.name}" paused: ${reason}`, { url: `/sales/sequences/${s.id}` })
+}
+
+/** For a sequence paused because its sender's domain isn't set up: what would send it through the sender's own mailbox instead. */
+function mailboxInstead(sender: { id: number; email: string }): string {
+  const inbox = inboxState(sender)
+  if (inbox === 'failed') return `Or fix the sending of ${sender.email}'s inbox in Settings → Mailboxes: it's connected, but couldn't send.`
+  if (inbox === 'off') return `Or switch on sending through ${sender.email}'s mailbox in Settings → Mailboxes.`
+  return `Or connect ${sender.email}'s inbox in Settings → Mailboxes, to send these through its own mailbox.`
 }
 
 function end(e: Enrollment, status: Enrollment['status'], reason: string) {
@@ -267,7 +275,7 @@ async function runOne(s: Sequence, now: Date, appUrl: string, random: () => numb
       if (route.via === 'server') requireSendingDomain(sender.email)
     } catch (err) {
       if (err instanceof AllowanceError) pause(s, 'Your plan has no emails left this month.', 'allowance')
-      else pause(s, `${(err as Error).message} Or connect ${sender.email}'s inbox in Settings → Mailboxes, to send these through its own mailbox.`, 'sending_domain')
+      else pause(s, `${(err as Error).message} ${mailboxInstead(sender)}`, 'sending_domain')
       return false
     }
 

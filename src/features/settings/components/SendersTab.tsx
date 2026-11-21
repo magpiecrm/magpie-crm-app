@@ -12,12 +12,12 @@ import { Notice } from '../../../components/ui/Notice'
 import { SettingsActions, SettingsBlock, SettingsEmpty, SettingsList, SettingsPanel } from './SettingsBlock'
 import { confirmDialog } from '../../../components/ui/confirm'
 
-/** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
 type InboxFilter = 'none' | 'broken' | 'connected'
 
 /** The address in "Name <jo@acme.com>" or "jo@acme.com", lower-cased. */
 const addressOf = (from: string) => (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase()
 
+/** Whether a sender's address is on a domain that's ready to send from (sendingDomains.ts canSendFrom: the domain itself or a subdomain of it). */
 function domainReady(email: string, domains: Array<{ domain: string; ready: boolean }>) {
   const domain = email.toLowerCase().split('@')[1] ?? ''
   return domains.some((d) => d.ready && (domain === d.domain || domain.endsWith(`.${d.domain}`)))
@@ -37,6 +37,9 @@ export function SendersTab() {
   const [senders, setSenders] = useState<any[]>([])
   const [isLoadingSenders, setIsLoadingSenders] = useState(false)
   const [senderError, setSenderError] = useState<string | null>(null)
+  // A refused add or edit is said under its own form, where the address was typed.
+  const [addError, setAddError] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
   const [senderSuccess, setSenderSuccess] = useState<string | null>(null)
   const [newSenderName, setNewSenderName] = useState('')
   const [newSenderEmail, setNewSenderEmail] = useState('')
@@ -77,7 +80,7 @@ export function SendersTab() {
     e.preventDefault()
     if (!newSenderName.trim() || !newSenderEmail.trim()) return
     setIsAddingSender(true)
-    setSenderError(null)
+    setAddError(null)
     try {
       await createSenderFn({ data: { name: newSenderName.trim(), email: newSenderEmail.trim() } })
       setNewSenderName('')
@@ -85,7 +88,7 @@ export function SendersTab() {
       await fetchSenders()
       showSenderSuccess('Sender added.')
     } catch (e: any) {
-      setSenderError(e.message || 'Failed to add sender')
+      setAddError(e.message || "Couldn't add the sender.")
     } finally {
       setIsAddingSender(false)
     }
@@ -95,27 +98,27 @@ export function SendersTab() {
     setEditingSenderId(sender.id)
     setEditName(sender.name)
     setEditEmail(sender.email)
-    setSenderError(null)
+    setEditError(null)
   }
 
   const handleCancelEdit = () => {
     setEditingSenderId(null)
     setEditName('')
     setEditEmail('')
-    setSenderError(null)
+    setEditError(null)
   }
 
   const handleSaveEdit = async (id: number) => {
     if (!editName.trim() || !editEmail.trim()) return
     setIsSavingSender(true)
-    setSenderError(null)
+    setEditError(null)
     try {
       await updateSenderFn({ data: { id, name: editName.trim(), email: editEmail.trim() } })
       setEditingSenderId(null)
       await fetchSenders()
       showSenderSuccess('Sender updated.')
     } catch (e: any) {
-      setSenderError(e.message || 'Failed to update sender')
+      setEditError(e.message || "Couldn't save the sender.")
     } finally {
       setIsSavingSender(false)
     }
@@ -205,6 +208,7 @@ export function SendersTab() {
                     key={sender.id}
                     sender={sender}
                     box={boxes?.find((b) => b.sender_id === sender.id) ?? null}
+                    serverReady={!managed || !domains || domainReady(sender.email, domains)}
                     extraBadge={
                       <>
                         {addressOf(sender.email) === defaultAddress && <Badge>Default</Badge>}
@@ -251,6 +255,7 @@ export function SendersTab() {
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
                               placeholder="Marketing team"
+                              maxLength={200}
                               className={INPUT_CLASS}
                             />
                           </Field>
@@ -260,10 +265,12 @@ export function SendersTab() {
                               value={editEmail}
                               onChange={(e) => setEditEmail(e.target.value)}
                               placeholder="hello@yourdomain.com"
+                              maxLength={320}
                               className={INPUT_CLASS}
                             />
                           </Field>
                         </FieldGrid>
+                        {editError && <Notice level="error">{editError}</Notice>}
                         <SettingsActions>
                           <Button
                             type="button"
@@ -308,6 +315,7 @@ export function SendersTab() {
                   value={newSenderName}
                   onChange={(e) => setNewSenderName(e.target.value)}
                   placeholder="Marketing team"
+                  maxLength={200}
                   disabled={isAddingSender}
                   className={INPUT_CLASS}
                 />
@@ -319,11 +327,13 @@ export function SendersTab() {
                   value={newSenderEmail}
                   onChange={(e) => setNewSenderEmail(e.target.value)}
                   placeholder="hello@yourdomain.com"
+                  maxLength={320}
                   disabled={isAddingSender}
                   className={INPUT_CLASS}
                 />
               </Field>
             </FieldGrid>
+            {addError && <Notice level="error">{addError}</Notice>}
             <SettingsActions>
               <Button
                 type="submit"

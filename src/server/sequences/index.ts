@@ -30,7 +30,7 @@ import { logActivity } from '../sales/deals'
 import { notify } from '../notify'
 import { env } from '../env'
 import { canSendFrom } from '../sendingDomains'
-import { sequenceRoute } from '../mailboxes/send'
+import { inboxState, sequenceRoute } from '../mailboxes/send'
 
 const now = () => new Date().toISOString()
 const normEmail = (e: string) => e.toLowerCase().trim()
@@ -109,7 +109,6 @@ function cleanSettings(patch: Partial<SequenceSettings>, base: SequenceSettings)
   }
 }
 
-/** What's missing before a sequence can send, or null when it's ready. */
 /** Why a sequence's emails can't be merged, or null: a tag that would show, or a custom field that's gone. */
 export function mergeTagProblem(data: DbSchema, s: Sequence): string | null {
   const keys = (data.contact_fields ?? []).map((f) => f.key)
@@ -117,13 +116,18 @@ export function mergeTagProblem(data: DbSchema, s: Sequence): string | null {
   return tag ? `Its emails use ${tag}, which isn't a contact field. Fix it or add the field, so no one gets a blank.` : null
 }
 
+/** What's missing before a sequence can send, or null when it's ready. */
 export function notReady(data: DbSchema, s: Sequence): string | null {
   const sender = data.senders.find((x) => x.id === s.sender_id)
   if (!sender) return 'Choose who it sends from.'
   // Through the host's mail server the sender's domain has to be set up there; through its own mailbox it needn't be.
   if (env.sendingManaged() && sequenceRoute(sender, data).via === 'server' && !canSendFrom(sender.email)) {
     const domain = sender.email.split('@')[1] ?? sender.email
-    return `${domain} isn't set up to send from yet. Connect ${sender.email}'s inbox in Settings → Mailboxes to send through its own mailbox, or set ${domain} up in Settings → Sending.`
+    const orDomain = `or set ${domain} up in Settings → Sending.`
+    const inbox = inboxState(sender, data)
+    if (inbox === 'failed') return `${domain} isn't set up to send from yet, and ${sender.email}'s inbox couldn't send. Fix its sending in Settings → Mailboxes, ${orDomain}`
+    if (inbox === 'off') return `${domain} isn't set up to send from yet. Switch on sending through ${sender.email}'s mailbox in Settings → Mailboxes, ${orDomain}`
+    return `${domain} isn't set up to send from yet. Connect ${sender.email}'s inbox in Settings → Mailboxes to send through its own mailbox, ${orDomain}`
   }
   if (!s.steps.length) return 'Add at least one email.'
   if (!s.steps[0].subject?.trim()) return 'The first email needs a subject.'
@@ -246,19 +250,26 @@ export const sequences = {
   ): Sequence =>
     write((data) => {
       const s = seqOf(data, id)
-      if (patch.name !== undefined) {
-        if (!patch.name.trim()) throw new Error('Give the sequence a name.')
-        s.name = patch.name.trim().slice(0, 120)
+      // Everything is worked out and checked before anything changes: the store has no rollback,
+      // so a change that's refused must leave the sequence (and its people) exactly as they were.
+      if (patch.name !== undefined && !patch.name.trim()) throw new Error('Give the sequence a name.')
+      if (patch.senderId !== undefined && patch.senderId !== null && !data.senders.some((x) => x.id === patch.senderId)) throw new Error('Sender not found')
+      const old = s.steps
+      const steps = patch.steps ? cleanSteps(patch.steps, old) : old
+      if (patch.steps && !steps.length) throw new Error('Add at least one email.')
+      const next: Sequence = {
+        ...s,
+        name: patch.name !== undefined ? patch.name.trim().slice(0, 120) : s.name,
+        sender_id: patch.senderId !== undefined ? patch.senderId : s.sender_id,
+        settings: patch.settings ? cleanSettings(patch.settings, s.settings) : s.settings,
+        steps,
       }
-      if (patch.senderId !== undefined) {
-        if (patch.senderId !== null && !data.senders.some((x) => x.id === patch.senderId)) throw new Error('Sender not found')
-        s.sender_id = patch.senderId
-      }
-      if (patch.settings) s.settings = cleanSettings(patch.settings, s.settings)
+      const why = s.status === 'active' ? notReady(data, next) : null
+      if (why) throw new Error(why)
+      s.name = next.name
+      s.sender_id = next.sender_id
+      s.settings = next.settings
       if (patch.steps) {
-        const old = s.steps
-        const steps = cleanSteps(patch.steps, old)
-        if (!steps.length) throw new Error('Add at least one email.')
         for (const e of enrollmentsOf(data, s.id)) {
           if (e.status !== 'active' && e.status !== 'paused') continue
           e.next_step = remapStep(e.next_step, old, steps)
@@ -273,7 +284,6 @@ export const sequences = {
         s.steps = steps
         redraft(data, s, old)
       }
-      if (s.status === 'active' && notReady(data, s)) throw new Error(notReady(data, s)!)
       s.updated_at = now()
       return s
     }),

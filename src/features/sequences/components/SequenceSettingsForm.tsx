@@ -58,6 +58,7 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
   }, [saved])
   const footerOk = /\{\{\s*unsubscribe\s*\}\}/i.test(s.footer)
   const box = boxes.find((b) => String(b.sender_id) === senderId) ?? null
+  const serverReady = senders.find((x: any) => String(x.id) === senderId)?.server_ready !== false
   // Through the sender's own mailbox: no tracking, its own daily cap, and "reply stop" for the unsubscribe line.
   const viaMailbox = !!box?.sending?.active
 
@@ -82,7 +83,7 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
             </option>
           ))}
         </Select>
-        <SendsThrough box={box} />
+        <SendsThrough box={box} serverReady={serverReady} />
       </Field>
 
       <fieldset className="space-y-3">
@@ -203,17 +204,20 @@ export function SequenceSettingsForm({ sequence }: { sequence: Sequence }) {
 
 /**
  * How this sender's emails go out (their own mailbox, or the workspace's mail
- * server) and whether replies are noticed, with a way to set either up.
+ * server) and whether replies are noticed, with a way to set either up; or,
+ * where that server can't send from the address yet either, that they can't.
  */
-function SendsThrough({ box }: { box: MailboxView | null }) {
+function SendsThrough({ box, serverReady }: { box: MailboxView | null; serverReady: boolean }) {
   const link = (
     <Link to="/settings" search={{ tab: 'senders' }} className="text-accent hover:underline">
       Settings → Mailboxes
     </Link>
   )
   const TONES = { ok: 'text-emerald-700 dark:text-emerald-400', plain: 'text-muted-foreground', warn: 'text-amber-700 dark:text-amber-400', bad: 'text-destructive' }
-  const line = (tone: keyof typeof TONES, words: React.ReactNode) => <p className={`mt-1 text-xs ${TONES[tone]}`}>{words}</p>
+  const line = (tone: keyof typeof TONES, words: React.ReactNode) => <p className={`mt-1 text-xs break-words ${TONES[tone]}`}>{words}</p>
+  const domainFirst = "the workspace's mail server can't send from this address until its domain is set up in Settings → Sending"
   if (!box) {
+    if (!serverReady) return line('warn', <>Can't send yet: {domainFirst}. Connect this sender's inbox in {link} to send through its own mailbox, or set the domain up.</>)
     return line('warn', <>Sends through the workspace's mail server, and replies aren't detected. Connect this sender's inbox in {link} to send through its own mailbox, which reaches more inboxes, and to notice replies.</>)
   }
   const replies = box.status === 'ok' ? null : line('bad', <>Reply detection isn't working ({box.last_error}). Fix it in {link}.</>)
@@ -230,6 +234,17 @@ function SendsThrough({ box }: { box: MailboxView | null }) {
     return (
       <>
         {line('bad', <>Sending through {box.user} has stopped, so these emails wait. {sending.last_error} Fix it in {link}.</>)}
+        {replies}
+      </>
+    )
+  }
+  if (!serverReady) {
+    const words = sending?.use_server
+      ? <>Can't send yet: it's set to go through the workspace's mail server, and {domainFirst}. Switch sending through its mailbox back on in {link}, or set the domain up.</>
+      : <>Can't send yet: its mailbox couldn't send, and {domainFirst}. {sending?.last_error} Fix it in {link}, or set the domain up.</>
+    return (
+      <>
+        {line('warn', words)}
         {replies}
       </>
     )

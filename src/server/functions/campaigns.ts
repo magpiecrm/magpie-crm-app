@@ -1,5 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 import { z } from 'zod'
+import { validInput } from '../validInput'
 
 export const campaignsFn = createServerFn({ method: 'GET' })
   .handler(async () => {
@@ -28,22 +29,26 @@ export const getCampaignActivityFn = createServerFn({ method: 'GET' })
     return emailService.getCampaignActivity(data.id)
   })
 
+/** Every sender, and whether the workspace's mail server can send from it (where the host sends, its domain is set up). */
 export const getSendersFn = createServerFn({ method: 'GET' })
   .handler(async () => {
     const { requireAuth } = await import('../auth.server')
     const emailService = await import('../emailService')
+    const { env } = await import('../env')
+    const { canSendFrom } = await import('../sendingDomains')
     await requireAuth()
-    return emailService.getSenders()
+    const { senders } = await emailService.getSenders()
+    return { senders: senders.map((s) => ({ ...s, server_ready: !env.sendingManaged() || canSendFrom(s.email) })) }
   })
 
 /** A sender's name and address: any address, now its domain needn't be set up first (emailService.createSender). */
 const senderInput = z.object({
-  name: z.string().trim().max(200),
-  email: z.string().trim().toLowerCase().max(320).email("That isn't an email address."),
+  name: z.string("Give the sender a name.").trim().max(200, 'Keep the name under 200 characters.'),
+  email: z.string("Enter the sender's email address.").trim().toLowerCase().max(320, "That address is too long.").email("That isn't an email address."),
 })
 
 export const createSenderFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { name: string; email: string }) => senderInput.parse(d))
+  .inputValidator((d: { name: string; email: string }) => validInput(senderInput, d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const emailService = await import('../emailService')
@@ -52,7 +57,7 @@ export const createSenderFn = createServerFn({ method: 'POST' })
   })
 
 export const updateSenderFn = createServerFn({ method: 'POST' })
-  .inputValidator((d: { id: number; name: string; email: string }) => senderInput.extend({ id: z.number().int() }).parse(d))
+  .inputValidator((d: { id: number; name: string; email: string }) => validInput(senderInput.extend({ id: z.number().int() }), d))
   .handler(async ({ data }) => {
     const { requireAuth } = await import('../auth.server')
     const emailService = await import('../emailService')

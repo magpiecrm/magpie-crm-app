@@ -594,6 +594,41 @@ describe("sending through the sender's own mailbox", () => {
     }
   })
 
+  it("says what's wrong with an inbox that's already connected, rather than to connect it", () => {
+    process.env.SENDING_MANAGED = 'on'
+    try {
+      contact('ava@larkspur.test')
+      canSend({ verified_at: null, verified_for: null, last_error: "couldn't log in" })
+      expect(() => sequenceFor(['ava@larkspur.test'])).toThrow(/acme.test isn't set up to send from yet, and jo@acme.test's inbox couldn't send\. Fix its sending in Settings → Mailboxes, or set acme.test up/)
+      canSend({ use_server: true })
+      expect(() => sequenceFor(['ava@larkspur.test'])).toThrow(/Switch on sending through jo@acme.test's mailbox in Settings → Mailboxes, or set acme.test up/)
+    } finally {
+      delete process.env.SENDING_MANAGED
+    }
+  })
+
+  it('changes nothing in a running sequence when a change is refused', () => {
+    process.env.SENDING_MANAGED = 'on'
+    db.mutate((d) => d.senders.push({ id: 2, name: 'Pat', email: 'pat@unready.test' }))
+    try {
+      contact('ava@larkspur.test')
+      canSend()
+      const id = sequenceFor(['ava@larkspur.test'])
+      const before = JSON.stringify({ s: sequences.get(id).sequence, e: enrollment('ava@larkspur.test') })
+      // No unsubscribe line: refused, and the footer it had is kept.
+      expect(() => sequences.update(id, { name: 'Renamed', settings: { footer: 'Thanks for reading.' } })).toThrow(/needs the \{\{ unsubscribe \}\} link/)
+      // A sender the mail server can't send from and with no mailbox: refused, and the sender is kept.
+      expect(() => sequences.update(id, { senderId: 2 })).toThrow(/unready.test isn't set up to send from yet/)
+      // Emails changed along with a refused setting: none of it is applied, nor anyone moved on.
+      expect(() => sequences.update(id, { steps: [{ delay_days: 0, subject: 'New', body: 'Hi' }], settings: { footer: 'No link' } })).toThrow(/unsubscribe/)
+      expect(JSON.stringify({ s: sequences.get(id).sequence, e: enrollment('ava@larkspur.test') })).toBe(before)
+      expect(sequences.get(id).sequence).toMatchObject({ name: 'Intro', sender_id: 1, status: 'active' })
+    } finally {
+      delete process.env.SENDING_MANAGED
+      db.mutate((d) => (d.senders = d.senders.filter((s) => s.id !== 2)))
+    }
+  })
+
   it('pauses its sequences when the mailbox refuses the account, without using up an attempt, until it checks out again', async () => {
     contact('ava@larkspur.test')
     const id = sequenceFor(['ava@larkspur.test'])
@@ -717,5 +752,18 @@ describe("sending through the sender's own mailbox", () => {
     const shown = JSON.stringify(mailboxes.list())
     expect(shown).not.toMatch(/own-pass|app-pass|right|"secret"/)
     expect(mailboxes.list()[0].sending).toMatchObject({ user: 'jo.send@acme.test', has_own_password: true })
+  })
+
+  it('keeps a sending server typed in until it is emptied, then goes back to the one that goes with the inbox', async () => {
+    const good = fakeInbox([])
+    const login = { senderId: 1, host: 'imap.gmail.com', port: 993, secure: true, user: 'jo@acme.test', password: 'right' }
+    await mailboxes.save({ ...login, smtp: { host: 'mail.acme.test', port: 465 } }, good.connect, undefined, sendsFine)
+    expect(checked.at(-1)).toMatchObject({ host: 'mail.acme.test', port: 465 })
+    // Saved again without touching it: the same one.
+    await mailboxes.save(login, good.connect, undefined, sendsFine)
+    expect(checked.at(-1)).toMatchObject({ host: 'mail.acme.test', port: 465 })
+    await mailboxes.save({ ...login, smtp: { host: '' } }, good.connect, undefined, sendsFine)
+    expect(checked.at(-1)).toMatchObject({ host: 'smtp.gmail.com', port: 587 })
+    expect(db.data.mailboxes![0].sending).toMatchObject({ host: 'smtp.gmail.com', port: 587 })
   })
 })

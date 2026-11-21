@@ -234,6 +234,16 @@ export function sequenceRoute(sender: { id: number; email: string }, data: DbSch
   }
 }
 
+/**
+ * For a sender whose sequence emails go through the mail server, why they don't go through its
+ * own mailbox: no inbox connected, one whose sending didn't check out, or one the sender turned off.
+ */
+export function inboxState(sender: { id: number }, data: DbSchema = db.data): 'none' | 'failed' | 'off' {
+  const box = boxOf(sender.id, data)
+  if (!box) return 'none'
+  return box.sending?.verified_at && box.sending.use_server ? 'off' : 'failed'
+}
+
 /** A sender's sequence emails through their mailbox since a time, and their recipients' keys. */
 function mailboxSends(data: DbSchema, senderId: number, sinceMs: number): { at: string; key: string }[] {
   const sequences = new Set((data.sequences ?? []).filter((s) => s.sender_id === senderId).map((s) => s.id))

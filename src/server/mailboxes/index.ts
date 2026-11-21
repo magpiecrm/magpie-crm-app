@@ -225,8 +225,16 @@ async function sendingFor(
   previous: MailboxSending | undefined,
   check: CheckSending,
 ): Promise<MailboxSending> {
+  // A server typed in; left empty, the one that goes with the inbox; not sent at all, the one it had.
   const typed = input?.host?.trim().toLowerCase()
-  const server = typed ? { host: typed, port: input?.port ?? 587 } : previous?.host ? { host: previous.host, port: previous.port } : smtpServerFor(imap.host)
+  const auto = smtpServerFor(imap.host)
+  const server = typed
+    ? { host: typed, port: input?.port ?? 587 }
+    : input?.host === ''
+      ? auto && { host: auto.host, port: input.port ?? auto.port }
+      : previous?.host
+        ? { host: previous.host, port: previous.port }
+        : auto
   // Its own login: one typed in that isn't the inbox's, or the one it had.
   const typedUser = input?.user?.trim()
   const user = typedUser !== undefined ? (typedUser && typedUser.toLowerCase() !== imap.user.toLowerCase() ? typedUser : undefined) : previous?.user

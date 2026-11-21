@@ -102,12 +102,15 @@ export function SenderInbox({
   extraActions,
   extraBadge,
   editor,
+  serverReady = true,
 }: {
   sender: { id: number; name: string; email: string }
   box: MailboxView | null
   extraActions?: ReactNode
   extraBadge?: ReactNode
   editor?: ReactNode
+  /** Whether the workspace's mail server can send from this address (where the host sends, its domain is set up). */
+  serverReady?: boolean
 }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
@@ -190,7 +193,7 @@ export function SenderInbox({
               </Button>
             )}
           </SettingsActions>
-          <InboxSending box={box} onChange={refresh} />
+          <InboxSending box={box} serverReady={serverReady} onChange={refresh} />
         </div>
       ) : box || editing ? (
         <ConnectForm sender={sender} box={box} onDone={() => setEditing(false)} />
@@ -201,9 +204,10 @@ export function SenderInbox({
 
 /**
  * How a connected inbox sends its sender's sequence emails: through it (the
- * default once it has checked out), or the workspace's mail server, and why.
+ * default once it has checked out), or the workspace's mail server, and why;
+ * or, where that server can't send from the address yet either, that they wait.
  */
-function InboxSending({ box, onChange }: { box: MailboxView; onChange: () => void }) {
+function InboxSending({ box, serverReady, onChange }: { box: MailboxView; serverReady: boolean; onChange: () => void }) {
   const s = box.sending
   const [cap, setCap] = useState(s?.daily_cap ?? 40)
   const set = useMutation({ mutationFn: (input: { useServer?: boolean; dailyCap?: number }) => setMailboxSendingFn({ data: { id: box.id, ...input } }), onSuccess: onChange })
@@ -229,10 +233,19 @@ function InboxSending({ box, onChange }: { box: MailboxView; onChange: () => voi
           Sending through this mailbox has stopped, so this sender's sequences are paused: {s.last_error}
         </Notice>
       ) : s.use_server ? (
-        <p className="text-muted-foreground">They go through the workspace's mail server.</p>
+        serverReady ? (
+          <p className="text-muted-foreground">They go through the workspace's mail server.</p>
+        ) : (
+          <Notice level="warning" className="break-words">
+            They're set to go through the workspace's mail server, which can't send from this address until its domain is set up in Settings → Sending, so this sender's sequences
+            can't start. Switch sending through this mailbox back on below, or set the domain up.
+          </Notice>
+        )
       ) : (
         <Notice level="warning" className="break-words">
-          They go through the workspace's mail server for now: this mailbox couldn't send. {s.last_error}
+          {serverReady
+            ? `They go through the workspace's mail server for now: this mailbox couldn't send. ${s.last_error ?? ''}`
+            : `This mailbox couldn't send, and the workspace's mail server can't send from this address until its domain is set up in Settings → Sending, so this sender's sequences can't start. ${s.last_error ?? ''}`}
         </Notice>
       )}
       {s?.verified_at && (
@@ -285,7 +298,8 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
   const [smtpPort, setSmtpPort] = useState<587 | 465>(box?.sending?.port === 465 ? 465 : 587)
   const [smtpUser, setSmtpUser] = useState(box?.sending?.user ?? '')
   const [smtpPassword, setSmtpPassword] = useState('')
-  const typedSmtp = smtpOpen && smtpHost.trim() && smtpHost.trim() !== box?.sending?.host
+  // The sending server is sent only when it's changed; emptied, it goes back to the one that goes with the inbox.
+  const smtpChanged = smtpHost.trim() !== (box?.sending?.host ?? '') || smtpPort !== (box?.sending?.port ?? 587)
   const save = useMutation({
     mutationFn: () =>
       saveMailboxFn({
@@ -299,7 +313,7 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
           ...(smtpOpen
             ? {
                 smtp: {
-                  ...(typedSmtp || smtpPort !== (box?.sending?.port ?? 587) ? { host: smtpHost.trim() || box?.sending?.host, port: smtpPort } : {}),
+                  ...(smtpChanged ? { host: smtpHost.trim(), port: smtpPort } : {}),
                   user: smtpUser.trim(),
                   ...(smtpPassword ? { password: smtpPassword } : {}),
                 },
@@ -404,13 +418,17 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
           {smtpOpen && (
             <>
               <FieldGrid cols={3}>
-                <Field label="Sending (SMTP) server" className="sm:col-span-2">
+                <Field
+                  label="Sending (SMTP) server"
+                  className="sm:col-span-2"
+                  hint={custom ? 'Left empty, the IMAP server with smtp. in place of imap.' : 'Left empty, the one that goes with the inbox.'}
+                >
                   <input value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} placeholder={custom ? 'smtp.example.com' : 'The one that goes with the inbox'} className={INPUT_CLASS} />
                 </Field>
-                <Field label="Port">
+                <Field label="Port" hint="465 only where the service says SSL.">
                   <Select value={String(smtpPort)} onChange={(e) => setSmtpPort(e.target.value === '465' ? 465 : 587)} className={INPUT_CLASS}>
-                    <option value="587">587 (STARTTLS)</option>
-                    <option value="465">465 (SSL/TLS)</option>
+                    <option value="587">587</option>
+                    <option value="465">465 (SSL)</option>
                   </Select>
                 </Field>
               </FieldGrid>
@@ -419,7 +437,7 @@ function ConnectForm({ sender, box, onDone }: { sender: { id: number; email: str
                   <input value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} placeholder={user} className={INPUT_CLASS} autoComplete="off" />
                 </Field>
                 <Field label="Sending password">
-                  <SecretInput id={`smtp-pass-${sender.id}`} value={smtpPassword} onChange={setSmtpPassword} placeholder={box?.sending?.has_own_password ? 'Leave empty to keep the saved one' : "The inbox's, unless given"} />
+                  <SecretInput id={`smtp-pass-${sender.id}`} value={smtpPassword} onChange={setSmtpPassword} placeholder={box?.sending?.has_own_password ? 'Leave empty to keep it' : "Same as the inbox's"} />
                 </Field>
               </FieldGrid>
             </>
