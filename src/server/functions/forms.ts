@@ -144,22 +144,22 @@ export const createFormFn = createServerFn({ method: 'POST' })
     const { requireAuth } = await import('../auth.server')
     const { db } = await import('../db')
     await requireAuth()
-    const clean = await cleanForm(data)
+    // Everything the builder sent that passed the checks, over the defaults: so a new
+    // setting is kept from the first save without being listed here.
     const id = db.addForm({
-      name: clean.name ?? 'Untitled form',
-      fields: clean.fields ?? ['first_name', 'email'],
-      field_settings: clean.field_settings ?? {},
-      list_id: clean.list_id ?? 1,
-      save_to_list_enabled: clean.save_to_list_enabled ?? true,
-      save_to_list_fields: clean.save_to_list_fields ?? ['first_name', 'last_name', 'company'],
-      welcome_email_enabled: clean.welcome_email_enabled ?? false,
-      welcome_email_subject: clean.welcome_email_subject ?? '',
-      welcome_email_body: clean.welcome_email_body ?? '',
-      welcome_email_delay_minutes: clean.welcome_email_delay_minutes ?? 5,
-      sender_id: clean.sender_id ?? null,
-      submit_label: clean.submit_label,
-      success_message: clean.success_message,
-      style: clean.style ?? {},
+      name: 'Untitled form',
+      fields: ['first_name', 'email'],
+      field_settings: {},
+      list_id: 1,
+      save_to_list_enabled: true,
+      save_to_list_fields: ['first_name', 'last_name', 'company'],
+      welcome_email_enabled: false,
+      welcome_email_subject: '',
+      welcome_email_body: '',
+      welcome_email_delay_minutes: 5,
+      sender_id: null,
+      style: {},
+      ...(await cleanForm(data)),
     })
     return { id }
   })

@@ -7,6 +7,7 @@ import { Badge } from '../../../components/ui/Badge'
 import { campaignsFn } from '../../../server/functions'
 import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { sortCampaigns } from '../../../features/campaigns/sort'
+import { ALL_TIME, inDateRange, type DateRange } from '../../../features/campaigns/dateRange'
 import { campaignSummary, summariseCampaigns } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
@@ -52,7 +53,8 @@ function AnalyticsPage() {
     queryFn: () => campaignsFn(),
   })
 
-  const [dateRange, setDateRange] = useState({ start: '2026-01-01', end: '2026-12-31' })
+  // Every campaign until dates are picked: a fixed default range hides whatever falls outside it.
+  const [dateRange, setDateRange] = useState<DateRange>(ALL_TIME)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(20)
 
@@ -60,15 +62,7 @@ function AnalyticsPage() {
   const campaigns = campaignsData?.campaigns || []
 
   // Filter campaigns by date range, in the order chosen (newest first unless changed)
-  const filteredCampaigns = sortCampaigns(campaigns, sort).filter((c: any) => {
-    const dateStr = c.sentDate || c.createdAt
-    if (!dateStr) return true
-    const cDate = new Date(dateStr)
-    const start = new Date(dateRange.start)
-    const end = new Date(dateRange.end)
-    end.setHours(23, 59, 59, 999)
-    return cDate >= start && cDate <= end
-  })
+  const filteredCampaigns = sortCampaigns(campaigns, sort).filter((c: any) => inDateRange(c, dateRange))
   
   // Totals across the campaigns shown. Opens are divided by what was delivered in campaigns that track them.
   const totals = summariseCampaigns(filteredCampaigns)
@@ -114,14 +108,15 @@ function AnalyticsPage() {
               }}
               className="bg-transparent border-none text-foreground outline-none focus:ring-0 w-32 [color-scheme:dark]"
             />
-            { (dateRange.start !== '2026-01-01' || dateRange.end !== '2026-12-31') && (
-              <button 
+            { (dateRange.start || dateRange.end) && (
+              <button
                 onClick={() => {
-                  setDateRange({ start: '2026-01-01', end: '2026-12-31' })
+                  setDateRange(ALL_TIME)
                   setCurrentPage(1)
                 }}
                 className="ml-2 text-muted-foreground hover:text-foreground transition-colors"
-                title="Reset Date Range"
+                title="Show all dates"
+                aria-label="Show all dates"
               >
                 <X className="w-4 h-4" />
               </button>
