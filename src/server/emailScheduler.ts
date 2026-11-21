@@ -111,6 +111,39 @@ export function withUnsubscribeLink(html: string, url: string): string {
   return /<\/body>/i.test(replaced) ? replaced.replace(/<\/body>/i, (m) => `${footer}${m}`) : replaced + footer
 }
 
+/**
+ * Welcome emails whose wait is over (a form's or a sign-up's); never two runs
+ * at once. A run that takes longer than the minute between checks would
+ * otherwise be joined by a second one, sending the same emails again.
+ */
+export async function sendDueWelcomeEmails() {
+  if (g.__welcomeRunBusy) return
+  g.__welcomeRunBusy = true
+  try {
+    for (const e of db.getDuePendingEmails()) {
+      const domain = e.contact_email.split('@')[1] ?? 'unknown'
+      // Unsubscribed or bounced since they signed up: not sent.
+      const contact = db.getContact(e.contact_email)
+      if (!contact || contact.status !== 'subscribed' || db.emailStop(e.contact_email)) {
+        db.markPendingEmailSent(e.id, 'skipped')
+        console.log(`[EmailScheduler] Skipped a welcome email to someone at ${domain}: no longer subscribed`)
+        continue
+      }
+      try {
+        const unsubscribeUrl = `${await getAppUrl()}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email }))}`
+        await sendMail({ to: e.contact_email, subject: e.subject, html: withUnsubscribeLink(e.html, unsubscribeUrl), from: e.from, unsubscribeUrl })
+        db.markPendingEmailSent(e.id)
+        console.log(`[EmailScheduler] Sent a welcome email to someone at ${domain}`)
+      } catch (err) {
+        const gaveUp = db.notePendingEmailFailure(e.id)
+        console.error(`[EmailScheduler] A welcome email to someone at ${domain} failed${gaveUp ? ' (giving up after 5 tries)' : ''}:`, err)
+      }
+    }
+  } finally {
+    g.__welcomeRunBusy = false
+  }
+}
+
 export function startEmailScheduler() {
   if (g.__emailSchedulerStarted) return
   g.__emailSchedulerStarted = true
@@ -130,30 +163,12 @@ export function startEmailScheduler() {
   // A sequence email claimed but not committed was cut off by a restart: taken as sent, never sent twice.
   import('./sequences/engine').then(({ recoverClaims }) => recoverClaims()).catch((err) => console.error('[EmailScheduler] Sequence recovery failed:', err))
 
-  g.__emailSchedulerInterval = setInterval(async () => {
+  g.__emailSchedulerInterval = setInterval(() => {
     sendDueCampaigns().catch((err) => console.error('[EmailScheduler] Scheduled sends failed:', err))
     runDueSequences().catch((err) => console.error('[EmailScheduler] Sequences failed:', err))
     writeDueDrafts().catch((err) => console.error('[EmailScheduler] Writing personalised emails failed:', err))
     remindDueTasks().catch((err) => console.error('[EmailScheduler] Task reminders failed:', err))
-    const due = db.getDuePendingEmails()
-    for (const e of due) {
-      // Unsubscribed or bounced since they signed up: not sent.
-      const contact = db.getContact(e.contact_email)
-      if (!contact || contact.status !== 'subscribed' || db.emailStop(e.contact_email)) {
-        db.markPendingEmailSent(e.id, 'skipped')
-        console.log(`[EmailScheduler] Skipped the welcome email to ${e.contact_email}: no longer subscribed`)
-        continue
-      }
-      try {
-        const unsubscribeUrl = `${await getAppUrl()}/api/unsubscribe?t=${encodeURIComponent(encryptToken({ email: e.contact_email }))}`
-        await sendMail({ to: e.contact_email, subject: e.subject, html: withUnsubscribeLink(e.html, unsubscribeUrl), from: e.from, unsubscribeUrl })
-        db.markPendingEmailSent(e.id)
-        console.log(`[EmailScheduler] Sent welcome email to ${e.contact_email}`)
-      } catch (err) {
-        const gaveUp = db.notePendingEmailFailure(e.id)
-        console.error(`[EmailScheduler] Failed to send to ${e.contact_email}${gaveUp ? ' (giving up after 5 tries)' : ''}:`, err)
-      }
-    }
+    sendDueWelcomeEmails().catch((err) => console.error('[EmailScheduler] Welcome emails failed:', err))
   }, 60_000)
 
   // A hosted copy's rules for unverifiable addresses (prospecting/hostRules.ts),

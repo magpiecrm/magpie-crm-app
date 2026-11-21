@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, renameSync, statSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, statSync, copyFileSync } from 'fs'
 import { join } from 'path'
 import crypto from 'crypto'
 import { env } from './env'
@@ -672,12 +672,18 @@ class JsonDb {
 
   private load(): DbSchema {
     let loaded: DbSchema
-    if (existsSync(dbPath)) {
+    const text = existsSync(dbPath) ? readFileSync(dbPath, 'utf8') : ''
+    if (text.trim()) {
       try {
-        loaded = JSON.parse(readFileSync(dbPath, 'utf8'))
+        loaded = JSON.parse(text)
       } catch (err) {
-        console.error('Failed to parse database file. Starting fresh.', err)
-        loaded = this.getFreshSchema()
+        // Never started empty: the next save would write over everything the file still holds.
+        const copy = `${dbPath}.corrupt-${Math.round(statSync(dbPath).mtimeMs)}`
+        if (!existsSync(copy)) copyFileSync(dbPath, copy)
+        throw new Error(
+          `The data file ${dbPath} can't be read (${(err as Error).message}), so nothing was started and it was left as it is. ` +
+            `A copy is at ${copy}. Restore a backup or repair the file, then start again.`,
+        )
       }
     } else {
       loaded = this.getFreshSchema()
