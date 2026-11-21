@@ -259,6 +259,25 @@ key), with the app's actions as tools.
   `package.json`/`tsconfig.json` if you want to use it.
 - `scratch/` is gitignored throwaway space; don't import from it.
 
+## Testing
+
+See `test/README.md`. In short:
+
+- Unit tests: `bunx vitest run`. It never loads `.env` (`test/setup/isolateEnv.ts`)
+  and skips `.claude/worktrees` and `scratch/`, so a run here matches CI.
+- Journeys: `bun run e2e` runs `test/e2e/*.e2e.ts` in Chrome against the test
+  stack (`bun run stack`): the production build with every outside service
+  stood in for (host, SocialFetch, AI, DNS, mail: Mailpit catches what's sent,
+  GreenMail holds senders' inboxes). Nothing real is reached, so send, search
+  and reveal freely there. Use it to try a change in the browser, too, rather
+  than a dev server on the real `.env`.
+- `test/JOURNEYS.md` is what has to work. A feature that adds or changes what a
+  customer can do adds or updates its journey there in the same change, and a
+  Playwright journey when it can. A new outside call needs its stand-in in
+  `test/stack/hostRoutes.ts` (the stand-in logs "no stand-in for …" otherwise).
+- Before a release: the `release-check` skill (`.claude/skills/release-check/`)
+  runs all of it, then a bug hunt by agents over the areas that changed.
+
 ## Known rough edges (improve opportunistically)
 
 - Several large components (`ProspectSearch`, `AIChat`, `CampaignWizard`,

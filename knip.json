@@ -7,9 +7,21 @@
     "public/sw.js",
     "public/forms/embed.js",
     "public/surveys/embed.js",
-    "cloudflare-worker/worker.js"
+    "cloudflare-worker/worker.js",
+    ".claude/workflows/*.js"
   ],
   "ignoreDependencies": [
     "postal-mime"
-  ]
+  ],
+  "entry": [
+    "test/stack/host.ts"
+  ],
+  "playwright": {
+    "config": [
+      "test/e2e/playwright.config.ts"
+    ],
+    "entry": [
+      "test/e2e/**/*.{e2e,setup}.ts"
+    ]
+  }
 }

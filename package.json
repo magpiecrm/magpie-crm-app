@@ -13,6 +13,8 @@
     "preview": "vite preview",
     "start": "bun serve.ts",
     "test": "vitest run",
+    "stack": "bun test/stack/up.ts",
+    "e2e": "playwright test -c test/e2e/playwright.config.ts",
     "knip": "knip",
     "verifier:up": "docker compose -f docker/reacher/docker-compose.yml --env-file .env up -d",
     "verifier:down": "docker compose -f docker/reacher/docker-compose.yml --env-file .env down",
@@ -43,6 +45,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tanstack/devtools-vite": "latest",
     "@types/bun": "^1.3.14",
     "@types/node": "^25.9.1",

@@ -205,6 +205,9 @@ PASSWORD_LOGIN=off       # optional — no password sign-in; people come in
                          # through links from the host's portal
 SIGN_IN_URL=...          # optional — where the sign-in page sends people when
                          # PASSWORD_LOGIN=off (the host's portal)
+DNS_SERVERS=...          # optional — comma-separated resolvers (host:port allowed)
+                         # for the app's own DNS lookups instead of the system's;
+                         # the test stack points it at its stand-in (test/)
 ```
 
 In production the app refuses to sign or encrypt anything until
@@ -357,6 +360,8 @@ company and people data from SocialFetch (`src/server/prospecting/`).
 | `bun run start`  | Run the production build (`serve.ts`) |
 | `bun run preview`| Preview the build with Vite (dev use) |
 | `bun run test`   | Run the Vitest suite                 |
+| `bun run stack`  | Run the test stack: the build with every outside service stood in for (`test/README.md`) |
+| `bun run e2e`    | Run the Playwright journeys on the test stack |
 | `bun run knip`   | Find unused files/exports/deps       |
 
 ## Project layout

@@ -25,6 +25,27 @@ jobs:
       - run: bunx tsc --noEmit
       - run: bunx vitest run
 
+  # The Playwright journeys (test/e2e) on the test stack: the production build
+  # with every outside service stood in for (test/README.md). Not yet required
+  # for the image: it runs alongside until it has proven steady.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            /tmp/magpie-test-stack-4700/e2e-report
+            /tmp/magpie-test-stack-4700/e2e-results
+            /tmp/magpie-test-stack-4700/*.log
+          retention-days: 7
+
   image:
     needs: test
     if: github.event_name == 'push'

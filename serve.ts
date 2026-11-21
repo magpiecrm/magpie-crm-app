@@ -17,6 +17,15 @@ const root = import.meta.dir
 const clientDir = resolve(root, 'dist/client')
 const entry = resolve(root, 'dist/server/server.js')
 
+// DNS_SERVERS (comma-separated; `host:port` allowed) sends the app's own DNS
+// lookups (MX records, a sending domain's SPF/DKIM/DMARC, a mailbox's mail
+// server) there instead of the system's resolvers: the test stack's stand-in
+// (test/stack), or a resolver of the host's choosing.
+if (process.env.DNS_SERVERS) {
+  const { setServers } = await import('node:dns')
+  setServers(process.env.DNS_SERVERS.split(',').map((s) => s.trim()).filter(Boolean))
+}
+
 // A variable path, so typechecking doesn't need a build first.
 const { default: app } = await import(entry)
 
