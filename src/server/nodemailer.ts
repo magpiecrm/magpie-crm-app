@@ -69,8 +69,11 @@ export async function sendMail(options: SendMailOptions) {
 
   const rawFrom = options.from || defaultSender
   if (!rawFrom) {
+    // Where the host sends there's no default sender setting: the first sender on a ready domain is used (emailSettings.ts).
     throw new Error(
-      'No sender configured — set a default sender in Settings → Sending.',
+      env.sendingManaged()
+        ? 'There is no sender to send this from yet: add one in Settings → Mailboxes, on a domain that is ready in Settings → Sending.'
+        : 'No sender configured — set a default sender in Settings → Sending.',
     )
   }
 

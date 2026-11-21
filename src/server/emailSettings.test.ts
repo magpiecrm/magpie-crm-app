@@ -52,6 +52,9 @@ vi.mock('./env', () => ({
   },
 }))
 
+const readyDomains: string[] = []
+vi.mock('./sendingDomains', () => ({ canSendFrom: (from: string) => readyDomains.some((d) => from.toLowerCase().endsWith(`@${d}`)) }))
+
 const { getActiveProviderConfig, getMaskedSettings, saveProviderSettings } = await import(
   './emailSettings'
 )
@@ -162,6 +165,19 @@ describe('back-compat with no saved settings', () => {
       { id: 1, name: 'A', email: 'a@acme.com' },
       { id: 2, name: 'B', email: 'b@acme.com' },
     ]
+    expect(getActiveProviderConfig().defaultSender).toBeUndefined()
+  })
+
+  it("where the host sends (no default sender setting), uses the first sender added whose domain is ready", () => {
+    envState.SENDING_MANAGED = 'on'
+    dbState.senders = [
+      { id: 3, name: 'C', email: 'c@ready.test' },
+      { id: 1, name: 'A', email: 'a@notready.test' },
+      { id: 2, name: 'B', email: 'b@ready.test' },
+    ]
+    readyDomains.splice(0, readyDomains.length, 'ready.test')
+    expect(getActiveProviderConfig().defaultSender).toBe('"B" <b@ready.test>')
+    readyDomains.length = 0
     expect(getActiveProviderConfig().defaultSender).toBeUndefined()
   })
 })

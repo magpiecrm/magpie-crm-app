@@ -8,6 +8,7 @@
 import crypto from 'crypto'
 import { db } from './db'
 import { env } from './env'
+import { canSendFrom } from './sendingDomains'
 import { decryptToken, encryptToken } from './crypto'
 import { PROVIDER_DESCRIPTORS, getDescriptor, isProviderId } from './providers/descriptors'
 import type { ProviderCredentials, ProviderId } from './providers/types'
@@ -100,7 +101,7 @@ export function getActiveProviderConfig(): ActiveProviderConfig {
       if (!creds[field.key] && field.defaultValue) creds[field.key] = field.defaultValue
     }
     const missingFields = (descriptor?.fields ?? []).filter((f) => f.required && !creds[f.key]).map((f) => f.label)
-    const defaultSender = stored?.defaultSender || soleSenderRow()
+    const defaultSender = stored?.defaultSender || fallbackSenderRow()
     return { providerId, creds, defaultSender, missingFields, credsUnreadable: false, source: 'env' }
   }
 
@@ -129,21 +130,25 @@ export function getActiveProviderConfig(): ActiveProviderConfig {
     .filter((f) => f.required && !creds[f.key])
     .map((f) => f.label)
 
-  const defaultSender = stored?.defaultSender || env.smtp.sender() || soleSenderRow()
+  const defaultSender = stored?.defaultSender || env.smtp.sender() || fallbackSenderRow()
 
   return { providerId, creds, defaultSender, missingFields, credsUnreadable, source }
 }
 
 /**
- * When exactly one sender identity exists it is unambiguous enough to act as
- * the default, which keeps `sendIndividualEmailFn` (the one caller that passes
- * no `from`) working on deployments that never set SMTP_SENDER.
+ * The default sender when none is set, for the sends that pass no `from`
+ * (an email from a contact's record, a proposal, the test on Settings →
+ * Sending). The only sender, when there's one, is unambiguous enough. Where
+ * the host sends there's no setting for it, so with several the first one
+ * added whose domain is ready to send from stands in (Mailboxes marks it
+ * Default); elsewhere the default sender setting picks one.
  */
-function soleSenderRow(): string | undefined {
+function fallbackSenderRow(): string | undefined {
   const senders = db.data.senders
-  if (senders.length !== 1) return undefined
-  const { name, email } = senders[0]
-  return name ? `"${name}" <${email}>` : email
+  const pick =
+    senders.length === 1 ? senders[0] : env.sendingManaged() ? [...senders].sort((a, b) => a.id - b.id).find((s) => canSendFrom(s.email)) : undefined
+  if (!pick) return undefined
+  return pick.name ? `"${pick.name}" <${pick.email}>` : pick.email
 }
 
 export interface SaveProviderSettingsInput {
