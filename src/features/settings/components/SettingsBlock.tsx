@@ -7,8 +7,9 @@ import { Switch } from '../../../components/ui/Switch'
 // column and puts its controls in a right column, so every field, list row
 // and button on every page shares the same two edges. The columns go by the
 // panel's own width, not the window's: beside each other where the panel has
-// room for both, stacked where it hasn't (a laptop with the sidebar open),
-// and the controls column stops growing at a width a form still reads well at.
+// room for both, stacked where it hasn't (a laptop with the sidebar open). The
+// controls column takes the rest of the panel, which SettingsPage stops growing
+// at a width a form still reads well at.
 //
 //   <SettingsPanel>
 //     <SettingsBlock title="People" description="…">
@@ -31,7 +32,8 @@ export function SettingsPanel({ children, className = '' }: { children: ReactNod
 /**
  * One block of a panel. Where the panel is wide enough its title and
  * explanation sit in the left column beside the controls; where it isn't they
- * stack. The controls column is the same width in every block.
+ * stack. The controls column is the same width in every block; on a wide
+ * panel the title column widens a little too, so explanations wrap less.
  */
 export function SettingsBlock({
   title,
@@ -43,7 +45,7 @@ export function SettingsBlock({
   children?: ReactNode
 }) {
   return (
-    <section className="grid gap-x-10 gap-y-4 px-6 py-6 @[44rem]:grid-cols-[15rem_minmax(0,46rem)]">
+    <section className="grid gap-x-10 gap-y-4 px-6 py-6 @[44rem]:grid-cols-[15rem_minmax(0,1fr)] @[72rem]:grid-cols-[18rem_minmax(0,1fr)]">
       <div className="flex min-w-0 flex-col gap-1.5">
         <h3 className="text-[15px] font-semibold text-foreground">{title}</h3>
         {description && <div className="flex flex-col gap-2 text-[13px] leading-relaxed text-muted-foreground">{description}</div>}

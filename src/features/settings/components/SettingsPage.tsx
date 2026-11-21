@@ -80,8 +80,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
   const current = SETTINGS_SECTIONS.find((s) => s.id === active) ?? SETTINGS_SECTIONS[0]
 
   return (
-    // Centred once the window is wider than the menu and a full-width page together.
-    <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[84rem] mx-auto">
+    // Fills the window up to the menu plus the widest page (a 1920px screen with the sidebar open), then centres.
+    <div className="p-4 lg:p-8 flex flex-col gap-6 w-full max-w-[107rem] mx-auto">
       <h1 className="lg:hidden text-base font-semibold text-foreground">Settings</h1>
 
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
@@ -148,8 +148,8 @@ export function SettingsPage({ initialSection, checkoutSession }: { initialSecti
         </nav>
         </aside>
 
-        {/* Every page is the same width: at its widest the panel's label column, its controls column and their padding (SettingsBlock). */}
-        <section className="flex-1 min-w-0 max-w-[65.5rem] flex flex-col gap-5">
+        {/* Every page is the same width. At its widest: a block's padding (3rem), title column (18rem), gap (2.5rem) and a 64rem controls column (SettingsBlock). */}
+        <section className="flex-1 min-w-0 max-w-[87.5rem] flex flex-col gap-5">
           <header className="flex flex-col gap-1.5">
             <h2 className="text-2xl font-display text-foreground">{current.label}</h2>
             <p className="text-sm text-muted-foreground max-w-2xl">
