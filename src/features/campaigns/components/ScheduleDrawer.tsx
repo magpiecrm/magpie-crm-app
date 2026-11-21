@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
@@ -47,11 +47,6 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
-  // A refusal shows at the end of the dialog's body, which may be scrolled past the spam score: brought into view.
-  const errorRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (errorMsg) errorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [errorMsg])
   const [batchSize, setBatchSize] = useState('100')
   const [batchWait, setBatchWait] = useState(60)
   const [batchStart, setBatchStart] = useState<'now' | 'later'>('now')
@@ -322,12 +317,14 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
               </div>
             )}
 
-            {errorMsg && (
-              <div ref={errorRef}>
-                <Notice level="error">{errorMsg}</Notice>
-              </div>
-            )}
           </DialogBody>
+
+          {/* Next to the buttons, outside the scrolling body, so it's seen however far down the spam score goes. */}
+          {errorMsg && (
+            <div className="shrink-0 px-5 sm:px-6 pb-3">
+              <Notice level="error">{errorMsg}</Notice>
+            </div>
+          )}
 
           <DialogFooter>
             <Button variant="secondary" onClick={onClose}>
