@@ -67,6 +67,12 @@ export const Route = createRootRouteWithContext<{
       {
         title: APP_NAME,
       },
+      // The app is never a search result: its login page was showing up in
+      // Google for the hosted copies. Public forms and surveys set the same.
+      {
+        name: 'robots',
+        content: 'noindex, nofollow',
+      },
       // iOS only treats the site as an installable app — and only allows web
       // push — when it is added to the Home Screen with these present.
       {
