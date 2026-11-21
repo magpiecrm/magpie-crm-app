@@ -238,17 +238,16 @@ export function CampaignWizard({ onClose, campaignId, initialTemplateId }: Campa
   const lists = listsData?.lists || []
   const senders = (sendersData?.senders || []).filter((s: any) => s.active !== false)
 
-  // Auto-select first sender if available and none selected
+  // A new campaign, or a saved one with no sender, starts from the first sender. A saved campaign is
+  // waited for, and the check is on the latest form (prev), so its own sender is never replaced.
+  const firstSender = senders[0]
+  const waitingForCampaign = !!campaignId && !campaignToEdit
   useEffect(() => {
-    if (senders.length > 0 && !formData.senderEmail) {
-      setFormData(prev => ({
-        ...prev,
-        senderName: senders[0].name,
-        senderEmail: senders[0].email,
-        senderId: senders[0].id
-      }))
-    }
-  }, [senders])
+    if (!firstSender || waitingForCampaign) return
+    setFormData(prev =>
+      prev.senderEmail ? prev : { ...prev, senderName: firstSender.name, senderEmail: firstSender.email, senderId: firstSender.id },
+    )
+  }, [firstSender?.id, waitingForCampaign])
 
   const selectedList = lists.find((l: any) => l.id === formData.selectedListId)
 

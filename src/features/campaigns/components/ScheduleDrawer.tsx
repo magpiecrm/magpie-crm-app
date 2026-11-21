@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../../queryKeys'
@@ -47,6 +47,11 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
   const [scheduleDate, setScheduleDate] = useState('')
   const [scheduleTime, setScheduleTime] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
+  // A refusal shows at the end of the dialog's body, which may be scrolled past the spam score: brought into view.
+  const errorRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (errorMsg) errorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [errorMsg])
   const [batchSize, setBatchSize] = useState('100')
   const [batchWait, setBatchWait] = useState(60)
   const [batchStart, setBatchStart] = useState<'now' | 'later'>('now')
@@ -317,7 +322,11 @@ export function ScheduleDrawer({ isOpen, onClose, campaignId, campaignData, onSe
               </div>
             )}
 
-            {errorMsg && <Notice level="error">{errorMsg}</Notice>}
+            {errorMsg && (
+              <div ref={errorRef}>
+                <Notice level="error">{errorMsg}</Notice>
+              </div>
+            )}
           </DialogBody>
 
           <DialogFooter>
