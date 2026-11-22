@@ -353,6 +353,7 @@ export async function getCampaigns() {
       scheduledAt: db.campaignScheduledAt(c.id),
       dailyPacing: db.campaignPacing(c.id),
       batches: batchesOf(c.id),
+      firstSentAt: firstSentAt(c.id),
       recipients: { listIds: c.listId ? [c.listId] : [] },
       sender: { name: c.senderName, email: c.senderEmail },
       statistics: {
@@ -402,8 +403,10 @@ export async function getCampaign(id: number) {
     sentAt: c.sentAt,
     sentDate: c.sentAt, // Alias for backward compatibility
     scheduledAt: db.campaignScheduledAt(c.id),
-      dailyPacing: db.campaignPacing(c.id),
-      batches: batchesOf(c.id),
+    dailyPacing: db.campaignPacing(c.id),
+    batches: batchesOf(c.id),
+    /** When its first email went: a campaign going out in batches has results before `sentAt`, set once the last one has gone. */
+    firstSentAt: firstSentAt(c.id),
     /** Unverified recipients held back after a first batch, if any (guessedRecipients.ts). */
     guessHold: db.getGuessHold(c.id),
     recipients: { 
@@ -481,6 +484,15 @@ export async function duplicateCampaign(id: number) {
     unsubscribeEnabled: campaign.unsubscribeEnabled,
     trackOpens: campaign.trackOpens,
   })
+}
+
+/** When a campaign's first email went, or null before any has. */
+const firstSentAt = (id: number): string | null => {
+  let first: string | null = null
+  for (const r of db.data.campaign_recipients) {
+    if (r.campaign_id == id && r.sent_at && (!first || r.sent_at < first)) first = r.sent_at
+  }
+  return first
 }
 
 /** A campaign's batches as the app speaks of them. */

@@ -8,7 +8,7 @@ import { campaignsFn, sendCampaignFn, deleteCampaignFn, duplicateCampaignFn } fr
 import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { CampaignWizard } from '../../../features/campaigns/components/CampaignWizard'
 import { sortCampaigns } from '../../../features/campaigns/sort'
-import { campaignSummary } from '../../../features/campaigns/results'
+import { campaignHasResults, campaignSummary } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
 import { sentMessage, toastParts } from '../../../features/campaigns/sendResult'
 import { confirmDialog } from '../../../components/ui/confirm'
@@ -67,7 +67,8 @@ function CampaignCard({ campaign, onEdit }: { campaign: any, onEdit: (id: number
   const isSuspended = campaign.status === 'suspended'
   const isScheduled = campaign.status === 'scheduled' && Boolean(campaign.scheduledAt)
   const isSending = campaign.status === 'sending'
-  const showMetrics = isSent || isSuspended
+  // Part-sent campaigns (in batches, or over days) show their results so far.
+  const showMetrics = campaignHasResults(campaign)
 
   const { sent: cSent, opened: cOpened, clicked: cClicked, unsubscribed: cUnsubscribed, openRate: campaignOpenRate, clickRate: campaignClickRate, unsubRate: campaignUnsubRate } = campaignSummary(campaign)
 

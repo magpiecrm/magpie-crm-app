@@ -120,6 +120,15 @@ export function summariseCampaigns(campaigns: Array<Parameters<typeof campaignSu
 }
 
 /** A share as a percentage with one decimal, or a dash when there's nothing to divide by. */
+/**
+ * Whether a campaign has results to show: sent, suspended, or part-sent (going
+ * out in batches, or spread over days by the daily limit), so its numbers show
+ * from the first batch and fill in as the rest go.
+ */
+export function campaignHasResults(c: { status?: string; dailyPacing?: { sent: number } | null }): boolean {
+  return c.status === 'sent' || c.status === 'suspended' || (c.status === 'scheduled' && (c.dailyPacing?.sent ?? 0) > 0)
+}
+
 export const percent = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toFixed(1)}%` : '–')
 
 export const RECIPIENT_FILTERS = [

@@ -8,7 +8,7 @@ import { campaignsFn } from '../../../server/functions'
 import { CampaignSort, useCampaignSort } from '../../../features/campaigns/components/CampaignSort'
 import { sortCampaigns } from '../../../features/campaigns/sort'
 import { ALL_TIME, inDateRange, type DateRange } from '../../../features/campaigns/dateRange'
-import { campaignSummary, summariseCampaigns } from '../../../features/campaigns/results'
+import { campaignHasResults, campaignSummary, summariseCampaigns } from '../../../features/campaigns/results'
 import { Pagination } from '../../../components/ui/Pagination'
 import { ExportMenu } from '../../../components/ui/ExportMenu'
 import type { ExportColumn } from '../../../utils/export'
@@ -66,7 +66,7 @@ function AnalyticsPage() {
   
   // Totals across the campaigns shown. Opens are divided by what was delivered in campaigns that track them.
   const totals = summariseCampaigns(filteredCampaigns)
-  const totalCampaignsCount = filteredCampaigns.filter((c: any) => c.status === 'sent' || c.status === 'suspended').length
+  const totalCampaignsCount = filteredCampaigns.filter((c: any) => campaignHasResults(c)).length
   const { sent: totalSent, opened: totalOpened, clicked: totalClicked, unsubscribed: totalUnsubscribed, bounces: totalBounces } = totals
   const { openRate, clickRate, unsubRate, bounceRate } = totals
   const totalReplies = 0

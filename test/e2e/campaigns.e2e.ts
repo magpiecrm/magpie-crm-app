@@ -1,4 +1,4 @@
-// M1, M2 and C4 (test/JOURNEYS.md): campaigns sent the way a customer sends them,
+// M1, M2, M6 and C4 (test/JOURNEYS.md): campaigns sent the way a customer sends them,
 // caught by the stack's mail server (Mailpit), and what the people who got them
 // can do with them: unsubscribe (from the page, or the mail app's one-click
 // List-Unsubscribe), open and click.
@@ -339,6 +339,45 @@ test('M2: an open counts only after the first minute, a click counts and redirec
   const row = page.getByRole('row').filter({ hasText: campaign.name })
   await expect(row.getByRole('cell').nth(3).locator('span').first()).toHaveText('1')
   await expect(row.getByRole('cell').nth(4).locator('span').first()).toHaveText('1')
+
+  expect(problems()).toEqual([])
+})
+
+test('M6: a campaign in batches shows its results from the first batch', async ({ page, problems }) => {
+  await readySender(page)
+  const listName = unique('M6 list')
+  const people = [person('gil'), person('hal'), person('ivy')]
+  await makeList(page, listName)
+  await addContacts(page, people, listName)
+
+  const campaign = { name: unique('M6 campaign'), subject: unique('Batch news') }
+  await createCampaign(page, { ...campaign, listName, listSize: 3, html: body(LINK) })
+
+  // One at a time, an hour apart (the drawer's default wait): only the first goes now.
+  await page.goto('/marketing/campaigns')
+  await campaignCard(page, campaign.name).getByTitle('Edit').click()
+  await expect(page.getByRole('heading', { level: 1, name: campaign.name })).toBeVisible()
+  await page.getByRole('button', { name: 'Schedule' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Send or schedule' })
+  await dialog.getByText('In batches', { exact: true }).click()
+  await dialog.locator('#batch-size').fill('1')
+  await dialog.getByRole('button', { name: 'Send first batch' }).click()
+  await expect(dialog).toBeHidden()
+
+  const caughtSoFar = async () => (await Promise.all(people.map((p) => caught(p.email, campaign.subject)))).flat()
+  await expect.poll(async () => (await caughtSoFar()).length, { timeout: 30_000 }).toBe(1)
+
+  // Still scheduled, with what's gone so far counted on its card and its page.
+  const card = campaignCard(page, campaign.name)
+  await page.goto('/marketing/campaigns')
+  await expect(card.getByText('scheduled', { exact: true })).toBeVisible()
+  await expect(card.locator('span', { hasText: /^Recipients$/ }).locator('xpath=following-sibling::span[1]')).toHaveText('1')
+  await card.getByRole('link', { name: campaign.name, exact: true }).click()
+  await expect(page.getByText('So far: 1 of 3 sent')).toBeVisible()
+  await expect(page.getByText('1 sent so far.')).toBeVisible()
+  await page.getByRole('button', { name: 'Deliverability', exact: true }).click()
+  await expect(tile(page, 'Sent to')).toHaveText('1')
+  expect(await caughtSoFar()).toHaveLength(1)
 
   expect(problems()).toEqual([])
 })

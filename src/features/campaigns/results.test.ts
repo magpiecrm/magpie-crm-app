@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { campaignSummary, summariseCampaigns } from './results'
+import { campaignHasResults, campaignSummary, summariseCampaigns } from './results'
 
 const sent = (stats: Record<string, number>, trackOpens?: boolean) => ({ ...(trackOpens === undefined ? {} : { trackOpens }), statistics: { globalStats: stats } })
 
@@ -41,5 +41,20 @@ describe('summariseCampaigns', () => {
 
   it('has nothing to divide by when no campaign tracked opens', () => {
     expect(summariseCampaigns([sent({ sent: 300, delivered: 300 }, false)])).toMatchObject({ trackedDelivered: 0, openRate: 0 })
+  })
+})
+
+describe('campaignHasResults', () => {
+  it('shows results once sent or suspended, and while part-sent in batches or over days', () => {
+    expect(campaignHasResults({ status: 'sent' })).toBe(true)
+    expect(campaignHasResults({ status: 'suspended' })).toBe(true)
+    expect(campaignHasResults({ status: 'scheduled', dailyPacing: { sent: 100 } })).toBe(true)
+  })
+
+  it('shows none before anything has gone', () => {
+    expect(campaignHasResults({ status: 'draft' })).toBe(false)
+    expect(campaignHasResults({ status: 'sending' })).toBe(false)
+    expect(campaignHasResults({ status: 'scheduled', dailyPacing: null })).toBe(false)
+    expect(campaignHasResults({ status: 'scheduled', dailyPacing: { sent: 0 } })).toBe(false)
   })
 })

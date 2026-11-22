@@ -70,6 +70,7 @@ and the line here with the fix.
 - **M3 Schedule and cancel** — hunt. Scheduled for later sends nothing now; cancelling keeps it a draft.
 - **M4 Daily limit** — hunt (hosted). With the host's cold limit set low (`/__control`), the rest goes the next day and the campaign says so.
 - **M5 Test email** — hunt. "Send a test" reaches only the address given.
+- **M6 Results while in batches** — auto [`campaigns`]. Sent in batches (or spread over days by the daily limit), a campaign shows its results from the first batch: its card's figures, its page's tiles, tabs and recipients, refreshing as the rest go.
 
 ## Forms and surveys
 

@@ -29,7 +29,7 @@ import {
   OpensTab,
   UnsubscribesTab,
 } from '../../../features/campaigns/components/CampaignResultTabs'
-import { RECIPIENT_EXPORT_COLUMNS, campaignTotals, percent } from '../../../features/campaigns/results'
+import { RECIPIENT_EXPORT_COLUMNS, campaignHasResults, campaignTotals, percent } from '../../../features/campaigns/results'
 import { confirmDialog } from '../../../components/ui/confirm'
 
 const when = (iso: string) =>
@@ -55,15 +55,17 @@ function CampaignDetailPage() {
     queryKey: queryKeys.email.campaign(id),
     queryFn: () => getCampaignFn({ data: { id: parseInt(id) } }),
     // Results keep arriving after the send; refresh them while the page is open.
-    refetchInterval: (q) => (q.state.data?.status === 'sent' || q.state.data?.status === 'sending' ? 30_000 : false),
+    refetchInterval: (q) => (q.state.data?.status === 'sending' || (q.state.data && campaignHasResults(q.state.data)) ? 30_000 : false),
   })
-  const hasResults = campaign?.status === 'sent' || campaign?.status === 'suspended'
+  const hasResults = Boolean(campaign && campaignHasResults(campaign))
+  // Going out in batches (or over days): results so far, filling in as the rest go.
+  const partSent = hasResults && campaign?.status === 'scheduled'
 
   const { data: activity } = useQuery({
     queryKey: queryKeys.email.campaignActivity(id),
     queryFn: () => getCampaignActivityFn({ data: { id: parseInt(id) } }),
     enabled: hasResults,
-    refetchInterval: campaign?.status === 'sent' ? 30_000 : false,
+    refetchInterval: campaign?.status === 'sent' || partSent ? 30_000 : false,
   })
 
   const { data: listsData } = useQuery({
@@ -108,7 +110,7 @@ function CampaignDetailPage() {
   const totals = campaignTotals(campaign.statistics?.globalStats)
   const formattedDate = when(campaign.sentAt || campaign.createdAt)
   const tracksOpens = campaign.trackOpens !== false
-  const tabProps = { totals, activity, sentAt: campaign.sentAt, hasResults, tracksOpens }
+  const tabProps = { totals, activity, sentAt: campaign.sentAt ?? campaign.firstSentAt, hasResults, tracksOpens }
 
   const recipientLists = (campaign.recipients?.listIds || []).map((listId: number) => {
     const found = listsData?.lists?.find((l: any) => l.id === listId)
@@ -304,7 +306,11 @@ function CampaignDetailPage() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-bold text-foreground">Campaign performance</h2>
-                {isSent && <span className="text-xs text-muted-foreground">Updates every 30 seconds</span>}
+                {(isSent || partSent) && (
+                  <span className="text-xs text-muted-foreground">
+                    {partSent && pacing ? `So far: ${pacing.sent} of ${pacing.sent + pacing.left} sent · updates every 30 seconds` : 'Updates every 30 seconds'}
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -430,11 +436,12 @@ function CampaignDetailPage() {
                 <div className="relative border-l border-border pl-6 space-y-6">
                   {[
                     campaign.sentAt && { icon: Mail, strong: true, title: 'Sent', text: `Went out to ${totals.sent.toLocaleString()} recipient${totals.sent === 1 ? '' : 's'}.`, at: campaign.sentAt },
+                    partSent && campaign.firstSentAt && { icon: Mail, strong: true, title: 'Started sending', text: `${totals.sent.toLocaleString()} sent so far.`, at: campaign.firstSentAt },
                     campaign.scheduledAt && {
                       icon: Clock,
-                      strong: !campaign.sentAt,
-                      title: isSent ? 'Was scheduled for' : 'Scheduled for',
-                      text: isSent ? 'Its scheduled send time.' : 'It sends on its own at this time.',
+                      strong: !campaign.sentAt && !partSent,
+                      title: isSent ? 'Was scheduled for' : partSent ? 'Next ones go' : 'Scheduled for',
+                      text: isSent ? 'Its scheduled send time.' : partSent ? 'The rest carry on by themselves.' : 'It sends on its own at this time.',
                       at: campaign.scheduledAt,
                     },
                     campaign.createdAt && { icon: FilePen, strong: false, title: 'Created', text: 'The campaign was created as a draft.', at: campaign.createdAt },
