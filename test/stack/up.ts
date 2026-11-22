@@ -214,15 +214,8 @@ const appEnv: Record<string, string> = {
         WEB_SEARCH_API_KEY: 'stand-in',
       }),
 }
-const app = spawn('bun', ['--no-env-file', 'serve.ts'], { cwd: root, env: appEnv, stdio: ['ignore', log('app'), log('app')] })
-children.push(app)
-app.on('exit', (code) => !stopping && fail(`the app stopped (${code}): see ${join(dir, 'app.log')}`))
-
-await waitFor(`${hostUrl}/__health`, 'the stand-in host')
-await waitFor(`http://127.0.0.1:${ports.mailWeb}/api/v1/info`, 'Mailpit')
-await waitFor(`http://127.0.0.1:${ports.inboxApi}/api/configuration`, 'GreenMail')
-await waitFor(`http://127.0.0.1:${ports.app}/login`, 'the app', 120_000)
-
+// Written before the app starts: the journeys begin the moment its sign-in page answers,
+// and read their login from here.
 const state: StackState = {
   appUrl: `http://127.0.0.1:${ports.app}`,
   hostUrl,
@@ -236,6 +229,15 @@ const state: StackState = {
 writeFileSync(join(dir, 'state.json'), JSON.stringify(state, null, 2), { mode: 0o600 })
 // What the stand-in needs to act as the host towards the app (e.g. set its allowance).
 writeFileSync(join(dir, 'app-tokens.json'), JSON.stringify({ usageApiToken: appEnv.USAGE_API_TOKEN, signInLinkSecret: appEnv.SIGN_IN_LINK_SECRET, webhookSecret }), { mode: 0o600 })
+
+const app = spawn('bun', ['--no-env-file', 'serve.ts'], { cwd: root, env: appEnv, stdio: ['ignore', log('app'), log('app')] })
+children.push(app)
+app.on('exit', (code) => !stopping && fail(`the app stopped (${code}): see ${join(dir, 'app.log')}`))
+
+await waitFor(`${hostUrl}/__health`, 'the stand-in host')
+await waitFor(`http://127.0.0.1:${ports.mailWeb}/api/v1/info`, 'Mailpit')
+await waitFor(`http://127.0.0.1:${ports.inboxApi}/api/configuration`, 'GreenMail')
+await waitFor(`http://127.0.0.1:${ports.app}/login`, 'the app', 120_000)
 
 console.log(`[stack] ready (${mode}): ${state.appUrl}`)
 console.log(`[stack] sign in with the login in ${join(dir, 'state.json')}; logs in ${dir}; Ctrl-C stops it`)
