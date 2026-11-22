@@ -75,3 +75,17 @@ describe('sessions after a password change', () => {
     expect(db.findSession(colleague)).toBeTruthy()
   })
 })
+
+describe('sessions after someone is removed', () => {
+  it('signs them out everywhere, and nobody else', async () => {
+    const { db } = await restart()
+    db.addUser('leaver@example.com', 'x:y')
+    const phone = db.createSession('leaver@example.com')
+    const laptop = db.createSession('Leaver@example.com')
+    const owner = db.createSession('admin@example.com')
+    db.deleteUser(' Leaver@Example.com')
+    expect(db.findSession(phone)).toBeNull()
+    expect(db.findSession(laptop)).toBeNull()
+    expect(db.findSession(owner)).toBeTruthy()
+  })
+})

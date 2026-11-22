@@ -254,6 +254,8 @@ export interface DbSchema {
     from?: string
     send_after: string
     sent: boolean
+    /** From a form that doesn't add people to a list: there's no contact to check, only the stops. */
+    without_contact?: true
     /** Failed sends so far; given up after a few. */
     attempts?: number
     /** Why it's no longer due: sent, skipped (they'd unsubscribed or bounced by then), or failed. */
@@ -632,6 +634,9 @@ const DELIVERY_LEEWAY_MS = 60_000
 /** How far apart a company's staff counts are kept (prospect_companies headcount_history). */
 const HEADCOUNT_SNAPSHOT_GAP_MS = 25 * 86_400_000
 
+/** The data file is there but isn't valid JSON (JsonDb.load): nothing is started on it. */
+class UnreadableDataFile extends Error {}
+
 class JsonDb {
   public data: DbSchema
 
@@ -680,7 +685,7 @@ class JsonDb {
         // Never started empty: the next save would write over everything the file still holds.
         const copy = `${dbPath}.corrupt-${Math.round(statSync(dbPath).mtimeMs)}`
         if (!existsSync(copy)) copyFileSync(dbPath, copy)
-        throw new Error(
+        throw new UnreadableDataFile(
           `The data file ${dbPath} can't be read (${(err as Error).message}), so nothing was started and it was left as it is. ` +
             `A copy is at ${copy}. Restore a backup or repair the file, then start again.`,
         )
@@ -1990,7 +1995,7 @@ class JsonDb {
   }
 
   // Pending email helpers
-  addPendingEmail(contactEmail: string, firstName: string, subject: string, html: string, delayMs: number, from?: string) {
+  addPendingEmail(contactEmail: string, firstName: string, subject: string, html: string, delayMs: number, from?: string, opts: { withoutContact?: boolean } = {}) {
     if (!this.data.pending_emails) this.data.pending_emails = []
     const id = crypto.randomUUID()
     this.data.pending_emails.push({
@@ -2002,6 +2007,7 @@ class JsonDb {
       from,
       send_after: new Date(Date.now() + delayMs).toISOString(),
       sent: false,
+      ...(opts.withoutContact ? { without_contact: true as const } : {}),
     })
     this.save()
     return id
@@ -2679,6 +2685,9 @@ class JsonDb {
     }
 
     this.data.users = this.data.users.filter(u => u.email.toLowerCase() !== normalizedEmail)
+    // Signed out everywhere: a session they still hold would go on working until it ran out.
+    this.data.sessions = (this.data.sessions ?? []).filter(s => s.email.toLowerCase() !== normalizedEmail)
+    this.data.view_sessions = this.data.view_sessions?.filter(s => s.email.toLowerCase() !== normalizedEmail)
     this.save()
   }
 
@@ -2796,7 +2805,22 @@ class JsonDb {
   }
 }
 
-export const db = new JsonDb()
+/**
+ * The app's database. A data file that can't be read stops the whole app
+ * (exit 1) rather than leaving it up answering errors: whoever runs it sees
+ * it's down, and why, once. Tests get the error itself.
+ */
+function openDb(): JsonDb {
+  try {
+    return new JsonDb()
+  } catch (err) {
+    if (!(err instanceof UnreadableDataFile) || process.env.VITEST) throw err
+    console.error(`[db] ${err.message}`)
+    process.exit(1)
+  }
+}
+
+export const db = openDb()
 
 // Placeholder function to maintain schema creation calls in imports
 export function initDb() {}

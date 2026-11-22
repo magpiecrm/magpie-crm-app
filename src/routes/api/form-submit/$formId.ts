@@ -75,7 +75,8 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
 
         const outcome: NonNullable<FormSubmissionRecord['outcome']> = {}
         try {
-          if (form.save_to_list_enabled !== false && form.list_id) {
+          const saved = form.save_to_list_enabled !== false && !!form.list_id
+          if (saved) {
             const save = new Set(contactFieldsOf(form))
             const existing = db.getContact(email)
             outcome.list_id = form.list_id
@@ -100,7 +101,10 @@ export const Route = createFileRoute('/api/form-submit/$formId')({
               const sender = db.data.senders.find((s) => s.id === form.sender_id)
               if (sender) from = `"${sender.name}" <${sender.email}>`
             }
-            outcome.welcome_email_id = db.addPendingEmail(email, str('first_name'), fillMergeTags(form.welcome_email_subject, values), html, form.welcome_email_delay_minutes * 60 * 1000, from)
+            outcome.welcome_email_id = db.addPendingEmail(email, str('first_name'), fillMergeTags(form.welcome_email_subject, values), html, form.welcome_email_delay_minutes * 60 * 1000, from, {
+              // A form that keeps nobody still sends its welcome email: there's no contact to look for later.
+              withoutContact: !saved,
+            })
           }
 
           const consent = fields.find((f) => f.key === 'consent')

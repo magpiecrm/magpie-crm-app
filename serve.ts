@@ -29,6 +29,13 @@ if (process.env.DNS_SERVERS) {
 // A variable path, so typechecking doesn't need a build first.
 const { default: app } = await import(entry)
 
+// The sign-in page, asked for once before listening: it opens the data file, so one
+// that can't be read stops the app here (src/server/db.ts) rather than at the first
+// visitor, and the background jobs start now rather than then.
+await Promise.resolve(app.fetch(new Request('http://127.0.0.1/login'))).catch((err: any) =>
+  console.error('[serve] First page failed:', err?.message ?? err),
+)
+
 /** A built client file for this path, or null. Never anything outside dist/client. */
 async function clientFile(pathname: string) {
   let decoded: string

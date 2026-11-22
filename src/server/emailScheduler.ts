@@ -122,9 +122,11 @@ export async function sendDueWelcomeEmails() {
   try {
     for (const e of db.getDuePendingEmails()) {
       const domain = e.contact_email.split('@')[1] ?? 'unknown'
-      // Unsubscribed or bounced since they signed up: not sent.
+      // Unsubscribed, bounced or removed since they signed up: not sent. A form that
+      // doesn't add people to a list made no contact, so only a contact that's there is checked.
       const contact = db.getContact(e.contact_email)
-      if (!contact || contact.status !== 'subscribed' || db.emailStop(e.contact_email)) {
+      const gone = contact ? contact.status !== 'subscribed' : !e.without_contact
+      if (gone || db.emailStop(e.contact_email)) {
         db.markPendingEmailSent(e.id, 'skipped')
         console.log(`[EmailScheduler] Skipped a welcome email to someone at ${domain}: no longer subscribed`)
         continue

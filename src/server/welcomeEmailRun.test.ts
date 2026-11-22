@@ -61,4 +61,17 @@ describe('welcome emails that are due', () => {
     expect(sent).toEqual([])
     expect(db.getDuePendingEmails()).toEqual([])
   })
+
+  it("go to someone a form didn't add to a list, unless they're a contact who unsubscribed or their address is stopped", async () => {
+    await subscribed(['left@acme.test'])
+    db.getContact('left@acme.test')!.status = 'unsubscribed'
+    db.stopEmail('bounced@acme.test', 'bounced')
+    for (const email of ['new@acme.test', 'left@acme.test', 'bounced@acme.test']) {
+      db.addPendingEmail(email, '', 'Welcome', '<p>Hi</p>', -1000, undefined, { withoutContact: true })
+    }
+
+    await sendDueWelcomeEmails()
+    expect(sent).toEqual(['new@acme.test'])
+    expect(db.getDuePendingEmails()).toEqual([])
+  })
 })

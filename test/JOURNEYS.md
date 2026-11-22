@@ -66,14 +66,14 @@ and the line here with the fix.
 ## Campaigns
 
 - **M1 Send a campaign** — auto [`campaigns`]. To a list of three (one unsubscribed): two emails caught, each with the subject, a working unsubscribe link, a List-Unsubscribe header and a tracking pixel; the campaign shows sent with two recipients.
-- **M2 Opens and clicks** — auto [`campaigns`]. Loading the pixel later than a minute after delivery counts an open; within a minute it's left out (automated); following a link counts a click and redirects; Analytics shows both.
+- **M2 Opens and clicks** — auto [`campaigns`]. Loading the pixel later than a minute after delivery counts an open; within a minute it's left out (automated); following a link counts a click and redirects; Analytics shows both. Analytics dates and its date range go by when a campaign was sent, not when it was drafted.
 - **M3 Schedule and cancel** — hunt. Scheduled for later sends nothing now; cancelling keeps it a draft.
 - **M4 Daily limit** — hunt (hosted). With the host's cold limit set low (`/__control`), the rest goes the next day and the campaign says so.
 - **M5 Test email** — hunt. "Send a test" reaches only the address given.
 
 ## Forms and surveys
 
-- **F1 Form to contact** — auto [`forms`]. Build a form, publish it, fill it in at `/f/<id>`: a contact is made with the fields, and its welcome email is caught. A heading, intro, privacy link and thank-you page set before the first save show on the form, and sending it goes to that page.
+- **F1 Form to contact** — auto [`forms`]. Build a form, publish it, fill it in at `/f/<id>`: a contact is made with the fields, and its welcome email is caught. A heading, intro, privacy link and thank-you page set before the first save show on the form, and sending it goes to that page. A form with "Add people to a list" off still sends its welcome email, and makes no contact.
 - **F2 Embeds** — hunt. The iframe and pop-up snippets work on a plain page from another origin; hidden fields and the redirect apply.
 - **SV1 Survey** — hunt. Build one with a branch rule; take it at `/s/<id>` both ways; results show both answers.
 
@@ -112,7 +112,7 @@ and the line here with the fix.
 - **ST3 Overview and usage** — hunt. Counts on Overview match what the journeys did; with an allowance set, the meters show it and going over refuses with a clear message.
 - **ST4 Plan and billing** — hunt (hosted). The plan from the stand-in shows; add-ons offered.
 - **ST5 Warmup** — hunt (hosted). A sender with a ready domain and connected inbox can switch warmup on after agreeing; one that isn't ready says why.
-- **ST6 API keys and team** — hunt. Make and revoke a key; invite someone.
+- **ST6 API keys and team** — hunt. Make and revoke a key; invite someone. Removing a person signs them out everywhere: their open browser goes to the sign-in page at its next click.
 
 ## Dev copy only (real)
 

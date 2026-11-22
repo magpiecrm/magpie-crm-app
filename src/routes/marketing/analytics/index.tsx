@@ -22,7 +22,7 @@ const campaignExportColumns: ExportColumn<any>[] = [
   { header: 'Unsubscribed', value: c => campaignSummary(c).unsubscribed },
   { header: 'Complaints', value: c => campaignSummary(c).complaints },
   { header: 'Bounces', value: c => campaignSummary(c).bounces },
-  { header: 'Sent Date', value: c => c.sentDate || c.createdAt || '' },
+  { header: 'Sent Date', value: c => c.sentAt || c.createdAt || '' },
   { header: 'Status', value: c => c.status },
 ]
 
@@ -307,7 +307,7 @@ function AnalyticsPage() {
                         <div className="min-w-0">
                           <p className="font-semibold text-foreground truncate">{campaign.name}</p>
                           <p className="text-[11px] text-muted-foreground font-mono">
-                            #{campaign.id} · {formatDate(campaign.sentDate || campaign.createdAt)}
+                            #{campaign.id} · {formatDate(campaign.sentAt || campaign.createdAt)}
                           </p>
                         </div>
                         <Badge variant={campaign.status === 'sent' ? 'success' : campaign.status === 'suspended' ? 'error' : 'default'}>
@@ -425,7 +425,7 @@ function AnalyticsPage() {
                           
                           {/* Sent Date */}
                           <td className="px-6 py-4 text-muted-foreground whitespace-nowrap">
-                            {formatDate(campaign.sentDate || campaign.createdAt)}
+                            {formatDate(campaign.sentAt || campaign.createdAt)}
                           </td>
                           
                           {/* Status */}
