@@ -8,8 +8,9 @@
 // surveys, templates or personas) unless given --reset. Either way it
 // replaces the collections it seeds and leaves everything else as it is:
 // users, sessions, API keys, secrets, settings, prospecting caches,
-// mailboxes and sending domains. Its own sender and brand kit are added or
-// updated; anyone else's are kept. Its plan and usage counts (plan.ts) replace
+// mailboxes and other sending domains. Its own sender, brand kit and
+// verified sending domain (sending.ts) are added or updated; anyone else's
+// are kept. Its plan and usage counts (plan.ts) replace
 // any there were, so the credits it shows start part-used again.
 //
 // Nothing it writes is due to send. Campaigns are 'sent' or 'draft', never
@@ -25,6 +26,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { buildDemo } from './build'
 import { WORKSPACE } from './content'
 import { buildDemoPlan } from './plan'
+import { demoSendingDomain } from './sending'
 
 /** The sample contacts the app adds to a fresh database (db.ts seedDefaultData): not anyone's data. */
 const APP_SAMPLES = new Set(['test@example.com', 'hello@example.com'])
@@ -103,6 +105,9 @@ db.transaction(() => {
     data.allowance = plan.allowance
     data.usage = plan.monthly
     data.usage_daily = plan.daily
+    // Its own domain, verified; anyone else's are kept.
+    const sendingDomain = demoSendingDomain(now)
+    data.sending_domains = [...(data.sending_domains ?? []).filter((d) => d.domain !== sendingDomain.domain), sendingDomain]
     // Welcome emails still waiting were for contacts that are now gone.
     data.pending_emails = (data.pending_emails ?? []).filter((e) => e.sent)
   })

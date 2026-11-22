@@ -136,3 +136,15 @@ describe('sending domains', () => {
     expect(() => requireSendingDomain('me@anything.test')).toThrow("anything.test isn't a verified sending domain yet")
   })
 })
+
+describe('a demo copy', () => {
+  afterEach(() => {
+    delete process.env.DEMO_MODE
+  })
+
+  it('says it is a demo rather than that sending is not set up', async () => {
+    process.env.DEMO_MODE = 'on'
+    await expect(addSendingDomain('acme.test')).rejects.toThrow(/demo workspace/)
+    expect(getSendingDomains()).toEqual([])
+  })
+})

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildDemo } from './build'
 import { buildDemoPlan } from './plan'
+import { demoSendingDomain } from './sending'
 import { fromProspectSearch, isUnconfirmedGuess } from '../prospecting/types'
 
 // The demo workspace (seed.ts): made up, on .example, and nothing in it can send.
@@ -66,5 +67,19 @@ describe('demo plan', () => {
 
   it('is counts only', () => {
     expect(JSON.stringify({ allowance, daily, monthly })).not.toMatch(/@/)
+  })
+})
+
+describe('demo sending domain', () => {
+  const domain = demoSendingDomain(new Date('2026-11-14T12:00:00Z'))
+
+  it("is the workspace's own, verified, with the records a real one has", () => {
+    expect(domain).toMatchObject({ domain: 'copperwick.example', ready: true })
+    expect(domain.records.map((r) => r.name)).toEqual([expect.stringMatching(/^mg[0-9a-f]{8}\._domainkey\.copperwick\.example$/), '_dmarc.copperwick.example'])
+    expect(domain.records[0].value).toMatch(/^v=DKIM1; k=rsa; p=MIIB[A-Za-z0-9+/]{300,}$/)
+  })
+
+  it('covers the demo sender, so Senders shows it ready', () => {
+    expect(demo.sender.email.endsWith(`@${domain.domain}`)).toBe(true)
   })
 })
