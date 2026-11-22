@@ -120,3 +120,12 @@ What the stand-ins can't prove, done once per release on `dev.magpiecrm.com`
 with your own addresses: one real people search, one real reveal, one campaign
 and one sequence email to your own inbox (it arrives, not in spam, links work),
 a reply to it detected.
+
+## Demo copy only (real)
+
+`demo.magpiecrm.com` (`DEMO_MODE=on`, made-up data from `bun run demo:seed`),
+checked after deploying a build to it: a real people search shows every name,
+company and title's employer starred and no profile links, in the page and in
+what the server sent (`demoMask.test.ts` covers the shapes); Reveal shows a
+starred email; Save is off; sending a draft campaign sends nothing; Settings
+shows the plan's meters, a ready sending domain and a good reputation.

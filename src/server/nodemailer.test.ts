@@ -3,9 +3,10 @@ import { providerError } from './providers/types'
 
 const managed = vi.hoisted(() => ({ on: false }))
 const config = vi.hoisted(() => ({ missingFields: [] as string[] }))
+const demo = vi.hoisted(() => ({ on: false }))
 
 vi.mock('./db', () => ({ db: { query: () => ({ get: () => null }) } }))
-vi.mock('./env', () => ({ env: { sendingManaged: () => managed.on } }))
+vi.mock('./env', () => ({ env: { sendingManaged: () => managed.on, demoMode: () => demo.on } }))
 vi.mock('./emailSettings', () => ({
   getActiveProviderConfig: () => ({
     providerId: 'ses',
@@ -36,6 +37,7 @@ const { recordUsage } = await import('./usage')
 describe('send errors', () => {
   beforeEach(() => {
     managed.on = false
+    demo.on = false
   })
 
   it('name the provider when you run your own sending', async () => {
@@ -50,6 +52,12 @@ describe('send errors', () => {
       /^Email sending failed for jane@example\.com: Email address is not verified\.$/,
     )
   })
+
+  it('never reach the provider in a demo copy, which says it sent', async () => {
+    demo.on = true
+    const sent = await sendMail({ to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>' })
+    expect(sent.messageId).toMatch(/^demo-/)
+  })
 })
 
 describe("through the sender's own mailbox", () => {
@@ -59,6 +67,7 @@ describe("through the sender's own mailbox", () => {
     vi.mocked(requireAllowance).mockClear()
     vi.mocked(recordUsage).mockClear()
     config.missingFields = []
+    demo.on = false
   })
 
   it("goes through the mailbox, not the provider: counted, but no sending domain needed", async () => {
@@ -87,6 +96,13 @@ describe("through the sender's own mailbox", () => {
     config.missingFields = ['apiKey']
     await sendMail({ from: 'hello@acme.com', to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>', via: { mailboxId: 'mb1' } })
     expect(sendThroughMailbox).toHaveBeenCalledTimes(1)
+  })
+
+  it("doesn't go through it in a demo copy either", async () => {
+    demo.on = true
+    const sent = await sendMail({ from: 'hello@acme.com', to: 'jane@example.com', subject: 'Hi', html: '<p>Hi</p>', via: { mailboxId: 'mb1' } })
+    expect(sent.messageId).toMatch(/^demo-/)
+    expect(sendThroughMailbox).not.toHaveBeenCalled()
   })
 
   it('still refuses a From that is no sender of the workspace', async () => {

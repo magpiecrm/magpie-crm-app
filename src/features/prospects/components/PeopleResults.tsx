@@ -355,9 +355,11 @@ export function PeopleResults({
                   <Avatar name={`${p.firstName} ${p.lastName}`} />
                   <div className="flex items-center gap-1.5 min-w-0">
                     <p className="font-semibold text-foreground text-sm">{p.firstName} {p.lastName}</p>
-                    <a href={p.profileUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title={p.fromWebsite ? 'Their company’s website' : 'Profile'}>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                    {!p.masked && (
+                      <a href={p.profileUrl} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground" title={p.fromWebsite ? 'Their company’s website' : 'Profile'}>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
                   </div>
                 </div>
               </td>

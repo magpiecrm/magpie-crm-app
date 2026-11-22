@@ -59,6 +59,8 @@ const hostApi: HostApi = async (method, domain) => {
   const base = env.managedSendingUrl()
   const user = env.smtp.user()
   const pass = env.smtp.pass()
+  // A demo copy has no login to the mail server: its domain is made up (demo/sending.ts).
+  if (env.demoMode()) throw new Error('This is a demo workspace, so sending domains can’t be added or checked here.')
   if (!base || !user || !pass) throw new Error("Sending isn't set up on this server yet.")
   const res = await fetch(`${base}/v1/mta/domains/${encodeURIComponent(domain)}`, {
     method,

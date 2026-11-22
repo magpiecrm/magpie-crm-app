@@ -26,6 +26,11 @@ import { classifySeniority } from './seniority'
 import { emailHash, hashesFor, isSuppressed, profileHash } from './suppression'
 
 export async function searchCompanies(filters: CompanyFilters): Promise<Page<CompanyResult>> {
+  const { demoMode, demoCompanySearch } = await import('./demoMask')
+  return demoMode() ? demoCompanySearch(filters, searchCompaniesUnmasked) : searchCompaniesUnmasked(filters)
+}
+
+async function searchCompaniesUnmasked(filters: CompanyFilters): Promise<Page<CompanyResult>> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { remaining, requireAllowance } = await import('../allowance')
@@ -82,6 +87,11 @@ function forThisCopy<T extends { warnings: string[]; details?: string[] }>(page:
 
 /** Company with a known domain where possible; fetches the company page once if needed. */
 export async function resolveCompany(ref: string): Promise<{ ref: string; domain: string | null; catchAll: boolean }> {
+  const { demoMode, demoResolveCompany } = await import('./demoMask')
+  return demoMode() ? demoResolveCompany(ref, resolveCompanyUnmasked) : resolveCompanyUnmasked(ref)
+}
+
+async function resolveCompanyUnmasked(ref: string): Promise<{ ref: string; domain: string | null; catchAll: boolean }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { resolveCompanyDomain } = await import('./companies')
@@ -1757,6 +1767,15 @@ export async function searchPeople(
    */
   opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void; listening?: () => boolean } = {},
 ): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
+  // A demo copy shows nobody it finds (demoMask.ts).
+  const { demoMode, demoPeopleSearch } = await import('./demoMask')
+  return demoMode() ? demoPeopleSearch(input, opts, searchPeopleUnmasked) : searchPeopleUnmasked(input, opts)
+}
+
+async function searchPeopleUnmasked(
+  input: PeopleFilters & { company?: { ref: string; name: string } | null },
+  opts: { onPeople?: (found: { items: PersonResult[]; refined: string[] }) => void; listening?: () => boolean } = {},
+): Promise<Page<PersonResult> & { refined: string[]; resumed: boolean }> {
   const { getSource } = await import('./runtime')
   const { db } = await import('../db')
   const { hidesUnverifiable, isVerifiedOnly } = await import('./settings')
@@ -2485,6 +2504,8 @@ function searchPositionKey(input: PeopleFilters & { company?: { ref: string; nam
 }
 
 export async function startSave(listId: number, people: PersonResult[], personaId?: string) {
+  const { demoMode, DEMO_SAVE_REFUSED } = await import('./demoMask')
+  if (demoMode()) throw new Error(DEMO_SAVE_REFUSED)
   const { db } = await import('../db')
   if (!db.data.lists.some((l) => l.id === listId)) throw new Error(`List ${listId} does not exist`)
   // One deleted since it was applied marks nobody.

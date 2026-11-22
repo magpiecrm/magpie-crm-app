@@ -221,6 +221,17 @@ key), with the app's actions as tools.
   that only reads goes on the list in `viewOnly.ts`. A GET must check
   `isViewOnly` itself if it reaches outside this copy or hands out a link that
   acts on its own (`getSendingDomainsFn`, proposals).
+- **Demo copies** (`DEMO_MODE=on`, `prospecting/demoMask.ts`) — a copy for
+  showing the product. Prospect search runs for real, but names, companies,
+  domains, emails, profile links and cursors are masked on the server before
+  they leave it ("J*** S*** at A***"); the real records stay in server memory
+  for a day under tokens the masked copies carry, so Reveal (shown masked),
+  picking a company, the next page and signals still work. The entry points in
+  `search.ts` and the prospect server functions go through it, so the page, the
+  copilot and MCP get the same; anything new that hands out search results must
+  too. Saving people found is refused, and `sendMail` sends nothing (and says
+  it went). Its made-up workspace, plan and usage, and a verified `.example`
+  sending domain come from `bun run demo:seed [--reset]` (`src/server/demo/`).
 - **Calls from elsewhere** (`src/ownPages.ts`) — server functions, and the routes
   that go by the session cookie, answer this copy's own pages and nothing else:
   `Sec-Fetch-Site: same-origin`, or for a browser that doesn't send it, an Origin
