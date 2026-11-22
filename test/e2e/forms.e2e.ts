@@ -127,3 +127,17 @@ test('a new form keeps its heading, intro, privacy link and thank-you page from 
   })
   expect(problems()).toEqual([])
 })
+
+test("a form made from a template keeps the template's heading and intro", async ({ page, problems, browser }) => {
+  const name = unique('F1 template')
+  await page.goto('/marketing/forms/new')
+  await page.getByRole('link', { name: /Contact us/ }).click()
+  await page.getByRole('textbox', { name: 'Form name' }).fill(name)
+  const { link } = await publish(page, name)
+
+  await asVisitor(browser, link, async (form) => {
+    await expect(form.getByRole('heading', { name: 'Get in touch', level: 1 })).toBeVisible()
+    await expect(form.getByText("Tell us what you need and we'll reply within one working day.")).toBeVisible()
+  })
+  expect(problems()).toEqual([])
+})

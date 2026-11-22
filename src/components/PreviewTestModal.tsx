@@ -91,7 +91,8 @@ export function PreviewTestModal({
         data: {
           sender: campaignSender,
           to: recipients,
-          subject: `[TEST] ${campaignSubject || 'No Subject'}`,
+          // The server marks it as a test.
+          subject: campaignSubject,
           htmlContent: replacePlaceholders(htmlContent, selectedContact, true),
           previewText: getPreviewText() || undefined
         }

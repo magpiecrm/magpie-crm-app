@@ -69,11 +69,11 @@ and the line here with the fix.
 - **M2 Opens and clicks** — auto [`campaigns`]. Loading the pixel later than a minute after delivery counts an open; within a minute it's left out (automated); following a link counts a click and redirects; Analytics shows both. Analytics dates and its date range go by when a campaign was sent, not when it was drafted.
 - **M3 Schedule and cancel** — hunt. Scheduled for later sends nothing now; cancelling keeps it a draft.
 - **M4 Daily limit** — hunt (hosted). With the host's cold limit set low (`/__control`), the rest goes the next day and the campaign says so.
-- **M5 Test email** — hunt. "Send a test" reaches only the address given.
+- **M5 Test email** — auto [`campaigns`]. "Send a test" from the campaign's Preview and test reaches only the address given, its subject marked `[TEST]` once; the list's people get nothing.
 
 ## Forms and surveys
 
-- **F1 Form to contact** — auto [`forms`]. Build a form, publish it, fill it in at `/f/<id>`: a contact is made with the fields, and its welcome email is caught. A heading, intro, privacy link and thank-you page set before the first save show on the form, and sending it goes to that page. A form with "Add people to a list" off still sends its welcome email, and makes no contact.
+- **F1 Form to contact** — auto [`forms`]. Build a form, publish it, fill it in at `/f/<id>`: a contact is made with the fields, and its welcome email is caught. A heading, intro, privacy link and thank-you page set before the first save show on the form, and sending it goes to that page. A form with "Add people to a list" off still sends its welcome email, and makes no contact. A form made from a template (Contact us) keeps the template's heading and intro.
 - **F2 Embeds** — hunt. The iframe and pop-up snippets work on a plain page from another origin; hidden fields and the redirect apply.
 - **SV1 Survey** — hunt. Build one with a branch rule; take it at `/s/<id>` both ways; results show both answers.
 

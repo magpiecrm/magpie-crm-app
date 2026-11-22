@@ -980,12 +980,21 @@ export async function sendTestEmail(payload: {
     await sendMail({
       from,
       to: recipient,
-      subject: `[TEST] ${subject}`,
+      subject: testSubject(subject),
       html,
     })
   }
 
   return { success: true }
+}
+
+/**
+ * A test email's subject, marked as a test here and only here. A leading mark
+ * the caller already added (a page loaded before this) isn't doubled.
+ */
+export function testSubject(subject: string) {
+  const rest = subject.replace(/^\s*(\[TEST\]\s*)+/i, '').trim()
+  return `[TEST] ${rest || 'No subject'}`
 }
 
 /**

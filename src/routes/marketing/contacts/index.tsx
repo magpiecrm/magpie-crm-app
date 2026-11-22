@@ -186,7 +186,7 @@ function ContactsPage() {
 
   const selectedListName = selectedListId !== null
     ? lists.find((l: any) => l.id === selectedListId)?.name || `List #${selectedListId}`
-    : 'Load a list or a segment'
+    : 'All contacts'
 
   // Export whatever the user is currently looking at: the selected rows if
   // there is a selection, otherwise the full search/list-filtered set (not just
@@ -484,18 +484,6 @@ function ContactsPage() {
           >
             Import contacts
           </Link>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="border-b border-border mb-6">
-        <div className="flex gap-6 -mb-px">
-          <button className="pb-3 text-sm font-semibold border-b-2 border-accent text-accent">
-            All contacts
-          </button>
-          <button className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground">
-            +
-          </button>
         </div>
       </div>
 

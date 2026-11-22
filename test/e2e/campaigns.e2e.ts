@@ -1,4 +1,4 @@
-// M1, M2 and C4 (test/JOURNEYS.md): campaigns sent the way a customer sends them,
+// M1, M2, M5 and C4 (test/JOURNEYS.md): campaigns sent the way a customer sends them,
 // caught by the stack's mail server (Mailpit), and what the people who got them
 // can do with them: unsubscribe (from the page, or the mail app's one-click
 // List-Unsubscribe), open and click.
@@ -351,3 +351,32 @@ const tile = (page: Page, label: string) =>
     .filter({ has: page.locator('span', { hasText: new RegExp(`^${label}$`, 'i') }) })
     .locator('span')
     .nth(1)
+
+test('M5: "Send a test" reaches only the address given, its subject marked [TEST] once', async ({ page, problems }) => {
+  await readySender(page)
+  const listName = unique('M5 list')
+  const onList = person('mira')
+  await makeList(page, listName)
+  await addContacts(page, [onList], listName)
+  const campaign = { name: unique('M5 campaign'), subject: unique('Spring update'), listName, listSize: 1, html: body(LINK) }
+  await createCampaign(page, campaign)
+
+  await page.goto('/marketing/campaigns')
+  await campaignCard(page, campaign.name).getByTitle('Edit').click()
+  await expect(page.getByRole('heading', { level: 1, name: campaign.name })).toBeVisible()
+  await page.getByRole('button', { name: 'Preview and test' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Preview and test' })
+  await dialog.getByRole('tab', { name: 'Send a test' }).click()
+  const tester = person('tess')
+  await dialog.getByPlaceholder('e.g. you@example.com').fill(tester.email)
+  await dialog.getByRole('button', { name: 'Send test email' }).click()
+  await expect(page.getByText('Test email sent', { exact: true })).toBeVisible()
+
+  const [mail] = await waitForSent(tester.email)
+  expect(mail.subject).toBe(`[TEST] ${campaign.subject}`)
+  expect(mail.to).toEqual([tester.email])
+  // The list's own people get nothing from a test.
+  expect(await sent(onList.email)).toEqual([])
+
+  expect(problems()).toEqual([])
+})
