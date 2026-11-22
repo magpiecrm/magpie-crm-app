@@ -188,15 +188,33 @@ function ContactsPage() {
     ? lists.find((l: any) => l.id === selectedListId)?.name || `List #${selectedListId}`
     : 'All contacts'
 
+  // What Delete, Add to sequence and Export act on: the ticked contacts still in
+  // view (this list, search and filters, on any page). A tick on someone a search
+  // or filter has since hidden doesn't count, so a bulk action never reaches a
+  // contact that isn't shown; it counts again once they're back in view.
+  const selectedInView: string[] = useMemo(() => {
+    if (selectedEmails.length === 0) return []
+    const ticked = new Set(selectedEmails)
+    return contacts.filter((c: any) => ticked.has(c.email)).map((c: any) => c.email)
+  }, [contacts, selectedEmails])
+
   // Export whatever the user is currently looking at: the selected rows if
   // there is a selection, otherwise the full search/list-filtered set (not just
   // the current page).
   const exportRows: ExportableContact[] = useMemo(() => {
-    if (selectedEmails.length === 0) return contacts
-    return contacts.filter((c: any) => selectedEmails.includes(c.email))
-  }, [contacts, selectedEmails])
+    if (selectedInView.length === 0) return contacts
+    const ticked = new Set(selectedInView)
+    return contacts.filter((c: any) => ticked.has(c.email))
+  }, [contacts, selectedInView])
 
-  const exportName = selectedEmails.length > 0
+  // Another list is another set of people: the selection starts over.
+  const chooseList = (id: number | null) => {
+    setSelectedListId(id)
+    setSelectedEmails([])
+    setShowListDropdown(false)
+  }
+
+  const exportName = selectedInView.length > 0
     ? 'contacts_selected'
     : selectedListId !== null
       ? `contacts_${selectedListName}`
@@ -502,10 +520,7 @@ function ContactsPage() {
             {showListDropdown && (
               <div className="absolute left-0 mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-20 max-h-72 overflow-y-auto py-1 animate-in fade-in duration-200">
                 <button 
-                  onClick={() => {
-                    setSelectedListId(null)
-                    setShowListDropdown(false)
-                  }}
+                  onClick={() => chooseList(null)}
                   className={`w-full text-left px-4 py-2 hover:bg-muted/50 text-sm flex items-center justify-between font-semibold ${selectedListId === null ? 'text-accent bg-accent/5' : ''}`}
                 >
                   All contacts
@@ -514,10 +529,7 @@ function ContactsPage() {
                 {lists.map((l: any) => (
                   <button 
                     key={l.id}
-                    onClick={() => {
-                      setSelectedListId(l.id)
-                      setShowListDropdown(false)
-                    }}
+                    onClick={() => chooseList(l.id)}
                     className={`w-full text-left px-4 py-2 hover:bg-muted/50 text-sm flex items-center justify-between ${selectedListId === l.id ? 'text-accent bg-accent/5 font-semibold' : ''}`}
                   >
                     <span className="truncate">{l.name}</span>
@@ -530,34 +542,35 @@ function ContactsPage() {
           <AddFilterButton fields={fields} open={showAddFilter} onOpenChange={setShowAddFilter} onAdd={(field) => setFilters((all) => [...all, newFilter(field)])} />
           {selectedListId !== null && (
             <button 
-              onClick={() => setSelectedListId(null)}
+              onClick={() => chooseList(null)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 bg-accent/10 hover:bg-accent/15 text-accent rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <span>Filtered: {selectedListName}</span>
               <X className="w-3.5 h-3.5" />
             </button>
           )}
-          {selectedEmails.length > 0 && (
+          {selectedInView.length > 0 && (
             <button
               onClick={() => setEnrolling(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-accent/10 hover:bg-accent/15 text-accent border border-accent/20 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <Repeat className="w-3.5 h-3.5" />
-              <span>Add to sequence ({selectedEmails.length})</span>
+              <span>Add to sequence ({selectedInView.length})</span>
             </button>
           )}
-          {enrolling && <EnrollDialog emails={selectedEmails} onClose={() => setEnrolling(false)} />}
-          {selectedEmails.length > 0 && (
+          {enrolling && <EnrollDialog emails={selectedInView} onClose={() => setEnrolling(false)} />}
+          {selectedInView.length > 0 && (
             <button 
               onClick={async () => {
-                const n = selectedEmails.length
+                const emails = selectedInView
+                const n = emails.length
                 const ok = await confirmDialog({
                   title: `Delete ${n === 1 ? 'this contact' : `${n} contacts`}?`,
                   message: `They come off every list and out of Contacts. This can't be undone.`,
                   confirmLabel: n === 1 ? 'Delete contact' : `Delete ${n} contacts`,
                   tone: 'danger',
                 })
-                if (ok) deleteContactsMutation.mutate(selectedEmails)
+                if (ok) deleteContactsMutation.mutate(emails)
               }}
               disabled={deleteContactsMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-2 bg-destructive/10 hover:bg-destructive/15 text-destructive border border-destructive/20 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
@@ -567,7 +580,7 @@ function ContactsPage() {
               ) : (
                 <Trash2 className="w-3.5 h-3.5" />
               )}
-              <span>Delete selected ({selectedEmails.length})</span>
+              <span>Delete selected ({selectedInView.length})</span>
             </button>
           )}
         </div>

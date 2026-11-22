@@ -50,7 +50,7 @@ and the line here with the fix.
 
 ## Contacts and lists
 
-- **C1 Add and edit a contact** — auto [`contacts`]. Add one by hand; edit a field inline in the table; it shows on the contact page.
+- **C1 Add and edit a contact** — auto [`contacts`]. Add one by hand; edit a field inline in the table; it shows on the contact page. Delete and Add to sequence act only on ticked contacts still in view: a search that hides one leaves it out, and choosing a list clears the ticks.
 - **C2 Custom fields and columns** — hunt. Make a field from the table; give a contact a value; hide and show the column; a bad value for its type is refused.
 - **C3 Import** — auto [`contacts`]. A CSV with a header row, a custom column and a duplicate: mapped, the duplicate merged, the count right, a new field made from the import.
 - **C4 Unsubscribe** — auto [`campaigns`]. The link in a sent email unsubscribes them; they're left out of the next send; the List-Unsubscribe header is there.

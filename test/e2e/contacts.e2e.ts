@@ -1,4 +1,4 @@
-// C1 and C3 (test/JOURNEYS.md): contacts added by hand and by import.
+// C1 and C3 (test/JOURNEYS.md): contacts added by hand and by import, and what a tick acts on.
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -219,5 +219,76 @@ test('an import says how many people it brought in, counting a duplicate once', 
   await uploadCsv(page, ['Email,First name', `${dup},Dana`, `${dup.toUpperCase()},Dana`])
   await confirmImport(page, list)
   await expect(page.getByText(/^Imported \d+ contacts?$/)).toHaveText('Imported 1 contact')
+  expect(problems()).toEqual([])
+})
+
+test('Delete and Add to sequence act only on the ticked contacts in view', async ({ page, problems }) => {
+  const run = unique('C1 tick').replace(/\s+/g, '-').toLowerCase()
+  const list = unique('C1 tick list')
+  const onList = `${run}-on-list@contacts.test`
+  const [ada, ben] = [`${run}-ada@contacts.test`, `${run}-ben@contacts.test`]
+
+  await page.goto('/marketing/lists')
+  await page.getByRole('button', { name: 'New list' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New list' })
+  await dialog.getByPlaceholder('e.g. Newsletter subscribers').fill(list)
+  await dialog.getByRole('button', { name: 'Create list' }).click()
+  await expect(page.getByText('List created')).toBeVisible()
+
+  await page.goto('/marketing/contacts')
+  await page.getByRole('button', { name: 'Create a contact' }).click()
+  await page.getByPlaceholder('Enter the email address').fill(onList)
+  await page.getByRole('checkbox', { name: list }).check()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByText('Contact created')).toBeVisible()
+  await createContact(page, { email: ada, firstName: 'Ada' })
+  await createContact(page, { email: ben, firstName: 'Ben' })
+
+  // Tick Ada and Ben, found by a search for this run.
+  await page.goto('/marketing/contacts')
+  const search = page.getByPlaceholder('Search...')
+  await search.fill(`${run}-`)
+  await page.getByRole('checkbox', { name: `Select ${ada}` }).check()
+  await page.getByRole('checkbox', { name: `Select ${ben}` }).check()
+  await expect(page.getByRole('button', { name: 'Delete selected (2)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add to sequence (2)' })).toBeVisible()
+
+  // A search that hides Ben leaves only Ada to act on.
+  await search.fill(ada)
+  await expect(page.getByRole('button', { name: 'Delete selected (1)' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add to sequence (1)' })).toBeVisible()
+
+  // Back in view, Ben counts again.
+  await search.fill(`${run}-`)
+  await expect(page.getByRole('button', { name: 'Delete selected (2)' })).toBeVisible()
+
+  // Choosing a list starts the selection over: nothing to delete there.
+  await search.fill('')
+  await page.getByRole('button', { name: 'All contacts' }).first().click()
+  await page.getByRole('button', { name: list }).click()
+  await expect(page.getByRole('table').getByRole('row').filter({ hasText: onList })).toHaveCount(1)
+  await expect(page.getByRole('button', { name: /^Delete selected/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /^Add to sequence/ })).toHaveCount(0)
+
+  // Back on All contacts, nothing is ticked any more.
+  await page.getByRole('button', { name: list }).first().click()
+  await page.getByRole('button', { name: 'All contacts', exact: true }).click()
+  await search.fill(`${run}-`)
+  await expect(page.getByRole('checkbox', { name: `Select ${ada}` })).not.toBeChecked()
+
+  // Tick Ada and Ben again, hide Ben, delete: only Ada goes.
+  await page.getByRole('checkbox', { name: `Select ${ada}` }).check()
+  await page.getByRole('checkbox', { name: `Select ${ben}` }).check()
+  await search.fill(ada)
+  await page.getByRole('button', { name: 'Delete selected (1)' }).click()
+  const confirm = page.getByRole('alertdialog', { name: 'Delete this contact?' })
+  await confirm.getByRole('button', { name: 'Delete contact' }).click()
+  await expect(page.getByText('Contacts deleted')).toBeVisible()
+  await search.fill(`${run}-`)
+  const rows = page.getByRole('table').getByRole('row')
+  await expect(rows.filter({ hasText: ada })).toHaveCount(0)
+  await expect(rows.filter({ hasText: ben })).toHaveCount(1)
+  await expect(rows.filter({ hasText: onList })).toHaveCount(1)
+
   expect(problems()).toEqual([])
 })
