@@ -415,10 +415,15 @@ export function buildDemo({ now, senderId, owner }: { now: Date; senderId: numbe
   const statusOf = (p: Person) => current.get(p) ?? 'subscribed'
   const sendTime = (c: C.SentCampaign) => dayAt(c.daysAgo, c.hour)
   const sentCampaigns = [...C.SENT_CAMPAIGNS].sort((a, b) => b.daysAgo - a.daysAgo)
+  // Unsubscribes from a campaign older than the week sending reputation looks
+  // at (sendingReputation.ts WINDOW_DAYS), where one received it, so Settings →
+  // Sending shows a healthy workspace rather than one at risk.
+  const beforeReputationWeek = (c: C.SentCampaign) => sendTime(c) < t0 - 8 * DAY
   for (const p of people) {
     if (p.fate !== 'unsubscribed') continue
     const theirs = sentCampaigns.filter((c) => p.lists.has(c.list) && at0(p) < sendTime(c))
-    if (theirs.length) p.unsubFrom = pick(theirs).key
+    const older = theirs.filter(beforeReputationWeek)
+    if (theirs.length) p.unsubFrom = pick(older.length ? older : theirs).key
   }
   const campaignId = new Map<string, number>()
   const openedC5 = new Map<Person, number>()

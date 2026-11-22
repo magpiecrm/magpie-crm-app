@@ -83,3 +83,18 @@ describe('demo sending domain', () => {
     expect(demo.sender.email.endsWith(`@${domain.domain}`)).toBe(true)
   })
 })
+
+describe("the week sending reputation looks at", () => {
+  // sendingReputation.ts: 2% bounces or unsubscribes, or any complaint, puts a workspace at risk.
+  const since = new Date(Date.parse('2026-11-14T12:00:00Z') - 7 * 86_400_000).toISOString()
+  const week = demo.recipients.filter((r) => r.sent_at && r.sent_at >= since)
+  const rate = (n: number) => n / week.length
+
+  it('is healthy, so Settings → Sending shows a good reputation', () => {
+    expect(week.length).toBeGreaterThanOrEqual(30)
+    expect(rate(week.filter((r) => r.unsubscribed_at).length)).toBeLessThan(0.02)
+    expect(rate(week.filter((r) => r.status === 'bounced_hard').length)).toBeLessThan(0.02)
+    expect(week.filter((r) => r.complained_at)).toEqual([])
+    expect(rate(week.filter((r) => r.opened_at).length)).toBeGreaterThanOrEqual(0.25)
+  })
+})
