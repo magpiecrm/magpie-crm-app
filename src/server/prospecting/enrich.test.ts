@@ -1942,4 +1942,104 @@ describe('the verified people search, through the funnel', () => {
     await searchPeople(filters, { listening: () => false })
     expect(asked[0].body).toMatchObject({ places: expect.arrayContaining(['Boston']), placesOnly: true })
   })
+
+  describe('the Signals filter, which the host can\'t search by', () => {
+    const hiring = { kind: 'hiring', label: 'Hiring · 4 open roles', source: 'web' }
+    const funding = { kind: 'funding', label: 'Raised funding · Series A', source: 'web' }
+
+    it('keeps only people whose employer is hiring, with its badge, before anyone else is looked into or charged', async () => {
+      webSignalAnswers = { 'hire.example': [hiring] }
+      hostFinds([person('ana', 'https://hire.example'), person('ben', 'https://quiet.example')])
+      // No industry or keyword needed: each person's employer is checked, not companies found first.
+      const res = await searchPeople({ titles: ['Founder'], country: 'United States', signals: ['hiring'], fromStart: true })
+      expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.label)])).toEqual([['ana', ['Hiring · 4 open roles']]])
+      // Both employers were asked about; the host was asked only by title.
+      expect(companySignalsMock.mock.calls[0][0].map((c: any) => c.domain).sort()).toEqual(['hire.example', 'quiet.example'])
+      expect(asked[0].body).not.toHaveProperty('signals')
+      // Ben's employer's mail server wasn't tested, and he wasn't charged for.
+      expect(searchLog.at(-1).counts).toMatchObject({ hits: 2, shown: 1, noSignal: 1, signalsNotReady: 0, signalCompanies: 2, domainsCheckedAhead: 1, prospectCredits: 1 })
+      expect(searchLog.at(-1).filters.signals).toEqual(['hiring'])
+      expect(recordUsage.mock.calls.at(-1)![0]).toMatchObject({ prospects: 1, prospectCredits: 1 })
+      expect(res.warnings).toEqual(['Found 1 of the 25 asked for: the signals chosen left out 1 of the people found. Fewer filters find more. Load more carries on.'])
+    })
+
+    it('keeps someone with either of two signals asked for', async () => {
+      webSignalAnswers = { 'hire.example': [hiring], 'funded.example': [funding] }
+      hostFinds([person('ana', 'https://hire.example'), person('ben', 'https://funded.example'), person('cat', 'https://quiet.example')])
+      const res = await searchPeople({ titles: ['Founder'], country: 'United States', signals: ['hiring', 'funding'], fromStart: true })
+      expect(res.items.map((p) => p.firstName)).toEqual(['ana', 'ben'])
+    })
+
+    it('asks again about employers still being looked up, and leaves out, uncharged, those still not known', async () => {
+      const { signalKey } = await import('./signals')
+      let asks = 0
+      companySignalsMock.mockImplementation(async (companies: Array<{ name: string; domain?: string | null }>) => {
+        asks++
+        const keys = companies.map((c) => signalKey(c)!)
+        // The first ask finds nothing yet; the second finds the slow one; the stuck one never comes.
+        const signals: Record<string, any[]> = asks > 1 && keys.includes('slow.example') ? { 'slow.example': [hiring] } : {}
+        return { signals, pending: asks === 1 ? keys : keys.filter((k) => k === 'stuck.example') }
+      })
+      try {
+        hostFinds([person('ana', 'https://slow.example'), person('ben', 'https://stuck.example')])
+        const res = await searchPeople({ titles: ['Founder'], country: 'United States', signals: ['hiring'], fromStart: true })
+        expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+        // Asked three times: the third got nowhere, so it stopped there.
+        expect(asks).toBe(3)
+        expect(searchLog.at(-1).counts).toMatchObject({ shown: 1, noSignal: 0, signalsNotReady: 1 })
+      } finally {
+        companySignalsMock.mockImplementation(async (companies: Array<{ name: string; domain?: string | null }>) => {
+          const { signalKey } = await import('./signals')
+          const signals: Record<string, any[]> = {}
+          for (const c of companies) if (webSignalAnswers[signalKey(c)!]) signals[signalKey(c)!] = webSignalAnswers[signalKey(c)!]
+          return { signals, pending: [] as string[] }
+        })
+      }
+    })
+
+    it('with Warm, searches inside the warm companies a few a round, and keeps only people there', async () => {
+      const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+      recipients = [{ campaign_id: 1, contact_email: 'someone@acme.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+      prospectCompanies = [{ ref: '7', name: 'Acme', domain: 'acme.com', headcount: 30 }]
+      const atAcme = person('ana', 'https://acme.com', { company: { name: 'Acme', slug: 'acme', url: null, industry: null, sizeBand: '11-50', employees: 30, website: 'https://acme.com' } })
+      hostFinds([atAcme, person('ben', 'https://elsewhere.example')])
+      const res = await searchPeople({ titles: ['Founder'], country: 'United States', signals: ['warm'], fromStart: true }, { listening: () => true })
+      const starts = asked.filter((a) => a.method === 'POST').map((a) => a.body)
+      // Inside Acme, named and by its company page, with no cities, industries or sizes.
+      expect(starts).toHaveLength(1)
+      expect(starts[0]).toMatchObject({ companies: ['Acme'], companySlugs: ['7'], industries: [], sizes: [] })
+      expect(starts[0]).not.toHaveProperty('places')
+      expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.kind)])).toEqual([['ana', ['warm']]])
+      expect(searchLog.at(-1).counts).toMatchObject({ shown: 1, noSignal: 1, warmCompanies: 1 })
+      expect(res.nextCursor).toBeNull()
+      // Not one hiring or funding lookup: Warm needs none.
+      expect(companySignalsMock).not.toHaveBeenCalled()
+    })
+
+    it('with Warm and no warm company to search inside, searches nothing and says why', async () => {
+      hostFinds([person('ana', 'https://ana.example')])
+      const res = await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true })
+      expect(res.items).toEqual([])
+      expect(res.warnings.join(' ')).toMatch(/None of your warm companies has a LinkedIn company page we know/)
+      expect(asked).toEqual([])
+    })
+
+    it("refuses New in role, which the host's people can't tell, rather than leave out everyone or nobody", async () => {
+      hostFinds([person('ana', 'https://ana.example')])
+      await expect(searchPeople({ titles: ['Founder'], signals: ['new_in_role'], fromStart: true })).rejects.toThrow(/New in role can't be used with a job title here/)
+      await expect(searchPeople({ titles: ['Founder'], signals: ['hiring', 'new_in_role'], fromStart: true })).rejects.toThrow(/New in role/)
+      expect(asked).toEqual([])
+    })
+  })
+
+  it('keeps only people whose job, employer or its industry has the keyword, before anything is done for the rest', async () => {
+    const at = (handle: string, name: string, industry: string | null) => person(handle, `https://${handle}.example`, { company: { name, slug: handle, url: null, industry, sizeBand: '11-50', employees: 30, website: `https://${handle}.example` } })
+    hostFinds([at('ana', 'Larkspur', 'Software Development'), at('ben', 'Brightsoft', 'IT Services'), at('cat', 'Harbour Freight', 'Logistics')])
+    const res = await searchPeople({ titles: ['Founder'], country: 'United States', keyword: 'software', fromStart: true })
+    expect(res.items.map((p) => p.firstName)).toEqual(['ana'])
+    // The host can't search by it, so it isn't sent: it's applied here.
+    expect(asked[0].body).not.toHaveProperty('keyword')
+    expect(searchLog.at(-1).counts).toMatchObject({ hits: 3, shown: 1, noKeyword: 2, domainsCheckedAhead: 1 })
+    expect(res.warnings).toEqual(['Found 1 of the 25 asked for: the keyword left out 2 of the people found. Fewer filters find more. Load more carries on.'])
+  })
 })

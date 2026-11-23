@@ -82,7 +82,7 @@ and the line here with the fix.
 - **P1 Search people by title** — auto [`prospecting`]. Results come from the stand-in; seniority and country filters narrow them; the next page shows new people, nobody twice.
 - **P2 Reveal an email** — auto [`prospecting`]. Reveal finds the stand-in's verified address; an unverifiable domain says so; usage goes up by one lookup.
 - **P3 Save to a list** — auto [`prospecting`]. Saved people become contacts with source "search"; a suppressed address is not saved; the host is sent only verified, saved people (`/__log` `/v1/pool/contribute`).
-- **P4 Search inside companies** — hunt. Company filters and a single company search; signals badges (hiring, funding, warm) load after the results.
+- **P4 Search inside companies and by signals** — auto [`prospecting`] for signals: with Hiring ticked, a job-title search shows (and charges for) only people at companies hiring, each with the badge, and a keyword narrows them to those whose job, employer or its industry has it. Hunt for the rest: company filters and a single company search; Warm searches inside the warm companies; New in role is refused with a job title in a hosted copy; signals badges (hiring, funding, warm) load after the results.
 - **P5 Personas** — hunt. Draft a persona from a website (AI, stand-in): criteria fill in; using it fills the search filters.
 - **P6 Prospect search by AI** — hunt. Start it, leave the page, the bell says it's done, the suggestions are there.
 

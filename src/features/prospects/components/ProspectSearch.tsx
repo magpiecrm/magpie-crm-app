@@ -98,10 +98,22 @@ const SEARCH_SIGNALS: Array<{ kind: SignalKind; label: string; hint: string }> =
   { kind: 'hiring', label: 'Hiring', hint: 'Jobs open on their careers page or a job board lately. Companies are found first, so this needs an industry or keyword.' },
   { kind: 'funding', label: 'Raised funding', hint: 'A funding round in the news in the last year. Companies are found first, so this needs an industry or keyword.' },
 ]
+/**
+ * The same, where a search with a job title goes to the host's verified search
+ * (server/prospecting/verifiedPeopleSource.ts): it searches by job title, and
+ * each person's employer is checked for the signals afterwards. It can't tell
+ * when anyone started their job, so New in role isn't offered with a title.
+ */
+const VERIFIED_SIGNAL_HINTS: Partial<Record<SignalKind, string>> = {
+  new_in_role: "Not with a job title here: this search doesn't read when people started their jobs.",
+  hiring: 'Jobs open on their careers page or a job board lately. Each person’s company is checked before they’re shown or charged.',
+  funding: 'A funding round in the news in the last year. Each person’s company is checked before they’re shown or charged.',
+}
 /** Signals about the company found on the web: they choose the companies first, which needs something to search companies by. */
 const WEB_KINDS: SignalKind[] = ['hiring', 'funding']
-const signalsNeedTerm = (f: PeopleForm) =>
-  !f.company && f.signals.some((k) => WEB_KINDS.includes(k)) && !f.signals.includes('warm') && f.industries.length === 0 && !f.keyword.trim()
+/** `verified`: a job-title search the host's verified search answers, which checks each person's company instead. */
+const signalsNeedTerm = (f: PeopleForm, verified: boolean) =>
+  !verified && !f.company && f.signals.some((k) => WEB_KINDS.includes(k)) && !f.signals.includes('warm') && f.industries.length === 0 && !f.keyword.trim()
 
 
 const EMPTY_COMPANY_FORM: CompanyForm = { keyword: '', industry: '', headcount: [], country: '' }
@@ -348,8 +360,14 @@ export function ProspectSearch() {
         setFormError('Enter a job title or keyword, or pick a company.')
         return
       }
+      // The verified search can't tell who's new in role: said, rather than searched without it.
+      if (titleSearchVerified && peopleForm.signals.includes('new_in_role')) {
+        setFormError("New in role can't be used with a job title here: this search doesn't read when people started their jobs. Untick it to search.")
+        setExpanded((prev) => ({ ...prev, signals: true }))
+        return
+      }
       // Companies hiring or funded are found first too.
-      if (signalsNeedTerm(peopleForm)) {
+      if (signalsNeedTerm(peopleForm, titleSearchVerified)) {
         setFormError('Hiring and Raised funding need an industry or keyword, to find the companies first.')
         setExpanded((prev) => ({ ...prev, peopleIndustry: true }))
         return
@@ -462,6 +480,8 @@ export function ProspectSearch() {
   const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
   // Hiring and funding, where this copy can look them up (its host, or its own web search key).
   const webSignals: Array<'hiring' | 'funding'> = status?.webSignals ?? []
+  // A search with a job title goes to the host's verified search, which applies signals and the keyword person by person.
+  const titleSearchVerified = Boolean(status?.verifiedPeopleSearch) && peopleForm.titles.length > 0
   const companyItems = useCompanySignals(companies.data?.pages.flatMap((p) => p.items) ?? [], webSignals.length > 0 && mode === 'companies')
   // While a page is being searched, the people it has found so far follow the pages already done.
   const searching = people.isFetching ? live : null
@@ -743,26 +763,31 @@ export function ProspectSearch() {
 
       <FilterAccordion label="Signals" icon={<Flame className="w-4 h-4" />} isOpen={!!expanded.signals} onToggle={() => toggleSection('signals')} badgeCount={peopleForm.signals.length}>
         <div className="space-y-2">
-          {SEARCH_SIGNALS.filter((s) => !WEB_KINDS.includes(s.kind) || webSignals.includes(s.kind as 'hiring' | 'funding')).map((s) => (
-            <label key={s.kind} className="flex items-start gap-1.5 text-xs text-foreground cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={peopleForm.signals.includes(s.kind)}
-                disabled={Boolean(peopleForm.company) && s.kind === 'warm'}
-                onChange={(e) =>
-                  setPeopleForm({
-                    ...peopleForm,
-                    signals: e.target.checked ? [...peopleForm.signals, s.kind] : peopleForm.signals.filter((x) => x !== s.kind),
-                  })
-                }
-              />
-              <span>
-                {s.label}
-                <span className="block text-[10px] text-muted-foreground leading-snug">{s.hint}</span>
-              </span>
-            </label>
-          ))}
+          {SEARCH_SIGNALS.filter((s) => !WEB_KINDS.includes(s.kind) || webSignals.includes(s.kind as 'hiring' | 'funding')).map((s) => {
+            const checked = peopleForm.signals.includes(s.kind)
+            // New in role ticked already can still be unticked.
+            const unavailable = (Boolean(peopleForm.company) && s.kind === 'warm') || (titleSearchVerified && s.kind === 'new_in_role' && !checked)
+            return (
+              <label key={s.kind} className={`flex items-start gap-1.5 text-xs text-foreground ${unavailable ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={checked}
+                  disabled={unavailable}
+                  onChange={(e) =>
+                    setPeopleForm({
+                      ...peopleForm,
+                      signals: e.target.checked ? [...peopleForm.signals, s.kind] : peopleForm.signals.filter((x) => x !== s.kind),
+                    })
+                  }
+                />
+                <span className={unavailable ? 'opacity-60' : undefined}>
+                  {s.label}
+                  <span className="block text-[10px] text-muted-foreground leading-snug">{(titleSearchVerified && VERIFIED_SIGNAL_HINTS[s.kind]) || s.hint}</span>
+                </span>
+              </label>
+            )
+          })}
         </div>
         <label className="flex items-center gap-1.5 text-xs text-foreground cursor-pointer mt-3 pt-2 border-t border-border">
           <input type="checkbox" checked={signalsFirst} onChange={(e) => setSignalsFirst(e.target.checked)} />
@@ -774,7 +799,13 @@ export function ProspectSearch() {
       </FilterAccordion>
 
       <CountryField value={peopleForm.country} onChange={(country) => setPeopleForm({ ...peopleForm, country })} hosted={hosted} isOpen={!!expanded.country} onToggle={() => toggleSection('country')} />
-      <KeywordField value={peopleForm.keyword} onChange={(keyword) => setPeopleForm({ ...peopleForm, keyword })} isOpen={!!expanded.keyword} onToggle={() => toggleSection('keyword')} />
+      <KeywordField
+        value={peopleForm.keyword}
+        onChange={(keyword) => setPeopleForm({ ...peopleForm, keyword })}
+        hint={titleSearchVerified ? 'Keeps only people whose job title, employer or its industry has these words.' : undefined}
+        isOpen={!!expanded.keyword}
+        onToggle={() => toggleSection('keyword')}
+      />
 
       <div className="flex items-start justify-between gap-3 py-3.5">
         <div className="min-w-0">

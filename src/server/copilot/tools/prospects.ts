@@ -140,7 +140,10 @@ export const prospectTools = [
         ),
       seniorities: z.array(z.enum(SENIORITY_LEVELS)).optional(),
       country: z.string().optional(),
-      keyword: z.string().optional(),
+      keyword: z
+        .string()
+        .optional()
+        .describe('Where the host runs the verified people search, a search with job titles keeps only people whose job title, employer or its industry has these words.'),
       industries: z.array(z.string()).optional().describe('Industry names, exactly as searchIndustries returns them.'),
       companySizes: z
         .array(z.enum(HEADCOUNT_BUCKETS))
@@ -154,7 +157,7 @@ export const prospectTools = [
         .array(z.enum(SEARCH_SIGNALS))
         .optional()
         .describe(
-          'Only people with one of these signals. "warm": at companies where the user\'s own emails, forms or proposals found interest in the last 90 days (searched first, needs no keyword). "new_in_role": started their job lately, from their profile. "hiring" (jobs open lately) and "funding" (a round in the news in the last year): companies are found first, so these need `industries` or `keyword`, and only work where prospectingStatus says this copy can look them up.',
+          'Only people with one of these signals. "warm": at companies where the user\'s own emails, forms or proposals found interest in the last 90 days (searched first, needs no keyword). "new_in_role": started their job lately, from their profile. "hiring" (jobs open lately) and "funding" (a round in the news in the last year): companies are found first, so these need `industries` or `keyword`, except where the host runs the verified people search and there are job titles (each person\'s company is checked instead); they only work where this copy can look them up. Where the host runs the verified people search, "new_in_role" can\'t be used with job titles, and the search says so.',
         ),
       count: z.union([z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional().describe('People on a page of results, in all: 25, 50, 75 or 100, whatever the number of job titles. Defaults to 25; each result uses about one to two prospect credits.'),
       cursor: z.string().optional().describe('nextCursor from a previous call.'),

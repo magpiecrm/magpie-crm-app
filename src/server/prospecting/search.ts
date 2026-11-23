@@ -730,6 +730,57 @@ interface SignalTally {
 /** How long a batch waits for its companies' signals to be looked up. */
 const SIGNALS_WAIT_MS = 20_000
 const SIGNALS_NEED_TERM = 'Hiring and Raised funding need an industry or keyword, to find the companies first.'
+/** The verified search's people come with no job start date (verifiedPeopleSource.ts HostPerson), so New in role can't be told there. */
+export const NEW_IN_ROLE_NOT_WITH_TITLE = "New in role can't be used with a job title here: this search doesn't read when people started their jobs. Untick it to search."
+/**
+ * Asks of the host about a batch's employers' hiring and funding (companySignals.ts), each
+ * waiting up to SIGNALS_WAIT_MS: it looks up about ten companies an ask, and says the rest are pending.
+ */
+const SIGNAL_ASKS = 6
+/** Warm companies one round of a verified search goes inside, shared between its job titles (the host takes 25 at most). */
+const WARM_PER_SEARCH = 10
+const MIN_WARM = 3
+const WARM_CURSOR = /^warm:(\d+)$/
+
+/** The warm companies one round of a verified search goes inside, from `cursor`, like searchPlaces.ts placesFor's cities. */
+function warmRound(companies: Array<{ ref: string; name: string }>, titles: number, cursor: string | null): PlacesPlan & { companies: Array<{ ref: string; name: string }> } {
+  const from = Number(cursor?.match(WARM_CURSOR)?.[1] ?? 0)
+  const start = from < companies.length ? from : 0
+  const end = start + Math.max(MIN_WARM, Math.ceil(WARM_PER_SEARCH / Math.max(1, titles)))
+  // placesOnly: a later search, the first companies having been searched.
+  return { places: [], placesOnly: start > 0, next: end < companies.length ? `warm:${end}` : null, companies: companies.slice(start, end) }
+}
+
+/**
+ * The hiring and funding of these people's employers (companySignals.ts), asking again while
+ * the host is still looking some up, up to SIGNAL_ASKS, and stopping once an ask gets nowhere
+ * (it's over its allowance, say). `notReady`: the companies still not known.
+ */
+async function employerSignals(people: PersonResult[], kinds: readonly WebSignalKind[]): Promise<{ signals: Record<string, Signal[]>; notReady: Set<string>; companies: number }> {
+  const unique = new Map<string, { name: string; domain: string | null }>()
+  for (const p of people) {
+    const c = { name: p.company, domain: p.companyDomain }
+    const key = signalKey(c)
+    if (key && !unique.has(key)) unique.set(key, c)
+  }
+  const signals: Record<string, Signal[]> = {}
+  let waiting = [...unique.keys()]
+  for (let ask = 0; ask < SIGNAL_ASKS && waiting.length; ask++) {
+    const pending = new Set<string>()
+    // companySignals takes 50 companies at a time.
+    for (let i = 0; i < waiting.length; i += 50) {
+      const list = waiting.slice(i, i + 50).map((key) => unique.get(key)!)
+      const answer = await companySignals(list, { kinds, liveMax: list.length, waitMs: SIGNALS_WAIT_MS })
+      for (const [key, found] of Object.entries(answer.signals)) signals[key] = found.filter((s) => kinds.includes(s.kind as WebSignalKind))
+      for (const key of answer.pending) pending.add(key)
+    }
+    // One with a signal found already has what it needs, whatever else is still being looked up.
+    const still = waiting.filter((key) => pending.has(key) && !signals[key]?.length)
+    if (ask > 0 && still.length === waiting.length) break
+    waiting = still
+  }
+  return { signals, notReady: new Set(waiting), companies: unique.size }
+}
 
 /**
  * A companies-first batch, keeping only companies with one of these signals
@@ -1654,6 +1705,15 @@ const emptyTally = (): Tally => ({
  * catch-all companies (16 of 21, 2026-10-31). It also keeps who a search has
  * shown, and which of the country's cities it reached (searchPlaces.ts), so
  * asking again moves on rather than showing and charging for the same people.
+ *
+ * The Signals filter is applied here too, which the host can't search by:
+ * before anything else is done for them, people are kept only where their
+ * employer has one of the signals asked for (Hiring and Raised funding looked
+ * up for each employer, the same answers their badges show; Warm from the
+ * workspace's own engagement), and the rest are left out uncharged. Warm,
+ * with no company chosen, also searches inside the workspace's warm
+ * companies, a few a round, in place of cities. New in role is refused
+ * before this (NEW_IN_ROLE_NOT_WITH_TITLE).
  */
 async function verifiedFunnel(
   input: PeopleFilters & { company?: { ref: string; name: string } | null; includeContacts?: boolean },
@@ -1676,14 +1736,55 @@ async function verifiedFunnel(
   const titleCount = new Set((input.titles ?? []).map((t) => t.trim()).filter(Boolean)).size
   // Where this search starts: a page's cursor, or where the last one stopped.
   const start = input.cursor ?? saved ?? null
+  // The Signals filter: who's kept, and Warm's companies to search inside.
+  const kinds: SignalKind[] = input.signals ?? []
+  const webKinds = WEB_SIGNAL_KINDS.filter((k) => kinds.includes(k))
+  const warm = kinds.includes('warm') ? warmIndex(db.data) : null
+  const warmTargetsHere = !input.company && warm ? warmCompanies(db, input) : null
+  // Each warm company searched, by name: someone the host found at one is at a warm company, whatever page or domain theirs links.
+  const warmByName = new Map<string, Signal>()
+  for (const c of warmTargetsHere ?? []) {
+    const s = warm!.byRef.get(c.ref)
+    if (s && c.name) warmByName.set(c.name.trim().toLowerCase(), warmSignal(s))
+  }
   // Inside one company the host runs a single query and leaves cities out, so there are none to go through.
-  const placesOf = (cursor: string | null): PlacesPlan => (input.company ? { places: [], placesOnly: false, next: null } : placesFor(input.country, titleCount, cursor))
+  // With Warm, each round goes inside a few of the warm companies instead.
+  const placesOf = (cursor: string | null): VerifiedFunnel['plan'] & PlacesPlan =>
+    input.company ? { places: [], placesOnly: false, next: null } : warmTargetsHere ? warmRound(warmTargetsHere, titleCount, cursor) : placesFor(input.country, titleCount, cursor)
   let plan = placesOf(start)
   const resumed = plan.placesOnly
   // Where the cities of the batch under way start: a batch that failed hasn't been through them.
   let roundStart = input.cursor ?? null
   let repeats = 0
   let spared = 0
+  // Warm companies the rounds have gone inside, and what the Signals filter left out and looked up.
+  let warmSearched = plan.companies?.length ?? 0
+  let signalsNotReady = 0
+  let signalCompanies = 0
+  /** Only people whose employer has one of the signals asked for, each given those it has. */
+  const withSignalsAsked = async (people: PersonResult[]): Promise<PersonResult[]> => {
+    let found = warm ? people.map((p) => withSignals(p, [warmFor(warm, { domain: p.companyDomain, ref: p.companyRef }) ?? warmByName.get(p.company.trim().toLowerCase())])) : people
+    let notReady = new Set<string>()
+    // Those Warm already keeps needn't be looked up.
+    const toLookUp = webKinds.length ? found.filter((p) => !hasSignal(p, kinds)) : []
+    if (toLookUp.length) {
+      const answer = await employerSignals(toLookUp, webKinds)
+      notReady = answer.notReady
+      signalCompanies += answer.companies
+      found = found.map((p) => {
+        const key = signalKey({ name: p.company, domain: p.companyDomain })
+        return key && answer.signals[key]?.length ? withSignals(p, answer.signals[key]) : p
+      })
+    }
+    const kept = found.filter((p) => hasSignal(p, kinds))
+    for (const p of found) {
+      if (hasSignal(p, kinds)) continue
+      const key = signalKey({ name: p.company, domain: p.companyDomain })
+      if (key && notReady.has(key)) signalsNotReady++
+      else tally.noSignal++
+    }
+    return kept
+  }
   return {
     get plan() {
       return plan
@@ -1693,6 +1794,7 @@ async function verifiedFunnel(
       if (!plan.next) return false
       roundStart = plan.next
       plan = placesOf(plan.next)
+      warmSearched += plan.companies?.length ?? 0
       return true
     },
     hidden,
@@ -1700,7 +1802,9 @@ async function verifiedFunnel(
     async prepare(people) {
       const unseen = people.filter((p) => !shownHashes.has(hashOf(p)))
       repeats += people.length - unseen.length
-      const batch = await processBatch(unseen, input.company ?? null, source, db, tally, hideUnverifiable, Boolean(input.includeContacts), undefined, undefined, free, undefined, VERIFIED_AHEAD_MS)
+      // Before anything else is done for them: who's left out here isn't looked into or charged.
+      const wanted = kinds.length ? await withSignalsAsked(unseen) : unseen
+      const batch = await processBatch(wanted, input.company ?? null, source, db, tally, hideUnverifiable, Boolean(input.includeContacts), undefined, undefined, free, undefined, VERIFIED_AHEAD_MS)
       spared += batch.spared
       return batch.items
     },
@@ -1717,9 +1821,22 @@ async function verifiedFunnel(
       if (tally.noSurname > 0) details.push(`${plural(tally.noSurname, 'person was', 'people were')} left out because LinkedIn hides ${tally.noSurname === 1 ? 'their surname' : 'their surnames'} (e.g. "Andy C."), so no email can be found.`)
       if (tally.remembered > 0) details.push(`${plural(tally.remembered, 'person was', 'people were')} left out because an earlier lookup couldn't verify ${tally.remembered === 1 ? 'their email' : 'their emails'}.`)
       if (tally.inContacts > 0) details.push(`${plural(tally.inContacts, 'person was', 'people were')} left out because they're already in your contacts. Turn on "Include existing contacts" to see them.`)
+      if (tally.noSignal > 0) details.push(`${plural(tally.noSignal, 'person was', 'people were')} left out for having none of the signals chosen.`)
+      if (signalsNotReady > 0) {
+        const what = webKinds.map((k) => (k === 'hiring' ? 'hiring' : 'funding')).join(' or ')
+        details.push(`${plural(signalsNotReady, 'person was', 'people were')} left out because ${signalsNotReady === 1 ? 'their employer' : 'their employers'} couldn't be checked for ${what} in time.`)
+      }
+      if (warmTargetsHere && citiesSearched) {
+        const noRef = warmWithoutRef(warm!)
+        details.push(
+          `Searched inside ${plural(warmSearched, 'warm company', 'warm companies')} of your ${warmTargetsHere.length}, where your emails, forms or proposals found interest in the last 90 days.${noRef ? ` ${plural(noRef, 'other has', 'others have')} no LinkedIn company page we know, so couldn't be searched.` : ''}`,
+        )
+      }
       return {
         counts: {
           repeats,
+          ...(kinds.length ? { noSignal: tally.noSignal, signalsNotReady, signalCompanies } : {}),
+          ...(warmTargetsHere ? { warmCompanies: citiesSearched ? warmSearched : 0 } : {}),
           inContacts: tally.inContacts,
           noSurname: tally.noSurname,
           knownUnverifiable: tally.skippedUnverifiable,
@@ -1788,10 +1905,23 @@ async function searchPeopleUnmasked(
   // (verifiedFunnel). Any title search goes there, across companies or inside
   // one (the company narrows the query, and each person's live employer is
   // checked against it). A company search with no job title keeps the existing
-  // path: the verified search needs a title to query on.
+  // path: the verified search needs a title to query on. The Signals filter
+  // and the keyword, which the host can't search by, are applied to each batch
+  // before anyone is shown or charged (verifiedFunnel, keywordFilter).
   {
     const { hostVerifiedPeopleSearch } = await import('./hostRules')
     if (hostVerifiedPeopleSearch() && (filters.titles?.length ?? 0) > 0) {
+      // Refused, not ignored: it would otherwise leave everyone out, or nobody.
+      if (filters.signals?.includes('new_in_role')) throw new Error(NEW_IN_ROLE_NOT_WITH_TITLE)
+      // Warm searches inside the workspace's warm companies: with none to search, nothing is.
+      if (!company && filters.signals?.includes('warm') && !warmCompanies(db, filters).length) {
+        const all = warmTargets(warmIndex(db.data)).length
+        const noRef = warmWithoutRef(warmIndex(db.data))
+        const why = all
+          ? `None of your warm companies is one of the sizes chosen, so there's nowhere to search.`
+          : `None of your warm companies has a LinkedIn company page we know, so there's nowhere to search${noRef ? ` (${plural(noRef, 'warm company', 'warm companies')} known only by email domain)` : ''}. Saving people from prospect search links their companies.`
+        return { items: [], nextCursor: null, reportedTotal: 0, warnings: [why], details: [], requests: 0, refined: [], resumed: false }
+      }
       const { verifiedPeopleSearch } = await import('./verifiedPeopleSource')
       return verifiedPeopleSearch({ ...filters, company: company ?? null }, opts, { funnel: await verifiedFunnel(input, fromStart) })
     }

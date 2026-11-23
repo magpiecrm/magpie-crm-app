@@ -88,7 +88,12 @@ key), with the app's actions as tools.
     `companySignals.ts` asks the host, or with SIGNAL_LOOKUPS=on uses the
     copy's own key, cached in `company_signals`). Badges load after the
     results show (`useCompanySignals`); the Hiring and Funding filters find
-    companies first and screen each batch before searching for people. Company
+    companies first and screen each batch before searching for people. The
+    host's verified title search can't search by signals or keyword, so there
+    each batch's people are screened by employer before anyone is shown or
+    charged, Warm searches inside the warm companies, the keyword must be in
+    the person's job, employer or its industry, and New in role is refused
+    (`search.ts` `verifiedFunnel`, `verifiedPeopleSource.ts` `keywordFilter`). Company
     staff counts from company pages are kept over time
     (`prospect_companies.headcount_history`) for a later growth signal.
     A sequence's emails, first and follow-ups, can be written for each

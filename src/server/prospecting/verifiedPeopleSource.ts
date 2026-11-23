@@ -15,6 +15,14 @@
 // and searches its own cities (createCutShortBatches). It isn't read on: what's
 // left of a batch by then is mostly the deeper pages of the same queries.
 //
+// The host searches by job title, place, industry, size and employer only.
+// What else a search asks for is applied here, before anyone is shown or
+// charged: a keyword (keywordFilter: its words in the person's job title,
+// employer or the employer's industry), and the Signals filter, in the
+// funnel (search.ts verifiedFunnel: each employer's hiring and funding looked
+// up, and Warm searched inside the workspace's warm companies, a batch of them
+// a round in place of cities).
+//
 // It talks to the host over the SocialFetch channel (SOCIALFETCH_BASE_URL +
 // x-api-key), which the relay proxies to liscrape's async people API
 // (start -> poll -> done). search.ts delegates here, so allowance, the search
@@ -40,6 +48,11 @@ const DEFAULT_COUNT = 25
  * liscrapeSource.ts ASKED_PER_SHOWN).
  */
 const ASKED_PER_SHOWN = 4
+/**
+ * The same with a keyword, Hiring or Raised funding, which the host can't
+ * search by: they're applied here, and leave out more of who it finds.
+ */
+const ASKED_PER_SHOWN_FILTERED = 8
 /** Most people one search can ask for (the cloud's liscrapeSource.ts MAX_LIMIT). */
 const MAX_ASKED = 200
 /**
@@ -81,6 +94,32 @@ function bandToBucket(band: string | null): HeadcountBucket | undefined {
   if (!band) return undefined
   if (band === '1' || band === '2-10') return '1-10'
   return (HEADCOUNT_BUCKETS as readonly string[]).includes(band) ? (band as HeadcountBucket) : undefined
+}
+
+/** Lower case, accents and punctuation gone, words one space apart. */
+const plainWords = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+
+/**
+ * The keyword, as a filter the host can't apply itself (it searches by job
+ * title, place, industry, size and employer, never free text): each of its
+ * words has to begin a word of the person's job title, their employer's name
+ * or the employer's industry, so "software" keeps a VP Sales at a Software
+ * Development company and "logistic" one at Bramblefield Logistics. Null with
+ * no keyword.
+ */
+export function keywordFilter(keyword: string | null | undefined): ((person: { title?: string | null; company?: { name?: string | null; industry?: string | null } | null }) => boolean) | null {
+  const words = plainWords(keyword ?? '').split(' ').filter(Boolean)
+  if (!words.length) return null
+  return (person) => {
+    const text = ` ${plainWords([person.title, person.company?.name, person.company?.industry].filter(Boolean).join(' '))}`
+    return words.every((w) => text.includes(` ${w}`))
+  }
 }
 
 function splitName(full: string): [string, string] {
@@ -331,8 +370,12 @@ export interface VerifiedFunnel {
   hidden(person: PersonResult): boolean
   /** Whose email is likeliest to be found, first, for when there's less room than people. */
   findableFirst(people: PersonResult[]): PersonResult[]
-  /** The cities this batch of the search takes in its country (searchPlaces.ts). */
-  plan: Pick<PlacesPlan, 'places' | 'placesOnly'>
+  /**
+   * The cities this batch of the search takes in its country (searchPlaces.ts),
+   * or the companies it searches inside instead (the Warm filter: the
+   * workspace's warm companies, a batch at a time).
+   */
+  plan: Pick<PlacesPlan, 'places' | 'placesOnly'> & { companies?: Array<{ ref: string; name: string }> }
   /** Moves `plan` on to the next cities; false where there are none. */
   nextRound(): boolean
   /**
@@ -414,22 +457,29 @@ export async function verifiedPeopleSearch(
   const startedAt = now()
   const company = input.company ?? null
   const sizes = [...new Set((input.companySizes ?? []).flatMap((b) => BUCKET_TO_BANDS[b] ?? []))]
-  const body = () => ({
-    titles,
-    locations: input.country?.trim() ? [input.country.trim()] : [],
-    // Inside one company: the host names it in the query and keeps only those whose live
-    // employer is it (by name or company page), so its industry, size and website don't apply.
-    ...(company
-      ? { industries: [], sizes: [], companies: [company.name], companySlugs: [company.ref] }
-      : {
-          industries: input.industries ?? [],
-          sizes,
-          ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
-          // The host also reads company websites, where it runs that and the filter suits it.
-          founderSites: true,
-        }),
-    limit: Math.min(MAX_ASKED, (count - usable()) * ASKED_PER_SHOWN),
-  })
+  // Applied here rather than by the host, so more are asked for (only ever a ceiling).
+  const matchesKeyword = keywordFilter(input.keyword)
+  const askedPerShown = matchesKeyword || input.signals?.some((k) => k === 'hiring' || k === 'funding') ? ASKED_PER_SHOWN_FILTERED : ASKED_PER_SHOWN
+  const body = () => {
+    // Inside one company, or the batch of companies this round searches (Warm).
+    const inside = company ? [company] : funnel.plan.companies
+    return {
+      titles,
+      locations: input.country?.trim() ? [input.country.trim()] : [],
+      // Inside companies: the host names each in the query and keeps only those whose live
+      // employer is one of them (by name or company page), so their industry, size and website don't apply.
+      ...(inside
+        ? { industries: [], sizes: [], companies: inside.map((c) => c.name), companySlugs: inside.map((c) => c.ref) }
+        : {
+            industries: input.industries ?? [],
+            sizes,
+            ...(funnel.plan.places.length ? { places: funnel.plan.places, placesOnly: funnel.plan.placesOnly } : {}),
+            // The host also reads company websites, where it runs that and the filter suits it.
+            founderSites: true,
+          }),
+      limit: Math.min(MAX_ASKED, (count - usable()) * askedPerShown),
+    }
+  }
 
   const items: PersonResult[] = []
   const seen = new Set<string>()
@@ -443,6 +493,8 @@ export async function verifiedPeopleSearch(
   let stop = 'time limit'
   let roundFound = 0
   let websiteFound = 0
+  /** Left out for not matching the keyword, before anything else was done for them. */
+  let noKeyword = 0
 
   /** Makes `people` ready and adds them to the page, as far as there's room. */
   const take = async (people: PersonResult[]) => {
@@ -491,6 +543,10 @@ export async function verifiedPeopleSearch(
       for (const row of page.people) {
         if (!row?.profileUrl || seen.has(row.profileUrl)) continue
         seen.add(row.profileUrl)
+        if (matchesKeyword && !matchesKeyword(row)) {
+          noKeyword++
+          continue
+        }
         const person = mapPerson(row, searchId)
         ;(person.fromWebsite ? fromWebsite : fresh).push(person)
         if (person.fromWebsite) websiteFound++
@@ -586,7 +642,16 @@ export async function verifiedPeopleSearch(
   const onWebsites = items.filter((p) => p.fromWebsite)
   const websiteCounts: Record<string, number> = websiteFound ? { websiteFound, websiteShown: onWebsites.filter((p) => !funnel.hidden(p)).length, websiteHidden: onWebsites.filter(funnel.hidden).length } : {}
   const carried: Record<string, number> = { ...(heldOver ? { heldOver } : {}), ...(cutShort && funnel.at ? { leftFinishing: 1 } : {}) }
-  const counts = { hits: found, shown, rounds, places, ...kept.counts, prospectCredits: shown, ...websiteCounts, ...carried, ...statCounts(stats) }
+  const counts = { hits: found, shown, rounds, places, ...(matchesKeyword ? { noKeyword } : {}), ...kept.counts, prospectCredits: shown, ...websiteCounts, ...carried, ...statCounts(stats) }
+  const details = noKeyword
+    ? [`${noKeyword} ${noKeyword === 1 ? 'person was' : 'people were'} left out because the keyword isn't in ${noKeyword === 1 ? 'their job title, their employer’s name or its industry' : 'their job titles, their employers’ names or industries'}.`, ...kept.details]
+    : kept.details
+  // A hosted copy shows warnings, not details: a page the keyword or signals left short says so.
+  const bySignals = (kept.counts.noSignal ?? 0) + (kept.counts.signalsNotReady ?? 0)
+  if (shown < count && (noKeyword || bySignals) && !warnings.length) {
+    const by = [noKeyword ? `the keyword left out ${noKeyword}` : null, bySignals ? `the signals chosen left out ${bySignals}` : null].filter(Boolean).join(' and ')
+    warnings.push(`Found ${shown} of the ${count} asked for: ${by} of the people found. Fewer filters find more.${kept.nextCursor ? ' Load more carries on.' : ''}`)
+  }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,
@@ -600,6 +665,7 @@ export async function verifiedPeopleSearch(
       country: input.country?.trim() || null,
       company: company?.ref ?? null,
       keyword: Boolean(input.keyword?.trim()),
+      ...(input.signals?.length ? { signals: input.signals } : {}),
       page: input.cursor ? 'more' : resumedSearch ? 'resumed' : 'first',
     },
     counts,
@@ -615,7 +681,7 @@ export async function verifiedPeopleSearch(
     nextCursor: kept.nextCursor,
     reportedTotal: found,
     warnings,
-    details: kept.details,
+    details,
     requests: 1,
     refined: [],
     resumed: kept.resumed,

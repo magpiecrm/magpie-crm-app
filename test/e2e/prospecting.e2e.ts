@@ -1,4 +1,4 @@
-// P1, P2 and P3 (test/JOURNEYS.md): prospect search as a hosted customer uses
+// P1 to P4 (test/JOURNEYS.md): prospect search as a hosted customer uses
 // it. The stand-in host answers from the made-up world in test/stack/fixtures.ts
 // (six companies, six people at each), so every result can be named. Hosted
 // copies use the host's verified people search, and by default leave out
@@ -29,7 +29,16 @@ interface Filters {
   seniorities?: string[]
   /** A country from the filter's list ("United Kingdom"). */
   country?: string
+  keyword?: string
+  /** Signals as the filter labels them ("Hiring"). */
+  signals?: string[]
   includeContacts?: boolean
+}
+
+/** Opens a filter's section of the form, unless it's open already (`inside` shows). Its button counts what's chosen ("Signals 1"). */
+async function openSection(form: Locator, label: string, inside: Locator) {
+  if (!(await inside.isVisible())) await form.getByRole('button', { name: new RegExp(`^${label}( \\d+)?$`) }).click()
+  await expect(inside).toBeVisible()
 }
 
 /** Runs `start` and waits for the people search it sets off to finish (the reply streams, then ends with the page). */
@@ -46,7 +55,10 @@ async function untilSearched(page: Page, start: () => Promise<unknown>) {
   expect(lines.at(-1)?.type, 'the search ended with its page').toBe('done')
 }
 
-/** Collection → Prospect Search: fills the people filters and searches, from the top. */
+/**
+ * Collection → Prospect Search: fills the people filters and searches, from the top. The form keeps
+ * what was chosen while the browser stays open, so a second search in the same test adds to the first.
+ */
 async function searchPeople(page: Page, f: Filters) {
   await page.goto('/collection/prospect-search')
   await page.waitForLoadState('networkidle')
@@ -65,9 +77,19 @@ async function searchPeople(page: Page, f: Filters) {
     await country.press('Enter')
     await expect(form.getByRole('button', { name: `Remove ${f.country}`, exact: true })).toBeVisible()
   }
+  if (f.keyword) {
+    const keyword = form.getByRole('textbox', { name: 'Keyword', exact: true })
+    await openSection(form, 'Keyword', keyword)
+    await keyword.fill(f.keyword)
+  }
+  for (const s of f.signals ?? []) {
+    const box = form.getByRole('checkbox', { name: new RegExp(`^${s}\\b`) })
+    await openSection(form, 'Signals', box)
+    await box.check()
+  }
   if (f.includeContacts) {
     const include = form.getByRole('switch', { name: 'Include existing contacts' })
-    await include.click()
+    if ((await include.getAttribute('aria-checked')) !== 'true') await include.click()
     await expect(include).toHaveAttribute('aria-checked', 'true')
   }
   const count = page.getByText(/^\d+ shown/)
@@ -108,14 +130,15 @@ async function hideUnverifiable(page: Page, on: boolean) {
   await expect(toggle).toHaveAttribute('aria-checked', String(on))
 }
 
-/** Settings → Overview: this month's email lookups. */
-async function emailLookups(page: Page): Promise<number> {
+/** Settings → Overview: one of this month's usage counts ("Email lookups", "Prospects found"). */
+async function usage(page: Page, label: string): Promise<number> {
   await page.goto('/settings?tab=overview')
-  const tile = page.getByRole('main').getByText('Email lookups', { exact: true }).locator('..')
+  const tile = page.getByRole('main').getByText(label, { exact: true }).locator('..')
   const value = tile.locator('p').nth(1)
   await expect(value).toHaveText(/^\d[\d,]*$/)
   return Number((await value.innerText()).replace(/,/g, ''))
 }
+const emailLookups = (page: Page) => usage(page, 'Email lookups')
 
 /** The public opt-out page, as the person themselves uses it (signed out). */
 async function optOut(browser: Browser, email: string) {
@@ -215,6 +238,41 @@ test.describe('P1 search people by job title', () => {
     } finally {
       await hideUnverifiable(page, true)
     }
+  })
+})
+
+test.describe('P4 search by signals', () => {
+  const vps = titled('VP Sales').filter(verifiable)
+  const hiring = (p: FakePerson) => Boolean(companyById(p.companyId)!.hiring)
+
+  test('with Hiring ticked, a job-title search shows and charges for only people at companies hiring, and a keyword narrows them', async ({ page, problems, host }) => {
+    test.setTimeout(6 * 60_000)
+    const atHiring = vps.filter(hiring)
+    // Some VPs of Sales work where nobody's hiring (Bramblefield has only raised funding), so there's something to leave out.
+    expect(atHiring.length).toBeGreaterThan(0)
+    expect(atHiring.length).toBeLessThan(vps.length)
+    const before = await usage(page, 'Prospects found')
+
+    await searchPeople(page, { titles: ['VP Sales'], signals: ['Hiring'], includeContacts: true })
+    expect(names(await shown(page))).toEqual(names(atHiring))
+    for (const p of atHiring) await expect(rowOf(page, p).getByText('Hiring', { exact: true })).toBeVisible()
+    // The host searches by job title alone; whether each employer is hiring was asked of it after.
+    const asked = (await host.log('/v2/linkedin/people/searches')).filter((c) => c.method === 'POST')
+    expect(asked.at(-1)?.body?.titles).toEqual(['VP Sales'])
+    const checked = (await host.log('/v1/company-signals')).flatMap((c) => (c.body?.companies ?? []) as Array<{ domain: string | null }>)
+    expect(checked.map((c) => c.domain)).toEqual(expect.arrayContaining(['bramblefield.test', 'lanternfish.test']))
+    // A credit for each person shown, and none for those left out (searchPeople ran it twice: once carrying on, once from the top).
+    const after = await usage(page, 'Prospects found')
+    expect(after - before).toBeLessThanOrEqual(2 * atHiring.length)
+    expect((after - before) % atHiring.length).toBe(0)
+
+    // A keyword keeps those whose job, employer or its industry has it: Copperwick is a software company, Saltmarsh makes machinery.
+    await searchPeople(page, { titles: ['VP Sales'], signals: ['Hiring'], keyword: 'software', includeContacts: true })
+    const software = atHiring.filter((p) => companyById(p.companyId)!.industry.includes('Software'))
+    expect(software.length).toBeGreaterThan(0)
+    expect(software.length).toBeLessThan(atHiring.length)
+    expect(names(await shown(page))).toEqual(names(software))
+    expect(problems()).toEqual([])
   })
 })
 

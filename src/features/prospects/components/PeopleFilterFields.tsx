@@ -229,7 +229,8 @@ export function CountryField({ value, onChange, hosted, ...section }: FieldProps
   )
 }
 
-export function KeywordField({ value, onChange, ...section }: FieldProps<string>) {
+/** `hint`: what the keyword does in this search, where that needs saying. */
+export function KeywordField({ value, onChange, hint: note, ...section }: FieldProps<string> & { hint?: string }) {
   return (
     <Shell label="Keyword" icon={<Search className="w-4 h-4" />} count={value ? 1 : 0} section={section}>
       <input
@@ -239,6 +240,7 @@ export function KeywordField({ value, onChange, ...section }: FieldProps<string>
         placeholder="e.g. fintech"
         onChange={(e) => onChange(e.target.value)}
       />
+      {note && <p className={hint(section.form)}>{note}</p>}
     </Shell>
   )
 }

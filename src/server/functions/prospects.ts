@@ -303,6 +303,12 @@ export const prospectingStatusFn = createServerFn({ method: 'GET' })
       sharedDatabase: (await import('../prospecting/hostRules')).sharedDatabase(),
       /** The hiring and funding signals this copy can look up (companySignals.ts): the page offers only these. */
       webSignals: (await import('../prospecting/companySignals')).webSignalKinds(),
+      /**
+       * A people search with a job title goes to the host's verified search (verifiedPeopleSource.ts):
+       * each person's employer is checked for the signals asked for, the keyword is matched against
+       * their job, employer and its industry, and New in role can't be told.
+       */
+      verifiedPeopleSearch: (await import('../prospecting/hostRules')).hostVerifiedPeopleSearch(),
       reacher: {
         configured: verifier?.provider === 'reacher',
         // The host's IPs aren't a managed copy's business.

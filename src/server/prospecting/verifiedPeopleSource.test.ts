@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCutShortBatches, verifiedPeopleSearch, type VerifiedFunnel } from './verifiedPeopleSource'
+import { createCutShortBatches, keywordFilter, verifiedPeopleSearch, type VerifiedFunnel } from './verifiedPeopleSource'
 import { logSearch } from './searchLog'
 import { recordUsage } from '../usage'
 import type { PersonResult } from './types'
@@ -147,6 +147,69 @@ describe('verifiedPeopleSearch', () => {
     await verifiedPeopleSearch({ titles: ['Account Executive'], industries: ['Software Development'], companySizes: ['51-200'], country: 'GB', company: { ref: 'larkspur', name: 'Larkspur' }, count: 10 }, {}, { calls: c as any, sleep: async () => {}, now: () => 0, funnel: { ...funnel, prepare: async (p: PersonResult[]) => p, hidden: () => false, findableFirst: (p: PersonResult[]) => p, nextRound: () => false, finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }) } })
     expect(sent).toEqual({ titles: ['Account Executive'], locations: ['GB'], industries: [], sizes: [], companies: ['Larkspur'], companySlugs: ['larkspur'], limit: 40 })
     expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ company: 'larkspur' }) }))
+  })
+
+  it('goes inside the companies a round of the funnel names (Warm), as inside one', async () => {
+    let sent: any = null
+    const c = { start: async (b: unknown) => { sent = b; return { id: 's1' } }, poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
+    const funnel = { plan: { places: [], placesOnly: false, companies: [{ ref: 'larkspur', name: 'Larkspur' }, { ref: '42', name: 'Barclays' }] } } as any
+    await verifiedPeopleSearch({ titles: ['Founder'], industries: ['Banking'], country: 'GB', signals: ['warm'], count: 10 }, {}, { calls: c as any, sleep: async () => {}, now: () => 0, funnel: { ...funnel, prepare: async (p: PersonResult[]) => p, hidden: () => false, findableFirst: (p: PersonResult[]) => p, nextRound: () => false, finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }) } })
+    expect(sent).toEqual({ titles: ['Founder'], locations: ['GB'], industries: [], sizes: [], companies: ['Larkspur', 'Barclays'], companySlugs: ['larkspur', '42'], limit: 40 })
+    expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ filters: expect.objectContaining({ signals: ['warm'] }) }))
+  })
+
+  it('asks the host for more people where a keyword, Hiring or Raised funding will leave some out here', async () => {
+    const bodies: any[] = []
+    const c = { start: async (b: unknown) => (bodies.push(b), { id: 's1' }), poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
+    const run = (more: object) => verifiedPeopleSearch({ titles: ['Founder'], count: 10, ...more }, {}, { calls: c as any, sleep: async () => {}, now: () => 0 })
+    await run({ keyword: 'software' })
+    await run({ signals: ['hiring'] })
+    await run({ signals: ['warm'] })
+    expect(bodies.map((b) => [b.limit, 'keyword' in b, 'signals' in b])).toEqual([[80, false, false], [80, false, false], [40, false, false]])
+  })
+
+  it('leaves out, before the funnel, people the keyword is in nothing of, and says so when the page is short', async () => {
+    const prepared: string[] = []
+    const funnel: VerifiedFunnel = {
+      prepare: async (people) => (prepared.push(...people.map((p) => p.lastName)), people),
+      hidden: () => false,
+      findableFirst: (people) => people,
+      plan: { places: [], placesOnly: false },
+      nextRound: () => false,
+      finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }),
+    }
+    const at = (name: string, company: string, industry: string | null, title = 'Founder') => person({ profileUrl: `https://x/in/${name}`, name: `A ${name}`, title, company: { ...person().company, name: company, industry } })
+    const c = calls([{ found: 4, nextCursor: 4, people: [at('one', 'Larkspur', 'Software Development'), at('two', 'Brightsoft', 'IT Services'), at('three', 'Harbour', 'Logistics', 'Founder, software'), at('four', 'Quill', null)] }])
+    const page = await verifiedPeopleSearch({ titles: ['Founder'], keyword: 'Software', count: 5 }, {}, { ...deps(c), funnel })
+    expect(page.items.map((p) => p.lastName)).toEqual(['one', 'three'])
+    expect(prepared).toEqual(['one', 'three'])
+    expect(page.warnings).toEqual(['Found 2 of the 5 asked for: the keyword left out 2 of the people found. Fewer filters find more.'])
+    expect(page.details?.[0]).toMatch(/^2 people were left out because the keyword isn't in their job titles/)
+    expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ counts: expect.objectContaining({ hits: 4, shown: 2, noKeyword: 2 }), filters: expect.objectContaining({ keyword: true }) }))
+  })
+
+  describe('keywordFilter', () => {
+    const who = (title: string, name: string | null, industry: string | null = null) => ({ title, company: name === null ? null : { name, industry } })
+    it('takes each word of the keyword at the start of a word of the job title, employer or its industry', () => {
+      const software = keywordFilter('software')!
+      expect(software(who('VP Sales', 'Copperwick Analytics', 'Software Development'))).toBe(true)
+      expect(software(who('VP Sales', 'Larkspur Software Ltd'))).toBe(true)
+      expect(software(who('Head of Software', 'Acme'))).toBe(true)
+      // Inside a word isn't a word of it.
+      expect(software(who('VP Sales', 'Brightsoftware'))).toBe(false)
+      expect(software(who('VP Sales', null))).toBe(false)
+      // Every word, any case, accents and punctuation aside; a word's start is enough.
+      expect(keywordFilter('Health  care')!(who('CTO', 'Lanternfish', 'Hospitals and Health Care'))).toBe(true)
+      expect(keywordFilter('health insurance')!(who('CTO', 'Lanternfish', 'Hospitals and Health Care'))).toBe(false)
+      expect(keywordFilter('logistic')!(who('Founder', 'Bramblefield', 'Transportation, Logistics, Supply Chain and Storage'))).toBe(true)
+      expect(keywordFilter('cafe')!(who('Owner', 'Café Rouge'))).toBe(true)
+      expect(keywordFilter('e-commerce')!(who('CEO', 'Shopwise', 'E-Commerce'))).toBe(true)
+    })
+    it('is no filter without a keyword', () => {
+      expect(keywordFilter(undefined)).toBeNull()
+      expect(keywordFilter('  ')).toBeNull()
+      expect(keywordFilter('—')).toBeNull()
+    })
   })
 
   describe('with the funnel', () => {
