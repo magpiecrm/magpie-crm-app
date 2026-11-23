@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
 import { deleteContactsFn, getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn } from '../../../server/functions'
 import { Dialog, DialogBody, DialogFooter, MetaList } from '../../../components/ui/Dialog'
@@ -15,10 +15,9 @@ import { useIsDesktop } from '../../../hooks/useMediaQuery'
 import { RecordTasks } from '../../sales/components/TaskParts'
 import { ContactSequences } from '../../sequences/components/ContactSequences'
 import { buildFeed, matchesFilter, type FeedFilter } from '../record'
-import { ContactSurveysTab } from './ContactSurveysTab'
 import { ContactHeader } from './record/ContactHeader'
-import { ContactSidebar, emailStatus } from './record/ContactSidebar'
-import { FeedList, NoteComposer, type NoteComposerHandle } from './record/ContactFeed'
+import { ContactSidebar, emailStatus, useResubscribe } from './record/ContactSidebar'
+import { FeedList, NoteComposer, UpcomingRow, type NoteComposerHandle } from './record/ContactFeed'
 
 interface ContactDetailsProps {
   email: string
@@ -26,10 +25,10 @@ interface ContactDetailsProps {
 }
 
 /** `details` is the side panel, a tab of its own on a phone. */
-type Tab = 'overview' | 'activity' | 'surveys' | 'details'
+type Tab = 'overview' | 'activity' | 'details'
 
 /** How many of the latest items the Overview shows before "View all". */
-const RECENT = 5
+const RECENT = 4
 
 const FILTERS: Array<{ value: FeedFilter; label: string }> = [
   { value: 'all', label: 'All' },
@@ -44,6 +43,9 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const isDesktop = useIsDesktop()
   const [filter, setFilter] = useState<FeedFilter>('all')
   const note = useRef<NoteComposerHandle>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [addingTask, setAddingTask] = useState(false)
+  const resubscribe = useResubscribe(email)
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
   // Who the email comes from: the workspace's default sender, as sending uses it.
   const { data: fromData } = useQuery({ queryKey: queryKeys.email.defaultSender(), queryFn: () => getDefaultSenderFn(), enabled: isEmailModalOpen })
@@ -59,7 +61,10 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
     queryFn: () => getContactDetailsFn({ data: { email } }),
   })
   const details = detailsData?.success ? detailsData : null
-  const feed = useMemo(() => (details ? buildFeed(details.activity, details.notes) : []), [details])
+  const feed = useMemo(
+    () => (details ? buildFeed(details.activity, details.notes, details.replies, details.surveyResponses.map((r) => ({ id: r.id, answers: r.answers }))) : []),
+    [details],
+  )
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(email) })
 
   if (isLoading) {
@@ -94,7 +99,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
     )
   }
 
-  const { contact, lists, campaigns, fieldDefs, surveyResponses, sequences, company, deals } = details
+  const { contact, lists, campaigns, fieldDefs, sequences, company, deals } = details
   const name = `${contact.attributes.FIRSTNAME} ${contact.attributes.LASTNAME}`.trim()
   const firstName = contact.attributes.FIRSTNAME || name || 'them'
   const status = emailStatus(contact.status)
@@ -125,13 +130,21 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
       toast.error("Couldn't delete the contact", { description: err instanceof Error ? err.message : undefined })
     }
   }
-  const nextEmailAt = (sequences ?? []).filter((e) => e.next_send_at).sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))[0]?.next_send_at ?? null
+  const nextSend = (sequences ?? []).filter((e) => e.next_send_at).sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))[0]
+  const nextEmailAt = nextSend?.next_send_at ?? null
 
   const openNote = () => {
-    if (view === 'surveys' || view === 'details') setTab('overview')
-    // After the tab has drawn its composer.
-    setTimeout(() => note.current?.focus(), 0)
+    if (view === 'details') setTab('overview')
+    if (noteOpen) note.current?.focus()
+    else setNoteOpen(true)
   }
+  const addNoteButton = !noteOpen && (
+    <button type="button" onClick={openNote} className={SECTION_ACTION}>
+      <Plus aria-hidden className="h-3.5 w-3.5" />
+      Add note
+    </button>
+  )
+  const composer = noteOpen && <NoteComposer ref={note} email={contact.email} name={firstName} onAdded={refresh} onClose={() => setNoteOpen(false)} />
 
   const handleSendEmail = async () => {
     if (!emailSubject || !emailBody || !canEmail) return
@@ -153,9 +166,8 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const shown = feed.filter((i) => matchesFilter(i, filter))
   const tabs: Array<{ value: Tab; label: string; count?: number; phoneOnly?: boolean }> = [
     { value: 'overview', label: 'Overview' },
-    { value: 'activity', label: 'Activity', count: feed.length },
-    ...(surveyResponses.length ? [{ value: 'surveys' as const, label: 'Surveys', count: surveyResponses.length }] : []),
     { value: 'details', label: 'Details', phoneOnly: true },
+    { value: 'activity', label: 'Activity', count: feed.length },
   ]
   // On a desktop the details are always beside the tabs, so their tab is the Overview.
   const view: Tab = isDesktop && tab === 'details' ? 'overview' : tab
@@ -181,9 +193,33 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         repliedAt={(sequences ?? []).map((e) => e.replied_at).filter((at): at is string => Boolean(at)).sort().at(-1) ?? null}
         onEmail={() => setIsEmailModalOpen(true)}
         onNote={openNote}
+        onAddTask={() => {
+          setTab('overview')
+          setAddingTask(true)
+        }}
+        onShowActivity={() => {
+          setFilter('emails')
+          setTab('activity')
+        }}
         onCopy={() => void copyEmail()}
         onDelete={() => void deleteContact()}
       />
+
+      {!canEmail && (
+        <Notice
+          level="warning"
+          className="mt-4"
+          title={`${name || contact.email} is ${status.label.toLowerCase()}`}
+          action={
+            <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()}>
+              Resubscribe
+            </Button>
+          }
+        >
+          {status.text} One-to-one emails from this page won’t send either.
+          {resubscribe.error && <span className="block text-destructive">{resubscribe.error.message}</span>}
+        </Notice>
+      )}
 
       <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
         <div className={`order-2 lg:order-none ${view === 'details' ? '' : 'hidden lg:block'}`}>
@@ -199,8 +235,8 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                 role="tab"
                 aria-selected={view === t.value}
                 onClick={() => setTab(t.value)}
-                className={`-mb-px shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.phoneOnly ? 'inline-flex lg:hidden' : 'inline-flex'} ${
-                  view === t.value ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+                className={`-mb-px shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.phoneOnly ? 'inline-flex lg:hidden' : 'inline-flex'} ${
+                  view === t.value ? 'border-accent font-semibold text-foreground' : 'border-transparent font-medium text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {t.label}
@@ -211,28 +247,44 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
 
           {view === 'overview' && (
             <>
-              <Section title="Tasks">
-                <RecordTasks on={{ contactEmail: contact.email }} />
+              <Section
+                title="Tasks"
+                action={
+                  !addingTask && (
+                    <button type="button" onClick={() => setAddingTask(true)} className={SECTION_ACTION}>
+                      <Plus aria-hidden className="h-3.5 w-3.5" />
+                      Add task
+                    </button>
+                  )
+                }
+              >
+                <RecordTasks on={{ contactEmail: contact.email }} adding={addingTask} onStopAdding={() => setAddingTask(false)} />
               </Section>
               <ContactSequences email={contact.email} items={sequences ?? []} blocked={canEmail ? null : `They’re ${status.label.toLowerCase()}, so sequences skip them.`} />
               <Section
                 title="Recent activity"
                 action={
-                  feed.length > RECENT && (
-                    <button type="button" onClick={() => setTab('activity')} className={SECTION_ACTION}>
-                      View all {feed.length}
-                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-                    </button>
-                  )
+                  <span className="flex items-center gap-1">
+                    {addNoteButton}
+                    {feed.length > RECENT && (
+                      <button type="button" onClick={() => setTab('activity')} className={SECTION_ACTION}>
+                        View all {feed.length}
+                        <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </span>
                 }
               >
-                <NoteComposer ref={note} email={contact.email} name={firstName} onAdded={refresh} />
-                {feed.length === 0 ? (
-                  <p className="pt-4 text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
+                {composer}
+                {feed.length === 0 && !nextSend ? (
+                  !noteOpen && <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
                 ) : (
-                  <div className="mt-2">
-                    <FeedList items={feed.slice(0, RECENT)} onChanged={refresh} />
-                  </div>
+                  <FeedList
+                    items={feed.slice(0, RECENT)}
+                    name={firstName}
+                    onChanged={refresh}
+                    before={nextSend && <UpcomingRow title={`${nextSend.sequence_name}, email ${nextSend.sent + 1}`} at={nextSend.next_send_at!} />}
+                  />
                 )}
               </Section>
             </>
@@ -241,18 +293,19 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
           {view === 'activity' && (
             <section aria-label="Activity" className="rounded-xl border border-border bg-card p-5">
               <div className="space-y-4">
-                <NoteComposer ref={note} email={contact.email} name={firstName} onAdded={refresh} />
-                <SegmentedTabs value={filter} onChange={setFilter} options={FILTERS} label="Show" scroll />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <SegmentedTabs value={filter} onChange={setFilter} options={FILTERS} label="Show" scroll />
+                  {addNoteButton}
+                </div>
+                {composer}
                 {shown.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nothing of this kind yet.</p>
                 ) : (
-                  <FeedList items={shown} months onChanged={refresh} />
+                  <FeedList items={shown} name={firstName} months onChanged={refresh} />
                 )}
               </div>
             </section>
           )}
-
-          {view === 'surveys' && <ContactSurveysTab responses={surveyResponses} />}
         </div>
       </div>
 

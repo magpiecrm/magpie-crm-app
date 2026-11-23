@@ -467,6 +467,28 @@ export const sequences = {
         }),
     ),
 
+  /** What a contact wrote back to their sequences, newest first: the start of each reply kept from the inbox. */
+  repliesForContact: (email: string) =>
+    read((data) =>
+      (data.sequence_enrollments ?? [])
+        .filter((e) => e.contact_email === normEmail(email))
+        .flatMap((e) => {
+          const name = data.sequences?.find((x) => x.id === e.sequence_id)?.name ?? 'Deleted sequence'
+          return (e.messages ?? [])
+            .filter((m) => m.direction === 'in')
+            .map((m) => ({
+              id: m.id,
+              enrollment_id: e.id,
+              sequence_id: e.sequence_id,
+              sequence_name: name,
+              subject: m.subject,
+              at: m.at,
+              excerpt: m.text.replace(/\s+/g, ' ').trim().slice(0, 280),
+            }))
+        })
+        .sort((a, b) => b.at.localeCompare(a.at)),
+    ),
+
   /** Per email: how many it went to, and opened, clicked, replied, bounced and unsubscribed (people, bots excluded). */
   stepStats: (id: string) =>
     read((data) => {

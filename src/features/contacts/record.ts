@@ -4,7 +4,7 @@
  */
 import type { ContactActivity } from '../../server/contactActivity'
 
-export type FeedKind = 'campaign' | 'sequence' | 'form' | 'survey' | 'note'
+export type FeedKind = 'campaign' | 'sequence' | 'reply' | 'form' | 'survey' | 'note'
 export type FeedFilter = 'all' | 'emails' | 'notes' | 'forms'
 
 export interface FeedNote {
@@ -12,6 +12,23 @@ export interface FeedNote {
   body: string
   created_by: string | null
   created_at: string
+}
+
+/** What they wrote back to a sequence (sequences.repliesForContact). */
+export interface FeedReply {
+  id: string
+  enrollment_id: string
+  sequence_id: string
+  sequence_name: string
+  subject: string
+  at: string
+  excerpt: string
+}
+
+/** A survey they answered, with its answers ready to show. */
+export interface FeedSurvey {
+  id: string
+  answers: Array<{ question: string; answer: string }>
 }
 
 export interface FeedItem {
@@ -27,6 +44,9 @@ export interface FeedItem {
   replied?: string
   completed?: string
   note?: FeedNote
+  reply?: FeedReply
+  /** A survey's answers. */
+  answers?: FeedSurvey['answers']
 }
 
 const KIND: Record<ContactActivity['type'], FeedKind> = {
@@ -42,8 +62,8 @@ const KIND: Record<ContactActivity['type'], FeedKind> = {
   survey_completed: 'survey',
 }
 
-/** The contact's events and notes as one list, each email's send, open, click and reply as one item. */
-export function buildFeed(activity: ContactActivity[], notes: FeedNote[]): FeedItem[] {
+/** The contact's events, replies and notes as one list, each email's send, open, click and reply as one item. */
+export function buildFeed(activity: ContactActivity[], notes: FeedNote[], replies: FeedReply[] = [], surveys: FeedSurvey[] = []): FeedItem[] {
   const byRef = new Map<string, FeedItem>()
   // Items dated by their send, start or submission; the rest by their earliest event.
   const dated = new Set<string>()
@@ -62,14 +82,19 @@ export function buildFeed(activity: ContactActivity[], notes: FeedNote[]): FeedI
       dated.add(e.ref)
     } else if (!dated.has(e.ref) && e.at < item.at) item.at = e.at
   }
+  for (const sv of surveys) {
+    const item = byRef.get(`survey:${sv.id}`)
+    if (item && sv.answers.length) item.answers = sv.answers
+  }
   const items: FeedItem[] = [...byRef.values()]
   for (const n of notes) items.push({ key: `note:${n.id}`, kind: 'note', at: n.created_at, title: '', note: n })
+  for (const r of replies) items.push({ key: `reply:${r.id}`, kind: 'reply', at: r.at, title: r.sequence_name, reply: r })
   return items.sort((a, b) => b.at.localeCompare(a.at))
 }
 
 export function matchesFilter(item: FeedItem, filter: FeedFilter): boolean {
   if (filter === 'all') return true
-  if (filter === 'emails') return item.kind === 'campaign' || item.kind === 'sequence'
+  if (filter === 'emails') return item.kind === 'campaign' || item.kind === 'sequence' || item.kind === 'reply'
   if (filter === 'notes') return item.kind === 'note'
   return item.kind === 'form' || item.kind === 'survey'
 }

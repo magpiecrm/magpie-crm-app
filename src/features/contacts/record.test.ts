@@ -36,6 +36,18 @@ describe('buildFeed', () => {
   })
 })
 
+it('gives each reply its own item and puts survey answers on their survey', () => {
+  const feed = buildFeed(
+    [ev('survey_started', '2026-10-01T09:00:00Z', 'survey:r1', 'NPS'), ev('survey_completed', '2026-10-01T09:02:00Z', 'survey:r1', 'NPS')],
+    [],
+    [{ id: 'm1', enrollment_id: 'e1', sequence_id: 's1', sequence_name: 'Webinar', subject: 'Re: Hi', at: '2026-10-05T09:00:00Z', excerpt: 'Thanks' }],
+    [{ id: 'r1', answers: [{ question: 'Score?', answer: '9' }] }],
+  )
+  expect(feed.map((i) => i.kind)).toEqual(['reply', 'survey'])
+  expect(feed[1].answers).toEqual([{ question: 'Score?', answer: '9' }])
+  expect(feed.filter((i) => matchesFilter(i, 'emails')).map((i) => i.kind)).toEqual(['reply'])
+})
+
 describe('dates', () => {
   const now = new Date('2026-11-23T10:30:00Z')
   it('leaves the year off this year’s dates and never shows seconds', () => {

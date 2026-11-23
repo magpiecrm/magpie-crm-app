@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, BellOff, Building2, CheckCircle2, Copy, ExternalLink, Link2, Mail, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, BellOff, Building2, CheckCircle2, ExternalLink, Link2, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { resubscribeContactFn, setContactCompanyFn } from '../../../../server/functions'
 import { queryKeys } from '../../../../queryKeys'
 import { Badge } from '../../../../components/ui/Badge'
 import { Button } from '../../../../components/ui/Button'
-import { toast } from '../../../../components/ui/toast'
 import { CompanyPicker } from '../../../sales/components/CompanyPicker'
 import { useInvalidateSales } from '../../../sales/usePipelines'
 import { formatMoney, type CompanyView, type DealStatus, type DealView } from '../../../sales/types'
@@ -41,14 +40,6 @@ const TONE = {
 
 function Details({ contact }: { contact: RecordContact }) {
   const [showEmpty, setShowEmpty] = useState(false)
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(contact.email)
-      toast.success('Email address copied')
-    } catch {
-      toast.error("Couldn't copy the address")
-    }
-  }
   const rows: Array<{ label: string; value: React.ReactNode | null }> = [
     { label: 'Job title', value: contact.attributes.JOB_TITLE || null },
     { label: 'Country', value: contact.country || null },
@@ -61,20 +52,12 @@ function Details({ contact }: { contact: RecordContact }) {
         </a>
       ) : null,
     },
-    { label: 'Added', value: formatDay(contact.createdAt) },
+    // With its year: a contact from long ago reads as one.
+    { label: 'Added', value: formatDay(contact.createdAt, new Date(0)) },
   ]
   const empty = rows.filter((r) => !r.value).length
   return (
     <PanelSection title="Details">
-      <p className="mb-1.5 flex min-w-0 items-center gap-2 text-sm text-foreground">
-        <Mail aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <a href={`mailto:${contact.email}`} className="min-w-0 truncate hover:text-accent hover:underline" title={contact.email}>
-          {contact.email}
-        </a>
-        <button type="button" onClick={copy} aria-label="Copy email address" title="Copy" className="touch-target ml-auto shrink-0 rounded-md-xs p-1 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
-          <Copy className="h-3.5 w-3.5" />
-        </button>
-      </p>
       <dl>
         {rows
           .filter((r) => showEmpty || r.value)
@@ -89,19 +72,24 @@ function Details({ contact }: { contact: RecordContact }) {
   )
 }
 
-function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContact; sent: number; opened: number; clicked: number }) {
+/** Puts an opted-out or bounced contact back among those campaigns reach. */
+export function useResubscribe(email: string) {
   const queryClient = useQueryClient()
-  const s = emailStatus(contact.status)
-  const resubscribe = useMutation({
+  return useMutation({
     mutationFn: async () => {
-      const res = await resubscribeContactFn({ data: { email: contact.email } })
+      const res = await resubscribeContactFn({ data: { email } })
       if (!res.success) throw new Error(res.error || "Couldn't resubscribe them")
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(contact.email) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(email) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
     },
   })
+}
+
+function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContact; sent: number; opened: number; clicked: number }) {
+  const s = emailStatus(contact.status)
+  const resubscribe = useResubscribe(contact.email)
   return (
     <PanelSection title="Email status">
       <p className={`flex items-center gap-1.5 text-sm font-medium ${TONE[s.tone]}`}>
@@ -117,9 +105,24 @@ function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContac
           {resubscribe.error && <p className="mt-2 text-[13px] text-destructive">{resubscribe.error.message}</p>}
         </div>
       )}
-      <p className="mt-3 text-[13px] text-muted-foreground tabular-nums">
-        {sent === 0 ? 'No campaigns sent to them yet.' : `${sent} campaign${sent === 1 ? '' : 's'} sent · ${opened} opened · ${clicked} clicked`}
-      </p>
+      {sent === 0 ? (
+        <p className="mt-3 text-[13px] text-muted-foreground">No campaigns sent to them yet.</p>
+      ) : (
+        <dl className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-border px-3 py-2">
+          {(
+            [
+              ['Campaigns', sent],
+              ['Opened', opened],
+              ['Clicked', clicked],
+            ] as const
+          ).map(([label, n]) => (
+            <div key={label}>
+              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dd className="text-base font-semibold text-foreground tabular-nums">{n}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </PanelSection>
   )
 }
@@ -205,7 +208,7 @@ function DealsSection({ email, companyId, deals }: { email: string; companyId: s
   return (
     <PanelSection
       title="Deals"
-      count={deals.length}
+      count={deals.length || undefined}
       action={
         <Link to="/sales/pipeline" search={{ new: 1, contact: email, ...(companyId ? { companyId } : {}) }} className={SECTION_ACTION}>
           <Plus aria-hidden className="h-3.5 w-3.5" />
@@ -247,7 +250,7 @@ function DealsSection({ email, companyId, deals }: { email: string; companyId: s
 
 function ListsSection({ lists }: { lists: Array<{ id: number; name: string }> }) {
   return (
-    <PanelSection title="Lists" count={lists.length}>
+    <PanelSection title="Lists" count={lists.length || undefined}>
       {lists.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">Not on any list.</p>
       ) : (
@@ -257,7 +260,7 @@ function ListsSection({ lists }: { lists: Array<{ id: number; name: string }> })
               <Link
                 to="/marketing/lists/$listId"
                 params={{ listId: String(l.id) }}
-                className="inline-flex items-center rounded-full border border-border px-2.5 py-1 text-[13px] text-foreground hover:border-accent hover:text-accent transition-colors"
+                className="inline-flex items-center rounded-md-xs bg-foreground/[0.06] px-2 py-1 text-[13px] text-foreground hover:bg-accent/10 hover:text-accent hover:underline transition-colors"
               >
                 {l.name}
               </Link>
@@ -288,14 +291,14 @@ export function ContactSidebar({
   return (
     <aside aria-label="About this contact" className="rounded-xl border border-border bg-card">
       <Details contact={contact} />
+      <DealsSection email={contact.email} companyId={company?.id ?? null} deals={deals} />
+      <CompanySection email={contact.email} company={company} typed={contact.attributes.COMPANY} />
       <EmailStatus
         contact={contact}
         sent={campaigns.length}
         opened={campaigns.filter((c) => c.openedAt).length}
         clicked={campaigns.filter((c) => c.clickedAt).length}
       />
-      <CompanySection email={contact.email} company={company} typed={contact.attributes.COMPANY} />
-      <DealsSection email={contact.email} companyId={company?.id ?? null} deals={deals} />
       <ListsSection lists={lists} />
       <ContactCustomFields email={contact.email} defs={fieldDefs} custom={contact.custom ?? {}} />
     </aside>

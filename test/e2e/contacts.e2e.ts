@@ -96,7 +96,7 @@ test('a contact added by hand is edited inline in the table and shows on their p
   await row.getByText('Cora Inline').click()
   await expect(page.getByRole('heading', { name: 'Cora Inline', level: 1 })).toBeVisible()
   const panel = aboutPanel(page)
-  await expect(info(panel, 'Company')).toContainText('Copperwick')
+  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Copperwick')
   await expect(info(panel, 'Job title')).toContainText('Head of Ops')
   await expect(info(panel, field)).toContainText('Gold')
 
@@ -194,7 +194,7 @@ test('a CSV import maps its columns, merges a duplicate, counts right and makes 
   // Ada's two rows made one contact: the second row's job title added, its blanks clearing nothing.
   let panel = await openContact(page, ada)
   await expect(page.getByRole('heading', { name: 'Ada Lovelace', level: 1 })).toBeVisible()
-  await expect(info(panel, 'Company')).toContainText('Copperwick')
+  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Copperwick')
   await expect(info(panel, 'Job title')).toContainText('CTO')
   await expect(info(panel, field)).toContainText('Gold')
 
@@ -202,7 +202,7 @@ test('a CSV import maps its columns, merges a duplicate, counts right and makes 
   panel = await openContact(page, xena)
   await expect(page.getByRole('heading', { name: 'Xena', level: 1 })).toBeVisible()
   await expect(info(panel, 'Job title')).toContainText('Founder')
-  await expect(info(panel, 'Company')).toContainText('Quillmoor')
+  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Quillmoor')
   await expect(info(panel, field)).toContainText('Bronze')
   await expect(page.getByText(list, { exact: true }).first()).toBeVisible()
 

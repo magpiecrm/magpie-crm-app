@@ -17,7 +17,8 @@ export type TaskOn = { dealId?: string; companyId?: string; contactEmail?: strin
 export type TaskItem = Activity & { link?: string; deal_name?: string | null; company_name?: string | null; contact_name?: string | null }
 
 /** After any task change: the Tasks page, the sidebar count, and the record pages refetch. */
-function useTasksChanged(onChanged?: () => void) {
+/** Refreshes every list of tasks after one changes. */
+export function useTasksChanged(onChanged?: () => void) {
   const queryClient = useQueryClient()
   return () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.sales.tasks() })
@@ -106,12 +107,15 @@ function TaskMenu({
   onChanged,
   trigger,
   triggerLabel,
+  always = false,
 }: {
   task: TaskItem
   onChanged?: () => void
   /** What the button shows in place of "…"; the menu then only moves the task. */
   trigger?: React.ReactNode
   triggerLabel?: string
+  /** Show "…" all the time, not only when the row is pointed at (a record's few tasks). */
+  always?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [place, setPlace] = useState<{ top: number; left: number } | null>(null)
@@ -181,7 +185,7 @@ function TaskMenu({
           trigger
             ? 'relative -mx-1.5 inline-flex cursor-pointer items-center rounded-md-xs px-1.5 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted'
             : // Shown when the row is pointed at or focused, so eleven of them don't make a stripe; always there on touch.
-              "relative -my-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-[color,background-color,opacity] after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground aria-expanded:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100 [@media(hover:hover)]:group-focus-within/row:opacity-100"
+              `relative -my-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md-xs text-muted-foreground transition-[color,background-color,opacity] after:absolute after:-inset-2 after:content-[''] hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 aria-expanded:bg-muted aria-expanded:text-foreground aria-expanded:opacity-100 ${always ? '' : '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/row:opacity-100 [@media(hover:hover)]:group-focus-within/row:opacity-100'}`
         }
       >
         {trigger ?? <MoreHorizontal className="h-4 w-4" />}
@@ -250,9 +254,12 @@ export function TaskRow({
   showAbout = false,
   grouped = false,
   showOwner = false,
+  menuAlways = false,
   onChanged,
 }: {
   task: TaskItem
+  /** Its "…" always showing, not only on pointing (a record's few tasks). */
+  menuAlways?: boolean
   /** Link to the record it's about (the Tasks page; not on the record itself). */
   showAbout?: boolean
   /** Under a heading that already says overdue, today or done, so the time doesn't repeat it. */
@@ -337,7 +344,7 @@ export function TaskRow({
           </span>
         )}
         <span className={owner ? '[@media(hover:hover)]:@2xl:absolute [@media(hover:hover)]:@2xl:inset-x-0 [@media(hover:hover)]:@2xl:top-0 [@media(hover:hover)]:@2xl:flex [@media(hover:hover)]:@2xl:justify-center' : ''}>
-          <TaskMenu task={task} onChanged={onChanged} />
+          <TaskMenu task={task} onChanged={onChanged} always={menuAlways} />
         </span>
       </div>
     </div>
@@ -352,12 +359,17 @@ export function TaskComposer({
   inputId,
   seed,
   quiet = false,
+  autoFocus = false,
+  onCancel,
 }: {
   on: TaskOn
   onDone?: () => void
   placeholder?: string
   /** On a record's page: one plain line until it's used, its due date and button showing then, the button secondary. */
   quiet?: boolean
+  autoFocus?: boolean
+  /** Escape, or leaving it empty: the page can put it away. */
+  onCancel?: () => void
   /** For a "write one" button elsewhere on the page to focus it. */
   inputId?: string
   /** Text to put in the box (an example picked elsewhere on the page); a new `key` puts it in again. */
@@ -391,7 +403,15 @@ export function TaskComposer({
       }}
       onFocus={() => setActive(true)}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(false)
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+        setActive(false)
+        if (!body.trim()) onCancel?.()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && onCancel) {
+          setBody('')
+          onCancel()
+        }
       }}
       className="@container"
     >
@@ -407,6 +427,7 @@ export function TaskComposer({
           <span className="sr-only">New task</span>
           <input
             id={inputId}
+            autoFocus={autoFocus}
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder={placeholder}
@@ -521,23 +542,23 @@ export function FollowUpButton({ on, name, onAdded }: { on: TaskOn; name: string
   )
 }
 
-/** One record's tasks (open ones, then recently done), with a box to add another. */
-export function RecordTasks({ on }: { on: TaskOn }) {
+/** One record's tasks (open ones, then recently done), and the box to add another while `adding`. */
+export function RecordTasks({ on, adding, onStopAdding }: { on: TaskOn; adding: boolean; onStopAdding: () => void }) {
   const { data = [], isLoading } = useQuery({ queryKey: queryKeys.sales.tasks(on), queryFn: () => tasksFn({ data: on }) })
   return (
     <div className="space-y-4">
       {isLoading ? null : data.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No tasks yet.</p>
+        !adding && <p className="text-sm text-muted-foreground">No tasks yet.</p>
       ) : (
         <ul className="space-y-3">
           {data.map((t) => (
             <li key={t.id}>
-              <TaskRow task={t} />
+              <TaskRow task={t} menuAlways />
             </li>
           ))}
         </ul>
       )}
-      <TaskComposer on={on} quiet />
+      {adding && <TaskComposer on={on} quiet autoFocus onCancel={onStopAdding} onDone={onStopAdding} />}
     </div>
   )
 }

@@ -1,24 +1,28 @@
 import { Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { Copy, Mail, PenLine, Trash2 } from 'lucide-react'
-import { tasksFn } from '../../../../server/functions'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { AlarmClock, Check, Copy, Mail, PenLine, Plus, Trash2 } from 'lucide-react'
+import { tasksFn, updateTaskFn } from '../../../../server/functions'
 import { queryKeys } from '../../../../queryKeys'
 import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { Avatar } from '../../../../components/ui/Avatar'
-import { Badge } from '../../../../components/ui/Badge'
 import { Button } from '../../../../components/ui/Button'
-import { FollowUpButton } from '../../../sales/components/TaskParts'
+import { FollowUpButton, useTasksChanged } from '../../../sales/components/TaskParts'
 import { dueBucket } from '../../../sales/tasks'
 import { formatMoney, type CompanyView, type DealView } from '../../../sales/types'
 import { formatAgo, formatDay, formatWhen, type FeedItem } from '../../record'
 import { emailStatus, type RecordContact } from './ContactSidebar'
 
-/** One fact in the strip under the name: a label, then the fact. */
-function Fact({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {
+const STATUS_BADGE = {
+  warn: 'bg-amber-500/15 text-amber-800 dark:text-amber-300',
+  bad: 'bg-destructive/10 text-destructive',
+}
+
+/** One number or fact in the strip under the name. */
+function Stat({ label, children, empty }: { label: string; children: React.ReactNode; empty?: boolean }) {
   return (
-    <div className={`min-w-0 py-2.5 pr-4 sm:border-l sm:border-border sm:px-4 sm:first:border-l-0 sm:first:pl-0 ${wide ? 'col-span-2 sm:flex-1' : ''}`}>
+    <div className="min-w-0 px-4 py-3 border-l border-border first:border-l-0">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-medium text-foreground">{children}</dd>
+      <dd className={`mt-0.5 truncate ${empty ? 'text-sm text-muted-foreground' : 'text-base font-semibold text-foreground'}`}>{children}</dd>
     </div>
   )
 }
@@ -34,6 +38,8 @@ export function ContactHeader({
   repliedAt,
   onEmail,
   onNote,
+  onAddTask,
+  onShowActivity,
   onCopy,
   onDelete,
 }: {
@@ -49,17 +55,25 @@ export function ContactHeader({
   repliedAt: string | null
   onEmail: () => void
   onNote: () => void
+  onAddTask: () => void
+  onShowActivity: () => void
   onCopy: () => void
   onDelete: () => void
 }) {
   const on = { contactEmail: contact.email }
   const { data: tasks = [] } = useQuery({ queryKey: queryKeys.sales.tasks(on), queryFn: () => tasksFn({ data: on }) })
+  const changed = useTasksChanged()
+  const complete = useMutation({ mutationFn: (id: string) => updateTaskFn({ data: { id, done: true } }), onSuccess: changed })
   const status = emailStatus(contact.status)
   const job = contact.attributes.JOB_TITLE
   const companyName = company?.name || contact.attributes.COMPANY
   const companyNode = companyName ? (
     company ? (
-      <Link to="/marketing/companies/$id" params={{ id: company.id }} className="font-medium text-foreground hover:text-accent hover:underline">
+      <Link
+        to="/marketing/companies/$id"
+        params={{ id: company.id }}
+        className="font-medium text-foreground underline decoration-foreground/25 underline-offset-4 hover:text-accent hover:decoration-accent"
+      >
         {companyName}
       </Link>
     ) : (
@@ -68,12 +82,12 @@ export function ContactHeader({
   ) : null
 
   const lastEmail = feed.find((i) => i.kind === 'campaign' || i.kind === 'sequence')
-  const lastReply = [repliedAt, ...feed.map((i) => i.replied)].filter((at): at is string => Boolean(at)).sort().at(-1)
-  const nextTask = tasks
-    .filter((t) => !t.done_at && t.due_at)
-    .sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0]
+  const lastReply = [repliedAt, ...feed.map((i) => i.replied ?? (i.kind === 'reply' ? i.at : undefined))].filter((at): at is string => Boolean(at)).sort().at(-1)
+  const nextTask = tasks.filter((t) => !t.done_at && t.due_at).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0]
+  const overdue = nextTask && dueBucket(nextTask.due_at) === 'overdue'
   const open = deals.filter((d) => d.status === 'open')
   const openValue = open.reduce((sum, d) => sum + d.value, 0)
+  const nothing = !nextTask && !nextEmailAt && !lastEmail && !lastReply && open.length === 0
 
   return (
     <header>
@@ -84,20 +98,37 @@ export function ContactHeader({
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <h1 className={`min-w-0 text-2xl font-semibold tracking-tight text-foreground ${name ? 'break-words' : 'break-all'}`}>{name || contact.email}</h1>
               {status.tone !== 'good' && (
-                <Badge variant={status.tone === 'bad' ? 'error' : 'warning'} status>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE[status.tone]}`}>
+                  <status.Icon aria-hidden className="h-3.5 w-3.5" />
                   {status.label}
-                </Badge>
+                </span>
               )}
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {job && companyNode ? (
-                <>
-                  {job} at {companyNode}
-                </>
-              ) : (
-                job || companyNode || `Added ${formatDay(contact.createdAt)}`
-              )}
-            </p>
+            {(job || companyNode) && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {job && companyNode ? (
+                  <>
+                    {job} at {companyNode}
+                  </>
+                ) : (
+                  job || companyNode
+                )}
+              </p>
+            )}
+            {name && (
+              <p className="mt-1 flex min-w-0 items-center gap-1 text-sm text-muted-foreground">
+                <span className="min-w-0 truncate">{contact.email}</span>
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  aria-label="Copy email address"
+                  title="Copy email address"
+                  className="touch-target shrink-0 rounded-md-xs p-1 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+              </p>
+            )}
           </div>
         </div>
 
@@ -106,7 +137,7 @@ export function ContactHeader({
             Note
           </Button>
           <FollowUpButton on={on} name={name || contact.email} />
-          <Button size="sm" onClick={onEmail} leftIcon={<Mail className="h-3.5 w-3.5" />}>
+          <Button size="sm" variant={status.tone === 'good' ? 'primary' : 'secondary'} onClick={onEmail} leftIcon={<Mail className="h-3.5 w-3.5" />}>
             Email
           </Button>
           <ActionMenu
@@ -121,45 +152,92 @@ export function ContactHeader({
         </div>
       </div>
 
-      <dl className="mt-5 grid grid-cols-2 gap-y-1 rounded-xl border border-border bg-card px-4 sm:flex sm:flex-wrap sm:px-5">
-        <Fact label="Next step" wide>
-          {nextTask ? (
-            <span title={`${nextTask.body}, due ${formatWhen(nextTask.due_at!)}`}>
-              {dueBucket(nextTask.due_at) === 'overdue' ? <span className="text-destructive">Overdue</span> : formatDay(nextTask.due_at!)}
-              <span className="font-normal text-muted-foreground"> · </span>
-              {nextTask.body}
-            </span>
-          ) : nextEmailAt ? (
-            <span title={formatWhen(nextEmailAt)}>Sequence email {formatDay(nextEmailAt)}</span>
-          ) : (
-            <span className="font-normal text-muted-foreground">Nothing planned</span>
-          )}
-        </Fact>
-        <Fact label="Last emailed">
-          {lastEmail ? (
-            <span title={formatWhen(lastEmail.at)}>{formatAgo(lastEmail.at)}</span>
-          ) : (
-            <span className="font-normal text-muted-foreground">Never</span>
-          )}
-        </Fact>
-        <Fact label="Last reply">
-          {lastReply ? (
-            <span title={formatWhen(lastReply)}>{formatAgo(lastReply)}</span>
-          ) : (
-            <span className="font-normal text-muted-foreground">None yet</span>
-          )}
-        </Fact>
-        <Fact label="Open deals">
-          {open.length ? (
-            <span className="tabular-nums">
-              {formatMoney(openValue, open[0].currency)}
-              <span className="font-normal text-muted-foreground"> · {open.length}</span>
-            </span>
-          ) : (
-            <span className="font-normal text-muted-foreground">None</span>
-          )}
-        </Fact>
-      </dl>
+      {nothing ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 sm:px-5">
+          <p className="text-sm text-muted-foreground">Nothing planned, sent or open with them yet.</p>
+          <Button size="sm" variant="ghost" onClick={onAddTask} leftIcon={<Plus className="h-3.5 w-3.5" />}>
+            Add a task
+          </Button>
+        </div>
+      ) : (
+        <div className="mt-5 grid grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[minmax(0,1.7fr)_minmax(0,3fr)]">
+          <div className="flex min-w-0 items-start gap-3 px-4 py-3 sm:px-5">
+            {nextTask ? (
+              <button
+                type="button"
+                onClick={() => complete.mutate(nextTask.id)}
+                disabled={complete.isPending}
+                aria-label={`Mark “${nextTask.body}” done`}
+                title="Mark done"
+                className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-input text-transparent hover:border-accent hover:text-accent cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <Check className="h-3 w-3" strokeWidth={3} />
+              </button>
+            ) : null}
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Next step</p>
+              {nextTask ? (
+                <p className="mt-0.5 text-sm font-medium text-foreground line-clamp-2">
+                  {overdue ? (
+                    <span className="mr-1.5 text-destructive">
+                      <AlarmClock aria-hidden className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
+                      Overdue
+                    </span>
+                  ) : (
+                    <span className="mr-1.5 text-muted-foreground" title={formatWhen(nextTask.due_at!)}>
+                      {formatDay(nextTask.due_at!)}
+                    </span>
+                  )}
+                  {nextTask.body}
+                </p>
+              ) : nextEmailAt ? (
+                <p className="mt-0.5 text-sm font-medium text-foreground" title={formatWhen(nextEmailAt)}>
+                  Sequence email on {formatWhen(nextEmailAt)}
+                </p>
+              ) : (
+                <button type="button" onClick={onAddTask} className="mt-0.5 inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline cursor-pointer">
+                  <Plus aria-hidden className="h-3.5 w-3.5" />
+                  Add a task
+                </button>
+              )}
+            </div>
+          </div>
+          <dl className="grid grid-cols-3 border-t border-border lg:border-l lg:border-t-0">
+            <Stat label="Last emailed" empty={!lastEmail}>
+              {lastEmail ? (
+                <button type="button" onClick={onShowActivity} title={formatWhen(lastEmail.at)} className="hover:text-accent hover:underline cursor-pointer">
+                  {formatAgo(lastEmail.at)}
+                </button>
+              ) : (
+                'Never'
+              )}
+            </Stat>
+            <Stat label="Last reply" empty={!lastReply}>
+              {lastReply ? (
+                <button type="button" onClick={onShowActivity} title={formatWhen(lastReply)} className="hover:text-accent hover:underline cursor-pointer">
+                  {formatAgo(lastReply)}
+                </button>
+              ) : (
+                'Never'
+              )}
+            </Stat>
+            <Stat label="Open deals" empty={open.length === 0}>
+              {open.length === 1 ? (
+                <Link to="/sales/deals/$id" params={{ id: open[0].id }} className="tabular-nums hover:text-accent hover:underline" title={open[0].name}>
+                  {formatMoney(openValue, open[0].currency)}
+                </Link>
+              ) : open.length > 1 ? (
+                <span className="tabular-nums" title={`${open.length} open deals`}>
+                  {formatMoney(openValue, open[0].currency)}
+                  <span className="text-sm font-normal text-muted-foreground"> · {open.length}</span>
+                </span>
+              ) : (
+                'None'
+              )}
+            </Stat>
+          </dl>
+        </div>
+      )}
     </header>
   )
 }
