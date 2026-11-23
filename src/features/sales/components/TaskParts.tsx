@@ -279,7 +279,7 @@ export function TaskRow({
     day = dueParts(task.due_at).day
     second = overdue ? lateBy(task.due_at) : dueParts(task.due_at).time
   }
-  const whenText = grouped ? [day, second].filter(Boolean).join(' ') : done ? `Done ${day}` : task.due_at ? dueLabel(task.due_at) : 'No due date'
+  const whenText = grouped ? [day, second].filter(Boolean).join(' ') : done ? day : task.due_at ? dueLabel(task.due_at) : 'No due date'
   const movable = grouped && !done && Boolean(task.due_at)
   const title = task.due_at && !done ? `Due ${dueLabel(task.due_at).replace(/^Overdue · /, '')}` : undefined
   const whenNode = grouped ? (
@@ -308,7 +308,7 @@ export function TaskRow({
         </div>
         {/* A phone or a record's page: one line under the task, the record shortened to fit. */}
         {((grouped ? day : whenText) || about) && (
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-[13px] leading-5 text-muted-foreground @2xl:hidden">
+          <div className={`mt-1 flex min-w-0 items-center gap-2 text-[13px] leading-5 text-muted-foreground ${grouped ? '@2xl:hidden' : ''}`}>
             {(day || !grouped) && (movable ? <TaskMenu task={task} onChanged={onChanged} trigger={whenNode} triggerLabel={`Due ${whenText}. Move it`} /> : whenNode)}
             {about && (
               <span className="flex min-w-0">

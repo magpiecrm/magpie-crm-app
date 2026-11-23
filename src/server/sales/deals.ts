@@ -241,6 +241,12 @@ export function companyActivity(data: DbSchema, companyId: string): Activity[] {
   return newestFirst((data.activities ?? []).filter((a) => a.company_id === companyId || (a.deal_id && deals.has(a.deal_id))))
 }
 
+/** Notes written about a contact, newest first. */
+export function contactNotes(data: DbSchema, email: string): Activity[] {
+  const e = normEmail(email)
+  return newestFirst((data.activities ?? []).filter((a) => a.kind === 'note' && a.contact_email === e))
+}
+
 /** Newest first; things done in the same millisecond keep the order they were written in. */
 function newestFirst(activities: Activity[]): Activity[] {
   return activities
