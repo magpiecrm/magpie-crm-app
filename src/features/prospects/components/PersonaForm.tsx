@@ -1,12 +1,10 @@
 import { useRef, useState, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Search } from 'lucide-react'
 import { Button } from '../../../components/ui/Button'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
-import { queryKeys } from '../../../queryKeys'
-import { prospectingStatusFn } from '../../../server/functions'
+import { useProspectingStatus } from '../useProspectingStatus'
 import { PersonaSummaryCard, fieldAnchor } from './PersonaSummaryCard'
 import { CompanySizeField, CountryField, IndustryField, KeywordField, SeniorityField, TitlesField } from './PeopleFilterFields'
 import { copilotStore } from '../../copilot/copilotStore'
@@ -89,7 +87,7 @@ export function PersonaForm({ title, subtitle = DEFAULT_SUBTITLE, initial, onSav
   const [aiUpdatedKeys, setAiUpdatedKeys] = useState<Set<string>>(new Set())
   const aiFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Search's own notes on titles and countries depend on who runs the search (shares the sidebar's status query).
-  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  const status = useProspectingStatus()
   const hosted = Boolean(status?.managed)
   const c = persona.criteria
 

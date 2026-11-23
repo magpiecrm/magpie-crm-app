@@ -37,8 +37,6 @@ and the line here with the fix.
   source `web`, which the Contacts filter doesn't label as Prospect search.
 - **An import counts rows, not people** (C3): one person twice says "Imported 2
   contacts" (`addContactsToList`, `server/emailService.ts`).
-- **Prospect Search at phone width** sometimes renders different text than the
-  server sent (React hydration error #418); cause not found.
 - **Mailboxes says "No senders yet" while it's loading** (ST1), before the
   senders appear.
 

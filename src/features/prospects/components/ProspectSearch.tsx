@@ -23,7 +23,6 @@ import { Button } from '../../../components/ui/Button'
 import { Sheet } from '../../../components/ui/Sheet'
 import {
   getPersonasFn,
-  prospectingStatusFn,
   resolveCompanyFn,
   revealEmailFn,
   searchCompaniesFn,
@@ -42,6 +41,7 @@ import {
 } from '../../../server/prospecting/types'
 import { signalScore } from '../../../server/prospecting/signals'
 import { useCompanySignals } from '../useCompanySignals'
+import { useProspectingStatus } from '../useProspectingStatus'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
 import { INDUSTRIES } from '../constants/industries'
@@ -477,7 +477,7 @@ export function ProspectSearch() {
       return next
     })
 
-  const { data: status } = useQuery({ queryKey: queryKeys.prospects.status(), queryFn: () => prospectingStatusFn() })
+  const status = useProspectingStatus()
   // Hiring and funding, where this copy can look them up (its host, or its own web search key).
   const webSignals: Array<'hiring' | 'funding'> = status?.webSignals ?? []
   // A search with a job title goes to the host's verified search, which applies signals and the keyword person by person.
