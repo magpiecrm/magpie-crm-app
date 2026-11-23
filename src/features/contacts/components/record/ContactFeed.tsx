@@ -24,34 +24,39 @@ import { confirmDialog } from '../../../../components/ui/confirm'
 import { nameFromEmail } from '../../../sales/utils'
 import { formatAgo, formatWhen, monthOf, type FeedItem } from '../../record'
 
-const KIND: Record<Exclude<FeedItem['kind'], 'note' | 'reply'>, { label: string; Icon: LucideIcon }> = {
-  campaign: { label: 'Campaign', Icon: Megaphone },
-  sequence: { label: 'Sequence email', Icon: Send },
-  form: { label: 'Form', Icon: FileInput },
-  survey: { label: 'Survey', Icon: ClipboardList },
+// Each channel its own quiet tint, so a campaign, a sequence email and a form tell apart at a glance.
+const KIND: Record<Exclude<FeedItem['kind'], 'note' | 'reply'>, { label: string; Icon: LucideIcon; tint: string }> = {
+  campaign: { label: 'Campaign', Icon: Megaphone, tint: 'bg-violet-500/10 text-violet-700 dark:text-violet-300' },
+  sequence: { label: 'Sequence email', Icon: Send, tint: 'bg-sky-500/10 text-sky-700 dark:text-sky-300' },
+  form: { label: 'Form', Icon: FileInput, tint: 'bg-amber-500/15 text-amber-800 dark:text-amber-300' },
+  survey: { label: 'Survey', Icon: ClipboardList, tint: 'bg-amber-500/15 text-amber-800 dark:text-amber-300' },
 }
 
-type Tone = 'success' | 'info' | 'neutral' | 'quiet'
+/** Opened, clicked and replied grow stronger in that order; not opened is only an outline. */
+type Tone = 'opened' | 'clicked' | 'replied' | 'done' | 'neutral' | 'none'
 
 /** What came of an email, form or survey: the strongest thing they did. */
 function outcome(item: FeedItem): { text: string; Icon: LucideIcon; tone: Tone } | null {
   if (item.kind === 'campaign' || item.kind === 'sequence') {
-    if (item.replied) return { text: 'Replied', Icon: MessageSquareReply, tone: 'success' }
-    if (item.clicked) return { text: 'Clicked', Icon: MousePointerClick, tone: 'info' }
-    if (item.opened) return { text: 'Opened', Icon: MailOpen, tone: 'neutral' }
-    return { text: 'Not opened', Icon: CircleDashed, tone: 'quiet' }
+    if (item.replied) return { text: 'Replied', Icon: MessageSquareReply, tone: 'replied' }
+    if (item.clicked) return { text: 'Clicked', Icon: MousePointerClick, tone: 'clicked' }
+    if (item.opened) return { text: 'Opened', Icon: MailOpen, tone: 'opened' }
+    return { text: 'Not opened', Icon: CircleDashed, tone: 'none' }
   }
-  if (item.kind === 'survey') return item.completed ? { text: 'Completed', Icon: CheckCircle2, tone: 'success' } : { text: 'Not finished', Icon: CircleDashed, tone: 'quiet' }
-  if (item.kind === 'form') return { text: 'Submitted', Icon: CheckCircle2, tone: 'success' }
+  if (item.kind === 'survey')
+    return item.completed ? { text: 'Completed', Icon: CheckCircle2, tone: 'done' } : { text: 'Not finished', Icon: CircleDashed, tone: 'none' }
+  if (item.kind === 'form') return { text: 'Submitted', Icon: CheckCircle2, tone: 'done' }
   return null
 }
 
 /** One look for a state wherever the page shows it: a soft pill with an icon and a word. */
 const CHIP_TONE: Record<Tone, string> = {
-  success: 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
-  info: 'bg-sky-500/15 text-sky-800 dark:text-sky-300',
+  opened: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300',
+  clicked: 'bg-emerald-500/25 text-emerald-900 dark:bg-emerald-500/30 dark:text-emerald-100',
+  replied: 'bg-emerald-700 text-white dark:bg-emerald-600',
+  done: 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
   neutral: 'bg-foreground/[0.07] text-foreground/80',
-  quiet: 'border border-dashed border-foreground/30 text-muted-foreground',
+  none: 'border border-foreground/25 text-muted-foreground',
 }
 
 function Chip({ tone, Icon, children }: { tone: Tone; Icon?: LucideIcon; children: React.ReactNode }) {
@@ -71,26 +76,18 @@ function When({ at }: { at: string }) {
   )
 }
 
-function Bubble({ children, tone = 'note' }: { children: React.ReactNode; tone?: 'note' | 'reply' }) {
+/** A note's words: a pale yellow slip, so a team's note never reads as something they sent. */
+function NoteSlip({ children }: { children: React.ReactNode }) {
   return (
-    <p
-      className={`mt-1.5 whitespace-pre-wrap break-words rounded-r-lg border-l-2 bg-muted/60 px-3 py-2 text-sm leading-6 text-foreground dark:bg-white/[0.05] ${
-        tone === 'reply' ? 'border-emerald-500/70' : 'border-accent/60'
-      }`}
-    >
+    <p className="mt-1.5 whitespace-pre-wrap break-words rounded-lg border border-amber-500/25 bg-amber-500/[0.08] px-3 py-2 text-sm leading-6 text-foreground">
       {children}
     </p>
   )
 }
 
-function IconDot({ Icon, tone }: { Icon: LucideIcon; tone?: 'reply' }) {
+function IconDot({ Icon, tint = 'bg-muted text-muted-foreground' }: { Icon: LucideIcon; tint?: string }) {
   return (
-    <span
-      aria-hidden
-      className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
-        tone === 'reply' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-border bg-background text-muted-foreground'
-      }`}
-    >
+    <span aria-hidden className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tint}`}>
       <Icon className="h-4 w-4" />
     </span>
   )
@@ -124,7 +121,12 @@ function NoteRow({ item, onChanged }: { item: FeedItem; onChanged: () => void })
                   tone: 'danger',
                   disabled: remove.isPending,
                   onSelect: async () => {
-                    const ok = await confirmDialog({ title: 'Delete this note?', message: 'It can’t be brought back.', confirmLabel: 'Delete note', tone: 'danger' })
+                    const ok = await confirmDialog({
+                      title: 'Delete this note?',
+                      message: 'It can’t be brought back.',
+                      confirmLabel: 'Delete note',
+                      tone: 'danger',
+                    })
                     if (ok) remove.mutate()
                   },
                 },
@@ -132,7 +134,7 @@ function NoteRow({ item, onChanged }: { item: FeedItem; onChanged: () => void })
             />
           </span>
         </div>
-        <Bubble>{note.body}</Bubble>
+        <NoteSlip>{note.body}</NoteSlip>
       </div>
     </>
   )
@@ -142,40 +144,47 @@ function ReplyRow({ item, name }: { item: FeedItem; name: string }) {
   const r = item.reply!
   return (
     <>
-      <IconDot Icon={MessageSquareReply} tone="reply" />
+      <IconDot Icon={MessageSquareReply} tint="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <p className="min-w-0 text-sm text-foreground">
             <span className="font-medium">{name}</span>
             <span className="text-muted-foreground"> replied to </span>
-            <span className="font-medium">{r.sequence_name}</span>
+            {r.sequence_name}
           </p>
           <When at={item.at} />
         </div>
-        <Bubble tone="reply">
-          {r.excerpt}
-          {r.excerpt.length >= 280 ? '…' : ''}
-        </Bubble>
-        <Link
-          to="/sales/sequences/$id"
-          params={{ id: r.sequence_id }}
-          search={{ tab: 'replies', person: r.enrollment_id }}
-          className="mt-1.5 -ml-1.5 inline-flex items-center gap-1 rounded-md-xs px-1.5 py-1 text-[13px] font-medium text-accent hover:bg-accent/10"
-        >
-          Open the conversation
-        </Link>
+        {/* What came in, drawn like an email: its subject, then its first lines. */}
+        <div className="mt-1.5 rounded-lg border border-border bg-card px-3 py-2.5 shadow-[0_1px_2px_rgb(17_19_22/0.05)] dark:bg-white/[0.03]">
+          <p className="truncate text-[13px] font-medium text-foreground">{r.subject || 'No subject'}</p>
+          <p className="mt-1 line-clamp-3 text-sm leading-6 text-foreground/85">
+            {r.excerpt}
+            {r.excerpt.length >= 280 ? '…' : ''}
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3">
+            <Link
+              to="/sales/sequences/$id"
+              params={{ id: r.sequence_id }}
+              search={{ tab: 'replies', person: r.enrollment_id }}
+              className="-ml-1.5 inline-flex items-center gap-1 rounded-md-xs px-1.5 py-1 text-[13px] font-medium text-accent hover:bg-accent/10"
+            >
+              {r.answered ? 'Open the conversation' : 'Reply'}
+            </Link>
+            {!r.answered && <span className="text-[13px] text-muted-foreground">Not answered yet</span>}
+          </div>
+        </div>
       </div>
     </>
   )
 }
 
 function EventRow({ item }: { item: FeedItem }) {
-  const { label, Icon } = KIND[item.kind as keyof typeof KIND]
+  const { label, Icon, tint } = KIND[item.kind as keyof typeof KIND]
   const result = outcome(item)
   const [open, setOpen] = useState(false)
   return (
     <>
-      <IconDot Icon={Icon} />
+      <IconDot Icon={Icon} tint={tint} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           {item.url ? (
@@ -207,7 +216,7 @@ function EventRow({ item }: { item: FeedItem }) {
           )}
         </div>
         {open && item.answers && (
-          <dl className="mt-2 space-y-2.5 rounded-lg border border-border px-3 py-2.5">
+          <dl className="mt-2 space-y-2.5 border-l-2 border-border pl-3">
             {item.answers.map((a, i) => (
               <div key={i}>
                 <dt className="text-[13px] text-muted-foreground">{a.question}</dt>
@@ -224,7 +233,13 @@ function EventRow({ item }: { item: FeedItem }) {
 function FeedRow({ item, name, onChanged }: { item: FeedItem; name: string; onChanged: () => void }) {
   return (
     <li className="flex gap-3 py-3">
-      {item.kind === 'note' ? <NoteRow item={item} onChanged={onChanged} /> : item.kind === 'reply' ? <ReplyRow item={item} name={name} /> : <EventRow item={item} />}
+      {item.kind === 'note' ? (
+        <NoteRow item={item} onChanged={onChanged} />
+      ) : item.kind === 'reply' ? (
+        <ReplyRow item={item} name={name} />
+      ) : (
+        <EventRow item={item} />
+      )}
     </li>
   )
 }
@@ -250,6 +265,11 @@ export function UpcomingRow({ title, at }: { title: string; at: string }) {
       </div>
     </li>
   )
+}
+
+/** A heading over part of the feed: a month, "Up next", "Latest". */
+export function FeedLabel({ children }: { children: React.ReactNode }) {
+  return <h3 className="border-b border-border pb-2 text-[13px] font-semibold text-muted-foreground">{children}</h3>
 }
 
 /** A contact's history as one list; `months` puts a heading over each month. `name` is who replies are from. */
@@ -285,9 +305,15 @@ export function FeedList({
   }
   return (
     <div className="space-y-4">
+      {before && (
+        <section aria-label="Upcoming">
+          <FeedLabel>Upcoming</FeedLabel>
+          <ul className="divide-y divide-border">{before}</ul>
+        </section>
+      )}
       {groups.map((g) => (
         <section key={g.month} aria-label={g.month}>
-          <h3 className="border-b border-border pb-2 text-sm font-semibold text-foreground">{g.month}</h3>
+          <FeedLabel>{g.month}</FeedLabel>
           <ul className="divide-y divide-border">
             {g.items.map((item) => (
               <FeedRow key={item.key} item={item} name={name} onChanged={onChanged} />

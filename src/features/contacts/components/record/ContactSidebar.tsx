@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, BellOff, Building2, CheckCircle2, ExternalLink, Link2, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { Building2, CheckCircle2, ExternalLink, Link2, MailWarning, MailX, Pencil, Plus } from 'lucide-react'
 import { resubscribeContactFn, setContactCompanyFn } from '../../../../server/functions'
 import { queryKeys } from '../../../../queryKeys'
 import { Badge } from '../../../../components/ui/Badge'
@@ -28,8 +28,18 @@ export interface RecordContact {
 export function emailStatus(status: string) {
   if (status === 'subscribed') return { label: 'Subscribed', tone: 'good' as const, Icon: CheckCircle2, text: 'Campaigns and sequences can email them.' }
   if (status === 'bounced')
-    return { label: 'Bounced', tone: 'bad' as const, Icon: AlertTriangle, text: 'Mail to this address bounced, so campaigns and sequences skip it. Only resubscribe if you know the address works again.' }
-  return { label: 'Unsubscribed', tone: 'warn' as const, Icon: BellOff, text: 'They opted out, so campaigns and sequences skip them. Only resubscribe with their permission.' }
+    return {
+      label: 'Bounced',
+      tone: 'bad' as const,
+      Icon: MailWarning,
+      text: 'Mail to this address bounced, so campaigns and sequences skip it. Only resubscribe if you know the address works again.',
+    }
+  return {
+    label: 'Unsubscribed',
+    tone: 'warn' as const,
+    Icon: MailX,
+    text: 'They opted out, so campaigns and sequences skip them. Only resubscribe with their permission.',
+  }
 }
 
 const TONE = {
@@ -52,8 +62,7 @@ function Details({ contact }: { contact: RecordContact }) {
         </a>
       ) : null,
     },
-    // With its year: a contact from long ago reads as one.
-    { label: 'Added', value: formatDay(contact.createdAt, new Date(0)) },
+    { label: 'Added', value: formatDay(contact.createdAt) },
   ]
   const empty = rows.filter((r) => !r.value).length
   return (
@@ -89,26 +98,19 @@ export function useResubscribe(email: string) {
 
 function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContact; sent: number; opened: number; clicked: number }) {
   const s = emailStatus(contact.status)
-  const resubscribe = useResubscribe(contact.email)
   return (
     <PanelSection title="Email status">
       <p className={`flex items-center gap-1.5 text-sm font-medium ${TONE[s.tone]}`}>
         <s.Icon aria-hidden className="h-4 w-4 shrink-0" />
         {s.label}
       </p>
-      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{s.text}</p>
-      {s.tone !== 'good' && (
-        <div className="mt-3">
-          <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()} leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>
-            Resubscribe
-          </Button>
-          {resubscribe.error && <p className="mt-2 text-[13px] text-destructive">{resubscribe.error.message}</p>}
-        </div>
-      )}
+      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+        {s.tone === 'good' ? s.text : 'Nothing is emailed to them until they’re resubscribed (see the notice at the top).'}
+      </p>
       {sent === 0 ? (
         <p className="mt-3 text-[13px] text-muted-foreground">No campaigns sent to them yet.</p>
       ) : (
-        <dl className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-border px-3 py-2">
+        <dl className="mt-3 flex gap-6">
           {(
             [
               ['Campaigns', sent],

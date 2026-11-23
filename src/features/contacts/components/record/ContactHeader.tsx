@@ -6,6 +6,7 @@ import { queryKeys } from '../../../../queryKeys'
 import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { Avatar } from '../../../../components/ui/Avatar'
 import { Button } from '../../../../components/ui/Button'
+import { SECTION_ACTION } from '../../../../components/ui/RecordSection'
 import { FollowUpButton, useTasksChanged } from '../../../sales/components/TaskParts'
 import { dueBucket } from '../../../sales/tasks'
 import { formatMoney, type CompanyView, type DealView } from '../../../sales/types'
@@ -82,7 +83,10 @@ export function ContactHeader({
   ) : null
 
   const lastEmail = feed.find((i) => i.kind === 'campaign' || i.kind === 'sequence')
-  const lastReply = [repliedAt, ...feed.map((i) => i.replied ?? (i.kind === 'reply' ? i.at : undefined))].filter((at): at is string => Boolean(at)).sort().at(-1)
+  const lastReply = [repliedAt, ...feed.map((i) => i.replied ?? (i.kind === 'reply' ? i.at : undefined))]
+    .filter((at): at is string => Boolean(at))
+    .sort()
+    .at(-1)
   const nextTask = tasks.filter((t) => !t.done_at && t.due_at).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0]
   const overdue = nextTask && dueBucket(nextTask.due_at) === 'overdue'
   const open = deals.filter((d) => d.status === 'open')
@@ -137,9 +141,18 @@ export function ContactHeader({
             Note
           </Button>
           <FollowUpButton on={on} name={name || contact.email} />
-          <Button size="sm" variant={status.tone === 'good' ? 'primary' : 'secondary'} onClick={onEmail} leftIcon={<Mail className="h-3.5 w-3.5" />}>
-            Email
-          </Button>
+          {status.tone === 'good' ? (
+            <Button size="sm" onClick={onEmail} leftIcon={<Mail className="h-3.5 w-3.5" />}>
+              Email
+            </Button>
+          ) : (
+            // Can't send: the button says so, and points at the notice that explains.
+            <span title={`They’re ${status.label.toLowerCase()}, so email won’t send`}>
+              <Button size="sm" variant="secondary" disabled aria-describedby="contact-email-blocked" leftIcon={<status.Icon className="h-3.5 w-3.5" />}>
+                Email
+              </Button>
+            </span>
+          )}
           <ActionMenu
             label={`More actions for ${name || contact.email}`}
             triggerClassName="inline-flex h-[30px] w-[30px] items-center justify-center rounded-md-xs border border-control bg-card text-foreground shadow-[0_1px_2px_rgb(17_19_22/0.06)] hover:bg-muted transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-white/[0.04] dark:shadow-none"
@@ -155,29 +168,28 @@ export function ContactHeader({
       {nothing ? (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 sm:px-5">
           <p className="text-sm text-muted-foreground">Nothing planned, sent or open with them yet.</p>
-          <Button size="sm" variant="ghost" onClick={onAddTask} leftIcon={<Plus className="h-3.5 w-3.5" />}>
-            Add a task
-          </Button>
+          <button type="button" onClick={onAddTask} className={SECTION_ACTION}>
+            <Plus aria-hidden className="h-3.5 w-3.5" />
+            Add task
+          </button>
         </div>
       ) : (
         <div className="mt-5 grid grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[minmax(0,1.7fr)_minmax(0,3fr)]">
-          <div className="flex min-w-0 items-start gap-3 px-4 py-3 sm:px-5">
+          <div className="min-w-0 px-4 py-3 sm:px-5">
+            <p className="text-xs text-muted-foreground">Next step</p>
             {nextTask ? (
-              <button
-                type="button"
-                onClick={() => complete.mutate(nextTask.id)}
-                disabled={complete.isPending}
-                aria-label={`Mark “${nextTask.body}” done`}
-                title="Mark done"
-                className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-input text-transparent hover:border-accent hover:text-accent cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              >
-                <Check className="h-3 w-3" strokeWidth={3} />
-              </button>
-            ) : null}
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Next step</p>
-              {nextTask ? (
-                <p className="mt-0.5 text-sm font-medium text-foreground line-clamp-2">
+              <div className="mt-0.5 flex min-w-0 items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => complete.mutate(nextTask.id)}
+                  disabled={complete.isPending}
+                  aria-label={`Mark “${nextTask.body}” done`}
+                  title="Mark done"
+                  className="mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-input text-transparent hover:border-accent hover:text-accent cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                >
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                </button>
+                <p className="min-w-0 text-sm font-medium leading-6 text-foreground line-clamp-2 lg:line-clamp-1" title={nextTask.body}>
                   {overdue ? (
                     <span className="mr-1.5 text-destructive">
                       <AlarmClock aria-hidden className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
@@ -190,17 +202,17 @@ export function ContactHeader({
                   )}
                   {nextTask.body}
                 </p>
-              ) : nextEmailAt ? (
-                <p className="mt-0.5 text-sm font-medium text-foreground" title={formatWhen(nextEmailAt)}>
-                  Sequence email on {formatWhen(nextEmailAt)}
-                </p>
-              ) : (
-                <button type="button" onClick={onAddTask} className="mt-0.5 inline-flex items-center gap-1 text-sm font-medium text-accent hover:underline cursor-pointer">
-                  <Plus aria-hidden className="h-3.5 w-3.5" />
-                  Add a task
-                </button>
-              )}
-            </div>
+              </div>
+            ) : nextEmailAt ? (
+              <p className="mt-0.5 text-sm font-medium leading-6 text-foreground" title={formatWhen(nextEmailAt)}>
+                Sequence email {formatWhen(nextEmailAt)}
+              </p>
+            ) : (
+              <button type="button" onClick={onAddTask} className={`${SECTION_ACTION} -ml-1.5 mt-0.5`}>
+                <Plus aria-hidden className="h-3.5 w-3.5" />
+                Add task
+              </button>
+            )}
           </div>
           <dl className="grid grid-cols-3 border-t border-border lg:border-l lg:border-t-0">
             <Stat label="Last emailed" empty={!lastEmail}>

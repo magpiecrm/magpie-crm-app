@@ -474,9 +474,12 @@ export const sequences = {
         .filter((e) => e.contact_email === normEmail(email))
         .flatMap((e) => {
           const name = data.sequences?.find((x) => x.id === e.sequence_id)?.name ?? 'Deleted sequence'
-          return (e.messages ?? [])
+          const messages = e.messages ?? []
+          return messages
             .filter((m) => m.direction === 'in')
             .map((m) => ({
+              /** Someone has written back since. */
+              answered: messages.some((o) => o.direction === 'out' && o.at > m.at),
               id: m.id,
               enrollment_id: e.id,
               sequence_id: e.sequence_id,

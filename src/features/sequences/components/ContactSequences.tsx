@@ -29,7 +29,7 @@ function Steps({ sent, steps }: { sent: number; steps: number }) {
   return (
     <span aria-hidden className="inline-flex items-center gap-1">
       {Array.from({ length: steps }, (_, i) => (
-        <span key={i} className={`h-1.5 w-5 rounded-full ${i < sent ? 'bg-accent' : 'bg-foreground/30'}`} />
+        <span key={i} className={`h-1.5 w-5 rounded-full ${i < sent ? 'bg-accent' : 'bg-foreground/40'}`} />
       ))}
     </span>
   )

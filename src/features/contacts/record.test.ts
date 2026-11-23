@@ -40,7 +40,7 @@ it('gives each reply its own item and puts survey answers on their survey', () =
   const feed = buildFeed(
     [ev('survey_started', '2026-10-01T09:00:00Z', 'survey:r1', 'NPS'), ev('survey_completed', '2026-10-01T09:02:00Z', 'survey:r1', 'NPS')],
     [],
-    [{ id: 'm1', enrollment_id: 'e1', sequence_id: 's1', sequence_name: 'Webinar', subject: 'Re: Hi', at: '2026-10-05T09:00:00Z', excerpt: 'Thanks' }],
+    [{ id: 'm1', enrollment_id: 'e1', sequence_id: 's1', sequence_name: 'Webinar', subject: 'Re: Hi', at: '2026-10-05T09:00:00Z', excerpt: 'Thanks', answered: false }],
     [{ id: 'r1', answers: [{ question: 'Score?', answer: '9' }] }],
   )
   expect(feed.map((i) => i.kind)).toEqual(['reply', 'survey'])
@@ -54,6 +54,10 @@ describe('dates', () => {
     expect(formatDay('2026-09-16T11:35:12Z', now)).toBe('16 Sep')
     expect(formatDay('2025-09-16T11:35:12Z', now)).toBe('16 Sep 2025')
     expect(formatWhen('2026-09-16T11:35:12Z', now)).toMatch(/^16 Sep, \d\d:35$/)
+  })
+  it('names the weekday of a time in the coming week', () => {
+    expect(formatWhen('2026-11-25T09:00:00Z', now)).toBe('Wed 25 Nov, 09:00')
+    expect(formatWhen('2026-12-25T09:00:00Z', now)).toBe('25 Dec, 09:00')
   })
   it('says how long ago, then the day', () => {
     expect(formatAgo('2026-11-23T10:10:00Z', now)).toBe('20 min ago')

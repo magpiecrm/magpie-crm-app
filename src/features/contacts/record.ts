@@ -23,6 +23,8 @@ export interface FeedReply {
   subject: string
   at: string
   excerpt: string
+  /** Someone has written back since. */
+  answered: boolean
 }
 
 /** A survey they answered, with its answers ready to show. */
@@ -109,10 +111,14 @@ export function formatDay(iso: string, now = new Date()): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear(d, now) ? '' : ` ${d.getFullYear()}`}`
 }
 
-/** "16 Sep, 12:35", or "16 Sep 2025, 12:35" in another year. Never seconds. */
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** "16 Sep, 12:35", or "16 Sep 2025, 12:35" in another year; in the coming week, "Wed 25 Nov, 09:00". Never seconds. */
 export function formatWhen(iso: string, now = new Date()): string {
   const d = new Date(iso)
-  return `${formatDay(iso, now)}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
+  const ahead = d.getTime() - now.getTime()
+  const weekday = ahead > 0 && ahead < 7 * 86_400_000 ? `${WEEKDAYS[d.getDay()]} ` : ''
+  return `${weekday}${formatDay(iso, now)}, ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 /** "Just now", "20 min ago", "3 hours ago", "Yesterday", "4 days ago", then the day. */

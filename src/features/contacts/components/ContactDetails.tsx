@@ -17,7 +17,7 @@ import { ContactSequences } from '../../sequences/components/ContactSequences'
 import { buildFeed, matchesFilter, type FeedFilter } from '../record'
 import { ContactHeader } from './record/ContactHeader'
 import { ContactSidebar, emailStatus, useResubscribe } from './record/ContactSidebar'
-import { FeedList, NoteComposer, UpcomingRow, type NoteComposerHandle } from './record/ContactFeed'
+import { FeedLabel, FeedList, NoteComposer, UpcomingRow, type NoteComposerHandle } from './record/ContactFeed'
 
 interface ContactDetailsProps {
   email: string
@@ -56,13 +56,25 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const [emailBody, setEmailBody] = useState('')
   const [isSendingEmail, setIsSendingEmail] = useState(false)
 
-  const { data: detailsData, isLoading, error } = useQuery({
+  const {
+    data: detailsData,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: queryKeys.email.contact(email),
     queryFn: () => getContactDetailsFn({ data: { email } }),
   })
   const details = detailsData?.success ? detailsData : null
   const feed = useMemo(
-    () => (details ? buildFeed(details.activity, details.notes, details.replies, details.surveyResponses.map((r) => ({ id: r.id, answers: r.answers }))) : []),
+    () =>
+      details
+        ? buildFeed(
+            details.activity,
+            details.notes,
+            details.replies,
+            details.surveyResponses.map((r) => ({ id: r.id, answers: r.answers })),
+          )
+        : [],
     [details],
   )
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(email) })
@@ -133,6 +145,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const nextSend = (sequences ?? []).filter((e) => e.next_send_at).sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))[0]
   const nextEmailAt = nextSend?.next_send_at ?? null
 
+  const upcoming = nextSend ? <UpcomingRow title={`${nextSend.sequence_name}, email ${nextSend.sent + 1}`} at={nextSend.next_send_at!} /> : null
+  // Replies nobody has answered go above the rest, so they aren't missed.
+  const waiting = feed.filter((i) => i.reply && !i.reply.answered)
+  const latest = feed.filter((i) => !waiting.includes(i)).slice(0, RECENT)
+
   const openNote = () => {
     if (view === 'details') setTab('overview')
     if (noteOpen) note.current?.focus()
@@ -190,7 +207,13 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         deals={deals}
         feed={feed}
         nextEmailAt={nextEmailAt}
-        repliedAt={(sequences ?? []).map((e) => e.replied_at).filter((at): at is string => Boolean(at)).sort().at(-1) ?? null}
+        repliedAt={
+          (sequences ?? [])
+            .map((e) => e.replied_at)
+            .filter((at): at is string => Boolean(at))
+            .sort()
+            .at(-1) ?? null
+        }
         onEmail={() => setIsEmailModalOpen(true)}
         onNote={openNote}
         onAddTask={() => {
@@ -206,19 +229,21 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
       />
 
       {!canEmail && (
-        <Notice
-          level="warning"
-          className="mt-4"
-          title={`${name || contact.email} is ${status.label.toLowerCase()}`}
-          action={
-            <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()}>
-              Resubscribe
-            </Button>
-          }
-        >
-          {status.text} One-to-one emails from this page won’t send either.
-          {resubscribe.error && <span className="block text-destructive">{resubscribe.error.message}</span>}
-        </Notice>
+        <div id="contact-email-blocked">
+          <Notice
+            level="warning"
+            className="mt-4"
+            title={`${name || contact.email} is ${status.label.toLowerCase()}`}
+            action={
+              <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()}>
+                Resubscribe
+              </Button>
+            }
+          >
+            {status.text} One-to-one emails from this page won’t send either.
+            {resubscribe.error && <span className="block text-destructive">{resubscribe.error.message}</span>}
+          </Notice>
+        </div>
       )}
 
       <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
@@ -236,11 +261,15 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                 aria-selected={view === t.value}
                 onClick={() => setTab(t.value)}
                 className={`-mb-px shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.phoneOnly ? 'inline-flex lg:hidden' : 'inline-flex'} ${
-                  view === t.value ? 'border-accent font-semibold text-foreground' : 'border-transparent font-medium text-muted-foreground hover:text-foreground'
+                  view === t.value
+                    ? 'border-accent font-semibold text-foreground'
+                    : 'border-transparent font-medium text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {t.label}
-                {t.count ? <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium text-foreground/80 tabular-nums">{t.count}</span> : null}
+                {t.count ? (
+                  <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium text-foreground/80 tabular-nums">{t.count}</span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -260,7 +289,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
               >
                 <RecordTasks on={{ contactEmail: contact.email }} adding={addingTask} onStopAdding={() => setAddingTask(false)} />
               </Section>
-              <ContactSequences email={contact.email} items={sequences ?? []} blocked={canEmail ? null : `They’re ${status.label.toLowerCase()}, so sequences skip them.`} />
+              <ContactSequences
+                email={contact.email}
+                items={sequences ?? []}
+                blocked={canEmail ? null : `They’re ${status.label.toLowerCase()}, so sequences skip them.`}
+              />
               <Section
                 title="Recent activity"
                 action={
@@ -277,14 +310,30 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
               >
                 {composer}
                 {feed.length === 0 && !nextSend ? (
-                  !noteOpen && <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
+                  !noteOpen && (
+                    <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
+                  )
                 ) : (
-                  <FeedList
-                    items={feed.slice(0, RECENT)}
-                    name={firstName}
-                    onChanged={refresh}
-                    before={nextSend && <UpcomingRow title={`${nextSend.sequence_name}, email ${nextSend.sent + 1}`} at={nextSend.next_send_at!} />}
-                  />
+                  <div className="space-y-4">
+                    {upcoming && (
+                      <section aria-label="Up next">
+                        <FeedLabel>Up next</FeedLabel>
+                        <ul className="divide-y divide-border">{upcoming}</ul>
+                      </section>
+                    )}
+                    {waiting.length > 0 && (
+                      <section aria-label="Waiting for your reply">
+                        <FeedLabel>Waiting for your reply</FeedLabel>
+                        <FeedList items={waiting} name={firstName} onChanged={refresh} />
+                      </section>
+                    )}
+                    {latest.length > 0 && (
+                      <section aria-label="Latest">
+                        <FeedLabel>Latest</FeedLabel>
+                        <FeedList items={latest} name={firstName} onChanged={refresh} />
+                      </section>
+                    )}
+                  </div>
                 )}
               </Section>
             </>
@@ -301,7 +350,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                 {shown.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nothing of this kind yet.</p>
                 ) : (
-                  <FeedList items={shown} name={firstName} months onChanged={refresh} />
+                  <FeedList items={shown} name={firstName} months onChanged={refresh} before={filter === 'all' || filter === 'emails' ? upcoming : undefined} />
                 )}
               </div>
             </section>
@@ -341,10 +390,25 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
               ]}
             />
             <Field label="Subject">
-              <input type="text" required autoFocus={canEmail} value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="e.g. Following up on our call" className={INPUT_CLASS} />
+              <input
+                type="text"
+                required
+                autoFocus={canEmail}
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="e.g. Following up on our call"
+                className={INPUT_CLASS}
+              />
             </Field>
             <Field label="Message">
-              <textarea required value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={7} placeholder="Write your message…" className={`${INPUT_CLASS} resize-none leading-relaxed`} />
+              <textarea
+                required
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                rows={7}
+                placeholder="Write your message…"
+                className={`${INPUT_CLASS} resize-none leading-relaxed`}
+              />
             </Field>
           </DialogBody>
           <DialogFooter>
