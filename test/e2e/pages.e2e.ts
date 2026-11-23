@@ -35,14 +35,7 @@ const all = [...PAGES, ...SETTINGS.map((s) => `/settings?tab=${s}`)]
  * which project. Each is recorded on the test (annotation) so it shows in the report.
  * Remove an entry with its fix.
  */
-const KNOWN: Array<{ project?: string; scheme?: 'light' | 'dark'; paths: string[] | 'all'; problem: RegExp; issue: string }> = [
-  {
-    project: 'phone',
-    paths: ['/collection', '/collection/prospect-search'],
-    problem: /Minified React error #418/,
-    issue: 'At phone width, Prospect Search sometimes renders different text in the browser than the server sent (React hydration mismatch #418). Found 2026-11-17, cause not found yet.',
-  },
-]
+const KNOWN: Array<{ project?: string; scheme?: 'light' | 'dark'; paths: string[] | 'all'; problem: RegExp; issue: string }> = []
 
 for (const scheme of ['light', 'dark'] as const) {
   test.describe(`${scheme} @phone`, () => {

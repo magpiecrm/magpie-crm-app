@@ -269,6 +269,16 @@ key), with the app's actions as tools.
 - Imports are relative today. The `#/*` -> `./src/*` alias is wired in
   `package.json`/`tsconfig.json` if you want to use it.
 - `scratch/` is gitignored throwaway space; don't import from it.
+- A page's first render must match the server's. React hydrates a page after
+  the layout around it, and the sidebar's queries (prospecting status, usage,
+  tasks, inbox) can answer in between: a page that renders text from one of
+  them reads it only once hydrated (`useHydrated()`, as
+  `features/prospects/useProspectingStatus.ts` does), or hydration fails
+  (React error #418). To see which text differs, build with
+  `NODE_ENV=development bunx vite build --mode development` and run the
+  stack's app with `NODE_ENV=development` (set in `test/stack/up.ts`'s
+  `appEnv`, for that run only): React then logs the differing text, and loses
+  the race every time.
 
 ## Testing
 
