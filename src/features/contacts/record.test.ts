@@ -39,9 +39,9 @@ describe('buildFeed', () => {
 describe('dates', () => {
   const now = new Date('2026-11-23T10:30:00Z')
   it('leaves the year off this year’s dates and never shows seconds', () => {
-    expect(formatDay('2026-09-16T11:35:12Z', now)).toMatch(/^16 Sept?$/)
-    expect(formatDay('2025-09-16T11:35:12Z', now)).toMatch(/^16 Sept? 2025$/)
-    expect(formatWhen('2026-09-16T11:35:12Z', now)).toMatch(/^16 Sept?, \d\d:35$/)
+    expect(formatDay('2026-09-16T11:35:12Z', now)).toBe('16 Sep')
+    expect(formatDay('2025-09-16T11:35:12Z', now)).toBe('16 Sep 2025')
+    expect(formatWhen('2026-09-16T11:35:12Z', now)).toMatch(/^16 Sep, \d\d:35$/)
   })
   it('says how long ago, then the day', () => {
     expect(formatAgo('2026-11-23T10:10:00Z', now)).toBe('20 min ago')

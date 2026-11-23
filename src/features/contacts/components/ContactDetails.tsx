@@ -1,15 +1,17 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, ArrowLeft } from 'lucide-react'
+import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn } from '../../../server/functions'
+import { deleteContactsFn, getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn } from '../../../server/functions'
 import { Dialog, DialogBody, DialogFooter, MetaList } from '../../../components/ui/Dialog'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
 import { Notice } from '../../../components/ui/Notice'
 import { toast } from '../../../components/ui/toast'
+import { confirmDialog } from '../../../components/ui/confirm'
 import { Button } from '../../../components/ui/Button'
-import { Section } from '../../../components/ui/RecordSection'
+import { Section, SECTION_ACTION } from '../../../components/ui/RecordSection'
 import { SegmentedTabs } from '../../templates/components/SegmentedTabs'
+import { useIsDesktop } from '../../../hooks/useMediaQuery'
 import { RecordTasks } from '../../sales/components/TaskParts'
 import { ContactSequences } from '../../sequences/components/ContactSequences'
 import { buildFeed, matchesFilter, type FeedFilter } from '../record'
@@ -23,7 +25,8 @@ interface ContactDetailsProps {
   onClose: () => void
 }
 
-type Tab = 'overview' | 'activity' | 'surveys'
+/** `details` is the side panel, a tab of its own on a phone. */
+type Tab = 'overview' | 'activity' | 'surveys' | 'details'
 
 /** How many of the latest items the Overview shows before "View all". */
 const RECENT = 5
@@ -38,6 +41,7 @@ const FILTERS: Array<{ value: FeedFilter; label: string }> = [
 export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('overview')
+  const isDesktop = useIsDesktop()
   const [filter, setFilter] = useState<FeedFilter>('all')
   const note = useRef<NoteComposerHandle>(null)
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
@@ -69,7 +73,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
             <div className="h-4 w-64 bg-muted rounded" />
           </div>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[21rem_minmax(0,1fr)] gap-6">
           <div className="h-96 bg-muted rounded-xl" />
           <div className="h-96 bg-muted rounded-xl" />
         </div>
@@ -96,8 +100,35 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const status = emailStatus(contact.status)
   const canEmail = status.tone === 'good'
 
+  const copyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(contact.email)
+      toast.success('Email address copied')
+    } catch {
+      toast.error("Couldn't copy the address")
+    }
+  }
+  const deleteContact = async () => {
+    const ok = await confirmDialog({
+      title: `Delete ${name || contact.email}?`,
+      message: 'They come off every list, sequence and deal, and their history goes with them. This can’t be undone.',
+      confirmLabel: 'Delete contact',
+      tone: 'danger',
+    })
+    if (!ok) return
+    try {
+      await deleteContactsFn({ data: { emails: [contact.email] } })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
+      toast.success('Contact deleted')
+      onClose()
+    } catch (err) {
+      toast.error("Couldn't delete the contact", { description: err instanceof Error ? err.message : undefined })
+    }
+  }
+  const nextEmailAt = (sequences ?? []).filter((e) => e.next_send_at).sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))[0]?.next_send_at ?? null
+
   const openNote = () => {
-    if (tab === 'surveys') setTab('overview')
+    if (view === 'surveys' || view === 'details') setTab('overview')
     // After the tab has drawn its composer.
     setTimeout(() => note.current?.focus(), 0)
   }
@@ -120,11 +151,14 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   }
 
   const shown = feed.filter((i) => matchesFilter(i, filter))
-  const tabs: Array<{ value: Tab; label: string; count?: number }> = [
+  const tabs: Array<{ value: Tab; label: string; count?: number; phoneOnly?: boolean }> = [
     { value: 'overview', label: 'Overview' },
     { value: 'activity', label: 'Activity', count: feed.length },
-    { value: 'surveys', label: 'Surveys', count: surveyResponses.length },
+    ...(surveyResponses.length ? [{ value: 'surveys' as const, label: 'Surveys', count: surveyResponses.length }] : []),
+    { value: 'details', label: 'Details', phoneOnly: true },
   ]
+  // On a desktop the details are always beside the tabs, so their tab is the Overview.
+  const view: Tab = isDesktop && tab === 'details' ? 'overview' : tab
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 animate-in fade-in duration-200">
@@ -137,42 +171,57 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         Back to contacts
       </button>
 
-      <ContactHeader contact={contact} name={name} company={company} onEmail={() => setIsEmailModalOpen(true)} onNote={openNote} />
+      <ContactHeader
+        contact={contact}
+        name={name}
+        company={company}
+        deals={deals}
+        feed={feed}
+        nextEmailAt={nextEmailAt}
+        repliedAt={(sequences ?? []).map((e) => e.replied_at).filter((at): at is string => Boolean(at)).sort().at(-1) ?? null}
+        onEmail={() => setIsEmailModalOpen(true)}
+        onNote={openNote}
+        onCopy={() => void copyEmail()}
+        onDelete={() => void deleteContact()}
+      />
 
-      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[20rem_minmax(0,1fr)]">
-        <ContactSidebar contact={contact} fieldDefs={fieldDefs} company={company} deals={deals} lists={lists} campaigns={campaigns} />
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
+        <div className={`order-2 lg:order-none ${view === 'details' ? '' : 'hidden lg:block'}`}>
+          <ContactSidebar contact={contact} fieldDefs={fieldDefs} company={company} deals={deals} lists={lists} campaigns={campaigns} />
+        </div>
 
-        <div className="min-w-0 space-y-5">
-          <div role="tablist" aria-label="Contact" className="flex gap-6 border-b border-border">
+        <div className="order-1 lg:order-none min-w-0 space-y-5">
+          <div role="tablist" aria-label="Contact" className="flex gap-6 overflow-x-auto border-b border-border [scrollbar-width:none]">
             {tabs.map((t) => (
               <button
                 key={t.value}
                 type="button"
                 role="tab"
-                aria-selected={tab === t.value}
+                aria-selected={view === t.value}
                 onClick={() => setTab(t.value)}
-                className={`-mb-px inline-flex items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${
-                  tab === t.value ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+                className={`-mb-px shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.phoneOnly ? 'inline-flex lg:hidden' : 'inline-flex'} ${
+                  view === t.value ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {t.label}
-                {t.count ? <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium text-muted-foreground tabular-nums">{t.count}</span> : null}
+                {t.count ? <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium text-foreground/80 tabular-nums">{t.count}</span> : null}
               </button>
             ))}
           </div>
 
-          {tab === 'overview' && (
+          {view === 'overview' && (
             <>
               <Section title="Tasks">
                 <RecordTasks on={{ contactEmail: contact.email }} />
               </Section>
-              <ContactSequences email={contact.email} items={sequences ?? []} />
+              <ContactSequences email={contact.email} items={sequences ?? []} blocked={canEmail ? null : `They’re ${status.label.toLowerCase()}, so sequences skip them.`} />
               <Section
                 title="Recent activity"
                 action={
                   feed.length > RECENT && (
-                    <button type="button" onClick={() => setTab('activity')} className="text-xs font-semibold text-accent hover:underline cursor-pointer">
+                    <button type="button" onClick={() => setTab('activity')} className={SECTION_ACTION}>
                       View all {feed.length}
+                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
                     </button>
                   )
                 }
@@ -189,8 +238,8 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
             </>
           )}
 
-          {tab === 'activity' && (
-            <Section title="Activity" count={feed.length}>
+          {view === 'activity' && (
+            <section aria-label="Activity" className="rounded-xl border border-border bg-card p-5">
               <div className="space-y-4">
                 <NoteComposer ref={note} email={contact.email} name={firstName} onAdded={refresh} />
                 <SegmentedTabs value={filter} onChange={setFilter} options={FILTERS} label="Show" scroll />
@@ -200,10 +249,10 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                   <FeedList items={shown} months onChanged={refresh} />
                 )}
               </div>
-            </Section>
+            </section>
           )}
 
-          {tab === 'surveys' && <ContactSurveysTab responses={surveyResponses} />}
+          {view === 'surveys' && <ContactSurveysTab responses={surveyResponses} />}
         </div>
       </div>
 

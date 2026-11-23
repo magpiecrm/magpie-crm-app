@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { MessageSquareReply, Plus } from 'lucide-react'
+import { Check, MessageSquareReply, Plus } from 'lucide-react'
 import { enrollmentActionFn } from '../../../server/functions'
 import { Badge } from '../../../components/ui/Badge'
-import { Button } from '../../../components/ui/Button'
 import { Section, SECTION_ACTION } from '../../../components/ui/RecordSection'
 import { queryKeys } from '../../../queryKeys'
 import { EnrollDialog } from './EnrollDialog'
@@ -28,14 +27,14 @@ function Steps({ sent, steps }: { sent: number; steps: number }) {
   return (
     <span aria-hidden className="inline-flex items-center gap-1">
       {Array.from({ length: steps }, (_, i) => (
-        <span key={i} className={`h-1.5 w-4 rounded-full ${i < sent ? 'bg-accent' : 'bg-foreground/15'}`} />
+        <span key={i} className={`h-1.5 w-4 rounded-full ${i < sent ? 'bg-accent' : 'bg-foreground/25'}`} />
       ))}
     </span>
   )
 }
 
 /** A contact's sequences on their page: where they are in each, their reply, and "they replied" for the ones still going. */
-export function ContactSequences({ email, items }: { email: string; items: ContactSequence[] }) {
+export function ContactSequences({ email, items, blocked = null }: { email: string; items: ContactSequence[]; /** Why they can't be added to one (they unsubscribed), if they can't. */ blocked?: string | null }) {
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const replied = useMutation({
@@ -50,14 +49,16 @@ export function ContactSequences({ email, items }: { email: string; items: Conta
       title="Sequences"
       count={items.length || undefined}
       action={
-        <button type="button" onClick={() => setAdding(true)} className={SECTION_ACTION}>
-          <Plus aria-hidden className="h-3.5 w-3.5" />
-          Add to sequence
-        </button>
+        !blocked && (
+          <button type="button" onClick={() => setAdding(true)} className={SECTION_ACTION}>
+            <Plus aria-hidden className="h-3.5 w-3.5" />
+            Add to sequence
+          </button>
+        )
       }
     >
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Not in any sequence.</p>
+        <p className="text-sm text-muted-foreground">{blocked ?? 'Not in any sequence.'}</p>
       ) : (
         <ul className="-mt-1 divide-y divide-border">
           {items.map((e) => {
@@ -81,22 +82,18 @@ export function ContactSequences({ email, items }: { email: string; items: Conta
                     </span>
                   </p>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center">
                   {e.replied_at ? (
-                    <Link
-                      to="/sales/sequences/$id"
-                      params={{ id: e.sequence_id }}
-                      search={{ tab: 'replies', person: e.id }}
-                      className="inline-flex items-center gap-1.5 rounded-md-xs px-2 py-1.5 text-[13px] font-medium text-accent hover:bg-accent/10"
-                    >
+                    <Link to="/sales/sequences/$id" params={{ id: e.sequence_id }} search={{ tab: 'replies', person: e.id }} className={SECTION_ACTION}>
                       <MessageSquareReply aria-hidden className="h-3.5 w-3.5" />
                       View reply
                     </Link>
                   ) : (
                     going && (
-                      <Button size="sm" variant="ghost" isLoading={replied.isPending && replied.variables === e.id} onClick={() => replied.mutate(e.id)}>
+                      <button type="button" disabled={replied.isPending} onClick={() => replied.mutate(e.id)} className={`${SECTION_ACTION} disabled:opacity-60`}>
+                        <Check aria-hidden className="h-3.5 w-3.5" />
                         Mark as replied
-                      </Button>
+                      </button>
                     )
                   )}
                 </div>

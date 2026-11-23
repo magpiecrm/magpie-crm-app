@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, BellOff, Building2, CheckCircle2, Copy, ExternalLink, Link2, Plus, RefreshCw } from 'lucide-react'
+import { AlertTriangle, BellOff, Building2, CheckCircle2, Copy, ExternalLink, Link2, Mail, Pencil, Plus, RefreshCw } from 'lucide-react'
 import { resubscribeContactFn, setContactCompanyFn } from '../../../../server/functions'
 import { queryKeys } from '../../../../queryKeys'
 import { Badge } from '../../../../components/ui/Badge'
@@ -13,7 +13,7 @@ import { formatMoney, type CompanyView, type DealStatus, type DealView } from '.
 import { ContactCustomFields } from '../ContactCustomFields'
 import type { ContactCustomValue, ContactFieldDef } from '../../contactFields'
 import { formatDay } from '../../record'
-import { DetailRow, PanelSection, SECTION_ACTION } from '../../../../components/ui/RecordSection'
+import { DetailRow, PanelSection, SECTION_ACTION, ShowEmpty } from '../../../../components/ui/RecordSection'
 
 export interface RecordContact {
   email: string
@@ -39,7 +39,7 @@ const TONE = {
   bad: 'text-destructive',
 }
 
-function Details({ contact, company }: { contact: RecordContact; company: CompanyView | null }) {
+function Details({ contact }: { contact: RecordContact }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const copy = async () => {
     try {
@@ -49,34 +49,8 @@ function Details({ contact, company }: { contact: RecordContact; company: Compan
       toast.error("Couldn't copy the address")
     }
   }
-  const companyName = company?.name || contact.attributes.COMPANY
   const rows: Array<{ label: string; value: React.ReactNode | null }> = [
-    {
-      label: 'Email',
-      value: (
-        <span className="flex min-w-0 items-start gap-1.5">
-          <span className="min-w-0 break-words">
-            {/* Breaks after the @ when it has to, not mid-word. */}
-            {contact.email.split('@')[0]}@<wbr />
-            {contact.email.split('@').slice(1).join('@')}
-          </span>
-          <button type="button" onClick={copy} aria-label="Copy email address" title="Copy" className="touch-target -my-0.5 shrink-0 rounded-md-xs p-0.5 text-muted-foreground hover:text-foreground cursor-pointer">
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        </span>
-      ),
-    },
     { label: 'Job title', value: contact.attributes.JOB_TITLE || null },
-    {
-      label: 'Company',
-      value: company ? (
-        <Link to="/marketing/companies/$id" params={{ id: company.id }} className="text-accent hover:underline">
-          {companyName}
-        </Link>
-      ) : (
-        companyName || null
-      ),
-    },
     { label: 'Country', value: contact.country || null },
     {
       label: 'LinkedIn',
@@ -92,6 +66,15 @@ function Details({ contact, company }: { contact: RecordContact; company: Compan
   const empty = rows.filter((r) => !r.value).length
   return (
     <PanelSection title="Details">
+      <p className="mb-1.5 flex min-w-0 items-center gap-2 text-sm text-foreground">
+        <Mail aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <a href={`mailto:${contact.email}`} className="min-w-0 truncate hover:text-accent hover:underline" title={contact.email}>
+          {contact.email}
+        </a>
+        <button type="button" onClick={copy} aria-label="Copy email address" title="Copy" className="touch-target ml-auto shrink-0 rounded-md-xs p-1 text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer">
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      </p>
       <dl>
         {rows
           .filter((r) => showEmpty || r.value)
@@ -101,11 +84,7 @@ function Details({ contact, company }: { contact: RecordContact; company: Compan
             </DetailRow>
           ))}
       </dl>
-      {empty > 0 && (
-        <button type="button" onClick={() => setShowEmpty((s) => !s)} className="mt-1 text-[13px] text-muted-foreground hover:text-foreground cursor-pointer">
-          {showEmpty ? 'Hide empty fields' : `Show ${empty} empty field${empty === 1 ? '' : 's'}`}
-        </button>
-      )}
+      {empty > 0 && <ShowEmpty shown={showEmpty} count={empty} onToggle={() => setShowEmpty((s) => !s)} />}
     </PanelSection>
   )
 }
@@ -124,7 +103,7 @@ function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContac
     },
   })
   return (
-    <PanelSection title="Email">
+    <PanelSection title="Email status">
       <p className={`flex items-center gap-1.5 text-sm font-medium ${TONE[s.tone]}`}>
         <s.Icon aria-hidden className="h-4 w-4 shrink-0" />
         {s.label}
@@ -145,7 +124,7 @@ function EmailStatus({ contact, sent, opened, clicked }: { contact: RecordContac
   )
 }
 
-function CompanySection({ email, company }: { email: string; company: CompanyView | null }) {
+function CompanySection({ email, company, typed }: { email: string; company: CompanyView | null; typed: string }) {
   const queryClient = useQueryClient()
   const invalidateSales = useInvalidateSales()
   const [picking, setPicking] = useState(false)
@@ -163,7 +142,17 @@ function CompanySection({ email, company }: { email: string; company: CompanyVie
       action={
         !picking && (
           <button type="button" onClick={() => setPicking(true)} className={SECTION_ACTION}>
-            {company ? 'Change' : (<><Link2 aria-hidden className="h-3 w-3" />Link</>)}
+            {company ? (
+              <>
+                <Pencil aria-hidden className="h-3 w-3" />
+                Change
+              </>
+            ) : (
+              <>
+                <Link2 aria-hidden className="h-3 w-3" />
+                Link
+              </>
+            )}
           </button>
         )
       }
@@ -200,7 +189,7 @@ function CompanySection({ email, company }: { email: string; company: CompanyVie
           </span>
         </Link>
       ) : (
-        <p className="text-[13px] text-muted-foreground">Not linked to a company.</p>
+        <p className="text-[13px] text-muted-foreground">{typed ? `${typed}, not linked to a company record.` : 'Not linked to a company.'}</p>
       )}
     </PanelSection>
   )
@@ -230,17 +219,22 @@ function DealsSection({ email, companyId, deals }: { email: string; companyId: s
         <ul className="-mx-2">
           {deals.map((d) => (
             <li key={d.id}>
-              <Link to="/sales/deals/$id" params={{ id: d.id }} className="flex items-start justify-between gap-3 rounded-lg px-2 py-2 hover:bg-muted/60 transition-colors">
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-foreground">{d.name}</span>
-                  <span className="block truncate text-[13px] text-muted-foreground">
-                    {d.stage_name}
-                    {d.status === 'open' && d.expected_close ? ` · closes ${formatDay(`${d.expected_close}T12:00:00Z`)}` : ''}
-                  </span>
+              <Link to="/sales/deals/$id" params={{ id: d.id }} className="block rounded-lg px-2 py-2 hover:bg-muted/60 transition-colors">
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm font-medium text-foreground">{d.name}</span>
+                  <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">{formatMoney(d.value, d.currency)}</span>
                 </span>
-                <span className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="text-sm font-medium text-foreground tabular-nums">{formatMoney(d.value, d.currency)}</span>
-                  <Badge variant={DEAL_STATUS[d.status].variant}>{DEAL_STATUS[d.status].label}</Badge>
+                <span className="mt-1 flex items-center gap-2 text-[13px] text-muted-foreground">
+                  {d.status === 'open' ? <Badge>{d.stage_name}</Badge> : <Badge variant={DEAL_STATUS[d.status].variant}>{DEAL_STATUS[d.status].label}</Badge>}
+                  <span className="truncate">
+                    {d.status === 'open'
+                      ? d.expected_close
+                        ? `Closes ${formatDay(`${d.expected_close}T12:00:00Z`)}`
+                        : ''
+                      : d.closed_at
+                        ? formatDay(d.closed_at)
+                        : ''}
+                  </span>
                 </span>
               </Link>
             </li>
@@ -293,17 +287,17 @@ export function ContactSidebar({
 }) {
   return (
     <aside aria-label="About this contact" className="rounded-xl border border-border bg-card">
-      <Details contact={contact} company={company} />
-      <ContactCustomFields email={contact.email} defs={fieldDefs} custom={contact.custom ?? {}} />
+      <Details contact={contact} />
       <EmailStatus
         contact={contact}
         sent={campaigns.length}
         opened={campaigns.filter((c) => c.openedAt).length}
         clicked={campaigns.filter((c) => c.clickedAt).length}
       />
-      <CompanySection email={contact.email} company={company} />
+      <CompanySection email={contact.email} company={company} typed={contact.attributes.COMPANY} />
       <DealsSection email={contact.email} companyId={company?.id ?? null} deals={deals} />
       <ListsSection lists={lists} />
+      <ContactCustomFields email={contact.email} defs={fieldDefs} custom={contact.custom ?? {}} />
     </aside>
   )
 }

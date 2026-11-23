@@ -9,7 +9,7 @@ import { patchContactCustom } from '../contactCache'
 import { formatCustomValue, type ContactCustomValue, type ContactFieldDef } from '../contactFields'
 import { formatDay } from '../record'
 import { CustomFieldInput } from './CustomFieldInput'
-import { DetailRow, PanelSection, SECTION_ACTION } from '../../../components/ui/RecordSection'
+import { DetailRow, PanelSection, SECTION_ACTION, ShowEmpty } from '../../../components/ui/RecordSection'
 
 function display(field: ContactFieldDef, value: ContactCustomValue | undefined): string {
   if (field.type === 'date' && typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return formatDay(`${value.slice(0, 10)}T12:00:00Z`)
@@ -66,11 +66,8 @@ export function ContactCustomFields({ email, defs, custom }: { email: string; de
             ))}
           </dl>
         )}
-        {empty > 0 && (
-          <button type="button" onClick={() => setShowEmpty((s) => !s)} className="mt-1 text-[13px] text-muted-foreground hover:text-foreground cursor-pointer">
-            {showEmpty ? 'Hide empty fields' : `Show ${empty} empty field${empty === 1 ? '' : 's'}`}
-          </button>
-        )}
+        {shown.length === 0 && !showEmpty && <p className="text-[13px] text-muted-foreground">None filled in yet.</p>}
+        {empty > 0 && <ShowEmpty shown={showEmpty} count={empty} onToggle={() => setShowEmpty((s) => !s)} />}
       </PanelSection>
     )
   }

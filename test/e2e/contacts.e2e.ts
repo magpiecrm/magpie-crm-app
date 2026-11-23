@@ -41,15 +41,18 @@ async function contactCount(page: Page) {
   return Number((await count.innerText()).replace(/\D/g, ''))
 }
 
-/** A contact's page, and its Information panel. */
+/** The side panel of a contact's page: their details, custom fields, company, deals and lists. */
+const aboutPanel = (page: Page) => page.getByRole('complementary', { name: 'About this contact' })
+
+/** A contact's page, and its side panel. */
 async function openContact(page: Page, email: string) {
   await page.goto(`/marketing/contacts?contact=${encodeURIComponent(email)}`)
   await expect(page.getByText(email, { exact: true }).first()).toBeVisible()
-  return page.locator('div').filter({ has: page.getByRole('heading', { name: 'Information', exact: true }) }).last()
+  return aboutPanel(page)
 }
 
-/** One labelled value in the Information panel (a label span, then its value). */
-const info = (panel: ReturnType<Page['locator']>, label: string) => panel.locator('div').filter({ has: panel.page().getByText(label, { exact: true }) }).last()
+/** One labelled value in the side panel (a label, then its value). */
+const info = (panel: ReturnType<Page['locator']>, label: string) => panel.locator('div:has(> dt)').filter({ has: panel.page().locator('dt').getByText(label, { exact: true }) })
 
 /** Settings → Contact fields: deletes every field whose label starts with `prefix` (this run's, and any a failed run left). */
 async function deleteFields(page: Page, prefix: string) {
@@ -92,9 +95,9 @@ test('a contact added by hand is edited inline in the table and shows on their p
   // …and on their page, with what was typed by hand.
   await row.getByText('Cora Inline').click()
   await expect(page.getByRole('heading', { name: 'Cora Inline', level: 1 })).toBeVisible()
-  const panel = page.locator('div').filter({ has: page.getByRole('heading', { name: 'Information', exact: true }) }).last()
-  await expect(info(panel, 'COMPANY')).toContainText('Copperwick')
-  await expect(info(panel, 'JOB_TITLE')).toContainText('Head of Ops')
+  const panel = aboutPanel(page)
+  await expect(info(panel, 'Company')).toContainText('Copperwick')
+  await expect(info(panel, 'Job title')).toContainText('Head of Ops')
   await expect(info(panel, field)).toContainText('Gold')
 
   await deleteFields(page, 'C1 tier')
@@ -191,15 +194,15 @@ test('a CSV import maps its columns, merges a duplicate, counts right and makes 
   // Ada's two rows made one contact: the second row's job title added, its blanks clearing nothing.
   let panel = await openContact(page, ada)
   await expect(page.getByRole('heading', { name: 'Ada Lovelace', level: 1 })).toBeVisible()
-  await expect(info(panel, 'COMPANY')).toContainText('Copperwick')
-  await expect(info(panel, 'JOB_TITLE')).toContainText('CTO')
+  await expect(info(panel, 'Company')).toContainText('Copperwick')
+  await expect(info(panel, 'Job title')).toContainText('CTO')
   await expect(info(panel, field)).toContainText('Gold')
 
   // Xena keeps her name and job title, and gains the company and tier.
   panel = await openContact(page, xena)
   await expect(page.getByRole('heading', { name: 'Xena', level: 1 })).toBeVisible()
-  await expect(info(panel, 'JOB_TITLE')).toContainText('Founder')
-  await expect(info(panel, 'COMPANY')).toContainText('Quillmoor')
+  await expect(info(panel, 'Job title')).toContainText('Founder')
+  await expect(info(panel, 'Company')).toContainText('Quillmoor')
   await expect(info(panel, field)).toContainText('Bronze')
   await expect(page.getByText(list, { exact: true }).first()).toBeVisible()
 

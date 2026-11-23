@@ -1,8 +1,9 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
-import { ClipboardCheck, FileText, Megaphone, MessageSquareReply, Send, StickyNote, Trash2, type LucideIcon } from 'lucide-react'
+import { ClipboardList, FileInput, MailOpen, Megaphone, MessageSquareReply, MousePointerClick, PenLine, Send, Trash2, CheckCircle2, type LucideIcon } from 'lucide-react'
 import { addNoteFn, deleteNoteFn } from '../../../../server/functions'
+import { Avatar } from '../../../../components/ui/Avatar'
 import { Button } from '../../../../components/ui/Button'
 import { confirmDialog } from '../../../../components/ui/confirm'
 import { nameFromEmail } from '../../../sales/utils'
@@ -11,24 +12,31 @@ import { formatAgo, formatWhen, monthOf, type FeedItem } from '../../record'
 const KIND: Record<FeedItem['kind'], { label: string; Icon: LucideIcon }> = {
   campaign: { label: 'Campaign', Icon: Megaphone },
   sequence: { label: 'Sequence email', Icon: Send },
-  form: { label: 'Form', Icon: FileText },
-  survey: { label: 'Survey', Icon: ClipboardCheck },
-  note: { label: 'Note', Icon: StickyNote },
+  form: { label: 'Form', Icon: FileInput },
+  survey: { label: 'Survey', Icon: ClipboardList },
+  note: { label: 'Note', Icon: PenLine },
 }
 
-/** What happened with an email, form or survey, in a few words. */
-function outcome(item: FeedItem): Array<{ text: string; tone?: 'good' }> {
+type Outcome = { text: string; Icon?: LucideIcon; tone: 'good' | 'info' | 'plain' | 'none' }
+
+/** What came of an email, form or survey: the strongest thing they did first. */
+function outcome(item: FeedItem): Outcome[] {
   if (item.kind === 'campaign' || item.kind === 'sequence') {
-    const out: Array<{ text: string; tone?: 'good' }> = []
-    if (item.replied) out.push({ text: 'Replied', tone: 'good' })
-    if (item.clicked) out.push({ text: 'Clicked a link' })
-    if (item.opened && !item.clicked) out.push({ text: 'Opened' })
-    if (!out.length) out.push({ text: 'Not opened' })
-    return out
+    if (item.replied) return [{ text: 'Replied', Icon: MessageSquareReply, tone: 'good' }]
+    if (item.clicked) return [{ text: 'Clicked', Icon: MousePointerClick, tone: 'info' }]
+    if (item.opened) return [{ text: 'Opened', Icon: MailOpen, tone: 'plain' }]
+    return [{ text: 'Not opened', tone: 'none' }]
   }
-  if (item.kind === 'survey') return [{ text: item.completed ? 'Completed' : 'Started, not finished' }]
-  if (item.kind === 'form') return [{ text: 'Submitted' }]
+  if (item.kind === 'survey') return item.completed ? [{ text: 'Completed', Icon: CheckCircle2, tone: 'good' }] : [{ text: 'Not finished', tone: 'none' }]
+  if (item.kind === 'form') return [{ text: 'Submitted', Icon: CheckCircle2, tone: 'plain' }]
   return []
+}
+
+const CHIP: Record<Outcome['tone'], string> = {
+  good: 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300',
+  info: 'bg-accent/10 text-accent',
+  plain: 'bg-foreground/[0.07] text-foreground/80',
+  none: 'text-muted-foreground',
 }
 
 function When({ at }: { at: string }) {
@@ -42,24 +50,24 @@ function When({ at }: { at: string }) {
 function FeedRow({ item, onChanged }: { item: FeedItem; onChanged: () => void }) {
   const { label, Icon } = KIND[item.kind]
   const remove = useMutation({ mutationFn: (id: string) => deleteNoteFn({ data: { id } }), onSuccess: onChanged })
-  const tone =
-    item.kind === 'note'
-      ? 'bg-accent/10 text-accent'
-      : item.replied
-        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-        : 'bg-muted text-muted-foreground'
-  const ItemIcon = item.replied ? MessageSquareReply : Icon
+  const author = item.note?.created_by ? nameFromEmail(item.note.created_by) : null
 
   return (
     <li className="group relative flex gap-3 py-3">
-      <span aria-hidden className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${tone}`}>
-        <ItemIcon className="h-3.5 w-3.5" />
-      </span>
+      {author ? (
+        <span className="mt-0.5">
+          <Avatar name={author} />
+        </span>
+      ) : (
+        <span aria-hidden className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+          <Icon className="h-4 w-4" />
+        </span>
+      )}
       {item.note ? (
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-3">
             <p className="text-sm font-medium text-foreground">
-              {item.note.created_by ? nameFromEmail(item.note.created_by) : 'Someone'}
+              {author ?? 'Someone'}
               <span className="font-normal text-muted-foreground"> wrote a note</span>
             </p>
             <span className="flex shrink-0 items-baseline gap-2">
@@ -93,11 +101,11 @@ function FeedRow({ item, onChanged }: { item: FeedItem; onChanged: () => void })
             )}
             <When at={item.at} />
           </div>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
-            {label}
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+            <span>{label}</span>
             {outcome(item).map((o) => (
-              <span key={o.text} className={o.tone === 'good' ? 'font-medium text-emerald-700 dark:text-emerald-300' : ''}>
-                {' · '}
+              <span key={o.text} className={`inline-flex items-center gap-1 rounded-full text-xs font-medium ${o.tone === 'none' ? '' : 'px-2 py-0.5'} ${CHIP[o.tone]}`}>
+                {o.Icon && <o.Icon aria-hidden className="h-3 w-3" />}
                 {o.text}
               </span>
             ))}
@@ -178,7 +186,7 @@ export const NoteComposer = forwardRef<NoteComposerHandle, { email: string; name
         e.preventDefault()
         save()
       }}
-      className="rounded-lg border border-input bg-background transition-colors focus-within:border-accent"
+      className="rounded-xl border border-input bg-card transition-colors focus-within:border-accent"
     >
       <label htmlFor={`note-${email}`} className="sr-only">
         Note about {name}

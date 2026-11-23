@@ -21,9 +21,9 @@ export function ContactSurveysTab({ responses }: { responses: ContactSurveyRespo
       {responses.length === 0 ? (
         <p className="text-sm text-muted-foreground">They haven’t answered any surveys yet.</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="-mt-1 divide-y divide-border">
           {responses.map((r) => (
-            <li key={r.id} className="rounded-lg border border-border p-4">
+            <li key={r.id} className="py-4 first:pt-2">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <Link to="/marketing/surveys/$surveyId" params={{ surveyId: r.surveyId }} className="text-sm font-medium text-foreground hover:text-accent">
@@ -36,7 +36,7 @@ export function ContactSurveysTab({ responses }: { responses: ContactSurveyRespo
                 </div>
                 <Badge variant={r.status === 'completed' ? 'success' : 'default'}>{r.status === 'completed' ? 'Completed' : 'Not finished'}</Badge>
               </div>
-              <dl className="mt-3 space-y-3 border-t border-border pt-3">
+              <dl className="mt-3 space-y-3">
                 {r.answers.map((a, i) => (
                   <div key={i}>
                     <dt className="text-[13px] text-muted-foreground">{a.question}</dt>

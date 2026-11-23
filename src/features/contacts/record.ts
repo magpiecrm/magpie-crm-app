@@ -75,11 +75,13 @@ export function matchesFilter(item: FeedItem, filter: FeedFilter): boolean {
 }
 
 const sameYear = (d: Date, now: Date) => d.getFullYear() === now.getFullYear()
+// Three letters every month: the browser's own en-GB short months say "Sept".
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** "16 Sep", or "16 Sep 2025" in another year. */
 export function formatDay(iso: string, now = new Date()): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(sameYear(d, now) ? {} : { year: 'numeric' }) })
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}${sameYear(d, now) ? '' : ` ${d.getFullYear()}`}`
 }
 
 /** "16 Sep, 12:35", or "16 Sep 2025, 12:35" in another year. Never seconds. */

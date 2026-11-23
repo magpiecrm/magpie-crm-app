@@ -351,10 +351,13 @@ export function TaskComposer({
   placeholder = 'What needs doing?',
   inputId,
   seed,
+  quiet = false,
 }: {
   on: TaskOn
   onDone?: () => void
   placeholder?: string
+  /** On a record's page: one plain line until it's used, its due date and button showing then, the button secondary. */
+  quiet?: boolean
   /** For a "write one" button elsewhere on the page to focus it. */
   inputId?: string
   /** Text to put in the box (an example picked elsewhere on the page); a new `key` puts it in again. */
@@ -378,15 +381,25 @@ export function TaskComposer({
     },
   })
   const ready = body.trim() && (when !== 'custom' || dueAt)
+  const [active, setActive] = useState(false)
+  const open = !quiet || active || Boolean(body)
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
         if (ready) add.mutate()
       }}
+      onFocus={() => setActive(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(false)
+      }}
       className="@container"
     >
-      <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-2 shadow-sm transition-colors focus-within:border-accent @xl:flex-row @xl:items-center">
+      <div
+        className={`flex flex-col gap-2 rounded-xl border bg-card transition-colors focus-within:border-accent @xl:flex-row @xl:items-center ${
+          quiet ? `border-input ${open ? 'p-2' : 'p-1'}` : 'border-border p-2 shadow-sm'
+        }`}
+      >
         <label className="flex min-w-0 flex-1 items-center gap-3 pl-2 pr-2">
           <span aria-hidden className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
             <Plus className="h-4 w-4" />
@@ -402,7 +415,7 @@ export function TaskComposer({
             className="min-w-0 flex-1 bg-transparent py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
         </label>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className={`flex-wrap items-center justify-between gap-2 ${open ? 'flex' : 'hidden'}`}>
           <div className="relative min-w-0">
             <Calendar aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Select
@@ -430,7 +443,7 @@ export function TaskComposer({
               className="h-[38px] rounded-md-s border border-input bg-card px-2.5 text-sm text-foreground outline-none focus:border-accent focus:ring-1 focus:ring-accent"
             />
           )}
-          <Button type="submit" isLoading={add.isPending}>
+          <Button type="submit" variant={quiet ? 'secondary' : 'primary'} isLoading={add.isPending}>
             Add task
           </Button>
         </div>
@@ -524,7 +537,7 @@ export function RecordTasks({ on }: { on: TaskOn }) {
           ))}
         </ul>
       )}
-      <TaskComposer on={on} />
+      <TaskComposer on={on} quiet />
     </div>
   )
 }

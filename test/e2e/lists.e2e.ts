@@ -63,8 +63,7 @@ test('a list is made, filled with contacts, and one is taken off it', async ({ p
   // They're off the list, not out of Contacts.
   await page.goto(`/marketing/contacts?contact=${encodeURIComponent(gone.email)}`)
   await expect(page.getByRole('heading', { name: gone.name, level: 1 })).toBeVisible()
-  await page.getByRole('button', { name: /^lists$/i }).click()
-  await expect(page.getByText('This contact does not belong to any lists.')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Lists' })).toContainText('Not on any list.')
 
   expect(problems()).toEqual([])
 })
