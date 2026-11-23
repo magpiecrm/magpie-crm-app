@@ -48,10 +48,13 @@ const TONE = {
   bad: 'text-destructive',
 }
 
-function Details({ contact }: { contact: RecordContact }) {
+function Details({ contact, company }: { contact: RecordContact; company: CompanyView | null }) {
   const [showEmpty, setShowEmpty] = useState(false)
+  const typedCompany = contact.attributes.COMPANY.trim()
   const rows: Array<{ label: string; value: React.ReactNode | null }> = [
     { label: 'Job title', value: contact.attributes.JOB_TITLE || null },
+    // Shown when it says something the Company section doesn't: it names another company than the record they're grouped under.
+    ...(typedCompany && company && typedCompany.toLowerCase() !== company.name.trim().toLowerCase() ? [{ label: 'Company', value: typedCompany }] : []),
     { label: 'Country', value: contact.country || null },
     {
       label: 'LinkedIn',
@@ -292,7 +295,7 @@ export function ContactSidebar({
 }) {
   return (
     <aside aria-label="About this contact" className="rounded-xl border border-border bg-card">
-      <Details contact={contact} />
+      <Details contact={contact} company={company} />
       <DealsSection email={contact.email} companyId={company?.id ?? null} deals={deals} />
       <CompanySection email={contact.email} company={company} typed={contact.attributes.COMPANY} />
       <EmailStatus

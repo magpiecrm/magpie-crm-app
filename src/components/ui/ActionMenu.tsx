@@ -31,17 +31,22 @@ export function ActionMenu({
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  useLayoutEffect(() => {
-    if (!open) return setPlace(null)
+  // Beside its button: below it, or above when there's no room below.
+  const placeMenu = () => {
     const r = buttonRef.current!.getBoundingClientRect()
     const h = menuRef.current?.offsetHeight ?? 200
     const top = window.innerHeight - r.bottom < h + 12 && r.top > h + 12 ? r.top - h - 4 : r.bottom + 4
     setPlace({ top, left: Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8)) })
+  }
+  useLayoutEffect(() => {
+    if (!open) return setPlace(null)
+    placeMenu()
   }, [open, width])
 
   useEffect(() => {
     if (!open) return
-    menuRef.current?.querySelector<HTMLElement>('[role=menuitem]:not([disabled])')?.focus()
+    // Without scrolling: the menu may not be in its place yet, and a scroll closes it.
+    menuRef.current?.querySelector<HTMLElement>('[role=menuitem]:not([disabled])')?.focus({ preventScroll: true })
     const close = (e: Event) => {
       if (e instanceof KeyboardEvent) {
         if (e.key === 'Escape' || e.key === 'Tab') {
@@ -51,7 +56,16 @@ export function ActionMenu({
         }
         return
       }
-      if (e.type === 'scroll' || !(menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) setOpen(false)
+      // A scroll moves the menu with its button (clicking a button at the page's edge can scroll it into
+      // view); it closes once the button has gone off screen.
+      if (e.type === 'scroll') {
+        if (menuRef.current?.contains(e.target as Node)) return
+        const r = buttonRef.current?.getBoundingClientRect()
+        if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        else placeMenu()
+        return
+      }
+      if (!(menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) setOpen(false)
     }
     document.addEventListener('mousedown', close)
     document.addEventListener('keydown', close, true)

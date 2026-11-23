@@ -1,4 +1,4 @@
-// C1 and C3 (test/JOURNEYS.md): contacts added by hand and by import, and what a tick acts on.
+// C1, C3 and C5 (test/JOURNEYS.md): contacts added by hand and by import, what a tick acts on, and a contact's page.
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -96,11 +96,47 @@ test('a contact added by hand is edited inline in the table and shows on their p
   await row.getByText('Cora Inline').click()
   await expect(page.getByRole('heading', { name: 'Cora Inline', level: 1 })).toBeVisible()
   const panel = aboutPanel(page)
-  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Copperwick')
+  await expect(panel).toContainText('Copperwick')
   await expect(info(panel, 'Job title')).toContainText('Head of Ops')
   await expect(info(panel, field)).toContainText('Gold')
 
   await deleteFields(page, 'C1 tier')
+  expect(problems()).toEqual([])
+})
+
+test('a contact’s page takes a note, a task ticked off from its summary, and shows their company', async ({ page, problems }) => {
+  const email = address('c5')
+  await createContact(page, { email, firstName: 'Nia', lastName: 'Record', company: 'Bramblefield', jobTitle: 'Head of Ops' })
+  const panel = await openContact(page, email)
+
+  // Who they are, at the top; their company in its own section.
+  await expect(page.getByRole('heading', { name: 'Nia Record', level: 1 })).toBeVisible()
+  await expect(page.getByText('Head of Ops at Bramblefield')).toBeVisible()
+  await expect(panel).toContainText('Bramblefield')
+
+  // A note, from the header's Note button, shows in the activity.
+  await page.getByRole('button', { name: 'Note', exact: true }).click()
+  await page.getByRole('textbox', { name: /^Note about/ }).fill('Asked for the security pack.')
+  await page.getByRole('button', { name: 'Save note' }).click()
+  const note = page.getByRole('listitem').filter({ hasText: 'Asked for the security pack.' })
+  await expect(note).toBeVisible()
+
+  // A task, added from the Tasks section, becomes the next step, and is ticked off from there.
+  const tasks = page.getByRole('region', { name: 'Tasks' })
+  await tasks.getByRole('button', { name: 'Add task' }).click()
+  await tasks.getByRole('textbox', { name: 'New task' }).fill('Send the security pack')
+  await tasks.getByRole('button', { name: 'Add task' }).click()
+  await expect(tasks.getByText('Send the security pack')).toBeVisible()
+  const tick = page.getByRole('button', { name: 'Mark “Send the security pack” done' })
+  await tick.click()
+  await expect(tick).toHaveCount(0)
+
+  // The note goes, after asking.
+  await note.getByRole('button', { name: 'Note actions' }).click()
+  await page.getByRole('menuitem', { name: 'Delete note' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete note' }).click()
+  await expect(note).toHaveCount(0)
+
   expect(problems()).toEqual([])
 })
 
@@ -194,7 +230,7 @@ test('a CSV import maps its columns, merges a duplicate, counts right and makes 
   // Ada's two rows made one contact: the second row's job title added, its blanks clearing nothing.
   let panel = await openContact(page, ada)
   await expect(page.getByRole('heading', { name: 'Ada Lovelace', level: 1 })).toBeVisible()
-  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Copperwick')
+  await expect(panel).toContainText('Copperwick')
   await expect(info(panel, 'Job title')).toContainText('CTO')
   await expect(info(panel, field)).toContainText('Gold')
 
@@ -202,7 +238,7 @@ test('a CSV import maps its columns, merges a duplicate, counts right and makes 
   panel = await openContact(page, xena)
   await expect(page.getByRole('heading', { name: 'Xena', level: 1 })).toBeVisible()
   await expect(info(panel, 'Job title')).toContainText('Founder')
-  await expect(panel.getByRole('region', { name: 'Company' })).toContainText('Quillmoor')
+  await expect(panel).toContainText('Quillmoor')
   await expect(info(panel, field)).toContainText('Bronze')
   await expect(page.getByText(list, { exact: true }).first()).toBeVisible()
 

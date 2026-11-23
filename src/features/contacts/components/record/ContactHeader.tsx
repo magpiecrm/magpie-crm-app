@@ -67,12 +67,15 @@ export function ContactHeader({
   const complete = useMutation({ mutationFn: (id: string) => updateTaskFn({ data: { id, done: true } }), onSuccess: changed })
   const status = emailStatus(contact.status)
   const job = contact.attributes.JOB_TITLE
-  const companyName = company?.name || contact.attributes.COMPANY
+  // Their own company field first: the record they're grouped under (by email domain) can be another name.
+  const typed = contact.attributes.COMPANY.trim()
+  const companyName = typed || company?.name || ''
+  const sameCompany = Boolean(company) && (!typed || typed.toLowerCase() === company!.name.trim().toLowerCase())
   const companyNode = companyName ? (
-    company ? (
+    company && sameCompany ? (
       <Link
         to="/marketing/companies/$id"
-        params={{ id: company.id }}
+        params={{ id: company!.id }}
         className="font-medium text-foreground underline decoration-foreground/25 underline-offset-4 hover:text-accent hover:decoration-accent"
       >
         {companyName}

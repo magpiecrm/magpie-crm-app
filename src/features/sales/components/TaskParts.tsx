@@ -126,16 +126,20 @@ function TaskMenu({
   const remove = useMutation({ mutationFn: () => deleteTaskFn({ data: { id: task.id } }), onSuccess: changed })
   const done = Boolean(task.done_at)
 
-  useLayoutEffect(() => {
-    if (!open) return setPlace(null)
+  const placeMenu = () => {
     const r = buttonRef.current!.getBoundingClientRect()
     const h = menuRef.current?.offsetHeight ?? 260
     const top = window.innerHeight - r.bottom < h + 12 && r.top > h + 12 ? r.top - h - 4 : r.bottom + 4
     setPlace({ top, left: Math.max(8, Math.min(r.right - 208, window.innerWidth - 216)) })
+  }
+  useLayoutEffect(() => {
+    if (!open) return setPlace(null)
+    placeMenu()
   }, [open])
   useEffect(() => {
     if (!open) return
-    menuRef.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus()
+    // Without scrolling: the menu may not be in its place yet.
+    menuRef.current?.querySelector<HTMLElement>('[role=menuitem]')?.focus({ preventScroll: true })
     const close = (e: Event) => {
       if (e instanceof KeyboardEvent) {
         if (e.key === 'Escape') {
@@ -144,7 +148,16 @@ function TaskMenu({
         }
         return
       }
-      if (e.type === 'scroll' || !(menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) setOpen(false)
+      // A scroll moves the menu with its button (clicking one at the page's edge can scroll it into view);
+      // it closes once the button has gone off screen.
+      if (e.type === 'scroll') {
+        if (menuRef.current?.contains(e.target as Node)) return
+        const r = buttonRef.current?.getBoundingClientRect()
+        if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        else placeMenu()
+        return
+      }
+      if (!(menuRef.current?.contains(e.target as Node) || buttonRef.current?.contains(e.target as Node))) setOpen(false)
     }
     document.addEventListener('mousedown', close)
     document.addEventListener('keydown', close)
