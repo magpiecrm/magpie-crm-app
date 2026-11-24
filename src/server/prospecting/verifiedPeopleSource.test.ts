@@ -205,6 +205,22 @@ describe('verifiedPeopleSearch', () => {
       expect(keywordFilter('cafe')!(who('Owner', 'Café Rouge'))).toBe(true)
       expect(keywordFilter('e-commerce')!(who('CEO', 'Shopwise', 'E-Commerce'))).toBe(true)
     })
+    it('takes a word written as one that is two there, and the common shorthands for industries', () => {
+      const lanternfish = who('VP Sales', 'Lanternfish Health', 'Hospitals and Health Care')
+      expect(keywordFilter('healthcare')!(lanternfish)).toBe(true)
+      expect(keywordFilter('health care')!(lanternfish)).toBe(true)
+      expect(keywordFilter('ecommerce')!(who('CEO', 'Shopwise', 'E-Commerce'))).toBe(true)
+      expect(keywordFilter('saas')!(who('VP Sales', 'Copperwick Analytics', 'Software Development'))).toBe(true)
+      expect(keywordFilter('fintech')!(who('VP Sales', 'Ledgerly', 'Financial Services'))).toBe(true)
+      expect(keywordFilter('fintech')!(who('VP Sales', 'Northbank', 'Banking'))).toBe(true)
+      expect(keywordFilter('proptech')!(who('Founder', 'Keyhaus', 'Real Estate'))).toBe(true)
+      // Still only what's there: the words in a row, at a word's start, and a shorthand's whole phrase.
+      expect(keywordFilter('healthcare')!(who('VP Sales', 'Acme', 'Health and Fitness'))).toBe(false)
+      expect(keywordFilter('carehealth')!(lanternfish)).toBe(false)
+      expect(keywordFilter('ealthcare')!(lanternfish)).toBe(false)
+      expect(keywordFilter('saas')!(who('VP Sales', 'Harbour Freight', 'Logistics'))).toBe(false)
+      expect(keywordFilter('proptech')!(who('Founder', 'Keyhaus', 'Real Time Systems'))).toBe(false)
+    })
     it('is no filter without a keyword', () => {
       expect(keywordFilter(undefined)).toBeNull()
       expect(keywordFilter('  ')).toBeNull()
@@ -295,7 +311,7 @@ describe('verifiedPeopleSearch', () => {
       expect(sent[0]).toMatchObject({ places: ['Boston', 'Seattle'], placesOnly: true })
       expect(sent[1]).not.toHaveProperty('places')
       expect(page.nextCursor).toBe('places:12')
-      expect(finish).toHaveBeenCalledWith([], true, true)
+      expect(finish).toHaveBeenCalledWith([], true, true, false)
       expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ page: 'more' }), counts: expect.objectContaining({ places: 2 }) }))
     })
 
@@ -303,7 +319,7 @@ describe('verifiedPeopleSearch', () => {
       const finish = vi.fn(() => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }))
       const c = { start: async () => ({ id: 's1' }), poll: async () => null }
       await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0, funnel: { ...funnel(), finish } })
-      expect(finish).toHaveBeenCalledWith([], false, true)
+      expect(finish).toHaveBeenCalledWith([], false, true, false)
     })
 
     describe('filling the page from the next cities', () => {
@@ -398,7 +414,7 @@ describe('verifiedPeopleSearch', () => {
         expect(polled).toBe(true)
         expect(page.items).toHaveLength(1)
         expect(page.warnings).toEqual([])
-        expect(r.f.finish).toHaveBeenCalledWith(page.items, false, true)
+        expect(r.f.finish).toHaveBeenCalledWith(page.items, false, true, false)
       })
     })
 
@@ -456,7 +472,7 @@ describe('verifiedPeopleSearch', () => {
         expect(page.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
         expect(h.starts).toHaveLength(2)
         expect(h.polls.filter(([id]) => id === 's1')).toHaveLength(2)
-        expect(next.finish).toHaveBeenCalledWith(page.items, true, true)
+        expect(next.finish).toHaveBeenCalledWith(page.items, true, true, false)
         expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ counts: expect.objectContaining({ hits: 3, heldOver: 2, rounds: 1 }) }))
         expect(held.size()).toBe(0)
       })
@@ -490,7 +506,7 @@ describe('verifiedPeopleSearch', () => {
         // The batch is read once more, from where it had got to, and stopped before the page's own cities are searched.
         expect(h.polls.filter(([id]) => id === 's1')).toEqual([['s1', 0], ['s1', 1], ['s1', 2]])
         expect(h.order).toEqual(['start', 'cancel s1', 'start'])
-        expect(next.finish).toHaveBeenCalledWith(res.items, true, true)
+        expect(next.finish).toHaveBeenCalledWith(res.items, true, true, false)
         expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'done', counts: expect.objectContaining({ hits: 4, heldOver: 3, rounds: 1 }) }))
       })
 
@@ -500,7 +516,7 @@ describe('verifiedPeopleSearch', () => {
         expect(res.items.map((p) => p.lastName)).toEqual(['two', 'three', 'four'])
         expect(h.cancel).toHaveBeenCalledWith('s1')
         expect(h.starts).toHaveLength(1)
-        expect(next.finish).toHaveBeenCalledWith(res.items, true, false)
+        expect(next.finish).toHaveBeenCalledWith(res.items, true, false, true)
         expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ stop: 'full', counts: expect.objectContaining({ hits: 3, heldOver: 3, rounds: 0 }) }))
       })
 
@@ -555,7 +571,7 @@ describe('verifiedPeopleSearch', () => {
         const page = await verifiedPeopleSearch({ titles: ['Founder'], count: 5, cursor: 'places:6' }, {}, { calls: busy, sleep, now: () => t, funnel: next, cutShort: held })
         expect(page.items.map((p) => p.lastName)).toEqual(['two'])
         expect(page.warnings[0]).toMatch(/busy/i)
-        expect(next.finish).toHaveBeenCalledWith(page.items, true, false)
+        expect(next.finish).toHaveBeenCalledWith(page.items, true, false, false)
       })
     })
 

@@ -79,7 +79,10 @@ vi.mock('../db', () => ({
     getEmailDomain: (d: string) => (emailDomains[d] ? { domain: d, ...emailDomains[d] } : null),
     knownAddressesAt: () => [],
     getDisclosures: () => disclosures,
-    upsertProspectCompanies: () => {},
+    upsertProspectCompanies: (entries: any[]) => {
+      // Only where a test asks to see it: elsewhere caching companies would change what later lookups find.
+      if (keepUpserts) for (const e of entries) prospectCompanies = [...prospectCompanies.filter((c) => c.ref !== e.ref), e]
+    },
     addSearchLog: (entry: any) => void searchLog.push(entry),
     getProspectingSettings: () => prospectingSettings,
     saveProspectingSettings: (s: typeof prospectingSettings) => void (prospectingSettings = s),
@@ -110,6 +113,8 @@ const companySites = new Map<string, { domain: string | null; at: string }>()
 let disclosures: Array<{ event: string; profile_hash: string | null; contact_hash: string }> = []
 let contacts: Array<{ email: string; job_title: string; company: string; email_status?: string; first_name?: string; last_name?: string }> = []
 let prospectCompanies: Array<{ ref: string; name: string; domain: string | null; headcount?: number | null; slug?: string | null }> = []
+/** Whether upsertProspectCompanies keeps what it's given (prospectCompanies). */
+let keepUpserts = false
 // The CRM's own companies, for the Warm filter's names.
 let crmCompanies: Array<{ id: string; name: string; domain: string | null; linkedin_ref?: string | null }> = []
 // Campaign results, for the Warm signal (warmAccounts.ts).
@@ -150,6 +155,7 @@ beforeEach(() => {
   contacts = []
   prospectCompanies = []
   crmCompanies = []
+  keepUpserts = false
   recipients = []
   forgetWarmIndex()
   webSignalAnswers = {}
@@ -2044,6 +2050,60 @@ describe('the verified people search, through the funnel', () => {
       expect(starts[0]).toMatchObject({ companies: ['Acme'], companySlugs: [] })
       expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.kind)])).toEqual([['ana', ['warm']]])
       expect(res.warnings.join(' ')).not.toMatch(/nowhere to search/)
+    })
+
+    it('with Warm, a page that fills up offers Load more, which goes through the same companies again for the rest', async () => {
+      const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+      recipients = [{ campaign_id: 1, contact_email: 'ada@acme.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+      crmCompanies = [{ id: 'co1', name: 'Acme', domain: 'acme.com', linkedin_ref: null }]
+      const at = (handle: string) => person(handle, 'https://acme.com', { company: { name: 'Acme', slug: 'acme', url: null, industry: null, sizeBand: '11-50', employees: 30, website: 'https://acme.com' } })
+      hostFinds([at('ana'), at('ben')])
+      const first = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, fromStart: true }, { listening: () => true })
+      expect(first.items.map((p) => p.firstName)).toEqual(['ana'])
+      // Its only warm company has been searched, but not everyone there read.
+      expect(first.nextCursor).toBe('warm:0')
+      const more = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, cursor: first.nextCursor! }, { listening: () => true })
+      expect(more.items.map((p) => p.firstName)).toEqual(['ben'])
+      // Full again, so it may have more; the next finds nobody new, and that's everyone there.
+      expect(more.nextCursor).toBe('warm:0')
+      const last = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, cursor: more.nextCursor! }, { listening: () => true })
+      expect(last.items).toEqual([])
+      expect(last.nextCursor).toBeNull()
+    })
+
+    it("with Warm, looks up the LinkedIn page of a warm company the CRM named only by guessing from its domain", async () => {
+      const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+      keepUpserts = true
+      recipients = [{ campaign_id: 1, contact_email: 'ada@quillmoor.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+      // syncCompanies' guess from the domain; LinkedIn calls it Quillmoor Studio.
+      crmCompanies = [{ id: 'co1', name: 'Quillmoor', domain: 'quillmoor.com', linkedin_ref: null }]
+      const studio = { ref: 'quillmoor-studio', name: 'Quillmoor Studio', domain: 'quillmoor.com', industry: 'Design Services', headcount: 12, companyType: null, country: 'GB', linkedinUrl: 'https://www.linkedin.com/company/quillmoor-studio', source: 'socialfetch' }
+      const other = { ...studio, ref: 'quillmoor-bakery', name: 'Quillmoor', domain: 'quillmoor-bakery.co.uk', linkedinUrl: 'https://www.linkedin.com/company/quillmoor-bakery' }
+      searchCompaniesMock.mockImplementationOnce(async () => ({ items: [other, studio], nextCursor: null, reportedTotal: 2, warnings: [], details: [], requests: 1 }) as any)
+      hostFinds([person('ana', 'https://quillmoor.com', { company: { name: 'Quillmoor Studio', slug: 'quillmoor-studio', url: null, industry: null, sizeBand: '11-50', employees: 12, website: 'https://quillmoor.com' } })])
+      const res = await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      // Looked up by the guessed name, and only the result at its own domain taken.
+      expect(searchCompaniesMock).toHaveBeenLastCalledWith({ keyword: 'Quillmoor' })
+      expect(asked.find((a) => a.method === 'POST')?.body).toMatchObject({ companies: ['Quillmoor Studio'], companySlugs: ['quillmoor-studio'] })
+      expect(res.items.map((p) => [p.firstName, p.signals?.map((s) => s.kind)])).toEqual([['ana', ['warm']]])
+      // Kept with the other companies, so it isn't looked up again.
+      searchCompaniesMock.mockClear()
+      asked = []
+      await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      expect(searchCompaniesMock).not.toHaveBeenCalled()
+    })
+
+    it('with Warm, keeps the guessed name where no page at its domain is found, and does not look again for a day', async () => {
+      const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+      recipients = [{ campaign_id: 1, contact_email: 'ada@brindleway.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+      crmCompanies = [{ id: 'co1', name: 'Brindleway', domain: 'brindleway.com', linkedin_ref: null }]
+      searchCompaniesMock.mockImplementationOnce(async () => ({ items: [], nextCursor: null, reportedTotal: 0, warnings: [], details: [], requests: 1 }) as any)
+      hostFinds([])
+      await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      expect(asked.find((a) => a.method === 'POST')?.body).toMatchObject({ companies: ['Brindleway'], companySlugs: [] })
+      searchCompaniesMock.mockClear()
+      await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      expect(searchCompaniesMock).not.toHaveBeenCalled()
     })
 
     it('never sends a numeric LinkedIn id as a company page name: the name still finds them', async () => {

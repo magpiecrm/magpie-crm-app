@@ -11,7 +11,7 @@
 // Only counts leave this file, never who.
 
 import type { DbSchema } from '../db'
-import { workDomain } from '../sales/companies'
+import { nameFromDomain, workDomain } from '../sales/companies'
 import type { Signal } from './types'
 
 const DAYS = 90
@@ -30,6 +30,12 @@ export interface WarmSummary {
   /** LinkedIn company page name, where known: the host's verified search goes inside a company by it, or by name. */
   slug: string | null
   name: string | null
+  /**
+   * `name` is only what the CRM guessed from the domain ("Quillmoor" for
+   * quillmoor.co.uk), with no LinkedIn page known: an employer filter by name
+   * is unlikely to match it until its page is found.
+   */
+  nameGuessed: boolean
   replies: number
   clicks: number
   /** People who opened (scanners left out). */
@@ -173,7 +179,9 @@ export function warmIndex(data: Data, now = new Date()): WarmIndex {
       domain: t.domain,
       ref,
       slug,
-      name: company?.name ?? page?.name ?? null,
+      // LinkedIn's own name where its page is known: what profiles give as the employer.
+      name: page?.name ?? company?.name ?? null,
+      nameGuessed: !page && Boolean(company && t.domain && company.name === nameFromDomain(t.domain)),
       replies: t.replies,
       clicks: t.clicks,
       openers: t.openers.size,

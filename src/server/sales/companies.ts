@@ -30,7 +30,7 @@ export const workDomain = (email: string) => {
 const nameKey = (name: string) => name.trim().toLowerCase().replace(/\s+(ltd|limited|plc|llc|inc|gmbh)\.?$/, '')
 
 /** "larkspur-labs.co.uk" → "Larkspur Labs", for a company known only by its domain. */
-function nameFromDomain(domain: string): string {
+export function nameFromDomain(domain: string): string {
   const label = domain.split('.')[0] ?? domain
   return label
     .split(/[-_]/)

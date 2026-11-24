@@ -106,19 +106,53 @@ const plainWords = (text: string) =>
     .trim()
 
 /**
+ * Shorthands people search by that LinkedIn's industries spell out: each also
+ * matches as any of these phrases. "fintech" is the keyword field's own example.
+ */
+const KEYWORD_SHORTHANDS: Record<string, string[]> = {
+  saas: ['software'],
+  fintech: ['financial services', 'banking', 'financial technology'],
+  insurtech: ['insurance'],
+  proptech: ['real estate'],
+  healthtech: ['health'],
+  medtech: ['medical'],
+  edtech: ['education', 'e learning'],
+  martech: ['marketing'],
+  adtech: ['advertising'],
+  legaltech: ['legal'],
+  hrtech: ['human resources'],
+  cleantech: ['renewable', 'environmental services'],
+  ai: ['artificial intelligence'],
+}
+
+/** Whether `w` begins a word of `words`, or is spelled across words in a row ("healthcare" in "health care"). */
+function beginsWord(words: string[], w: string): boolean {
+  for (let i = 0; i < words.length; i++) {
+    let joined = words[i]
+    // Join the next words on while they still spell the start of it.
+    for (let j = i + 1; j < words.length && joined.length < w.length && w.startsWith(joined); j++) joined += words[j]
+    if (joined.startsWith(w)) return true
+  }
+  return false
+}
+
+/**
  * The keyword, as a filter the host can't apply itself (it searches by job
  * title, place, industry, size and employer, never free text): each of its
  * words has to begin a word of the person's job title, their employer's name
  * or the employer's industry, so "software" keeps a VP Sales at a Software
- * Development company and "logistic" one at Bramblefield Logistics. Null with
- * no keyword.
+ * Development company and "logistic" one at Bramblefield Logistics. A word
+ * written as one that's two there counts ("healthcare" for Health Care), and
+ * so do the shorthands above ("saas" for Software Development). Null with no
+ * keyword.
  */
 export function keywordFilter(keyword: string | null | undefined): ((person: { title?: string | null; company?: { name?: string | null; industry?: string | null } | null }) => boolean) | null {
   const words = plainWords(keyword ?? '').split(' ').filter(Boolean)
   if (!words.length) return null
   return (person) => {
-    const text = ` ${plainWords([person.title, person.company?.name, person.company?.industry].filter(Boolean).join(' '))}`
-    return words.every((w) => text.includes(` ${w}`))
+    const text = plainWords([person.title, person.company?.name, person.company?.industry].filter(Boolean).join(' ')).split(' ').filter(Boolean)
+    const has = (w: string) => beginsWord(text, w) || (KEYWORD_SHORTHANDS[w] ?? []).some((phrase) => phrase.split(' ').every((p) => beginsWord(text, p)))
+    return words.every(has)
   }
 }
 
@@ -381,10 +415,11 @@ export interface VerifiedFunnel {
   /**
    * Everyone the search kept, whether it ran, and whether it searched its own
    * cities (not where an earlier page's cut-short batch filled it, or the host
-   * was busy after it): what the funnel did, for the log, usage and the page,
-   * and where the next search takes up.
+   * was busy after it), and whether the page filled before its round ran out:
+   * what the funnel did, for the log, usage and the page, and where the next
+   * search takes up.
    */
-  finish(items: PersonResult[], ran: boolean, citiesSearched?: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
+  finish(items: PersonResult[], ran: boolean, citiesSearched?: boolean, full?: boolean): { counts: Record<string, number>; usage: Parameters<typeof import('../usage').recordUsage>[0]; details: string[]; resumed: boolean; nextCursor: string | null }
   /**
    * Where this search starts (a page's cursor, or where the last one stopped),
    * and a key for any point of a search with these filters: a batch the time
@@ -634,7 +669,7 @@ export async function verifiedPeopleSearch(
     if (!(await runRound())) stop = 'source failed'
   }
 
-  const kept = funnel.finish(items, stop !== 'source failed', rounds > 0)
+  const kept = funnel.finish(items, stop !== 'source failed', rounds > 0, stop === 'full')
   if (cutShort) {
     const { id } = cutShort
     const cancel = async () => calls.cancel?.(id)

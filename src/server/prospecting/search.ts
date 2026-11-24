@@ -7,7 +7,7 @@ import { refineFromProfile } from './refine'
 import { bucketOf, PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type Signal, type SignalKind } from './types'
 import { hasSignal, newInRoleSignal, signalKey, withSignals } from './signals'
 import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companySignals'
-import { warmFor, warmIndex, warmSignal, warmTargets, warmTargetsByName, warmWithoutName, warmWithoutRef } from './warmAccounts'
+import { forgetWarmIndex, warmFor, warmIndex, warmSignal, warmTargets, warmTargetsByName, warmWithoutName, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
 import { FINDER_VERSION, unverifiableEntries } from './unverifiable'
 import { guessesChangedFor } from './patterns'
@@ -735,6 +735,41 @@ function warmCompaniesByName(db: Db, filters: PeopleFilters) {
     const n = (c.summary.ref ? headcount.get(c.summary.ref) : undefined) ?? (c.ref ? headcount.get(c.ref) : undefined)
     return !sizes.length || n === null || n === undefined || inHeadcountBuckets(n, sizes)
   })
+}
+
+/** Domains whose LinkedIn page was looked for lately, found or not: not looked for again for a day. */
+const warmPagesLookedFor = new Map<string, number>()
+const WARM_PAGE_RETRY_MS = 24 * 3_600_000
+/** At most this many looked for per search, the most recently warm first. */
+const WARM_PAGES_PER_SEARCH = 5
+
+/**
+ * The LinkedIn pages of warm companies the CRM only named by guessing from
+ * their domain ("Quillmoor" for quillmoor.co.uk): a company search by that
+ * name, taking only a result with the same domain, kept with the other
+ * companies (prospect_companies). The host's verified search then goes inside
+ * them by LinkedIn's own name and page name, as profiles give their employer.
+ * Company data only, never who.
+ */
+async function findWarmPages(db: Db, now = Date.now()): Promise<void> {
+  const todo = warmIndex(db.data)
+    .all.filter((s) => s.nameGuessed && s.domain && !(now - (warmPagesLookedFor.get(s.domain) ?? -Infinity) < WARM_PAGE_RETRY_MS))
+    .slice(0, WARM_PAGES_PER_SEARCH)
+  if (!todo.length) return
+  const { getSource } = await import('./runtime')
+  const source = getSource()
+  let found = false
+  for (const s of todo) {
+    warmPagesLookedFor.set(s.domain!, now)
+    const res = await Promise.resolve()
+      .then(() => source.searchCompanies({ keyword: s.name! }))
+      .catch(() => null)
+    const page = res?.items.find((c) => c.domain?.toLowerCase().replace(/^www\./, '') === s.domain)
+    if (!page) continue
+    db.upsertProspectCompanies([{ ref: page.ref, name: page.name, domain: s.domain, domain_source: 'socialfetch', headcount: page.headcount, slug: slugFromCompanyUrl(page.linkedinUrl) }])
+    found = true
+  }
+  if (found) forgetWarmIndex()
 }
 
 /** The Warm filter with no warm companies at all to start from. */
@@ -1771,6 +1806,8 @@ async function verifiedFunnel(
   const placesOf = (cursor: string | null): VerifiedFunnel['plan'] & PlacesPlan =>
     input.company ? { places: [], placesOnly: false, next: null } : warmTargetsHere ? warmRound(warmTargetsHere, titleCount, cursor) : placesFor(input.country, titleCount, cursor)
   let plan = placesOf(start)
+  // The cursor that gave `plan`: a full page inside companies goes through them again from it.
+  let planCursor = start
   const resumed = plan.placesOnly
   // Where the cities of the batch under way start: a batch that failed hasn't been through them.
   let roundStart = input.cursor ?? null
@@ -1812,6 +1849,7 @@ async function verifiedFunnel(
     nextRound() {
       if (!plan.next) return false
       roundStart = plan.next
+      planCursor = plan.next
       plan = placesOf(plan.next)
       warmSearched += plan.companies?.length ?? 0
       return true
@@ -1827,12 +1865,16 @@ async function verifiedFunnel(
       spared += batch.spared
       return batch.items
     },
-    finish(items, ran, citiesSearched = ran) {
+    finish(items, ran, citiesSearched = ran, full = false) {
       for (const p of items) shownHashes.add(hashOf(p))
       keepShown(positionKey, shownHashes)
+      // Inside companies (Warm's, or the one chosen), a page that filled up has left people there
+      // unread: Load more goes through the same companies again (nobody shown twice) before
+      // moving on, rather than on to the next few, or to nothing after the last.
+      const again = full && (input.company || warmTargetsHere) ? (planCursor ?? (warmTargetsHere ? 'warm:0' : 'company:0')) : null
       // A search that failed hasn't been through its cities: the next one takes them. Nor has
       // one an earlier page's cut-short batch filled, which leaves the next where it started.
-      const next = !ran ? roundStart : citiesSearched ? plan.next : start
+      const next = !ran ? roundStart : citiesSearched ? (again ?? plan.next) : start
       if (ran || next !== (input.cursor ?? null)) db.setSearchPosition(positionKey, next)
       const hiddenPeople = items.filter(hidden)
       const shared = items.filter((p) => p.shared && !hidden(p)).length
@@ -1933,6 +1975,8 @@ async function searchPeopleUnmasked(
       // Refused, not ignored: it would otherwise leave everyone out, or nobody.
       if (filters.signals?.includes('new_in_role')) throw new Error(NEW_IN_ROLE_NOT_WITH_TITLE)
       // Warm searches inside the workspace's warm companies: with none to search, nothing is.
+      // Those named only by a guess from their domain have their LinkedIn page looked for first.
+      if (!company && filters.signals?.includes('warm')) await findWarmPages(db)
       if (!company && filters.signals?.includes('warm') && !warmCompaniesByName(db, filters).length) {
         const index = warmIndex(db.data)
         const noName = warmWithoutName(index)
