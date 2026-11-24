@@ -126,13 +126,13 @@ export function TagInput({ label, tags, onChange, placeholder, suggestions = [],
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => {
-              // Commit whatever was typed, even when suggestions exist —
-              // otherwise clicking away silently discards the input. The delay
-              // lets a suggestion click land first (it fires on mouseDown).
-              setTimeout(() => {
-                addTag(inputVal)
-                setIsFocused(false)
-              }, 200)
+              // Commit whatever was typed, even when suggestions exist, at once:
+              // otherwise clicking away silently discards the input, and a button
+              // clicked next (Search people) would act before it's a tag. A
+              // suggestion picked fires on mouseDown, before this blur, so it's
+              // already added and the box emptied by now.
+              addTag(inputVal)
+              setIsFocused(false)
             }}
           />
         </div>

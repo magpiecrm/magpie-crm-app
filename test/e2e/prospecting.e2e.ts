@@ -196,6 +196,21 @@ test.describe('P1 search people by job title', () => {
     expect(problems()).toEqual([])
   })
 
+  test('a job title typed but not entered is searched for on the first click', async ({ page, problems, host }) => {
+    test.setTimeout(4 * 60_000)
+    await page.goto('/collection/prospect-search')
+    await page.waitForLoadState('networkidle')
+    const form = page.locator('form').first()
+    await form.getByRole('textbox', { name: 'Job titles' }).fill('VP Sales')
+    // No Enter: clicking Search people takes the title as it is.
+    await untilSearched(page, () => form.getByRole('button', { name: 'Search people' }).click())
+    await expect(form.getByRole('button', { name: 'Remove VP Sales', exact: true })).toBeVisible()
+    await expect(page.getByText('Enter a job title or keyword, or pick a company.')).toBeHidden()
+    const asked = (await host.log('/v2/linkedin/people/searches')).filter((c) => c.method === 'POST')
+    expect(asked.at(-1)?.body?.titles).toEqual(['VP Sales'])
+    expect(problems()).toEqual([])
+  })
+
   test('a country narrows them to the people there', async ({ page, problems }) => {
     test.setTimeout(4 * 60_000)
     await searchPeople(page, { titles, country: 'United Kingdom', includeContacts: true })
