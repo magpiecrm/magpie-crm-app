@@ -99,6 +99,7 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
     })
 
     const { contactActivity, contactSurveyResponses } = await import('../contactActivity')
+    const { sales } = await import('../sales')
 
     return {
       success: true,
@@ -120,8 +121,10 @@ export const getContactDetailsFn = createServerFn({ method: 'GET' })
       lists,
       campaigns,
       sequences: (await import('../sequences')).sequences.forContact(contact.email),
+      replies: (await import('../sequences')).sequences.repliesForContact(contact.email),
       surveyResponses: contactSurveyResponses(contact.email),
       activity: contactActivity(contact.email),
+      ...sales.contactRecord(contact.email),
     }
   })
 

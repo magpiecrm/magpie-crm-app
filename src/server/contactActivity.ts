@@ -17,6 +17,10 @@ export interface ContactActivity {
     | 'survey_completed'
   at: string
   label: string
+  /** What it was about, without the verb: the campaign, sequence email, form or survey's name. */
+  name: string
+  /** Events about the same email, form submission or survey response share this, so a page can show them as one. */
+  ref: string
   /** In-app link to the related record. */
   url?: string
 }
@@ -61,29 +65,33 @@ export function contactActivity(email: string): ContactActivity[] {
       const step = sequence ? sequence.steps.findIndex(st => st.id === campaign.step_id) + 1 : 0
       const name = `${sequence?.name ?? 'Deleted sequence'}${step ? `, email ${step}` : ''}`
       const url = sequence ? `/sales/sequences/${sequence.id}` : undefined
-      if (r.sent_at) events.push({ type: 'sequence_sent', at: r.sent_at, label: `Sent "${name}"`, url })
-      if (r.opened_at) events.push({ type: 'sequence_opened', at: r.opened_at, label: `Opened "${name}"`, url })
-      if (r.clicked_at) events.push({ type: 'sequence_clicked', at: r.clicked_at, label: `Clicked a link in "${name}"`, url })
-      if (r.replied_at) events.push({ type: 'sequence_replied', at: r.replied_at, label: `Replied to "${name}"`, url })
+      const ref = `email:${r.campaign_id}`
+      if (r.sent_at) events.push({ type: 'sequence_sent', at: r.sent_at, label: `Sent "${name}"`, name, ref, url })
+      if (r.opened_at) events.push({ type: 'sequence_opened', at: r.opened_at, label: `Opened "${name}"`, name, ref, url })
+      if (r.clicked_at) events.push({ type: 'sequence_clicked', at: r.clicked_at, label: `Clicked a link in "${name}"`, name, ref, url })
+      if (r.replied_at) events.push({ type: 'sequence_replied', at: r.replied_at, label: `Replied to "${name}"`, name, ref, url })
       continue
     }
     const name = campaign?.name ?? `Campaign #${r.campaign_id}`
     const url = `/marketing/campaigns/${r.campaign_id}`
-    if (campaign?.sent_at) events.push({ type: 'campaign_sent', at: campaign.sent_at, label: `Sent "${name}"`, url })
-    if (r.opened_at) events.push({ type: 'campaign_opened', at: r.opened_at, label: `Opened "${name}"`, url })
-    if (r.clicked_at) events.push({ type: 'campaign_clicked', at: r.clicked_at, label: `Clicked a link in "${name}"`, url })
+    const ref = `email:${r.campaign_id}`
+    const sentAt = r.sent_at ?? campaign?.sent_at
+    if (sentAt) events.push({ type: 'campaign_sent', at: sentAt, label: `Sent "${name}"`, name, ref, url })
+    if (r.opened_at) events.push({ type: 'campaign_opened', at: r.opened_at, label: `Opened "${name}"`, name, ref, url })
+    if (r.clicked_at) events.push({ type: 'campaign_clicked', at: r.clicked_at, label: `Clicked a link in "${name}"`, name, ref, url })
   }
 
   for (const s of (db.data.form_submissions ?? []).filter(f => f.contact_email.toLowerCase() === normalized)) {
-    const form = db.getForm(s.form_id)
-    events.push({ type: 'form_submitted', at: s.submitted_at, label: `Submitted form "${form?.name ?? 'Deleted form'}"`, url: `/marketing/forms/${s.form_id}` })
+    const name = db.getForm(s.form_id)?.name ?? 'Deleted form'
+    events.push({ type: 'form_submitted', at: s.submitted_at, label: `Submitted form "${name}"`, name, ref: `form:${s.form_id}:${s.submitted_at}`, url: `/marketing/forms/${s.form_id}` })
   }
 
   for (const r of db.getSurveyResponsesForContact(normalized)) {
     const name = db.getSurvey(r.survey_id)?.name ?? 'Deleted survey'
     const url = `/marketing/surveys/${r.survey_id}`
-    events.push({ type: 'survey_started', at: r.started_at, label: `Started survey "${name}"`, url })
-    if (r.completed_at) events.push({ type: 'survey_completed', at: r.completed_at, label: `Completed survey "${name}"`, url })
+    const ref = `survey:${r.id}`
+    events.push({ type: 'survey_started', at: r.started_at, label: `Started survey "${name}"`, name, ref, url })
+    if (r.completed_at) events.push({ type: 'survey_completed', at: r.completed_at, label: `Completed survey "${name}"`, name, ref, url })
   }
 
   return events.sort((a, b) => b.at.localeCompare(a.at))

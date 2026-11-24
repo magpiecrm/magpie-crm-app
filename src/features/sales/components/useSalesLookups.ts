@@ -51,5 +51,7 @@ export function useRefreshSales() {
     queryClient.invalidateQueries({ queryKey: queryKeys.sales.deals() })
     queryClient.invalidateQueries({ queryKey: queryKeys.sales.companies() })
     if (dealId) queryClient.invalidateQueries({ queryKey: queryKeys.sales.deal(dealId) })
+    // A contact's page lists their deals.
+    queryClient.invalidateQueries({ queryKey: queryKeys.email.contact('').slice(0, 2) })
   }
 }

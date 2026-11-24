@@ -37,6 +37,13 @@ export const sales = {
         .map((c) => ({ email: c.email, name: [c.first_name, c.last_name].filter(Boolean).join(' ') || null, job_title: c.job_title || null, status: c.status }))
       return { company, contacts, deals: deals.listDeals(data, { companyId: id }), activities: deals.companyActivity(data, id) }
     }),
+  /** What a contact's page shows from sales: their company, their deals and the notes about them. */
+  contactRecord: (email: string) =>
+    read((data) => {
+      const companyId = data.contacts.find((c) => c.email === email.trim().toLowerCase())?.company_id
+      const company = companyId ? (companies.listCompanies(data).find((c) => c.id === companyId) ?? null) : null
+      return { company, deals: deals.listDeals(data, { contactEmail: email }), notes: deals.contactNotes(data, email) }
+    }),
   createCompany: (input: companies.CompanyInput & { name: string }) => write((data) => companies.createCompany(data, input)),
   updateCompany: (id: string, input: companies.CompanyInput) => write((data) => companies.updateCompany(data, id, input)),
   deleteCompany: (id: string) => write((data) => companies.deleteCompany(data, id)),

@@ -82,7 +82,7 @@ test('a form built and published makes a contact from a visitor, and sends them 
   // A contact, with what they typed, on the form's list.
   await page.goto(`/marketing/contacts?contact=${encodeURIComponent(visitor.email)}`)
   await expect(page.getByRole('heading', { name: `${visitor.first} ${visitor.last}`, level: 1 })).toBeVisible()
-  const panel = page.locator('div').filter({ has: page.getByRole('heading', { name: 'Information', exact: true }) }).last()
+  const panel = page.getByRole('complementary', { name: 'About this contact' })
   await expect(panel).toContainText(visitor.company)
   await expect(panel).toContainText(visitor.job)
   await expect(page.getByText(list, { exact: true })).toBeVisible()

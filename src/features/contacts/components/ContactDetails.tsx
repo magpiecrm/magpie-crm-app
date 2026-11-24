@@ -1,40 +1,53 @@
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AlertCircle, ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { queryKeys } from '../../../queryKeys'
-import { getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn, resubscribeContactFn } from '../../../server/functions'
-import { 
-  ArrowLeft, 
-  Mail, 
-  Phone, 
-  Building2, 
-  Briefcase, 
-  CheckCircle2, 
-  AlertCircle, 
-  List,
-  BellOff,
-  AlertTriangle,
-  RefreshCw
-} from 'lucide-react'
-import { Avatar } from '../../../components/ui/Avatar'
+import { deleteContactsFn, getContactDetailsFn, getDefaultSenderFn, sendIndividualEmailFn } from '../../../server/functions'
 import { Dialog, DialogBody, DialogFooter, MetaList } from '../../../components/ui/Dialog'
 import { Field, INPUT_CLASS } from '../../../components/ui/Field'
+import { Notice } from '../../../components/ui/Notice'
 import { toast } from '../../../components/ui/toast'
+import { confirmDialog } from '../../../components/ui/confirm'
 import { Button } from '../../../components/ui/Button'
-import { ContactCustomFields } from './ContactCustomFields'
-import { ContactSurveysTab } from './ContactSurveysTab'
-import { ContactHistoryTab } from './ContactHistoryTab'
-import { FollowUpButton, RecordTasks } from '../../sales/components/TaskParts'
+import { Section, SECTION_ACTION } from '../../../components/ui/RecordSection'
+import { SegmentedTabs } from '../../templates/components/SegmentedTabs'
+import { useIsDesktop } from '../../../hooks/useMediaQuery'
+import { RecordTasks } from '../../sales/components/TaskParts'
 import { ContactSequences } from '../../sequences/components/ContactSequences'
+import { buildFeed, matchesFilter, type FeedFilter } from '../record'
+import { ContactHeader } from './record/ContactHeader'
+import { ContactSidebar, emailStatus, useResubscribe } from './record/ContactSidebar'
+import { FeedLabel, FeedList, NoteComposer, UpcomingRow, type NoteComposerHandle } from './record/ContactFeed'
+
 interface ContactDetailsProps {
   email: string
   onClose: () => void
 }
 
+/** `details` is the side panel, a tab of its own on a phone. */
+type Tab = 'overview' | 'activity' | 'details'
+
+/** How many of the latest items the Overview shows before "View all". */
+const RECENT = 4
+
+const FILTERS: Array<{ value: FeedFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'emails', label: 'Emails' },
+  { value: 'notes', label: 'Notes' },
+  { value: 'forms', label: 'Forms and surveys' },
+]
+
 export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<'overview' | 'surveys' | 'history' | 'lists'>('overview')
-  const [isResubscribing, setIsResubscribing] = useState(false)
-  const [resubError, setResubError] = useState('')
+  const [tab, setTab] = useState<Tab>('overview')
+  const isDesktop = useIsDesktop()
+  const [filter, setFilter] = useState<FeedFilter>('all')
+  const note = useRef<NoteComposerHandle>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  // Kept here, so a half-written note survives a change of tab.
+  const [noteDraft, setNoteDraft] = useState('')
+  const [addingTask, setAddingTask] = useState(false)
+  const resubscribe = useResubscribe(email)
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
   // Who the email comes from: the workspace's default sender, as sending uses it.
   const { data: fromData } = useQuery({ queryKey: queryKeys.email.defaultSender(), queryFn: () => getDefaultSenderFn(), enabled: isEmailModalOpen })
@@ -45,64 +58,130 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const [emailBody, setEmailBody] = useState('')
   const [isSendingEmail, setIsSendingEmail] = useState(false)
 
-  const { data: detailsData, isLoading, error } = useQuery({
+  const {
+    data: detailsData,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: queryKeys.email.contact(email),
     queryFn: () => getContactDetailsFn({ data: { email } }),
+    // Fetched afresh each time the page opens: its deals, sequences and replies change on other pages.
+    staleTime: 0,
   })
+  const details = detailsData?.success ? detailsData : null
+  const feed = useMemo(
+    () =>
+      details
+        ? buildFeed(
+            details.activity,
+            details.notes,
+            details.replies,
+            details.surveyResponses.map((r) => ({ id: r.id, answers: r.answers })),
+          )
+        : [],
+    [details],
+  )
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(email) })
 
   if (isLoading) {
     return (
-      <div className="p-4 lg:p-8 space-y-6 animate-pulse">
-        <div className="h-6 w-24 bg-muted rounded" />
-        <div className="h-28 bg-muted rounded-2xl" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="h-64 bg-muted rounded-2xl md:col-span-2" />
-          <div className="h-64 bg-muted rounded-2xl" />
+      <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 animate-pulse">
+        <div className="h-5 w-32 bg-muted rounded" />
+        <div className="flex items-center gap-4">
+          <div className="h-14 w-14 rounded-full bg-muted" />
+          <div className="space-y-2">
+            <div className="h-6 w-48 bg-muted rounded" />
+            <div className="h-4 w-64 bg-muted rounded" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[21rem_minmax(0,1fr)] gap-6">
+          <div className="h-96 bg-muted rounded-xl" />
+          <div className="h-96 bg-muted rounded-xl" />
         </div>
       </div>
     )
   }
 
-  if (error || !detailsData || !detailsData.success) {
+  if (error || !details) {
     return (
-      <div className="p-4 lg:p-8 text-center space-y-4">
-        <AlertCircle className="w-12 h-12 text-destructive mx-auto" />
-        <h3 className="text-lg font-bold text-foreground">Failed to load contact</h3>
-        <p className="text-sm text-muted-foreground">{(detailsData as any)?.error || 'An unexpected error occurred.'}</p>
-        <button 
-          onClick={onClose}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-xl font-semibold text-sm cursor-pointer"
-        >
-          Go Back
-        </button>
+      <div className="max-w-7xl mx-auto p-4 md:p-8 py-16 text-center space-y-4">
+        <AlertCircle className="w-10 h-10 text-destructive mx-auto" aria-hidden />
+        <h1 className="text-lg font-semibold text-foreground">Couldn’t open this contact</h1>
+        <p className="text-sm text-muted-foreground">{(detailsData as { error?: string } | undefined)?.error || error?.message || 'Something went wrong.'}</p>
+        <Button variant="secondary" onClick={onClose} leftIcon={<ArrowLeft className="h-4 w-4" />}>
+          Back to contacts
+        </Button>
       </div>
     )
   }
 
-  const { contact, lists, campaigns, fieldDefs, surveyResponses, activity, sequences } = detailsData
-  const firstName = contact.attributes?.FIRSTNAME || ''
-  const lastName = contact.attributes?.LASTNAME || ''
-  const fullName = `${firstName} ${lastName}`.trim() || contact.email
+  const { contact, lists, campaigns, fieldDefs, sequences, company, deals } = details
+  const name = `${contact.attributes.FIRSTNAME} ${contact.attributes.LASTNAME}`.trim()
+  const firstName = contact.attributes.FIRSTNAME || name || 'them'
+  const status = emailStatus(contact.status)
+  const canEmail = status.tone === 'good'
 
-  // Calculate some realistic stats based on campaigns
-  const totalSent = campaigns.length
-  const totalOpened = campaigns.filter((c: any) => c.openedAt).length
-  const totalClicked = campaigns.filter((c: any) => c.clickedAt).length
-  
-  const openRate = totalSent > 0 ? (totalOpened / totalSent) * 100 : 0
-  const clickRate = totalSent > 0 ? (totalClicked / totalSent) * 100 : 0
+  const copyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(contact.email)
+      toast.success('Email address copied')
+    } catch {
+      toast.error("Couldn't copy the address")
+    }
+  }
+  const deleteContact = async () => {
+    const ok = await confirmDialog({
+      title: `Delete ${name || contact.email}?`,
+      message: 'They come off every list, sequence and deal, and their history goes with them. This can’t be undone.',
+      confirmLabel: 'Delete contact',
+      tone: 'danger',
+    })
+    if (!ok) return
+    try {
+      await deleteContactsFn({ data: { emails: [contact.email] } })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
+      toast.success('Contact deleted')
+      onClose()
+    } catch (err) {
+      toast.error("Couldn't delete the contact", { description: err instanceof Error ? err.message : undefined })
+    }
+  }
+  const nextSend = (sequences ?? []).filter((e) => e.next_send_at).sort((a, b) => a.next_send_at!.localeCompare(b.next_send_at!))[0]
+  const nextEmailAt = nextSend?.next_send_at ?? null
+
+  const upcoming = nextSend ? <UpcomingRow title={`${nextSend.sequence_name}, email ${nextSend.sent + 1}`} at={nextSend.next_send_at!} /> : null
+  // Replies nobody has answered go above the rest, so they aren't missed.
+  const waiting = feed.filter((i) => i.reply && !i.reply.answered)
+  const latest = feed.filter((i) => !waiting.includes(i)).slice(0, RECENT)
+
+  const openNote = () => {
+    if (view === 'details') setTab('overview')
+    if (noteOpen) note.current?.focus()
+    else setNoteOpen(true)
+  }
+  const addNoteButton = !noteOpen && (
+    <button type="button" onClick={openNote} className={SECTION_ACTION}>
+      <Plus aria-hidden className="h-3.5 w-3.5" />
+      Add note
+    </button>
+  )
+  const composer = noteOpen && (
+    <NoteComposer
+      ref={note}
+      email={contact.email}
+      name={firstName}
+      body={noteDraft}
+      onBody={setNoteDraft}
+      onAdded={refresh}
+      onClose={() => setNoteOpen(false)}
+    />
+  )
 
   const handleSendEmail = async () => {
-    if (!emailSubject || !emailBody) return
+    if (!emailSubject || !emailBody || !canEmail) return
     setIsSendingEmail(true)
     try {
-      await sendIndividualEmailFn({
-        data: {
-          email,
-          subject: emailSubject,
-          htmlContent: emailBody.replace(/\n/g, '<br/>')
-        }
-      })
+      await sendIndividualEmailFn({ data: { email, subject: emailSubject, htmlContent: emailBody.replace(/\n/g, '<br/>') } })
       setIsEmailModalOpen(false)
       setEmailSubject('')
       setEmailBody('')
@@ -115,344 +194,194 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
     }
   }
 
+  const shown = feed.filter((i) => matchesFilter(i, filter))
+  const tabs: Array<{ value: Tab; label: string; count?: number; phoneOnly?: boolean }> = [
+    { value: 'overview', label: 'Overview' },
+    { value: 'details', label: 'Details', phoneOnly: true },
+    { value: 'activity', label: 'Activity', count: feed.length },
+  ]
+  // On a desktop the details are always beside the tabs, so their tab is the Overview.
+  const view: Tab = isDesktop && tab === 'details' ? 'overview' : tab
+
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-6 animate-in fade-in duration-200">
-      {/* Top back button */}
-      <div>
-        <button
-          onClick={onClose}
-          className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-accent transition-colors group mb-2 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-          Back to contacts
-        </button>
-      </div>
+    <div className="max-w-7xl mx-auto p-4 md:p-8 animate-in fade-in duration-200">
+      <button
+        type="button"
+        onClick={onClose}
+        className="mb-5 inline-flex items-center gap-2 rounded-md-xs text-sm text-muted-foreground hover:text-foreground transition-colors group cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" aria-hidden />
+        Back to contacts
+      </button>
 
-      {/* Profile Header panel */}
-      <div className="bg-card border border-border rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between shadow-premium relative overflow-hidden">
-        <div className="flex items-center gap-4">
-          <Avatar name={fullName} size="lg" />
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">{fullName}</h1>
-              {lists.map((l: any) => (
-                <span 
-                  key={l.id} 
-                  className="px-2.5 py-0.5 bg-accent/10 border border-accent/15 text-accent rounded-full text-xs font-semibold"
-                >
-                  {l.name}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground font-mono">{contact.email}</p>
-          </div>
-        </div>
+      <ContactHeader
+        contact={contact}
+        name={name}
+        company={company}
+        deals={deals}
+        feed={feed}
+        nextEmailAt={nextEmailAt}
+        answeredAt={
+          (sequences ?? [])
+            .map((e) => e.last_answer_at)
+            .filter((at): at is string => Boolean(at))
+            .sort()
+            .at(-1) ?? null
+        }
+        repliedAt={
+          (sequences ?? [])
+            .map((e) => e.replied_at)
+            .filter((at): at is string => Boolean(at))
+            .sort()
+            .at(-1) ?? null
+        }
+        onEmail={() => setIsEmailModalOpen(true)}
+        onNote={openNote}
+        onAddTask={() => {
+          setTab('overview')
+          setAddingTask(true)
+        }}
+        onShowActivity={() => {
+          setFilter('emails')
+          setTab('activity')
+        }}
+        onCopy={() => void copyEmail()}
+        onDelete={() => void deleteContact()}
+      />
 
-        {/* Action utility row */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button className="px-3.5 py-2 border border-border rounded-xl text-xs font-bold text-foreground bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-1.5 cursor-pointer">
-            <Mail className="w-3.5 h-3.5" /> Note
-          </button>
-          <button 
-            onClick={() => setIsEmailModalOpen(true)}
-            className="px-3.5 py-2 border border-border rounded-xl text-xs font-bold text-foreground bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-1.5 cursor-pointer"
+      {!canEmail && (
+        <div id="contact-email-blocked">
+          <Notice
+            level="warning"
+            className="mt-4"
+            title={status.headline}
+            action={
+              <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()}>
+                Resubscribe
+              </Button>
+            }
           >
-            <Mail className="w-3.5 h-3.5" /> Email
-          </button>
-          <button className="px-3.5 py-2 border border-border rounded-xl text-xs font-bold text-foreground bg-muted/20 hover:bg-muted/40 transition-colors flex items-center gap-1.5 cursor-pointer">
-            <Phone className="w-3.5 h-3.5" /> Call
-          </button>
-          <FollowUpButton on={{ contactEmail: contact.email }} name={fullName} />
+            {status.text} One-to-one emails from this page won’t send either.
+            {resubscribe.error && <span className="block text-destructive">{resubscribe.error.message}</span>}
+          </Notice>
         </div>
-      </div>
+      )}
 
-      {/* Tabs list navigation */}
-      <div className="border-b border-border">
-        <div className="flex gap-8 -mb-px">
-          {(['overview', 'surveys', 'history', 'lists'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-4 text-sm font-semibold tracking-wide border-b-2 transition-all capitalize cursor-pointer ${
-                activeTab === tab
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab contents */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        
-        {/* Main Column */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {activeTab === 'overview' && (
-            <>
-              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Tasks</h3>
-                <RecordTasks on={{ contactEmail: contact.email }} />
-              </div>
-
-              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Sequences</h3>
-                <ContactSequences email={contact.email} items={sequences ?? []} />
-              </div>
-
-              {/* Campaign Stats Overview Grid */}
-              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Email campaigns</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="p-4 bg-muted/20 rounded-xl">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">Sent</span>
-                    <span className="text-3xl font-black text-foreground">{totalSent}</span>
-                  </div>
-                  <div className="p-4 bg-muted/20 rounded-xl">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">Delivered</span>
-                    <span className="text-3xl font-black text-foreground">{totalSent > 0 ? '100%' : '0%'}</span>
-                  </div>
-                  <div className="p-4 bg-muted/20 rounded-xl">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">Unique opening</span>
-                    <span className="text-3xl font-black text-foreground">{openRate.toFixed(0)}%</span>
-                  </div>
-                  <div className="p-4 bg-muted/20 rounded-xl">
-                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">Unique clicks</span>
-                    <span className="text-3xl font-black text-foreground">{clickRate.toFixed(0)}%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* History Timeline */}
-              <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4 border-b border-border pb-2">Recent history</h3>
-                {campaigns.length === 0 ? (
-                  <div className="py-12 text-center text-muted-foreground text-sm">
-                    No recent campaign activity for this contact.
-                  </div>
-                ) : (
-                  <div className="relative border-l border-border pl-6 space-y-6 my-2">
-                    {campaigns.map((c: any, i: number) => (
-                      <div key={i} className="relative group">
-                        {/* Dot indicator */}
-                        <div className="absolute -left-[31px] top-1 bg-accent text-accent-foreground rounded-full p-1 border-4 border-card">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-foreground">{c.campaignName}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Status: <span className="font-semibold text-accent capitalize">{c.status}</span>
-                            {c.openedAt && ` • Opened on ${new Date(c.openedAt).toLocaleString()}`}
-                            {c.clickedAt && ` • Clicked link on ${new Date(c.clickedAt).toLocaleString()}`}
-                          </p>
-                          {c.sentAt && (
-                            <p className="text-[10px] font-mono text-muted-foreground/60 mt-1">
-                              {new Date(c.sentAt).toLocaleString()}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {activeTab === 'surveys' && <ContactSurveysTab responses={surveyResponses} />}
-
-          {activeTab === 'history' && <ContactHistoryTab activity={activity} />}
-
-          {activeTab === 'lists' && (
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <List className="w-5 h-5 text-accent" />
-                <h3 className="font-bold text-foreground">List Memberships</h3>
-              </div>
-              {lists.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
-                  This contact does not belong to any lists.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {lists.map((l: any) => (
-                    <div key={l.id} className="flex justify-between items-center p-3 bg-muted/20 border border-border rounded-xl">
-                      <span className="font-semibold text-sm text-foreground">{l.name}</span>
-                      <span className="text-xs text-muted-foreground font-mono">List ID: {l.id}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 lg:grid-cols-[21rem_minmax(0,1fr)]">
+        <div className={`order-2 lg:order-none ${view === 'details' ? '' : 'hidden lg:block'}`}>
+          <ContactSidebar contact={contact} fieldDefs={fieldDefs} company={company} deals={deals} lists={lists} campaigns={campaigns} />
         </div>
 
-        {/* Sidebar panels Column */}
-        <div className="space-y-6">
-          
-          {/* Channels Panel */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border pb-1">Channels</h4>
-            {(() => {
-              // This panel used to render every status inside a green
-              // "subscribed" treatment, so an opted-out contact looked fine.
-              const subscribed = contact.status === 'subscribed'
-              const bounced = contact.status === 'bounced'
-              const tone = subscribed
-                ? { box: 'bg-emerald-500/5 border-emerald-500/15', pill: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20', icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" /> }
-                : bounced
-                  ? { box: 'bg-red-500/5 border-red-500/15', pill: 'bg-red-500/10 text-red-600 border-red-500/20', icon: <AlertTriangle className="w-4 h-4 text-red-500" /> }
-                  : { box: 'bg-amber-500/5 border-amber-500/15', pill: 'bg-amber-500/10 text-amber-600 border-amber-500/20', icon: <BellOff className="w-4 h-4 text-amber-500" /> }
+        <div className="order-1 lg:order-none min-w-0 space-y-5">
+          <div role="tablist" aria-label="Contact" className="flex gap-6 overflow-x-auto border-b border-border [scrollbar-width:none]">
+            {tabs.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                role="tab"
+                aria-selected={view === t.value}
+                onClick={() => setTab(t.value)}
+                className={`-mb-px shrink-0 items-center gap-1.5 border-b-2 pb-3 pt-1 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${t.phoneOnly ? 'inline-flex lg:hidden' : 'inline-flex'} ${
+                  view === t.value
+                    ? 'border-accent font-semibold text-foreground'
+                    : 'border-transparent font-medium text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.label}
+                {t.count ? (
+                  <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs font-medium text-foreground/80 tabular-nums">{t.count}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
 
-              const handleResubscribe = async () => {
-                setIsResubscribing(true)
-                setResubError('')
-                try {
-                  const res: any = await resubscribeContactFn({ data: { email: contact.email } })
-                  if (!res.success) {
-                    setResubError(res.error || 'Failed to resubscribe')
-                    return
-                  }
-                  queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(contact.email) })
-                  queryClient.invalidateQueries({ queryKey: queryKeys.email.contacts() })
-                } catch (e: any) {
-                  setResubError(e?.message || 'Failed to resubscribe')
-                } finally {
-                  setIsResubscribing(false)
-                }
+          {/* Kept mounted on the other tabs, so a half-typed task survives them. */}
+          <div className={view === 'overview' ? 'space-y-5' : 'hidden'}>
+            <Section
+              title="Tasks"
+              action={
+                !addingTask && (
+                  <button type="button" onClick={() => setAddingTask(true)} className={SECTION_ACTION}>
+                    <Plus aria-hidden className="h-3.5 w-3.5" />
+                    Add task
+                  </button>
+                )
               }
-
-              return (
-                <div className={`p-3 border rounded-xl space-y-3 ${tone.box}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {tone.icon}
-                      <span className="text-xs font-bold text-foreground">Email campaigns</span>
-                    </div>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider border px-2 py-0.5 rounded-full ${tone.pill}`}>
-                      {contact.status}
-                    </span>
-                  </div>
-
-                  {!subscribed && (
-                    <>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        {bounced
-                          ? 'Mail to this address bounced, so campaigns skip it. Only resubscribe if you know the address is working again.'
-                          : 'This contact opted out, so campaigns skip them. Only resubscribe with their permission.'}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleResubscribe}
-                        disabled={isResubscribing}
-                        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md-s border border-border bg-background hover:bg-muted disabled:opacity-60 transition-all cursor-pointer"
-                      >
-                        {isResubscribing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                        {isResubscribing ? 'Resubscribing...' : 'Resubscribe'}
-                      </button>
-                      {resubError && (
-                        <p className="text-[11px] text-red-600">{resubError}</p>
-                      )}
-                    </>
+            >
+              <RecordTasks on={{ contactEmail: contact.email }} adding={addingTask} onStopAdding={() => setAddingTask(false)} />
+            </Section>
+            <ContactSequences email={contact.email} items={sequences ?? []} blocked={canEmail ? null : status.skip} />
+            <Section
+              title="Recent activity"
+              action={
+                <span className="flex items-center gap-1">
+                  {addNoteButton}
+                  {feed.length > RECENT && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilter('all')
+                        setTab('activity')
+                      }}
+                      className={SECTION_ACTION}
+                    >
+                      View all {feed.length}
+                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </span>
+              }
+            >
+              {view === 'overview' && composer}
+              {feed.length === 0 && !nextSend ? (
+                !noteOpen && (
+                  <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
+                )
+              ) : (
+                <div className="space-y-4">
+                  {upcoming && (
+                    <section aria-label="Up next">
+                      <FeedLabel>Up next</FeedLabel>
+                      <ul className="divide-y divide-border">{upcoming}</ul>
+                    </section>
+                  )}
+                  {waiting.length > 0 && (
+                    <section aria-label="Waiting for your reply">
+                      <FeedLabel>Waiting for your reply</FeedLabel>
+                      <FeedList items={waiting} name={firstName} onChanged={refresh} />
+                    </section>
+                  )}
+                  {latest.length > 0 && (
+                    <section aria-label="Latest">
+                      <FeedLabel>Latest</FeedLabel>
+                      <FeedList items={latest} name={firstName} onChanged={refresh} />
+                    </section>
                   )}
                 </div>
-              )
-            })()}
-            <div className="flex items-center justify-between p-3 bg-muted/30 border border-border rounded-xl">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-muted-foreground" />
-                <span className="text-xs font-semibold text-muted-foreground">Transactional emails</span>
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded-full">
-                Active
-              </span>
-            </div>
+              )}
+            </Section>
           </div>
 
-          {/* Details Information Panel */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
-            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider border-b border-border pb-1">Information</h4>
-            <div className="space-y-3.5 text-xs">
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">LASTNAME</span>
-                <span className="font-bold text-foreground">{lastName || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">FIRSTNAME</span>
-                <span className="font-bold text-foreground">{firstName || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">EMAIL</span>
-                <span className="font-mono font-semibold text-foreground">{contact.email}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">JOB_TITLE</span>
-                <span className="font-bold text-foreground">{contact.attributes?.JOB_TITLE || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">COMPANY</span>
-                <span className="font-bold text-foreground">{contact.attributes?.COMPANY || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">COUNTRY</span>
-                <span className="font-bold text-foreground">{contact.country || '—'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block font-medium mb-0.5">LINKEDIN</span>
-                {contact.linkedinUrl ? (
-                  <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-accent hover:underline break-all">
-                    {contact.linkedinUrl.replace(/^https?:\/\/(www\.)?/, '')}
-                  </a>
+          {view === 'activity' && (
+            <section aria-label="Activity" className="rounded-xl border border-border bg-card p-5">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <SegmentedTabs value={filter} onChange={setFilter} options={FILTERS} label="Show" scroll />
+                  {addNoteButton}
+                </div>
+                {composer}
+                {shown.length === 0 && !(upcoming && (filter === 'all' || filter === 'emails')) ? (
+                  <p className="text-sm text-muted-foreground">Nothing of this kind yet.</p>
                 ) : (
-                  <span className="font-bold text-foreground">—</span>
+                  <FeedList items={shown} name={firstName} months onChanged={refresh} before={filter === 'all' || filter === 'emails' ? upcoming : undefined} />
                 )}
               </div>
-              <ContactCustomFields email={contact.email} defs={fieldDefs} custom={contact.custom ?? {}} />
-            </div>
-          </div>
-
-          {/* Companies Panel */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-3">
-            <div className="flex justify-between items-center border-b border-border pb-1">
-              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Companies</h4>
-              <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
-            </div>
-            <div className="py-4 text-center text-xs text-muted-foreground leading-normal">
-              No companies associated with this record
-            </div>
-            <button className="w-full py-2 bg-muted/30 border border-border text-foreground hover:bg-muted/50 rounded-xl text-xs font-semibold transition-all cursor-pointer">
-              Add companies
-            </button>
-          </div>
-
-          {/* Deals Panel */}
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-3">
-            <div className="flex justify-between items-center border-b border-border pb-1">
-              <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Deals</h4>
-              <Briefcase className="w-3.5 h-3.5 text-muted-foreground" />
-            </div>
-            <div className="py-4 text-center text-xs text-muted-foreground leading-normal">
-              No deals associated with this record
-            </div>
-            <button className="w-full py-2 bg-muted/30 border border-border text-foreground hover:bg-muted/50 rounded-xl text-xs font-semibold transition-all cursor-pointer">
-              Add deals
-            </button>
-          </div>
-
+            </section>
+          )}
         </div>
-
       </div>
 
-      <Dialog
-        isOpen={isEmailModalOpen}
-        onClose={() => setIsEmailModalOpen(false)}
-        title={`Email ${fullName}`}
-        className="sm:max-w-lg"
-      >
+      <Dialog isOpen={isEmailModalOpen} onClose={() => setIsEmailModalOpen(false)} title={`Email ${name || contact.email}`} className="sm:max-w-lg">
         <form
           className="flex min-h-0 flex-col"
           onSubmit={(e) => {
@@ -461,6 +390,11 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
           }}
         >
           <DialogBody className="space-y-4">
+            {!canEmail && (
+              <Notice level="warning" title={status.headline}>
+                This email won’t send. Resubscribe them first, and only if they’ve asked to hear from you again.
+              </Notice>
+            )}
             <MetaList
               className="-mt-1 border-b border-border pb-4"
               rows={[
@@ -479,17 +413,32 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
               ]}
             />
             <Field label="Subject">
-              <input type="text" required autoFocus value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="e.g. Following up on our call" className={INPUT_CLASS} />
+              <input
+                type="text"
+                required
+                autoFocus={canEmail}
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="e.g. Following up on our call"
+                className={INPUT_CLASS}
+              />
             </Field>
             <Field label="Message">
-              <textarea required value={emailBody} onChange={(e) => setEmailBody(e.target.value)} rows={7} placeholder="Write your message…" className={`${INPUT_CLASS} resize-none leading-relaxed`} />
+              <textarea
+                required
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                rows={7}
+                placeholder="Write your message…"
+                className={`${INPUT_CLASS} resize-none leading-relaxed`}
+              />
             </Field>
           </DialogBody>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setIsEmailModalOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" isLoading={isSendingEmail}>
+            <Button type="submit" isLoading={isSendingEmail} disabled={!canEmail}>
               Send email
             </Button>
           </DialogFooter>
