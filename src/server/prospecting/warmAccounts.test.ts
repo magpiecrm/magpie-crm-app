@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { forgetWarmIndex, warmFor, warmIndex, warmTargets, warmWithoutRef } from './warmAccounts'
+import { forgetWarmIndex, warmFor, warmIndex, warmTargets, warmTargetsByName, warmWithoutName, warmWithoutRef } from './warmAccounts'
 
 const now = new Date('2026-10-16T12:00:00Z')
 const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString()
@@ -97,6 +97,35 @@ describe('warm accounts', () => {
     expect(warmTargets(index)).toEqual([{ ref: '101', name: 'Acme' }])
     // Globex's only id is a page name, and Initech has none: not searchable inside.
     expect(warmWithoutRef(index)).toBe(2)
+  })
+
+  it('lists the companies the host can go inside by name, with their page name where known, newest first', () => {
+    const index = warmIndex(
+      data({
+        // Umbrella is the CRM's, by domain only (as one saved from a hosted search is); Globex is known by its page name.
+        companies: [{ id: 'c1', name: 'Umbrella', domain: 'umbrella.com', linkedin_ref: null }],
+        prospect_companies: [
+          { ref: '101', name: 'Acme', domain: 'acme.com', slug: 'acme-corp' },
+          { ref: 'globex-slug', name: 'Globex', domain: 'globex.io' },
+        ],
+        campaign_recipients: [
+          recipient('jo@acme.com', { clicked_at: daysAgo(9) }),
+          recipient('sam@globex.io', { clicked_at: daysAgo(1) }),
+          recipient('kim@initech.co', { replied_at: daysAgo(2) }),
+          recipient('lu@umbrella.com', { replied_at: daysAgo(5) }),
+        ],
+      }),
+      now,
+    )
+    expect(warmTargetsByName(index).map(({ ref, name }) => ({ ref, name }))).toEqual([
+      { ref: 'globex-slug', name: 'Globex' },
+      { ref: '', name: 'Umbrella' },
+      { ref: 'acme-corp', name: 'Acme' },
+    ])
+    // The CRM company found by its domain, though nobody there is linked to it: its page for the badge.
+    expect(index.byDomain.get('umbrella.com')).toMatchObject({ companyId: 'c1', name: 'Umbrella' })
+    // Initech is known only by an email domain.
+    expect(warmWithoutName(index)).toBe(1)
   })
 
   it('keeps a person’s own engagement apart from their company’s', () => {

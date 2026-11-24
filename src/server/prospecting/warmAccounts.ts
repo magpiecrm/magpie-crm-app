@@ -27,6 +27,8 @@ export interface WarmSummary {
   domain: string | null
   /** Numeric LinkedIn company id, where known: what the Warm filter searches inside. */
   ref: string | null
+  /** LinkedIn company page name, where known: the host's verified search goes inside a company by it, or by name. */
+  slug: string | null
   name: string | null
   replies: number
   clicks: number
@@ -40,6 +42,8 @@ export interface WarmSummary {
 }
 
 export interface WarmIndex {
+  /** Every warm company, most recent first. */
+  all: WarmSummary[]
   byDomain: Map<string, WarmSummary>
   byRef: Map<string, WarmSummary>
   /** One person's own: for a search result who is already a contact. */
@@ -140,22 +144,36 @@ export function warmIndex(data: Data, now = new Date()): WarmIndex {
   }
 
   // A company's LinkedIn id: the CRM's, or the one prospect search found for its domain.
-  const refByDomain = new Map<string, string>()
-  for (const c of data.prospect_companies ?? []) if (c.domain && /^\d+$/.test(c.ref)) refByDomain.set(c.domain.toLowerCase(), c.ref)
-  const nameByRef = new Map((data.prospect_companies ?? []).map((c) => [c.ref, c.name]))
+  // The host's verified search keeps a company by its page name (slug) instead, so that's kept too.
+  const numeric = (ref: string | null | undefined): ref is string => Boolean(ref && /^\d+$/.test(ref))
+  const prospectByDomain = new Map<string, NonNullable<Data['prospect_companies']>[number]>()
+  for (const c of data.prospect_companies ?? []) {
+    if (!c.domain) continue
+    const d = c.domain.toLowerCase()
+    const had = prospectByDomain.get(d)
+    if (!had || (numeric(c.ref) && !numeric(had.ref))) prospectByDomain.set(d, c)
+  }
+  const prospectByRef = new Map((data.prospect_companies ?? []).map((c) => [c.ref, c]))
+  // Someone at a company's domain who isn't linked to it is still at that company.
+  const companyByDomain = new Map<string, NonNullable<Data['companies']>[number]>()
+  for (const c of data.companies ?? []) if (c.domain && !companyByDomain.has(c.domain.toLowerCase())) companyByDomain.set(c.domain.toLowerCase(), c)
+  const slugOf = (ref: string | null | undefined, slug?: string | null) => slug?.trim() || (ref && !numeric(ref) ? ref : null)
 
   const summary = (key: string, t: Tally): WarmSummary | null => {
     const warm = !t.cancelled && (t.replies + t.clicks + t.forms + t.proposalViews + t.accepted > 0 || t.openers.size >= 2)
     if (!warm) return null
-    const company = t.companyId ? companies.get(t.companyId) : undefined
-    const linked = company?.linkedin_ref && /^\d+$/.test(company.linkedin_ref) ? company.linkedin_ref : null
-    const ref = linked ?? (t.domain ? (refByDomain.get(t.domain) ?? null) : null)
+    const company = (t.companyId ? companies.get(t.companyId) : undefined) ?? (t.domain ? companyByDomain.get(t.domain) : undefined)
+    const prospect = t.domain ? prospectByDomain.get(t.domain) : undefined
+    const ref = numeric(company?.linkedin_ref) ? company.linkedin_ref : numeric(prospect?.ref) ? prospect.ref : null
+    const page = ref ? prospectByRef.get(ref) : prospect
+    const slug = slugOf(company?.linkedin_ref) ?? slugOf(page?.ref, page?.slug)
     return {
       key,
-      companyId: t.companyId,
+      companyId: company?.id ?? null,
       domain: t.domain,
       ref,
-      name: company?.name ?? (ref ? (nameByRef.get(ref) ?? null) : null),
+      slug,
+      name: company?.name ?? page?.name ?? null,
       replies: t.replies,
       clicks: t.clicks,
       openers: t.openers.size,
@@ -166,10 +184,10 @@ export function warmIndex(data: Data, now = new Date()): WarmIndex {
     }
   }
 
-  const index: WarmIndex = { byDomain: new Map(), byRef: new Map(), byEmail: new Map() }
   const warm = [...byKey].map(([key, t]) => summary(key, t)).filter((s): s is WarmSummary => Boolean(s))
   warm.sort((a, b) => b.lastAt.localeCompare(a.lastAt))
-  for (const s of warm.slice(0, MAX_COMPANIES)) {
+  const index: WarmIndex = { all: warm.slice(0, MAX_COMPANIES), byDomain: new Map(), byRef: new Map(), byEmail: new Map() }
+  for (const s of index.all) {
     if (s.domain) index.byDomain.set(s.domain, s)
     if (s.ref) index.byRef.set(s.ref, s)
   }
@@ -216,3 +234,23 @@ export function warmTargets(index: WarmIndex): Array<{ ref: string; name: string
 
 /** Warm companies the Warm filter can't search inside: no LinkedIn id known. */
 export const warmWithoutRef = (index: WarmIndex) => [...index.byDomain.values()].filter((s) => !s.ref).length
+
+/**
+ * Warm companies for the host's verified search, which goes inside a company by
+ * its name or its LinkedIn page name (`ref` here: the slug, or '' where none is
+ * known), most recent first. One per name.
+ */
+export function warmTargetsByName(index: WarmIndex): Array<{ ref: string; name: string; summary: WarmSummary }> {
+  const seen = new Set<string>()
+  const out: Array<{ ref: string; name: string; summary: WarmSummary }> = []
+  for (const s of index.all) {
+    const name = s.name?.trim()
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    out.push({ ref: s.slug ?? '', name, summary: s })
+  }
+  return out
+}
+
+/** Warm companies the host's verified search can't go inside: no company name known, only an email domain. */
+export const warmWithoutName = (index: WarmIndex) => index.all.filter((s) => !s.name?.trim()).length

@@ -7,7 +7,7 @@ import { refineFromProfile } from './refine'
 import { bucketOf, PAGE_SIZES, ProfileUnconfirmed, type CompanyFilters, type CompanyResult, type CompanySource, type Page, type PeopleFilters, type PeopleSource, type PersonResult, type Signal, type SignalKind } from './types'
 import { hasSignal, newInRoleSignal, signalKey, withSignals } from './signals'
 import { companySignals, WEB_SIGNAL_KINDS, type WebSignalKind } from './companySignals'
-import { warmFor, warmIndex, warmSignal, warmTargets, warmWithoutRef } from './warmAccounts'
+import { warmFor, warmIndex, warmSignal, warmTargets, warmTargetsByName, warmWithoutName, warmWithoutRef } from './warmAccounts'
 import { hasConfirmedFormat, isKnownCatchAll, isKnownNoMail, isKnownSilent, surnameHidden, trustedPattern } from './emailFinder'
 import { FINDER_VERSION, unverifiableEntries } from './unverifiable'
 import { guessesChangedFor } from './patterns'
@@ -718,6 +718,28 @@ function warmCompanies(db: Db, filters: PeopleFilters): Array<{ ref: string; nam
     return !sizes.length || n === null || n === undefined || inHeadcountBuckets(n, sizes)
   })
 }
+
+/**
+ * The Warm filter's companies on the host's verified search, which goes inside a
+ * company by its name or its LinkedIn page name (no numeric id needed): the
+ * workspace's warm ones, most recent first, of the chosen sizes where known.
+ */
+function warmCompaniesByName(db: Db, filters: PeopleFilters) {
+  const sizes = filters.companySizes ?? []
+  const headcount = new Map<string, number | null | undefined>()
+  for (const c of db.data.prospect_companies ?? []) {
+    headcount.set(c.ref, c.headcount)
+    if (c.slug) headcount.set(c.slug, c.headcount)
+  }
+  return warmTargetsByName(warmIndex(db.data)).filter((c) => {
+    const n = (c.summary.ref ? headcount.get(c.summary.ref) : undefined) ?? (c.ref ? headcount.get(c.ref) : undefined)
+    return !sizes.length || n === null || n === undefined || inHeadcountBuckets(n, sizes)
+  })
+}
+
+/** The Warm filter with no warm companies at all to start from. */
+const NO_WARM_COMPANIES =
+  "You have no warm companies yet: none where your emails, forms or proposals found interest in the last 90 days (a reply, a click, a form or survey answered, a proposal viewed, or opens by two people), so there's nowhere to search."
 
 /** What hiring and funding screening found, added up over a page (searchLog.ts counts). */
 interface SignalTally {
@@ -1740,13 +1762,10 @@ async function verifiedFunnel(
   const kinds: SignalKind[] = input.signals ?? []
   const webKinds = WEB_SIGNAL_KINDS.filter((k) => kinds.includes(k))
   const warm = kinds.includes('warm') ? warmIndex(db.data) : null
-  const warmTargetsHere = !input.company && warm ? warmCompanies(db, input) : null
+  const warmTargetsHere = !input.company && warm ? warmCompaniesByName(db, input) : null
   // Each warm company searched, by name: someone the host found at one is at a warm company, whatever page or domain theirs links.
   const warmByName = new Map<string, Signal>()
-  for (const c of warmTargetsHere ?? []) {
-    const s = warm!.byRef.get(c.ref)
-    if (s && c.name) warmByName.set(c.name.trim().toLowerCase(), warmSignal(s))
-  }
+  for (const c of warmTargetsHere ?? []) warmByName.set(c.name.trim().toLowerCase(), warmSignal(c.summary))
   // Inside one company the host runs a single query and leaves cities out, so there are none to go through.
   // With Warm, each round goes inside a few of the warm companies instead.
   const placesOf = (cursor: string | null): VerifiedFunnel['plan'] & PlacesPlan =>
@@ -1827,9 +1846,9 @@ async function verifiedFunnel(
         details.push(`${plural(signalsNotReady, 'person was', 'people were')} left out because ${signalsNotReady === 1 ? 'their employer' : 'their employers'} couldn't be checked for ${what} in time.`)
       }
       if (warmTargetsHere && citiesSearched) {
-        const noRef = warmWithoutRef(warm!)
+        const noName = warmWithoutName(warm!)
         details.push(
-          `Searched inside ${plural(warmSearched, 'warm company', 'warm companies')} of your ${warmTargetsHere.length}, where your emails, forms or proposals found interest in the last 90 days.${noRef ? ` ${plural(noRef, 'other has', 'others have')} no LinkedIn company page we know, so couldn't be searched.` : ''}`,
+          `Searched inside ${plural(warmSearched, 'warm company', 'warm companies')} of your ${warmTargetsHere.length}, where your emails, forms or proposals found interest in the last 90 days.${noName ? ` ${plural(noName, 'other is', 'others are')} known only by an email domain, so couldn't be searched.` : ''}`,
         )
       }
       return {
@@ -1914,12 +1933,14 @@ async function searchPeopleUnmasked(
       // Refused, not ignored: it would otherwise leave everyone out, or nobody.
       if (filters.signals?.includes('new_in_role')) throw new Error(NEW_IN_ROLE_NOT_WITH_TITLE)
       // Warm searches inside the workspace's warm companies: with none to search, nothing is.
-      if (!company && filters.signals?.includes('warm') && !warmCompanies(db, filters).length) {
-        const all = warmTargets(warmIndex(db.data)).length
-        const noRef = warmWithoutRef(warmIndex(db.data))
-        const why = all
-          ? `None of your warm companies is one of the sizes chosen, so there's nowhere to search.`
-          : `None of your warm companies has a LinkedIn company page we know, so there's nowhere to search${noRef ? ` (${plural(noRef, 'warm company', 'warm companies')} known only by email domain)` : ''}. Saving people from prospect search links their companies.`
+      if (!company && filters.signals?.includes('warm') && !warmCompaniesByName(db, filters).length) {
+        const index = warmIndex(db.data)
+        const noName = warmWithoutName(index)
+        const why = !index.all.length
+          ? NO_WARM_COMPANIES
+          : warmTargetsByName(index).length
+            ? `None of your warm companies is one of the sizes chosen, so there's nowhere to search.`
+            : `Your ${plural(noName, 'warm company is', 'warm companies are')} known only by an email domain, so there's no company name to search inside. Adding ${noName === 1 ? 'it' : 'them'} in Companies, with ${noName === 1 ? 'its' : 'their'} website domain, lets the search find ${noName === 1 ? 'it' : 'them'}.`
         return { items: [], nextCursor: null, reportedTotal: 0, warnings: [why], details: [], requests: 0, refined: [], resumed: false }
       }
       const { verifiedPeopleSearch } = await import('./verifiedPeopleSource')
@@ -2478,7 +2499,9 @@ async function searchPeopleUnmasked(
     details.push(
       companiesFound
         ? `Searched inside your warm companies: ${plural(companiesFound, 'company', 'companies')} where your emails, forms or proposals found interest in the last 90 days.${noRef ? ` ${plural(noRef, 'other has', 'others have')} no LinkedIn company page we know, so couldn't be searched.` : ''}`
-        : `None of your warm companies has a LinkedIn company page we know, so there's nowhere to search${noRef ? ` (${plural(noRef, 'warm company', 'warm companies')} known only by email domain)` : ''}. Saving people from prospect search links their companies.`,
+        : !warmIndex(db.data).all.length
+          ? NO_WARM_COMPANIES
+          : `None of your warm companies has a LinkedIn company page we know, so there's nowhere to search${noRef ? ` (${plural(noRef, 'warm company', 'warm companies')} known only by email domain)` : ''}. Saving people from prospect search links their companies.`,
     )
   } else if (companyFirst && companiesFound) {
     details.push(`Found ${plural(companiesFound, 'company', 'companies')} of the chosen size first, then looked for people there.`)

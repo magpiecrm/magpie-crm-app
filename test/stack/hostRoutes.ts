@@ -486,13 +486,15 @@ export const routes: Route[] = [
       const locations: string[] = body?.locations ?? []
       const slugs: string[] = body?.companySlugs ?? []
       const names: string[] = (body?.companies ?? []).map((n: string) => n.toLowerCase())
+      // As liscrape's works_at_wanted_company: with an employer filter, a person passes on
+      // their company page's slug or their employer's exact name, either one.
+      const atWanted = (c: { slug: string; name: string }) => (!slugs.length && !names.length) || slugs.includes(c.slug) || names.includes(c.name.toLowerCase())
       const found = PEOPLE.filter((p) => {
         const c = companyById(p.companyId)!
         return (
           (!titles.length || titles.some((t) => titleMatches(p.title, t))) &&
           (!locations.length || locations.some((l) => countryMatches(p.country, l))) &&
-          (!slugs.length || slugs.includes(c.slug)) &&
-          (!names.length || names.includes(c.name.toLowerCase()))
+          atWanted(c)
         )
       }).slice(0, body?.limit ?? 200)
       const id = `srch_${crypto.randomUUID()}`

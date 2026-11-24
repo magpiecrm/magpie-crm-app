@@ -469,7 +469,13 @@ export async function verifiedPeopleSearch(
       // Inside companies: the host names each in the query and keeps only those whose live
       // employer is one of them (by name or company page), so their industry, size and website don't apply.
       ...(inside
-        ? { industries: [], sizes: [], companies: inside.map((c) => c.name), companySlugs: inside.map((c) => c.ref) }
+        ? {
+            industries: [],
+            sizes: [],
+            companies: inside.map((c) => c.name),
+            // Page names only: a numeric LinkedIn id (an older search's) matches no company page, and the name still does.
+            companySlugs: inside.map((c) => c.ref).filter((ref) => ref && !/^\d+$/.test(ref)),
+          }
         : {
             industries: input.industries ?? [],
             sizes,
@@ -647,10 +653,22 @@ export async function verifiedPeopleSearch(
     ? [`${noKeyword} ${noKeyword === 1 ? 'person was' : 'people were'} left out because the keyword isn't in ${noKeyword === 1 ? 'their job title, their employer’s name or its industry' : 'their job titles, their employers’ names or industries'}.`, ...kept.details]
     : kept.details
   // A hosted copy shows warnings, not details: a page the keyword or signals left short says so.
-  const bySignals = (kept.counts.noSignal ?? 0) + (kept.counts.signalsNotReady ?? 0)
-  if (shown < count && (noKeyword || bySignals) && !warnings.length) {
-    const by = [noKeyword ? `the keyword left out ${noKeyword}` : null, bySignals ? `the signals chosen left out ${bySignals}` : null].filter(Boolean).join(' and ')
-    warnings.push(`Found ${shown} of the ${count} asked for: ${by} of the people found. Fewer filters find more.${kept.nextCursor ? ' Load more carries on.' : ''}`)
+  // Employers that couldn't be checked for hiring or funding are told apart: that's the host, not the filters.
+  const noSignal = kept.counts.noSignal ?? 0
+  const notReady = kept.counts.signalsNotReady ?? 0
+  if (shown < count && (noKeyword || noSignal || notReady) && !warnings.length) {
+    const by = [noKeyword ? `the keyword left out ${noKeyword}` : null, noSignal ? `the signals chosen left out ${noSignal}` : null].filter(Boolean).join(' and ')
+    // Load more adds to the people already shown: this page's count alone would read as nobody.
+    const found = input.cursor ? (shown ? `Found ${shown} more` : 'No more found') : `Found ${shown} of the ${count} asked for`
+    const checked = (input.signals ?? []).filter((k) => k === 'hiring' || k === 'funding').join(' or ') || 'the signals chosen'
+    const parts = [by ? `${found}: ${by} of the people found. Fewer filters find more.` : `${found}.`]
+    if (notReady) {
+      parts.push(
+        `${notReady} ${notReady === 1 ? 'person was' : 'people were'} left out because ${notReady === 1 ? 'their employer' : 'their employers'} couldn't be checked for ${checked} just now: try again in a few minutes.`,
+      )
+    }
+    if (kept.nextCursor) parts.push('Load more carries on.')
+    warnings.push(parts.join(' '))
   }
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({

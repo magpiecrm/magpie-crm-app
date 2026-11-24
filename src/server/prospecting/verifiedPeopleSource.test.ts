@@ -149,12 +149,12 @@ describe('verifiedPeopleSearch', () => {
     expect(logSearch).toHaveBeenCalledWith(expect.objectContaining({ filters: expect.objectContaining({ company: 'larkspur' }) }))
   })
 
-  it('goes inside the companies a round of the funnel names (Warm), as inside one', async () => {
+  it('goes inside the companies a round of the funnel names (Warm), as inside one, sending page names but never a numeric id', async () => {
     let sent: any = null
     const c = { start: async (b: unknown) => { sent = b; return { id: 's1' } }, poll: async () => ({ status: 'done', found: 0, nextCursor: null, people: [] }) }
     const funnel = { plan: { places: [], placesOnly: false, companies: [{ ref: 'larkspur', name: 'Larkspur' }, { ref: '42', name: 'Barclays' }] } } as any
     await verifiedPeopleSearch({ titles: ['Founder'], industries: ['Banking'], country: 'GB', signals: ['warm'], count: 10 }, {}, { calls: c as any, sleep: async () => {}, now: () => 0, funnel: { ...funnel, prepare: async (p: PersonResult[]) => p, hidden: () => false, findableFirst: (p: PersonResult[]) => p, nextRound: () => false, finish: () => ({ counts: {}, usage: {}, details: [], resumed: false, nextCursor: null }) } })
-    expect(sent).toEqual({ titles: ['Founder'], locations: ['GB'], industries: [], sizes: [], companies: ['Larkspur', 'Barclays'], companySlugs: ['larkspur', '42'], limit: 40 })
+    expect(sent).toEqual({ titles: ['Founder'], locations: ['GB'], industries: [], sizes: [], companies: ['Larkspur', 'Barclays'], companySlugs: ['larkspur'], limit: 40 })
     expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ filters: expect.objectContaining({ signals: ['warm'] }) }))
   })
 
