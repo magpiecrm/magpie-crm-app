@@ -36,6 +36,8 @@ export function EnrollDialog({ sequenceId, emails, onClose }: { sequenceId?: str
     onSuccess: (r) => {
       setDone(r.enrolled)
       void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.list() })
+      // A contact's page lists their sequences.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact('').slice(0, 2) })
       if (target) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.sequence(target) })
         void queryClient.invalidateQueries({ queryKey: queryKeys.sequences.enrollments(target) })

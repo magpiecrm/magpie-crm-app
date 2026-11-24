@@ -323,3 +323,41 @@ describe('the engine', () => {
     expect(() => sequences.setStatus(s.id, 'active')).toThrow(/unsubscribe/)
   })
 })
+
+describe('on a contact’s page', () => {
+  const msg = (id: string, direction: 'in' | 'out', from: string, at: string) => ({ id, direction, message_id: `<${id}@x.test>`, from, subject: 'Re: Quick question', at, text: `Text of ${id}` })
+
+  it('shows their own replies only, and counts one answered once someone wrote back or marked it done', () => {
+    const id = makeSequence()
+    contact('ava@larkspur.test')
+    sequences.enroll(id, ['ava@larkspur.test'], {}, null)
+    db.mutate(() => {
+      const e = enrollmentOf(id, 'ava@larkspur.test')
+      e.messages = [
+        msg('r1', 'in', '"Ava Stone" <Ava@Larkspur.test>', '2026-11-01T10:00:00.000Z'),
+        msg('c1', 'in', 'colleague@larkspur.test', '2026-11-01T11:00:00.000Z'),
+        msg('a1', 'out', 'jo@acme.test', '2026-11-02T09:00:00.000Z'),
+        msg('r2', 'in', 'ava@larkspur.test', '2026-11-03T10:00:00.000Z'),
+      ] as never
+    })
+    const replies = sequences.repliesForContact('ava@larkspur.test')
+    expect(replies.map((r) => [r.id, r.answered])).toEqual([
+      ['r2', false],
+      ['r1', true],
+    ])
+    expect(sequences.forContact('ava@larkspur.test')[0].last_answer_at).toBe('2026-11-02T09:00:00.000Z')
+
+    db.mutate(() => void (enrollmentOf(id, 'ava@larkspur.test').inbox_done_at = '2026-11-03T12:00:00.000Z'))
+    expect(sequences.repliesForContact('ava@larkspur.test')[0]).toMatchObject({ id: 'r2', answered: true })
+  })
+
+  it('schedules nothing while the sequence itself is paused', () => {
+    const id = makeSequence()
+    contact('bo@larkspur.test')
+    sequences.enroll(id, ['bo@larkspur.test'], {}, null)
+    expect(sequences.forContact('bo@larkspur.test')[0]).toMatchObject({ sequence_status: 'active', status: 'active' })
+    expect(sequences.forContact('bo@larkspur.test')[0].next_send_at).not.toBeNull()
+    sequences.setStatus(id, 'paused')
+    expect(sequences.forContact('bo@larkspur.test')[0]).toMatchObject({ sequence_status: 'paused', next_send_at: null })
+  })
+})

@@ -9,6 +9,7 @@ import { queryKeys } from '../../../queryKeys'
 import { daysFromNow, dueBucket, dueLabel, dueParts, FOLLOW_UPS, fromLocalInput, lateBy } from '../tasks'
 import type { Activity } from '../types'
 import { Select } from '../../../components/ui/Select'
+import { buttonHidden } from '../../../components/ui/ActionMenu'
 
 /** What a task is about: at most one of each. */
 export type TaskOn = { dealId?: string; companyId?: string; contactEmail?: string }
@@ -149,11 +150,10 @@ function TaskMenu({
         return
       }
       // A scroll moves the menu with its button (clicking one at the page's edge can scroll it into view);
-      // it closes once the button has gone off screen.
+      // it closes once the button can't be seen: off screen, under a sticky bar, or out of its panel.
       if (e.type === 'scroll') {
         if (menuRef.current?.contains(e.target as Node)) return
-        const r = buttonRef.current?.getBoundingClientRect()
-        if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        if (buttonHidden(buttonRef.current)) setOpen(false)
         else placeMenu()
         return
       }
@@ -517,8 +517,9 @@ export function FollowUpButton({ on, name, onAdded }: { on: TaskOn; name: string
   }, [added])
   return (
     <div ref={ref} className="relative inline-flex items-center gap-2">
+      {/* Under the button, out of the row's flow, so it doesn't push the buttons beside it about. */}
       {added && (
-        <span className="text-xs text-muted-foreground" role="status">
+        <span className="pointer-events-none absolute right-0 top-full z-10 mt-1 whitespace-nowrap rounded-md-xs bg-popover px-2 py-1 text-xs text-muted-foreground shadow-sm" role="status">
           Task added, due {added}.
         </span>
       )}

@@ -2,6 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
 
+/** Whether a menu's button is out of sight: off the window, or covered at its middle (a sticky bar, a scrolling panel's edge). */
+export function buttonHidden(button: HTMLElement | null): boolean {
+  if (!button) return true
+  const r = button.getBoundingClientRect()
+  if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) return true
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+  return !hit || !button.contains(hit)
+}
+
 export type ActionMenuItem =
   | { label: string; icon?: LucideIcon; onSelect: () => void; tone?: 'danger'; disabled?: boolean }
   | 'separator'
@@ -57,11 +66,10 @@ export function ActionMenu({
         return
       }
       // A scroll moves the menu with its button (clicking a button at the page's edge can scroll it into
-      // view); it closes once the button has gone off screen.
+      // view); it closes once the button can't be seen: off screen, under a sticky bar, or out of its panel.
       if (e.type === 'scroll') {
         if (menuRef.current?.contains(e.target as Node)) return
-        const r = buttonRef.current?.getBoundingClientRect()
-        if (!r || r.bottom < 0 || r.top > window.innerHeight) setOpen(false)
+        if (buttonHidden(buttonRef.current)) setOpen(false)
         else placeMenu()
         return
       }

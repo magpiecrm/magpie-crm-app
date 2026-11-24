@@ -44,6 +44,8 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   const [filter, setFilter] = useState<FeedFilter>('all')
   const note = useRef<NoteComposerHandle>(null)
   const [noteOpen, setNoteOpen] = useState(false)
+  // Kept here, so a half-written note survives a change of tab.
+  const [noteDraft, setNoteDraft] = useState('')
   const [addingTask, setAddingTask] = useState(false)
   const resubscribe = useResubscribe(email)
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false)
@@ -63,6 +65,8 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
   } = useQuery({
     queryKey: queryKeys.email.contact(email),
     queryFn: () => getContactDetailsFn({ data: { email } }),
+    // Fetched afresh each time the page opens: its deals, sequences and replies change on other pages.
+    staleTime: 0,
   })
   const details = detailsData?.success ? detailsData : null
   const feed = useMemo(
@@ -161,7 +165,17 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
       Add note
     </button>
   )
-  const composer = noteOpen && <NoteComposer ref={note} email={contact.email} name={firstName} onAdded={refresh} onClose={() => setNoteOpen(false)} />
+  const composer = noteOpen && (
+    <NoteComposer
+      ref={note}
+      email={contact.email}
+      name={firstName}
+      body={noteDraft}
+      onBody={setNoteDraft}
+      onAdded={refresh}
+      onClose={() => setNoteOpen(false)}
+    />
+  )
 
   const handleSendEmail = async () => {
     if (!emailSubject || !emailBody || !canEmail) return
@@ -207,6 +221,13 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         deals={deals}
         feed={feed}
         nextEmailAt={nextEmailAt}
+        answeredAt={
+          (sequences ?? [])
+            .map((e) => e.last_answer_at)
+            .filter((at): at is string => Boolean(at))
+            .sort()
+            .at(-1) ?? null
+        }
         repliedAt={
           (sequences ?? [])
             .map((e) => e.replied_at)
@@ -233,7 +254,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
           <Notice
             level="warning"
             className="mt-4"
-            title={`${name || contact.email} is ${status.label.toLowerCase()}`}
+            title={status.headline}
             action={
               <Button size="sm" variant="secondary" isLoading={resubscribe.isPending} onClick={() => resubscribe.mutate()}>
                 Resubscribe
@@ -274,70 +295,72 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
             ))}
           </div>
 
-          {view === 'overview' && (
-            <>
-              <Section
-                title="Tasks"
-                action={
-                  !addingTask && (
-                    <button type="button" onClick={() => setAddingTask(true)} className={SECTION_ACTION}>
-                      <Plus aria-hidden className="h-3.5 w-3.5" />
-                      Add task
+          {/* Kept mounted on the other tabs, so a half-typed task survives them. */}
+          <div className={view === 'overview' ? 'space-y-5' : 'hidden'}>
+            <Section
+              title="Tasks"
+              action={
+                !addingTask && (
+                  <button type="button" onClick={() => setAddingTask(true)} className={SECTION_ACTION}>
+                    <Plus aria-hidden className="h-3.5 w-3.5" />
+                    Add task
+                  </button>
+                )
+              }
+            >
+              <RecordTasks on={{ contactEmail: contact.email }} adding={addingTask} onStopAdding={() => setAddingTask(false)} />
+            </Section>
+            <ContactSequences email={contact.email} items={sequences ?? []} blocked={canEmail ? null : status.skip} />
+            <Section
+              title="Recent activity"
+              action={
+                <span className="flex items-center gap-1">
+                  {addNoteButton}
+                  {feed.length > RECENT && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilter('all')
+                        setTab('activity')
+                      }}
+                      className={SECTION_ACTION}
+                    >
+                      View all {feed.length}
+                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
                     </button>
-                  )
-                }
-              >
-                <RecordTasks on={{ contactEmail: contact.email }} adding={addingTask} onStopAdding={() => setAddingTask(false)} />
-              </Section>
-              <ContactSequences
-                email={contact.email}
-                items={sequences ?? []}
-                blocked={canEmail ? null : `They’re ${status.label.toLowerCase()}, so sequences skip them.`}
-              />
-              <Section
-                title="Recent activity"
-                action={
-                  <span className="flex items-center gap-1">
-                    {addNoteButton}
-                    {feed.length > RECENT && (
-                      <button type="button" onClick={() => setTab('activity')} className={SECTION_ACTION}>
-                        View all {feed.length}
-                        <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </span>
-                }
-              >
-                {composer}
-                {feed.length === 0 && !nextSend ? (
-                  !noteOpen && (
-                    <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
-                  )
-                ) : (
-                  <div className="space-y-4">
-                    {upcoming && (
-                      <section aria-label="Up next">
-                        <FeedLabel>Up next</FeedLabel>
-                        <ul className="divide-y divide-border">{upcoming}</ul>
-                      </section>
-                    )}
-                    {waiting.length > 0 && (
-                      <section aria-label="Waiting for your reply">
-                        <FeedLabel>Waiting for your reply</FeedLabel>
-                        <FeedList items={waiting} name={firstName} onChanged={refresh} />
-                      </section>
-                    )}
-                    {latest.length > 0 && (
-                      <section aria-label="Latest">
-                        <FeedLabel>Latest</FeedLabel>
-                        <FeedList items={latest} name={firstName} onChanged={refresh} />
-                      </section>
-                    )}
-                  </div>
-                )}
-              </Section>
-            </>
-          )}
+                  )}
+                </span>
+              }
+            >
+              {view === 'overview' && composer}
+              {feed.length === 0 && !nextSend ? (
+                !noteOpen && (
+                  <p className="text-sm text-muted-foreground">Nothing has happened with them yet. Emails, replies, forms, surveys and notes show here.</p>
+                )
+              ) : (
+                <div className="space-y-4">
+                  {upcoming && (
+                    <section aria-label="Up next">
+                      <FeedLabel>Up next</FeedLabel>
+                      <ul className="divide-y divide-border">{upcoming}</ul>
+                    </section>
+                  )}
+                  {waiting.length > 0 && (
+                    <section aria-label="Waiting for your reply">
+                      <FeedLabel>Waiting for your reply</FeedLabel>
+                      <FeedList items={waiting} name={firstName} onChanged={refresh} />
+                    </section>
+                  )}
+                  {latest.length > 0 && (
+                    <section aria-label="Latest">
+                      <FeedLabel>Latest</FeedLabel>
+                      <FeedList items={latest} name={firstName} onChanged={refresh} />
+                    </section>
+                  )}
+                </div>
+              )}
+            </Section>
+          </div>
 
           {view === 'activity' && (
             <section aria-label="Activity" className="rounded-xl border border-border bg-card p-5">
@@ -347,7 +370,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
                   {addNoteButton}
                 </div>
                 {composer}
-                {shown.length === 0 ? (
+                {shown.length === 0 && !(upcoming && (filter === 'all' || filter === 'emails')) ? (
                   <p className="text-sm text-muted-foreground">Nothing of this kind yet.</p>
                 ) : (
                   <FeedList items={shown} name={firstName} months onChanged={refresh} before={filter === 'all' || filter === 'emails' ? upcoming : undefined} />
@@ -368,7 +391,7 @@ export function ContactDetails({ email, onClose }: ContactDetailsProps) {
         >
           <DialogBody className="space-y-4">
             {!canEmail && (
-              <Notice level="warning" title={`${name || 'This contact'} is ${status.label.toLowerCase()}`}>
+              <Notice level="warning" title={status.headline}>
                 This email won’t send. Resubscribe them first, and only if they’ve asked to hear from you again.
               </Notice>
             )}

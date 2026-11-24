@@ -14,5 +14,7 @@ export function usePipelines() {
 export function useInvalidateSales() {
   const queryClient = useQueryClient()
   const [namespace] = queryKeys.sales.pipelines()
-  return () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace })
+  const [email, contact] = queryKeys.email.contact('')
+  // A contact's page shows their company and deals too.
+  return () => queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === namespace || (q.queryKey[0] === email && q.queryKey[1] === contact) })
 }

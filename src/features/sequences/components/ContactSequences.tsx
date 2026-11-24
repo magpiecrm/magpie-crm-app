@@ -6,16 +6,19 @@ import { enrollmentActionFn } from '../../../server/functions'
 import { ActionMenu, type ActionMenuItem } from '../../../components/ui/ActionMenu'
 import { Badge } from '../../../components/ui/Badge'
 import { confirmDialog } from '../../../components/ui/confirm'
+import { toast } from '../../../components/ui/toast'
 import { Section, SECTION_ACTION } from '../../../components/ui/RecordSection'
 import { queryKeys } from '../../../queryKeys'
 import { EnrollDialog } from './EnrollDialog'
 import { ENROLLMENT_STATUS, when } from './labels'
-import type { EnrollmentStatus } from '../types'
+import type { EnrollmentStatus, SequenceStatus } from '../types'
 
 export interface ContactSequence {
   id: string
   sequence_id: string
   sequence_name: string
+  /** The sequence's own status: a paused or draft one sends nothing. */
+  sequence_status?: SequenceStatus
   steps: number
   status: EnrollmentStatus
   stop_reason: string | null
@@ -48,12 +51,18 @@ export function ContactSequences({
   const queryClient = useQueryClient()
   const [adding, setAdding] = useState(false)
   const act = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'pause' | 'resume' | 'mark_replied' | 'stop' | 'remove' }) =>
-      enrollmentActionFn({ data: { ids: [id], action } }),
+    mutationFn: async ({ id, action }: { id: string; action: 'pause' | 'resume' | 'mark_replied' | 'stop' | 'remove' }) => {
+      const r = await enrollmentActionFn({ data: { ids: [id], action } })
+      // Taking someone out only works before anything went to them: if their first email went out
+      // since this page loaded, stop the sequence for them instead.
+      if (action === 'remove' && r.changed === 0) return enrollmentActionFn({ data: { ids: [id], action: 'stop' } })
+      return r
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.email.contact(email) })
       void queryClient.invalidateQueries({ queryKey: ['sequences'] })
     },
+    onError: (err) => toast.error("Couldn't change their sequence", { description: err instanceof Error ? err.message : undefined }),
   })
   return (
     <Section
@@ -74,6 +83,8 @@ export function ContactSequences({
         <ul className="-mt-1 divide-y divide-border">
           {items.map((e) => {
             const status = ENROLLMENT_STATUS[e.status]
+            // Still in it, but the sequence itself isn't sending.
+            const halted = (e.status === 'active' || e.status === 'paused') && e.sequence_status !== undefined && e.sequence_status !== 'active'
             const going = e.status === 'active' || e.status === 'paused' || e.status === 'finished'
             const items: ActionMenuItem[] = [
               ...(e.status === 'active' ? [{ label: 'Pause for them', icon: Pause, onSelect: () => act.mutate({ id: e.id, action: 'pause' }) }] : []),
@@ -115,14 +126,18 @@ export function ContactSequences({
                     >
                       {e.sequence_name}
                     </Link>
-                    <Badge variant={status.variant}>{status.label}</Badge>
+                    {halted ? (
+                      <Badge variant="warning">{e.sequence_status === 'draft' ? 'Sequence is a draft' : 'Sequence paused'}</Badge>
+                    ) : (
+                      <Badge variant={status.variant}>{status.label}</Badge>
+                    )}
                   </div>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground tabular-nums">
                     <Steps sent={e.sent} steps={e.steps} />
                     <span>
-                      {e.sent} of {e.steps} sent
+                      {Math.min(e.sent, e.steps)} of {e.steps} sent
                       {e.next_send_at ? ` · next ${when(e.next_send_at)}` : ''}
-                      {e.stop_reason && !e.replied_at ? ` · ${e.stop_reason}` : ''}
+                      {e.stop_reason && !e.replied_at && !e.stop_reason.toLowerCase().startsWith(status.label.toLowerCase()) ? ` · ${e.stop_reason}` : ''}
                     </span>
                   </p>
                 </div>

@@ -34,6 +34,8 @@ import { inboxState, sequenceRoute } from '../mailboxes/send'
 
 const now = () => new Date().toISOString()
 const normEmail = (e: string) => e.toLowerCase().trim()
+/** `"Priya Raman" <priya@x.com>` or `priya@x.com` → `priya@x.com`. */
+const addressOf = (from: string) => normEmail(from.match(/<([^>]+)>/)?.[1] ?? from)
 /** Most people enrolled in one go. */
 export const MAX_ENROLL = 5000
 
@@ -452,16 +454,21 @@ export const sequences = {
         .filter((e) => e.contact_email === normEmail(email))
         .map((e) => {
           const s = data.sequences?.find((x) => x.id === e.sequence_id)
+          const answers = (e.messages ?? []).filter((m) => m.direction === 'out').map((m) => m.at)
           return {
             id: e.id,
             sequence_id: e.sequence_id,
             sequence_name: s?.name ?? 'Deleted sequence',
+            /** A paused or draft sequence sends nothing, whatever the person's own status says. */
+            sequence_status: s?.status ?? 'archived',
             steps: s?.steps.length ?? 0,
             status: e.status,
             stop_reason: e.stop_reason,
             sent: e.sends.length,
-            next_send_at: e.status === 'active' && s ? sendableAt(e.next_send_at, s) : null,
+            next_send_at: e.status === 'active' && s?.status === 'active' ? sendableAt(e.next_send_at, s) : null,
             replied_at: e.replied_at,
+            /** The last answer to their reply that went to them. */
+            last_answer_at: answers.sort().at(-1) ?? null,
             enrolled_at: e.enrolled_at,
           }
         }),
@@ -475,11 +482,13 @@ export const sequences = {
         .flatMap((e) => {
           const name = data.sequences?.find((x) => x.id === e.sequence_id)?.name ?? 'Deleted sequence'
           const messages = e.messages ?? []
+          const them = normEmail(email)
           return messages
-            .filter((m) => m.direction === 'in')
+            // Theirs only: a colleague copied into the thread isn't them.
+            .filter((m) => m.direction === 'in' && addressOf(m.from) === them)
             .map((m) => ({
-              /** Someone has written back since. */
-              answered: messages.some((o) => o.direction === 'out' && o.at > m.at),
+              /** Someone has written back since, or marked the conversation done in the Inbox. */
+              answered: messages.some((o) => o.direction === 'out' && o.at > m.at) || Boolean(e.inbox_done_at && e.inbox_done_at >= m.at),
               id: m.id,
               enrollment_id: e.id,
               sequence_id: e.sequence_id,

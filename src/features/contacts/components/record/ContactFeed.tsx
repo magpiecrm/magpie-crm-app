@@ -21,6 +21,7 @@ import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { Avatar } from '../../../../components/ui/Avatar'
 import { Button } from '../../../../components/ui/Button'
 import { confirmDialog } from '../../../../components/ui/confirm'
+import { toast } from '../../../../components/ui/toast'
 import { nameFromEmail } from '../../../sales/utils'
 import { formatAgo, formatWhen, monthOf, type FeedItem } from '../../record'
 
@@ -96,7 +97,11 @@ function IconDot({ Icon, tint = 'bg-muted text-muted-foreground' }: { Icon: Luci
 function NoteRow({ item, onChanged }: { item: FeedItem; onChanged: () => void }) {
   const note = item.note!
   const author = note.created_by ? nameFromEmail(note.created_by) : null
-  const remove = useMutation({ mutationFn: () => deleteNoteFn({ data: { id: note.id } }), onSuccess: onChanged })
+  const remove = useMutation({
+    mutationFn: () => deleteNoteFn({ data: { id: note.id } }),
+    onSuccess: onChanged,
+    onError: (err) => toast.error("Couldn't delete the note", { description: err instanceof Error ? err.message : undefined }),
+  })
   return (
     <>
       <span className="mt-0.5">
@@ -330,11 +335,18 @@ export interface NoteComposerHandle {
 }
 
 /** A box to write a note about the contact, open until it's saved, cancelled or left empty. */
-export const NoteComposer = forwardRef<NoteComposerHandle, { email: string; name: string; onAdded: () => void; onClose: () => void }>(function NoteComposer(
-  { email, name, onAdded, onClose },
-  ref,
-) {
-  const [body, setBody] = useState('')
+export const NoteComposer = forwardRef<
+  NoteComposerHandle,
+  {
+    email: string
+    name: string
+    /** The draft, kept by the page so it outlives a change of tab. */
+    body: string
+    onBody: (body: string) => void
+    onAdded: () => void
+    onClose: () => void
+  }
+>(function NoteComposer({ email, name, body, onBody: setBody, onAdded, onClose }, ref) {
   const box = useRef<HTMLTextAreaElement>(null)
   const focus = () => {
     box.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })

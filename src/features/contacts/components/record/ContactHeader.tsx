@@ -6,6 +6,7 @@ import { queryKeys } from '../../../../queryKeys'
 import { ActionMenu } from '../../../../components/ui/ActionMenu'
 import { Avatar } from '../../../../components/ui/Avatar'
 import { Button } from '../../../../components/ui/Button'
+import { toast } from '../../../../components/ui/toast'
 import { SECTION_ACTION } from '../../../../components/ui/RecordSection'
 import { FollowUpButton, useTasksChanged } from '../../../sales/components/TaskParts'
 import { dueBucket } from '../../../sales/tasks'
@@ -37,6 +38,7 @@ export function ContactHeader({
   feed,
   nextEmailAt,
   repliedAt,
+  answeredAt,
   onEmail,
   onNote,
   onAddTask,
@@ -54,6 +56,8 @@ export function ContactHeader({
   nextEmailAt: string | null
   /** When they last replied to a sequence, as their enrolments have it. */
   repliedAt: string | null
+  /** When an answer to their reply last went to them (from the Inbox or a sequence's Replies). */
+  answeredAt: string | null
   onEmail: () => void
   onNote: () => void
   onAddTask: () => void
@@ -64,7 +68,11 @@ export function ContactHeader({
   const on = { contactEmail: contact.email }
   const { data: tasks = [] } = useQuery({ queryKey: queryKeys.sales.tasks(on), queryFn: () => tasksFn({ data: on }) })
   const changed = useTasksChanged()
-  const complete = useMutation({ mutationFn: (id: string) => updateTaskFn({ data: { id, done: true } }), onSuccess: changed })
+  const complete = useMutation({
+    mutationFn: (id: string) => updateTaskFn({ data: { id, done: true } }),
+    onSuccess: changed,
+    onError: (err) => toast.error("Couldn't mark the task done", { description: err instanceof Error ? err.message : undefined }),
+  })
   const status = emailStatus(contact.status)
   const job = contact.attributes.JOB_TITLE
   // Their own company field first: the record they're grouped under (by email domain) can be another name.
@@ -85,12 +93,19 @@ export function ContactHeader({
     )
   ) : null
 
-  const lastEmail = feed.find((i) => i.kind === 'campaign' || i.kind === 'sequence')
+  // Their latest campaign or sequence email, or an answer to their reply if that came later.
+  const lastSent = feed.find((i) => i.kind === 'campaign' || i.kind === 'sequence')?.at
+  const lastEmail = [lastSent, answeredAt]
+    .filter((at): at is string => Boolean(at))
+    .sort()
+    .at(-1)
   const lastReply = [repliedAt, ...feed.map((i) => i.replied ?? (i.kind === 'reply' ? i.at : undefined))]
     .filter((at): at is string => Boolean(at))
     .sort()
     .at(-1)
-  const nextTask = tasks.filter((t) => !t.done_at && t.due_at).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0]
+  // The soonest open task with a due date; else an open one without.
+  const openTasks = tasks.filter((t) => !t.done_at)
+  const nextTask = openTasks.filter((t) => t.due_at).sort((a, b) => a.due_at!.localeCompare(b.due_at!))[0] ?? openTasks[0]
   const overdue = nextTask && dueBucket(nextTask.due_at) === 'overdue'
   const open = deals.filter((d) => d.status === 'open')
   const openValue = open.reduce((sum, d) => sum + d.value, 0)
@@ -198,11 +213,11 @@ export function ContactHeader({
                       <AlarmClock aria-hidden className="mr-1 inline h-3.5 w-3.5 -translate-y-px" />
                       Overdue
                     </span>
-                  ) : (
-                    <span className="mr-1.5 text-muted-foreground" title={formatWhen(nextTask.due_at!)}>
-                      {formatDay(nextTask.due_at!)}
+                  ) : nextTask.due_at ? (
+                    <span className="mr-1.5 text-muted-foreground" title={formatWhen(nextTask.due_at)}>
+                      {formatDay(nextTask.due_at)}
                     </span>
-                  )}
+                  ) : null}
                   {nextTask.body}
                 </p>
               </div>
@@ -220,8 +235,8 @@ export function ContactHeader({
           <dl className="grid grid-cols-3 border-t border-border lg:border-l lg:border-t-0">
             <Stat label="Last emailed" empty={!lastEmail}>
               {lastEmail ? (
-                <button type="button" onClick={onShowActivity} title={formatWhen(lastEmail.at)} className="hover:text-accent hover:underline cursor-pointer">
-                  {formatAgo(lastEmail.at)}
+                <button type="button" onClick={onShowActivity} title={formatWhen(lastEmail)} className="hover:text-accent hover:underline cursor-pointer">
+                  {formatAgo(lastEmail)}
                 </button>
               ) : (
                 'Never'

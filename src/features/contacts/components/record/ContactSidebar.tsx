@@ -26,19 +26,24 @@ export interface RecordContact {
 
 /** How a contact's email status reads: what it means, and its colour and icon. */
 export function emailStatus(status: string) {
-  if (status === 'subscribed') return { label: 'Subscribed', tone: 'good' as const, Icon: CheckCircle2, text: 'Campaigns and sequences can email them.' }
+  if (status === 'subscribed')
+    return { label: 'Subscribed', tone: 'good' as const, Icon: CheckCircle2, text: 'Campaigns and sequences can email them.', headline: '', skip: '' }
   if (status === 'bounced')
     return {
       label: 'Bounced',
       tone: 'bad' as const,
       Icon: MailWarning,
       text: 'Mail to this address bounced, so campaigns and sequences skip it. Only resubscribe if you know the address works again.',
+      headline: 'Their address bounced',
+      skip: 'Their address bounced, so sequences skip it.',
     }
   return {
     label: 'Unsubscribed',
     tone: 'warn' as const,
     Icon: MailX,
     text: 'They opted out, so campaigns and sequences skip them. Only resubscribe with their permission.',
+    headline: 'They unsubscribed',
+    skip: 'They unsubscribed, so sequences skip them.',
   }
 }
 
@@ -167,8 +172,8 @@ function CompanySection({ email, company, typed }: { email: string; company: Com
     >
       {picking ? (
         <div className="space-y-2">
-          <CompanyPicker value={null} onChange={(id) => link.mutate(id)} autoFocus />
-          <div className="flex gap-2">
+          {/* Above the search, so its list opening below can't move them from under a click. */}
+          <div className="flex flex-wrap gap-2">
             {company && (
               <Button size="sm" variant="ghost" onClick={() => link.mutate(null)} isLoading={link.isPending && link.variables === null}>
                 Unlink {company.name}
@@ -178,6 +183,7 @@ function CompanySection({ email, company, typed }: { email: string; company: Com
               Cancel
             </Button>
           </div>
+          <CompanyPicker value={null} onChange={(id) => link.mutate(id)} autoFocus />
           {link.error && <p className="text-[13px] text-destructive">{link.error.message}</p>}
         </div>
       ) : company ? (
