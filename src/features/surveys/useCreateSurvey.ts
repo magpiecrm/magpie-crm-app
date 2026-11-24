@@ -21,5 +21,14 @@ export function useCreateSurvey() {
       navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: survey.id } })
     },
   })
-  return { pick: (templateId: string) => create.mutate(templateId), pending: create.isPending ? (create.variables ?? null) : null, error: create.error?.message }
+  // Made, the page stays busy until the builder opens (that takes a moment more): a second pick
+  // in between would make a second survey. A failure frees it to try again.
+  const busy = create.isPending || create.isSuccess
+  return {
+    pick: (templateId: string) => {
+      if (!busy) create.mutate(templateId)
+    },
+    pending: busy ? (create.variables ?? null) : null,
+    error: create.error?.message,
+  }
 }
