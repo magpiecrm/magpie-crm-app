@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { queryKeys } from '../../queryKeys'
@@ -7,28 +8,45 @@ import { SURVEY_STARTER_TEMPLATES } from '../survey-builder/templates/starters'
 /**
  * Make a survey from a starter and open it in the builder. It's named after
  * the starter; the name is changed in the builder's top bar.
+ *
+ * One pick at a time: from the click until the builder has opened, the tiles
+ * are busy and further picks do nothing, so a double click, or a click while
+ * the builder loads, makes no second survey. Back before the builder opened,
+ * or a failure, frees them again.
  */
 export function useCreateSurvey() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  // Set at the click itself, before React has drawn the busy tiles: a very fast double click is one pick.
+  const picking = useRef(false)
+  const [opening, setOpening] = useState<string | null>(null)
+  const done = () => {
+    picking.current = false
+    setOpening(null)
+  }
   const create = useMutation({
     mutationFn: (templateId: string) => {
       const template = SURVEY_STARTER_TEMPLATES.find(t => t.id === templateId)
       return createSurveyFn({ data: { name: templateId === 'blank' ? 'Untitled survey' : template?.name ?? 'Untitled survey', templateId } })
     },
-    onSuccess: survey => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list() })
-      navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: survey.id } })
-    },
+    // Marked out of date without refetching now: the empty Surveys page would otherwise turn into the list
+    // (new draft, live buttons) before the builder opens. It's fetched again when next shown.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.surveys.list(), refetchType: 'none' }),
   })
-  // Made, the page stays busy until the builder opens (that takes a moment more): a second pick
-  // in between would make a second survey. A failure frees it to try again.
-  const busy = create.isPending || create.isSuccess
-  return {
-    pick: (templateId: string) => {
-      if (!busy) create.mutate(templateId)
-    },
-    pending: busy ? (create.variables ?? null) : null,
-    error: create.error?.message,
+  const pick = (templateId: string) => {
+    if (picking.current) return
+    picking.current = true
+    setOpening(templateId)
+    create.mutate(templateId, {
+      // Only while this page is still open (these don't run once it's left): going elsewhere
+      // while it's being made doesn't pull you into its builder a moment later.
+      onSuccess: async survey => {
+        await navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: survey.id } })
+        // Still here: Back was pressed before the builder opened.
+        done()
+      },
+      onError: done,
+    })
   }
+  return { pick, pending: opening, error: create.error?.message }
 }
