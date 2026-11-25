@@ -220,6 +220,15 @@ describe('verifiedPeopleSearch', () => {
       expect(keywordFilter('ealthcare')!(lanternfish)).toBe(false)
       expect(keywordFilter('saas')!(who('VP Sales', 'Harbour Freight', 'Logistics'))).toBe(false)
       expect(keywordFilter('proptech')!(who('Founder', 'Keyhaus', 'Real Time Systems'))).toBe(false)
+      // A shorthand is an industry's: never found in the job title.
+      expect(keywordFilter('martech')!(who('Head of Marketing', 'Bramblefield Logistics', 'Transportation, Logistics, Supply Chain and Storage'))).toBe(false)
+      expect(keywordFilter('martech')!(who('Head of Growth', 'Pixelpost', 'Marketing Services'))).toBe(true)
+      expect(keywordFilter('saas')!(who('Software Engineer', 'Northbank', 'Banking'))).toBe(false)
+      expect(keywordFilter('legaltech')!(who('Legal Counsel', 'Harbour Freight', 'Logistics'))).toBe(false)
+      // The keyword itself still is: "marketing" keeps a Head of Marketing anywhere.
+      expect(keywordFilter('marketing')!(who('Head of Marketing', 'Bramblefield Logistics', 'Logistics'))).toBe(true)
+      // Words in a row are within one field: a company name's end and its industry's start don't join.
+      expect(keywordFilter('healthcare')!(who('CTO', 'Acme Health', 'Care Services'))).toBe(false)
     })
     it('is no filter without a keyword', () => {
       expect(keywordFilter(undefined)).toBeNull()

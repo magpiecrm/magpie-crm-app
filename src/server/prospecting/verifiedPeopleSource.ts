@@ -149,9 +149,14 @@ function beginsWord(words: string[], w: string): boolean {
 export function keywordFilter(keyword: string | null | undefined): ((person: { title?: string | null; company?: { name?: string | null; industry?: string | null } | null }) => boolean) | null {
   const words = plainWords(keyword ?? '').split(' ').filter(Boolean)
   if (!words.length) return null
+  const wordsOf = (text: string | null | undefined) => plainWords(text ?? '').split(' ').filter(Boolean)
   return (person) => {
-    const text = plainWords([person.title, person.company?.name, person.company?.industry].filter(Boolean).join(' ')).split(' ').filter(Boolean)
-    const has = (w: string) => beginsWord(text, w) || (KEYWORD_SHORTHANDS[w] ?? []).some((phrase) => phrase.split(' ').every((p) => beginsWord(text, p)))
+    // Each apart, so words in a row don't run from one into the next.
+    const employer = [wordsOf(person.company?.name), wordsOf(person.company?.industry)]
+    const fields = [wordsOf(person.title), ...employer]
+    const anyOf = (where: string[][], w: string) => where.some((f) => beginsWord(f, w))
+    // A shorthand is for an industry: it's looked for in the employer, never the job ("martech" isn't every Head of Marketing).
+    const has = (w: string) => anyOf(fields, w) || (KEYWORD_SHORTHANDS[w] ?? []).some((phrase) => employer.some((f) => phrase.split(' ').every((p) => beginsWord(f, p))))
     return words.every(has)
   }
 }
@@ -409,7 +414,11 @@ export interface VerifiedFunnel {
    * or the companies it searches inside instead (the Warm filter: the
    * workspace's warm companies, a batch at a time).
    */
-  plan: Pick<PlacesPlan, 'places' | 'placesOnly'> & { companies?: Array<{ ref: string; name: string }> }
+  plan: Pick<PlacesPlan, 'places' | 'placesOnly'> & {
+    companies?: Array<{ ref: string; name: string }>
+    /** Inside companies: how many this search has already shown, whom the host will find again first, so it's asked for that many more. */
+    skip?: number
+  }
   /** Moves `plan` on to the next cities; false where there are none. */
   nextRound(): boolean
   /**
@@ -518,7 +527,7 @@ export async function verifiedPeopleSearch(
             // The host also reads company websites, where it runs that and the filter suits it.
             founderSites: true,
           }),
-      limit: Math.min(MAX_ASKED, (count - usable()) * askedPerShown),
+      limit: Math.min(MAX_ASKED, (count - usable()) * askedPerShown + (funnel.plan.skip ?? 0)),
     }
   }
 
@@ -541,7 +550,9 @@ export async function verifiedPeopleSearch(
   const take = async (people: PersonResult[]) => {
     const ready = people.length ? await funnel.prepare(people) : []
     // When there's less room than people, those whose email is likeliest to be found take it.
-    const chosen = new Set(funnel.findableFirst(ready.filter((p) => !funnel.hidden(p))).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
+    const shown = ready.filter((p) => !funnel.hidden(p))
+    const chosen = new Set(funnel.findableFirst(shown).slice(0, Math.max(0, count - usable())).map((p) => p.profileUrl))
+    if (shown.length > chosen.size) leftUnread = true
     const taken = ready.filter((p) => funnel.hidden(p) || chosen.has(p.profileUrl))
     items.push(...taken)
     if (taken.length) opts.onPeople?.({ items: taken, refined: [] })
@@ -552,6 +563,8 @@ export async function verifiedPeopleSearch(
   let cutShort = null as Pick<CutShort, 'id' | 'cursor' | 'found' | 'stats'> | null
   /** People this page took from a batch an earlier page cut short. */
   let heldOver = 0
+  /** The page filled with people found but not taken, or before the host had given everyone: Load more has more to read. */
+  let leftUnread = false
 
   /** One batch of cities, to the end of its host search, or who one an earlier page cut short has found, stopping it; false if it couldn't start. */
   const runRound = async (earlier?: CutShort): Promise<boolean> => {
@@ -606,6 +619,7 @@ export async function verifiedPeopleSearch(
           await take(read(since))
         }
         stop = usable() >= count ? 'full' : 'done'
+        if (stop === 'full' && (earlier.running || since?.status === 'running')) leftUnread = true
       }
       while (stop === 'time limit' && usable() < count) {
         if (now() - roundStartedAt >= MAX_WAIT_MS) {
@@ -622,6 +636,7 @@ export async function verifiedPeopleSearch(
         await take(read(page))
         if (usable() >= count) {
           stop = 'full'
+          if (status === 'running' || page.nextCursor != null) leftUnread = true
           break
         }
         // Finished at the host, with nothing left unread: a big search can finish between polls.
@@ -669,7 +684,7 @@ export async function verifiedPeopleSearch(
     if (!(await runRound())) stop = 'source failed'
   }
 
-  const kept = funnel.finish(items, stop !== 'source failed', rounds > 0, stop === 'full')
+  const kept = funnel.finish(items, stop !== 'source failed', rounds > 0, stop === 'full' && leftUnread)
   if (cutShort) {
     const { id } = cutShort
     const cancel = async () => calls.cancel?.(id)
@@ -705,6 +720,8 @@ export async function verifiedPeopleSearch(
     if (kept.nextCursor) parts.push('Load more carries on.')
     warnings.push(parts.join(' '))
   }
+  // A Load more that found nobody, with nothing after it: said, rather than the button just going.
+  if (input.cursor && shown === 0 && !kept.nextCursor && !warnings.length) warnings.push("No more found: that's everyone this search finds.")
   console.log(`[Prospecting] Verified search ${JSON.stringify({ stop, ...counts })}`)
   await logSearch({
     id: searchId,

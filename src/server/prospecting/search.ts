@@ -737,9 +737,11 @@ function warmCompaniesByName(db: Db, filters: PeopleFilters) {
   })
 }
 
-/** Domains whose LinkedIn page was looked for lately, found or not: not looked for again for a day. */
+/** Domains whose LinkedIn page was looked for lately: not looked for again for a day, or a while where the host failed. */
 const warmPagesLookedFor = new Map<string, number>()
 const WARM_PAGE_RETRY_MS = 24 * 3_600_000
+/** A lookup the host failed (not one that found nothing) is tried again this soon. */
+const WARM_PAGE_ERROR_RETRY_MS = 10 * 60_000
 /** At most this many looked for per search, the most recently warm first. */
 const WARM_PAGES_PER_SEARCH = 5
 
@@ -760,10 +762,11 @@ async function findWarmPages(db: Db, now = Date.now()): Promise<void> {
   const source = getSource()
   let found = false
   for (const s of todo) {
-    warmPagesLookedFor.set(s.domain!, now)
     const res = await Promise.resolve()
       .then(() => source.searchCompanies({ keyword: s.name! }))
       .catch(() => null)
+    // Found nothing: not again for a day. Failed: again in a few minutes, as if looked for a day less that long ago.
+    warmPagesLookedFor.set(s.domain!, res ? now : now - WARM_PAGE_RETRY_MS + WARM_PAGE_ERROR_RETRY_MS)
     const page = res?.items.find((c) => c.domain?.toLowerCase().replace(/^www\./, '') === s.domain)
     if (!page) continue
     db.upsertProspectCompanies([{ ref: page.ref, name: page.name, domain: s.domain, domain_source: 'socialfetch', headcount: page.headcount, slug: slugFromCompanyUrl(page.linkedinUrl) }])
@@ -1803,8 +1806,13 @@ async function verifiedFunnel(
   for (const c of warmTargetsHere ?? []) warmByName.set(c.name.trim().toLowerCase(), warmSignal(c.summary))
   // Inside one company the host runs a single query and leaves cities out, so there are none to go through.
   // With Warm, each round goes inside a few of the warm companies instead.
+  // Inside companies the host finds who this search has shown there again first, so it's asked past them.
   const placesOf = (cursor: string | null): VerifiedFunnel['plan'] & PlacesPlan =>
-    input.company ? { places: [], placesOnly: false, next: null } : warmTargetsHere ? warmRound(warmTargetsHere, titleCount, cursor) : placesFor(input.country, titleCount, cursor)
+    input.company
+      ? { places: [], placesOnly: false, next: null, skip: shownHashes.size }
+      : warmTargetsHere
+        ? { ...warmRound(warmTargetsHere, titleCount, cursor), skip: shownHashes.size }
+        : placesFor(input.country, titleCount, cursor)
   let plan = placesOf(start)
   // The cursor that gave `plan`: a full page inside companies goes through them again from it.
   let planCursor = start

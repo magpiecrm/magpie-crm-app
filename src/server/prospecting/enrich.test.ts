@@ -2064,11 +2064,16 @@ describe('the verified people search, through the funnel', () => {
       expect(first.nextCursor).toBe('warm:0')
       const more = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, cursor: first.nextCursor! }, { listening: () => true })
       expect(more.items.map((p) => p.firstName)).toEqual(['ben'])
-      // Full again, so it may have more; the next finds nobody new, and that's everyone there.
-      expect(more.nextCursor).toBe('warm:0')
-      const last = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, cursor: more.nextCursor! }, { listening: () => true })
+      // Full again, but nobody was left unread: no Load more that would find nothing.
+      expect(more.nextCursor).toBeNull()
+      // The host is asked past the one already shown there.
+      const limits = asked.filter((a) => a.method === 'POST').map((a) => a.body.limit)
+      expect(limits.at(-1)).toBe(limits[0] + 1)
+      // Asked again all the same (an old page's Load more), it says there's no more rather than nothing.
+      const last = await searchPeople({ titles: ['Founder'], signals: ['warm'], count: 1, cursor: 'warm:0' }, { listening: () => true })
       expect(last.items).toEqual([])
       expect(last.nextCursor).toBeNull()
+      expect(last.warnings).toEqual(["No more found: that's everyone this search finds."])
     })
 
     it("with Warm, looks up the LinkedIn page of a warm company the CRM named only by guessing from its domain", async () => {
@@ -2104,6 +2109,31 @@ describe('the verified people search, through the funnel', () => {
       searchCompaniesMock.mockClear()
       await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
       expect(searchCompaniesMock).not.toHaveBeenCalled()
+    })
+
+    it("with Warm, tries a guessed name's page again soon where the host failed, not a day later", async () => {
+      const lately = new Date(Date.now() - 3 * 86_400_000).toISOString()
+      keepUpserts = true
+      recipients = [{ campaign_id: 1, contact_email: 'ada@harrowgate.com', status: 'clicked', opened_at: lately, clicked_at: lately, sent_at: lately }]
+      crmCompanies = [{ id: 'co1', name: 'Harrowgate', domain: 'harrowgate.com', linkedin_ref: null }]
+      hostFinds([])
+      searchCompaniesMock.mockImplementationOnce(async () => {
+        throw new Error('host 503')
+      })
+      await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      expect(searchCompaniesMock).toHaveBeenCalledTimes(1)
+      searchCompaniesMock.mockClear()
+      // Straight after, it waits; ten minutes on, it asks again.
+      await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+      expect(searchCompaniesMock).not.toHaveBeenCalled()
+      vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 11 * 60_000 })
+      try {
+        searchCompaniesMock.mockImplementationOnce(async () => ({ items: [], nextCursor: null, reportedTotal: 0, warnings: [], details: [], requests: 1 }) as any)
+        await searchPeople({ titles: ['Founder'], signals: ['warm'], fromStart: true }, { listening: () => true })
+        expect(searchCompaniesMock).toHaveBeenCalledWith({ keyword: 'Harrowgate' })
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('never sends a numeric LinkedIn id as a company page name: the name still finds them', async () => {
