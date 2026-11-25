@@ -42,6 +42,9 @@ export function useCreateSurvey() {
       // while it's being made doesn't pull you into its builder a moment later.
       onSuccess: async survey => {
         await navigate({ to: '/marketing/surveys/$surveyId/edit', params: { surveyId: survey.id } })
+        // The builder's open (or Back was pressed): the list is fetched now, in the background,
+        // so going back to Surveys doesn't first show the old one ("Make your first survey").
+        void queryClient.refetchQueries({ queryKey: queryKeys.surveys.list(), type: 'all' })
         // Still here: Back was pressed before the builder opened.
         done()
       },
