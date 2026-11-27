@@ -479,8 +479,9 @@ export function ProspectSearch() {
     })
 
   const status = useProspectingStatus()
-  // The host's search browsers get past Google's check while the filters are chosen.
-  useSearchWarmup(Boolean(status?.verifiedPeopleSearch) && mode === 'people', peopleForm)
+  // The host's search browsers get past Google's check while the filters are chosen. Not before the
+  // saved tab is back: the page opens on People and may then turn out to be on Browse companies.
+  useSearchWarmup(Boolean(status?.verifiedPeopleSearch) && restored && mode === 'people', peopleForm)
   // Hiring and funding, where this copy can look them up (its host, or its own web search key).
   const webSignals: Array<'hiring' | 'funding'> = status?.webSignals ?? []
   // A search with a job title goes to the host's verified search, which applies signals and the keyword person by person.

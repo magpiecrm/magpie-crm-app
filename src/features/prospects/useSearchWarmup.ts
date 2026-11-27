@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { warmPeopleSearchFn } from '../../server/functions'
+import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from '../../queryKeys'
+import { checkAuthFn, warmPeopleSearchFn } from '../../server/functions'
 
 /**
  * How often, at most, the page asks again while filters change: inside the 8
@@ -19,14 +21,20 @@ export function shouldWarm(on: boolean, visible: boolean, lastAt: number | null,
  * Without it, the first search after a quiet spell spends about 45 seconds
  * on that before anyone shows. `activity` is anything that changes as they
  * work on the filters.
+ *
+ * Never in a view-only session: the host's staff looking at a copy aren't
+ * about to search, and the copy refuses the request, which its banner would
+ * show as something they tried to change.
  */
 export function useSearchWarmup(on: boolean, activity: unknown) {
+  const { data: account } = useQuery({ queryKey: queryKeys.account(), queryFn: () => checkAuthFn(), staleTime: 5 * 60_000 })
+  const ready = on && account !== undefined && !account.viewOnly
   const lastAt = useRef<number | null>(null)
   useEffect(() => {
     const now = Date.now()
-    if (!shouldWarm(on, document.visibilityState === 'visible', lastAt.current, now)) return
+    if (!shouldWarm(ready, document.visibilityState === 'visible', lastAt.current, now)) return
     lastAt.current = now
     // A hint: the search works the same without it.
     warmPeopleSearchFn().catch(() => {})
-  }, [on, activity])
+  }, [ready, activity])
 }

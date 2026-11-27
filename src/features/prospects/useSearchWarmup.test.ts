@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('../../server/functions', () => ({ warmPeopleSearchFn: vi.fn() }))
+vi.mock('../../server/functions', () => ({ warmPeopleSearchFn: vi.fn(), checkAuthFn: vi.fn() }))
 const { shouldWarm, WARM_EVERY_MS } = await import('./useSearchWarmup')
 
 describe('shouldWarm', () => {

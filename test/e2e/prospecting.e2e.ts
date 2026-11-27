@@ -7,11 +7,15 @@
 //
 // The workspace is shared and searches remember who they showed, so every
 // search here starts from the top, and people stay contacts once saved.
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import type { Browser, Locator, Page } from '@playwright/test'
-import { expect, test } from './fixtures'
+import { expect, test, watch } from './fixtures'
 import { unique } from './helpers'
 import { PEOPLE, companyById, realAddress, verdict, type FakePerson } from '../stack/fixtures'
-import { readState } from '../stack/state'
+import { readState, stackDir } from '../stack/state'
+import { createViewOnlyToken } from '../../src/server/signInLink'
+import { VIEW_ONLY_REFUSED_EVENT } from '../../src/viewOnly'
 
 /** A search's first page waits up to 75 s for the mail-domain tests of companies it hasn't met before. */
 const SEARCH_MS = 150_000
@@ -227,6 +231,50 @@ test.describe('P1 search people by job title', () => {
     await page.waitForLoadState('networkidle')
     expect((await warmUps()).length).toBe(before + 1)
     expect(problems()).toEqual([])
+  })
+
+  test('coming back to it on Browse companies asks for no warm-up, as that tab has no use for one', async ({ page, problems, host }) => {
+    const warmUps = async () => (await host.log('/v2/linkedin/people/warm')).filter((c) => c.method === 'POST')
+    await page.goto('/collection/prospect-search')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('tab', { name: 'Browse companies' }).click()
+    const before = (await warmUps()).length
+    // The page opens on People, then finds it was left on Browse companies.
+    await page.reload()
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('tab', { name: 'Browse companies' })).toHaveAttribute('aria-selected', 'true')
+    await page.goto('/marketing/contacts')
+    await page.getByRole('link', { name: 'Prospect Search' }).first().click()
+    await expect(page.getByRole('tab', { name: 'Browse companies' })).toHaveAttribute('aria-selected', 'true')
+    await page.waitForLoadState('networkidle')
+    expect((await warmUps()).length).toBe(before)
+    // Back on People, it asks.
+    await page.getByRole('tab', { name: 'People' }).click()
+    await expect.poll(async () => (await warmUps()).length).toBe(before + 1)
+    expect(problems()).toEqual([])
+  })
+
+  test("a view-only session asks for no warm-up, so its banner shows no refusal it didn't cause", async ({ browser, host }) => {
+    const warmUps = async () => (await host.log('/v2/linkedin/people/warm')).filter((c) => c.method === 'POST')
+    const { appUrl, login } = readState()
+    const { signInLinkSecret } = JSON.parse(readFileSync(join(stackDir(), 'app-tokens.json'), 'utf8'))
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    const problems = watch(page)
+    await page.addInitScript((event) => {
+      ;(window as any).__refused = 0
+      window.addEventListener(event, () => (window as any).__refused++)
+    }, VIEW_ONLY_REFUSED_EVENT)
+    const before = (await warmUps()).length
+    await page.goto(`${appUrl}/auth/view?token=${createViewOnlyToken(login.email, 'staff@magpie.test', signInLinkSecret)}`)
+    await page.goto(`${appUrl}/collection/prospect-search`)
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText('Viewing as customer')).toBeVisible()
+    await page.waitForTimeout(1_000)
+    expect(await page.evaluate(() => (window as any).__refused)).toBe(0)
+    expect((await warmUps()).length).toBe(before)
+    expect(problems()).toEqual([])
+    await context.close()
   })
 
   test('a country narrows them to the people there', async ({ page, problems }) => {
