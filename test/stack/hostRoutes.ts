@@ -502,6 +502,9 @@ export const routes: Route[] = [
       return json({ id })
     },
   },
+  // Asked while someone chooses filters, so the host's search browsers are past Google's
+  // challenge before the search (verifiedPeopleSource.ts warmUpHostSearch). Nothing to warm here.
+  { method: 'POST', path: '/v2/linkedin/people/warm', handle: () => json({ warming: 0, kept: 0, skipped: 'this search engine needs no warm-up' }, 202) },
   {
     method: 'GET',
     path: /^\/v2\/linkedin\/people\/searches\/([^/]+)$/,

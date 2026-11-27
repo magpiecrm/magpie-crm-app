@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createCutShortBatches, keywordFilter, verifiedPeopleSearch, type VerifiedFunnel } from './verifiedPeopleSource'
+import { createCutShortBatches, keywordFilter, verifiedPeopleSearch, warmUpHostSearch, type VerifiedFunnel } from './verifiedPeopleSource'
 import { logSearch } from './searchLog'
 import { recordUsage } from '../usage'
 import type { PersonResult } from './types'
@@ -9,6 +9,7 @@ import type { PersonResult } from './types'
 vi.mock('./searchLog', () => ({ newSearchId: () => 'sid', logSearch: vi.fn() }))
 vi.mock('../allowance', () => ({ remaining: () => 999, requireAllowance: vi.fn(() => { throw new Error('allowance') }) }))
 vi.mock('../usage', () => ({ recordUsage: vi.fn() }))
+vi.mock('./settings', async (original) => ({ ...(await original<typeof import('./settings')>()), requireSocialFetchKey: () => 'sfk_test' }))
 
 const person = (over: Record<string, unknown> = {}) => ({
   profileUrl: 'https://uk.linkedin.com/in/jane-doe',
@@ -590,5 +591,22 @@ describe('verifiedPeopleSearch', () => {
       await verifiedPeopleSearch({ titles: ['Founder'] }, {}, { calls: c, sleep: async () => {}, now: () => 0 })
       expect(logSearch).toHaveBeenLastCalledWith(expect.objectContaining({ counts: expect.objectContaining({ serpSearches: 3, serpErrors: 1, candidates: 9, 'rejected: profile unavailable': 4 }) }))
     })
+  })
+})
+
+describe('warmUpHostSearch', () => {
+  it('asks the host to warm up with the copy’s key, and nothing else', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{"warming":2,"kept":0}', { status: 202 }))
+    expect(await warmUpHostSearch(fetchImpl as unknown as typeof fetch)).toBe(true)
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [URL, RequestInit]
+    expect(String(url)).toBe('https://api.socialfetch.dev/v2/linkedin/people/warm')
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({ 'x-api-key': 'sfk_test' })
+    expect(init.body).toBeUndefined()
+  })
+
+  it('is only a hint: a refusal or no answer is false, never an error', async () => {
+    expect(await warmUpHostSearch((async () => new Response('', { status: 405 })) as unknown as typeof fetch)).toBe(false)
+    expect(await warmUpHostSearch((async () => { throw new Error('ECONNREFUSED') }) as unknown as typeof fetch)).toBe(false)
   })
 })

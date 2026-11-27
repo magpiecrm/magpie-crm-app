@@ -42,6 +42,7 @@ import {
 import { signalScore } from '../../../server/prospecting/signals'
 import { useCompanySignals } from '../useCompanySignals'
 import { useProspectingStatus } from '../useProspectingStatus'
+import { useSearchWarmup } from '../useSearchWarmup'
 import { SUPPORTED_COUNTRIES } from '../../../server/prospecting/geo'
 
 import { INDUSTRIES } from '../constants/industries'
@@ -478,6 +479,8 @@ export function ProspectSearch() {
     })
 
   const status = useProspectingStatus()
+  // The host's search browsers get past Google's check while the filters are chosen.
+  useSearchWarmup(Boolean(status?.verifiedPeopleSearch) && mode === 'people', peopleForm)
   // Hiring and funding, where this copy can look them up (its host, or its own web search key).
   const webSignals: Array<'hiring' | 'funding'> = status?.webSignals ?? []
   // A search with a job title goes to the host's verified search, which applies signals and the keyword person by person.

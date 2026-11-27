@@ -319,6 +319,27 @@ function hostCalls(fetchImpl: typeof fetch): HostCalls {
   }
 }
 
+/**
+ * Asks the host to get its search browsers past Google's challenge before a
+ * search, which otherwise takes about 45 s off the first one after a quiet
+ * spell before anyone shows. Sent while someone chooses filters
+ * (warmPeopleSearchFn). The host does it once a minute at most for a
+ * workspace. Only a hint, so any failure is ignored, and nothing about anyone
+ * goes with it.
+ */
+export async function warmUpHostSearch(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const res = await fetchImpl(new URL('/v2/linkedin/people/warm', env.socialfetch.baseUrl()), {
+      method: 'POST',
+      headers: { 'x-api-key': requireSocialFetchKey(), accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 /** A batch the time limit cut short: it finishes at the host, and the next page of the same search takes who it found. */
 interface CutShort {
   id: string

@@ -211,6 +211,24 @@ test.describe('P1 search people by job title', () => {
     expect(problems()).toEqual([])
   })
 
+  test("opening it asks the host once to get its search browsers ready, not on every filter change", async ({ page, problems, host }) => {
+    const warmUps = async () => (await host.log('/v2/linkedin/people/warm')).filter((c) => c.method === 'POST')
+    const before = (await warmUps()).length
+    await page.goto('/collection/prospect-search')
+    await page.waitForLoadState('networkidle')
+    await expect.poll(async () => (await warmUps()).length, { message: 'a warm-up when the page opens' }).toBe(before + 1)
+    expect((await warmUps()).at(-1)?.status).toBe(202)
+    // Choosing filters straight after doesn't ask again: the host keeps what it warmed for minutes.
+    const form = page.locator('form').first()
+    const titles = form.getByRole('textbox', { name: 'Job titles' })
+    await titles.fill('VP Sales')
+    await titles.press('Enter')
+    await form.getByRole('checkbox', { name: 'Director', exact: true }).check()
+    await page.waitForLoadState('networkidle')
+    expect((await warmUps()).length).toBe(before + 1)
+    expect(problems()).toEqual([])
+  })
+
   test('a country narrows them to the people there', async ({ page, problems }) => {
     test.setTimeout(4 * 60_000)
     await searchPeople(page, { titles, country: 'United Kingdom', includeContacts: true })

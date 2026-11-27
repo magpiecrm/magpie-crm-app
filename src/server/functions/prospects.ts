@@ -266,6 +266,23 @@ export const dismissSearchSuggestionFn = createServerFn({ method: 'POST' })
     return { success: true }
   })
 
+/**
+ * Someone is choosing filters on a copy whose host runs the verified people
+ * search: the host gets its browsers past Google's challenge meanwhile
+ * (verifiedPeopleSource.ts warmUpHostSearch). Not with no prospects left to
+ * find this month, when the search would be refused anyway.
+ */
+export const warmPeopleSearchFn = createServerFn({ method: 'POST' }).handler(async () => {
+  const { requireAuth } = await import('../auth.server')
+  await requireAuth()
+  const { hostVerifiedPeopleSearch } = await import('../prospecting/hostRules')
+  if (!hostVerifiedPeopleSearch()) return { asked: false }
+  const { remaining } = await import('../allowance')
+  if (remaining('prospects') < 1) return { asked: false }
+  const { warmUpHostSearch } = await import('../prospecting/verifiedPeopleSource')
+  return { asked: await warmUpHostSearch() }
+})
+
 /** SocialFetch balance plus verification setup and proxy health, for the sidebar. */
 export const prospectingStatusFn = createServerFn({ method: 'GET' })
   .handler(async () => {
